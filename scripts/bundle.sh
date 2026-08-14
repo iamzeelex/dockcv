@@ -132,9 +132,19 @@ if [[ -n "$NOTARY_PROFILE" ]]; then
 fi
 
 if [[ -z "$NOTARY_PROFILE" ]]; then
-  cat > "$DIST/HOW-TO-OPEN.txt" <<'NOTE'
+  # Read from the binary, never hard-coded: a note that promises Intel
+  # support an arm64-only build does not have is worse than no note.
+  ARCHS="$(lipo -archs "$APP/Contents/MacOS/dockcv")"
+  case "$ARCHS" in
+    *arm64*x86_64*|*x86_64*arm64*) ARCH_LINE="Apple Silicon and Intel Macs." ;;
+    *arm64*)                       ARCH_LINE="Apple Silicon Macs (M1 or newer). Not Intel." ;;
+    *)                             ARCH_LINE="Intel Macs. Not Apple Silicon." ;;
+  esac
+  cat > "$DIST/HOW-TO-OPEN.txt" <<NOTE
 Opening DockCV the first time
 =============================
+
+Built for: $ARCH_LINE
 
 This build is signed, but not notarised by Apple — notarisation needs a paid
 Apple Developer account. macOS therefore asks before running it once, and
@@ -151,9 +161,9 @@ never again.
 What it needs
 -------------
 
-macOS 11 or newer, Apple Silicon or Intel. Nothing else: DockCV makes no
-network connections at all, and everything it stores is plain TOML in a folder
-you choose.
+macOS 11 or newer, on the architecture named above. Nothing else: DockCV makes
+no network connections at all, and everything it stores is plain TOML in a
+folder you choose.
 
 If something is wrong
 ---------------------
