@@ -311,6 +311,7 @@ impl Shell {
             .flex_1()
             .min_w_0()
             .h_full()
+            .relative()
             .flex()
             .flex_col()
             .child(self.library_header(cx, total, usage.total_reuses(library)))
@@ -329,6 +330,7 @@ impl Shell {
                     .children((total > 0).then(|| self.library_filter_chips(cx, &counts, total)))
                     .child(body),
             )
+            .children(self.render_library_edit_sheet(cx))
     }
 
     /// Title, block count, search and the "New block" menu.
@@ -397,9 +399,9 @@ impl Shell {
                                 for (section, title) in POOLS {
                                     let shell = shell.clone();
                                     menu = menu.item(PopupMenuItem::new(title).on_click(
-                                        move |_ev, _window, cx| {
+                                        move |_ev, window, cx| {
                                             let _ = shell.update(cx, |this, cx| {
-                                                this.add_library_block(section, cx);
+                                                this.open_library_edit(section, None, window, cx);
                                             });
                                         },
                                     ));
@@ -637,8 +639,8 @@ impl Shell {
                     .xsmall()
                     .icon(IconName::Plus)
                     .label("Add")
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.add_library_block(section, cx);
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.open_library_edit(section, None, window, cx);
                     })),
             );
 
@@ -713,7 +715,14 @@ impl Shell {
                     .right(px(8.0))
                     .dropdown_menu(move |menu, _window, _cx| {
                         let shell = shell.clone();
-                        menu.item(PopupMenuItem::new("Delete").on_click(
+                        let for_edit = shell.clone();
+                        menu.item(PopupMenuItem::new("Edit").on_click(move |_ev, window, cx| {
+                            let _ = for_edit.update(cx, |this, cx| {
+                                this.open_library_edit(section, Some(index), window, cx);
+                            });
+                        }))
+                        .separator()
+                        .item(PopupMenuItem::new("Delete").on_click(
                             move |_ev, window, cx| {
                                 let _ = shell.update(cx, |_this, cx| {
                                     confirm::destructive(
@@ -867,13 +876,17 @@ impl Shell {
     /// First-run explanation of what the library is and how to fill it.
     pub(super) fn render_library_onboarding(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
+        let shell = cx.weak_entity();
         let step = |n: &'static str, title: &'static str, body: &'static str| {
             div()
                 .flex()
                 .gap_3()
                 .items_start()
                 .child(
+                    // `flex_none`, or the longest step squashes its own circle
+                    // into an ellipse — a fixed `size` is still a flex basis.
                     div()
+                        .flex_none()
                         .size(px(26.0))
                         .flex()
                         .items_center()
@@ -890,16 +903,18 @@ impl Shell {
                     div()
                         .flex()
                         .flex_col()
-                        .gap_1()
+                        .gap(px(2.0))
                         .child(
                             div()
-                                .text_style(TextStyle::body())
+                                .text_style(TextStyle::control())
                                 .text_color(theme.text)
                                 .child(title),
                         )
                         .child(
+                            // Sans, not `meta()`: this is a sentence to read,
+                            // and mono is for data only (L-05).
                             div()
-                                .text_style(TextStyle::meta())
+                                .text_style(TextStyle::prose())
                                 .text_color(theme.text_muted)
                                 .child(body),
                         ),
@@ -944,28 +959,56 @@ impl Shell {
                     .flex()
                     .flex_col()
                     .gap_4()
-                    .child(step("1", "Open a CV", "Pick any CV from the gallery."))
+                    .child(step(
+                        "1",
+                        "Write one here",
+                        "New block asks for the fields that section needs. No CV required.",
+                    ))
                     .child(step(
                         "2",
-                        "Save a block with ★",
-                        "Next to any work entry, skill or certificate, press ★ to add it here.",
+                        "Or lift one out of a CV",
+                        "Press ★ on any work entry, skill or certificate to copy it here.",
                     ))
                     .child(step(
                         "3",
-                        "Reuse it anywhere",
-                        "In another CV, use “★ From library” to drop the block in.",
+                        "Drop it into any CV",
+                        "Reuse on a block copies it into another CV without leaving this screen.",
                     )),
             )
             .child(
-                Button::new("library-onboarding-cta")
-                    .cursor_pointer()
-                    .primary()
-                    .label("Browse CVs")
-                    .self_start()
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        this.screen = Screen::Gallery;
-                        cx.notify();
-                    })),
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        Button::new("library-onboarding-new")
+                            .cursor_pointer()
+                            .primary()
+                            .icon(IconName::Plus)
+                            .label("New block")
+                            .dropdown_menu(move |mut menu, _window, _cx| {
+                                for (section, title) in POOLS {
+                                    let shell = shell.clone();
+                                    menu = menu.item(PopupMenuItem::new(title).on_click(
+                                        move |_ev, window, cx| {
+                                            let _ = shell.update(cx, |this, cx| {
+                                                this.open_library_edit(section, None, window, cx);
+                                            });
+                                        },
+                                    ));
+                                }
+                                menu
+                            }),
+                    )
+                    .child(
+                        Button::new("library-onboarding-cta")
+                            .cursor_pointer()
+                            .ghost()
+                            .label("Browse CVs")
+                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                this.screen = Screen::Gallery;
+                                cx.notify();
+                            })),
+                    ),
             )
     }
 

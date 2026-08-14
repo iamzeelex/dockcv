@@ -20,8 +20,7 @@ use dockcv_ui_components::{TextFieldEvent, TextFieldState};
 use crate::config;
 use crate::render::{self, Rendered};
 use crate::resume::model::{
-    ApplicationStatus, Certificate, DiaryEntry, Education, ResumeDoc, SectionKind, SkillGroup,
-    Volunteer, Work,
+    ApplicationStatus, DiaryEntry, ResumeDoc, SectionKind,
 };
 use crate::resume::template;
 use crate::theme::ActiveTheme;
@@ -33,6 +32,7 @@ use super::applications_data::{ApplicationSort, ApplicationsView};
 use super::diary_capture::DiaryPaste;
 use super::diary_use::DiaryUse;
 use super::library::LibrarySort;
+use super::library_edit::LibraryEdit;
 use super::confirm;
 use super::save_status;
 use super::vault_cache::VaultCache;
@@ -83,6 +83,8 @@ pub struct Shell {
     pub(super) library_filter: Option<SectionKind>,
     /// How blocks are ordered inside each section group.
     pub(super) library_sort: LibrarySort,
+    /// The open block form — new when its index is `None`, otherwise an edit.
+    pub(super) library_edit: Option<LibraryEdit>,
     /// Mirror of `config.library_helper_dismissed`, read once at startup.
     /// Held in memory because the library screen consults it every frame, and
     /// a config file read per frame is a file read per frame.
@@ -159,6 +161,7 @@ impl Shell {
             library_search: None,
             library_filter: None,
             library_sort: LibrarySort::default(),
+            library_edit: None,
             library_helper_dismissed,
             diary_draft: None,
             diary_tags: None,
@@ -492,41 +495,6 @@ impl Shell {
             tag_field.update(cx, |state, cx| state.seed("", window, cx));
         }
         // The role deliberately survives the commit — see `diary_role`.
-        cx.notify();
-    }
-
-    /// Add a fresh placeholder block directly to a library section.
-    pub(super) fn add_library_block(&mut self, section: SectionKind, cx: &mut Context<Self>) {
-        let Some(vault) = self.vault.clone() else {
-            return;
-        };
-        let mut library = vault::load_library(&vault);
-        match section {
-            SectionKind::Work => library.work.push(Work {
-                position: "New role".into(),
-                ..Default::default()
-            }),
-            SectionKind::Education => library.education.push(Education {
-                study_type: "New qualification".into(),
-                ..Default::default()
-            }),
-            SectionKind::Skills => library.skills.push(SkillGroup {
-                name: "New category".into(),
-                keywords: Vec::new(),
-            }),
-            SectionKind::Certificates => library.certificates.push(Certificate {
-                name: "New certificate".into(),
-                ..Default::default()
-            }),
-            SectionKind::Organizations => library.volunteer.push(Volunteer {
-                position: "New role".into(),
-                ..Default::default()
-            }),
-            // No library pool for Profile or for custom sections (D-9) —
-            // see `views/root.rs::save_block_to_library`.
-            SectionKind::Profile | SectionKind::Custom(_) => {}
-        }
-        save_status::record(cx, "library", vault::save_library(&vault, &library));
         cx.notify();
     }
 
