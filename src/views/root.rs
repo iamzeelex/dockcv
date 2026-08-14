@@ -97,6 +97,13 @@ actions!(
         /// Move input focus to the previous field of the focused section
         /// (wraps).
         FocusPrevField,
+        /// Step the document back to before the last structural change —
+        /// a delete, an add, a reorder, an applied preset. Not text: while
+        /// the caret is in a field, that field's own undo takes `cmd-z`
+        /// first (see `root_undo`).
+        UndoDocument,
+        /// Step forward again after [`UndoDocument`].
+        RedoDocument,
         /// Export the composed document to PDF (same action as the toolbar
         /// button).
         ExportPdf,
@@ -131,6 +138,12 @@ pub(super) mod keys {
     pub const EXPORT_PDF: &str = "cmd-e";
     pub const OPEN_CAPTURE: &str = "cmd-k";
     pub const CLOSE_OVERLAY: &str = "escape";
+    /// The usual pair. Dispatch is what keeps them from fighting the text
+    /// input's identical bindings: a focused field is deeper in the tree, so
+    /// its `Undo` wins while the caret is in it, and these take over once it
+    /// is not.
+    pub const UNDO_DOCUMENT: &str = "cmd-z";
+    pub const REDO_DOCUMENT: &str = "cmd-shift-z";
 }
 
 /// Register the editor's keybindings. A one-time, process-wide call —
@@ -151,6 +164,8 @@ pub fn init_keybindings(cx: &mut App) {
         KeyBinding::new(EXPORT_PDF, ExportPdf, Some(EDITOR_CONTEXT)),
         KeyBinding::new(OPEN_CAPTURE, OpenCapture, Some(EDITOR_CONTEXT)),
         KeyBinding::new(CLOSE_OVERLAY, CloseOverlay, Some(EDITOR_CONTEXT)),
+        KeyBinding::new(UNDO_DOCUMENT, UndoDocument, Some(EDITOR_CONTEXT)),
+        KeyBinding::new(REDO_DOCUMENT, RedoDocument, Some(EDITOR_CONTEXT)),
     ]);
 }
 
@@ -229,6 +244,10 @@ pub struct Root {
     /// Where this document lives in the cvault, and the in-flight debounced save.
     pub(super) doc_path: PathBuf,
     pub(super) save_task: Option<Task<()>>,
+    /// Structural history — see [`super::root_undo`]. Whole-document
+    /// snapshots, taken before a change rather than after it.
+    pub(super) undo_stack: Vec<ResumeDoc>,
+    pub(super) redo_stack: Vec<ResumeDoc>,
     /// The vault's reusable block library ("me") and its directory.
     pub(super) vault_dir: PathBuf,
     pub(super) library: Library,
@@ -354,6 +373,8 @@ impl Root {
             fields_stale: false,
             focus_handle: cx.focus_handle(),
             recompile_task: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
             doc_path,
             save_task: None,
             vault_dir,
@@ -388,6 +409,7 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.checkpoint();
         self.doc.apply_preset(index);
         self.active_preset = Some(index);
         self.schedule_save(cx);
@@ -401,6 +423,7 @@ impl Root {
     /// preset. Not "capture" — see `ResumeDoc::add_preset`'s own doc comment
     /// for why that word is reserved for the Diary's quick-capture (D-7).
     pub(super) fn save_current_as_preset(&mut self, cx: &mut Context<Self>) {
+        self.checkpoint();
         let n = self.doc.presets.len() + 1;
         self.doc.add_preset(format!("Preset {n}"));
         self.active_preset = Some(self.doc.presets.len() - 1);
@@ -417,6 +440,7 @@ impl Root {
         let Some(index) = self.active_preset else {
             return;
         };
+        self.checkpoint();
         self.doc.remove_preset(index);
         self.active_preset = None;
         self.schedule_save(cx);
@@ -470,6 +494,7 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.checkpoint();
         use SectionKind::*;
         match section {
             Work => clone_from(self.library.work.get(index), self.doc.work.active_mut()),
@@ -515,6 +540,7 @@ impl Root {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.checkpoint();
         if let Some(entry) = self.diary.entries.get(entry_index) {
             let text = entry.text.clone();
             if let Some(work) = self.doc.work.active_mut().get_mut(work_index) {
@@ -1059,6 +1085,7 @@ impl Root {
         }
         let current = self.doc.active_variant(section) as isize;
         let next = (current + delta).rem_euclid(count as isize) as usize;
+        self.checkpoint();
         self.doc.set_active_variant(section, next);
         self.schedule_save(cx);
         self.fields_stale = true;
@@ -1153,6 +1180,24 @@ impl Root {
         cx.notify();
     }
 
+    pub(super) fn on_undo_document(
+        &mut self,
+        _: &UndoDocument,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.undo_document(window, cx);
+    }
+
+    pub(super) fn on_redo_document(
+        &mut self,
+        _: &RedoDocument,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.redo_document(window, cx);
+    }
+
     pub(super) fn on_export_pdf_action(
         &mut self,
         _: &ExportPdf,
@@ -1226,6 +1271,8 @@ impl Render for Root {
             .on_action(cx.listener(Self::on_prev_preset))
             .on_action(cx.listener(Self::on_focus_next_field))
             .on_action(cx.listener(Self::on_focus_prev_field))
+            .on_action(cx.listener(Self::on_undo_document))
+            .on_action(cx.listener(Self::on_redo_document))
             .on_action(cx.listener(Self::on_export_pdf_action))
             .on_action(cx.listener(Self::on_open_capture_action))
             .on_action(cx.listener(Self::on_close_overlay))

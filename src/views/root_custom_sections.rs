@@ -113,6 +113,7 @@ impl Root {
                 menu.item(
                     PopupMenuItem::new("Delete section").on_click(move |_ev, window, cx| {
                         let _ = root.update(cx, |this, cx| {
+                            this.checkpoint();
                             this.doc.remove_custom_section(id);
                             this.expanded.remove(&SectionKind::Custom(id));
                             this.fields_stale = true;

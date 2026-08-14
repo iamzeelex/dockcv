@@ -133,6 +133,7 @@ impl Root {
                 })
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.flush_variant_rename(section, window, cx);
+                    this.checkpoint();
                     this.doc.set_active_variant(section, i);
                     this.schedule_save(cx);
                     this.fields_stale = true;
@@ -214,6 +215,7 @@ impl Root {
                                 // Re-read rather than closing over `active`: the
                                 // dialog is modal, but the selection is state and
                                 // reading it late is free.
+                                this.checkpoint();
                                 let active = this.doc.active_variant(section);
                                 this.doc.remove_variant(section, active);
                                 this.schedule_save(cx);
@@ -244,6 +246,7 @@ impl Root {
                 .hover(|s| s.text_color(theme.accent))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.flush_variant_rename(section, window, cx);
+                    this.checkpoint();
                     this.doc.add_variant(section);
                     this.schedule_save(cx);
                     this.fields_stale = true;

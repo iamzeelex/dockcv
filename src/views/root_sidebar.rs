@@ -309,6 +309,7 @@ impl Root {
             .text_color(theme.chip_fg)
             .hover(|s| s.text_color(theme.accent))
             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.checkpoint();
                 let id = this.doc.add_custom_section("New Section");
                 this.expanded.insert(SectionKind::Custom(id));
                 this.fields_stale = true;
@@ -337,6 +338,7 @@ impl Root {
             .cursor_pointer()
             .hover(|s| s.text_color(theme.danger))
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.checkpoint();
                 list.remove(&mut this.doc, index);
                 this.schedule_save(cx);
                 this.fields_stale = true;
@@ -372,6 +374,7 @@ impl Root {
             .hover(|s| s.bg(theme.hover))
             .child(format!("＋ {label}"))
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.checkpoint();
                 list.add(&mut this.doc);
                 this.schedule_save(cx);
                 this.fields_stale = true;

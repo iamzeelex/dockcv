@@ -134,6 +134,7 @@ impl Root {
         };
         let step: isize = if to > from { 1 } else { -1 };
         for _ in 0..(to as isize - from as isize).unsigned_abs() {
+            self.checkpoint();
             self.doc.move_section(dragged, step);
         }
         self.schedule_save(cx);
