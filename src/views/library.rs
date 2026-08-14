@@ -500,9 +500,12 @@ impl Shell {
                         .min_w_0()
                         .text_style(TextStyle::body())
                         .text_color(theme.text_muted)
+                        // Names the two controls that are actually on this
+                        // screen. It used to point at “★ From library”, which
+                        // is not how a block gets reused any more.
                         .child(
-                            "Star any entry while editing a CV to drop it here — then reuse it \
-                             in any other CV from the section's “★ From library” menu.",
+                            "Reuse drops a block straight into another CV. New block writes \
+                             one from scratch, and ★ in the editor lifts one out of a CV.",
                         ),
                 )
                 .child(
@@ -703,47 +706,55 @@ impl Shell {
             .hover(|s| s.border_color(theme.accent))
             // Destructive action behind the "···" menu, never as a visible ✕
             // (review L-07 — the same fix the gallery card already carries).
+            // The positioning lives on this wrapper, never on the trigger
+            // itself. `dropdown_menu` hands the trigger's style to the popover
+            // and `Popover::render` then ignores it — so an `absolute()`
+            // Button paints in the corner while its click region, which is the
+            // popover's own unstyled wrapper, collapses to a zero-height
+            // strip. The button looks right and is dead. Applications has had
+            // the wrapper since the drag work; Library and Diary had not.
             .child(
-                Button::new(SharedString::from(format!("libmenu-{section:?}-{index}")))
-                    .icon(IconName::Ellipsis)
-                    .ghost()
-                    .xsmall()
-                    .cursor_pointer()
-                    .tooltip("More")
-                    .absolute()
-                    .top(px(10.0))
-                    .right(px(8.0))
-                    .dropdown_menu(move |menu, _window, _cx| {
-                        let shell = shell.clone();
-                        let for_edit = shell.clone();
-                        menu.item(PopupMenuItem::new("Edit").on_click(move |_ev, window, cx| {
-                            let _ = for_edit.update(cx, |this, cx| {
-                                this.open_library_edit(section, Some(index), window, cx);
-                            });
-                        }))
-                        .separator()
-                        .item(PopupMenuItem::new("Delete").on_click(
-                            move |_ev, window, cx| {
-                                let _ = shell.update(cx, |_this, cx| {
-                                    confirm::destructive(
-                                        "Delete this block from your library?".into(),
-                                        format!(
-                                            "{} Copies already placed in a CV are not \
-                                             affected — a library block is a source to \
-                                             copy from, not a link.",
-                                            confirm::CANNOT_UNDO
-                                        ),
-                                        "Delete",
-                                        window,
-                                        cx,
-                                        move |this, _window, cx| {
-                                            this.remove_library_block(section, index, cx)
-                                        },
-                                    );
-                                });
-                            },
-                        ))
-                    }),
+                div().absolute().top(px(10.0)).right(px(8.0)).child(
+                    Button::new(SharedString::from(format!("libmenu-{section:?}-{index}")))
+                        .icon(IconName::Ellipsis)
+                        .ghost()
+                        .xsmall()
+                        .cursor_pointer()
+                        .tooltip("More")
+                        .dropdown_menu(move |menu, _window, _cx| {
+                            let shell = shell.clone();
+                            let for_edit = shell.clone();
+                            menu.item(PopupMenuItem::new("Edit").on_click(
+                                move |_ev, window, cx| {
+                                    let _ = for_edit.update(cx, |this, cx| {
+                                        this.open_library_edit(section, Some(index), window, cx);
+                                    });
+                                },
+                            ))
+                            .separator()
+                            .item(PopupMenuItem::new("Delete").on_click(
+                                move |_ev, window, cx| {
+                                    let _ = shell.update(cx, |_this, cx| {
+                                        confirm::destructive(
+                                            "Delete this block from your library?".into(),
+                                            format!(
+                                                "{} Copies already placed in a CV are not \
+                                                 affected — a library block is a source to \
+                                                 copy from, not a link.",
+                                                confirm::CANNOT_UNDO
+                                            ),
+                                            "Delete",
+                                            window,
+                                            cx,
+                                            move |this, _window, cx| {
+                                                this.remove_library_block(section, index, cx)
+                                            },
+                                        );
+                                    });
+                                },
+                            ))
+                        }),
+                ),
             )
             .child(
                 div()

@@ -41,7 +41,6 @@ use super::applications_data::{
 };
 use super::applications_card::{card_meta, column_tint};
 use super::applications_menu::{application_menu, MenuContext};
-use super::applications_snapshot::pin_options;
 use super::shell::{remove_at, Shell};
 
 /// The five board columns, in display order.
@@ -68,6 +67,7 @@ impl Shell {
             .flex_1()
             .min_w_0()
             .h_full()
+            .relative()
             .flex()
             .flex_col()
             .child(self.applications_header(cx, applications, &today))
@@ -90,6 +90,8 @@ impl Shell {
                     .render_applications_insights(cx, applications)
                     .into_any_element(),
             })
+            // Last child, so it paints over the board rather than under it.
+            .children(self.render_pin_pick_sheet(cx))
     }
 
     /// Two rows, not one.
@@ -545,12 +547,7 @@ impl Shell {
         // It used to be built *inside* the closure with a full vault parse, on
         // the grounds that a menu opens rarely — but the closure borrows
         // `self`, and `DocMeta` already carries the preset names it needed.
-        let menu_context = MenuContext::of(
-            shell,
-            index,
-            &app,
-            pin_options(self.cache.metadata()),
-        );
+        let menu_context = MenuContext::of(shell, index, &app);
 
         // Only Interviewing and Offer draw the tinted border — Applied keeps
         // the neutral hairline per the design doc's own table (§4).

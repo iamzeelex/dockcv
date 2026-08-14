@@ -16,7 +16,6 @@ use dockcv_ui_components::{PopupMenu, PopupMenuItem};
 
 use crate::resume::model::{Application, ApplicationStatus};
 
-use super::applications_snapshot::PinOption;
 use super::confirm;
 use super::shell::Shell;
 
@@ -30,19 +29,23 @@ pub(super) struct MenuContext {
     pub status: ApplicationStatus,
     pub company: String,
     pub has_snapshot: bool,
-    /// Every document × preset in the vault, already computed from the cache.
-    pub pin_choices: Vec<PinOption>,
+    /// What CV is pinned right now: file stem and preset name. `None` when
+    /// nothing is — which is what makes the menu item read "Pin" or "Change".
+    pub pinned: Option<(String, String)>,
 }
 
 impl MenuContext {
-    pub(super) fn of(shell: gpui::WeakEntity<Shell>, index: usize, app: &Application, pin_choices: Vec<PinOption>) -> Self {
+    pub(super) fn of(shell: gpui::WeakEntity<Shell>, index: usize, app: &Application) -> Self {
         Self {
             shell,
             index,
             status: app.status,
             company: app.company.clone(),
             has_snapshot: !app.snapshots.is_empty(),
-            pin_choices,
+            pinned: app
+                .source_doc
+                .clone()
+                .map(|stem| (stem, app.preset.clone())),
         }
     }
 }
@@ -68,7 +71,7 @@ pub(super) fn application_menu(
             status,
             company,
             has_snapshot,
-            pin_choices,
+            pinned,
         } = &ctx;
 
         for (other_status, other_title) in COLUMNS {
@@ -92,23 +95,27 @@ pub(super) fn application_menu(
             );
         }
 
-        if !pin_choices.is_empty() {
-            menu = menu.separator();
-            for option in pin_choices {
-                let shell_pin = shell.clone();
-                let index = *index;
-                let stem = option.stem.clone();
-                let preset = option.preset.clone();
-                menu = menu.item(PopupMenuItem::new(format!("Pin CV: {}", option.label)).on_click(
-                    move |_ev, _window, cx| {
-                        let stem = stem.clone();
-                        let preset = preset.clone();
-                        let _ = shell_pin.update(cx, |this, cx| {
-                            this.pin_application_cv(index, stem, preset, cx);
-                        });
-                    },
-                ));
-            }
+        // One item, not one per document × preset. The choosing happens in a
+        // sheet that can group, filter and unpin — see `applications_pin`.
+        {
+            let shell_pin = shell.clone();
+            let index = *index;
+            let company_pin = company.clone();
+            let pinned = pinned.clone();
+            menu = menu.separator().item(
+                PopupMenuItem::new(if pinned.is_some() {
+                    "Change the CV sent…"
+                } else {
+                    "Pin the CV sent…"
+                })
+                .on_click(move |_ev, window, cx| {
+                    let company = company_pin.clone();
+                    let pinned = pinned.clone();
+                    let _ = shell_pin.update(cx, |this, cx| {
+                        this.open_pin_pick(index, company, pinned, window, cx);
+                    });
+                }),
+            );
         }
 
         if *has_snapshot {

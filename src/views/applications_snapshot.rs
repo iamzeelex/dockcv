@@ -26,58 +26,46 @@ use super::save_status;
 
 use super::shell::Shell;
 
-/// One choice in the card menu's "Pin CV" section: a document in the vault,
-/// optionally at one of its named presets.
+/// One document in the vault, with the named cuts it can be sent as.
+///
+/// Grouped rather than flattened: the picker draws a document once and its
+/// presets under it, so the list grows with the number of *CVs* rather than
+/// with documents × presets.
 #[derive(Clone)]
-pub(super) struct PinOption {
+pub(super) struct PinGroup {
     /// The document's file stem — what `Application::source_doc` stores.
     pub stem: String,
-    /// Preset name, or empty for "whatever the document's active variants are".
-    pub preset: String,
-    /// What the menu item reads.
+    /// Person name, or the file stem when the document has no name.
     pub label: String,
+    /// Preset names. Empty means the document has none and is pinned as
+    /// saved — still sendable, it just has no name for the cut.
+    pub presets: Vec<String>,
 }
 
-/// Every document × preset combination in the vault, for the pin menu.
+/// Every document in the vault that can be pinned, with its presets.
 ///
 /// Served from the cache's `DocMeta`, which already carries the preset *names*
 /// (not just a count) and the person's name. It used to load and parse every
 /// document in the vault on its own — the comment here said that was fine
 /// because the menu opens rarely, but it is a full vault parse either way, and
 /// the data was already sitting in memory.
-pub(super) fn pin_options(metas: &[vault::DocMeta]) -> Vec<PinOption> {
-    let mut options = Vec::new();
-    for meta in metas {
-        if meta.unreadable {
-            // Nothing honest to offer: the file did not parse, so its presets
-            // are unknown and pinning it would record a cut that may not exist.
-            continue;
-        }
-        let name = if meta.name.trim().is_empty() {
-            meta.stem.clone()
-        } else {
-            meta.name.clone()
-        };
-
-        if meta.preset_names.is_empty() {
-            // A document with no presets is still a document you can send;
-            // it just has no name for the cut you sent.
-            options.push(PinOption {
-                stem: meta.stem.clone(),
-                preset: String::new(),
-                label: name,
-            });
-        } else {
-            for preset in &meta.preset_names {
-                options.push(PinOption {
-                    stem: meta.stem.clone(),
-                    preset: preset.clone(),
-                    label: format!("{name} · {preset}"),
-                });
-            }
-        }
-    }
-    options
+pub(super) fn pin_groups(metas: &[vault::DocMeta]) -> Vec<PinGroup> {
+    metas
+        .iter()
+        // Nothing honest to offer for a document that did not parse: its
+        // presets are unknown, and pinning it would record a cut that may
+        // not exist.
+        .filter(|meta| !meta.unreadable)
+        .map(|meta| PinGroup {
+            stem: meta.stem.clone(),
+            label: if meta.name.trim().is_empty() {
+                meta.stem.clone()
+            } else {
+                meta.name.clone()
+            },
+            presets: meta.preset_names.clone(),
+        })
+        .collect()
 }
 
 impl Shell {
@@ -111,6 +99,29 @@ impl Shell {
         if already_sent {
             self.capture_snapshot(index, cx);
         }
+    }
+
+    /// Forget which CV this application was sent with.
+    ///
+    /// The snapshots stay: they are the evidence, and the pointer is only the
+    /// claim about it. Unpinning says "I no longer know which cut this was",
+    /// which is a truthful state and better than a wrong pin.
+    pub(super) fn unpin_application_cv(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(vault) = self.vault.clone() else {
+            return;
+        };
+        let mut applications = vault::load_applications(&vault);
+        let Some(application) = applications.entries.get_mut(index) else {
+            return;
+        };
+        application.source_doc = None;
+        application.preset = String::new();
+        save_status::record(
+            cx,
+            "applications board",
+            vault::save_applications(&vault, &applications),
+        );
+        cx.notify();
     }
 
     /// Compile the pinned document at its pinned preset and store the bytes as
@@ -234,7 +245,7 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::pin_options;
+    use super::pin_groups;
     use crate::resume::model::{Preset, Resume, ResumeDoc, SectionKind};
     use crate::vault;
 
@@ -279,18 +290,23 @@ mod tests {
 
         let metas: Vec<vault::DocMeta> =
             vault::load_all(&dir).into_iter().map(|(meta, _)| meta).collect();
-        let options = pin_options(&metas);
-        let labels: Vec<&str> = options.iter().map(|o| o.label.as_str()).collect();
+        let groups = pin_groups(&metas);
+        let labels: Vec<&str> = groups.iter().map(|g| g.label.as_str()).collect();
 
-        assert!(labels.contains(&"Sofiia Medvedenko · FAANG · concise"));
-        assert!(labels.contains(&"Sofiia Medvedenko · Infra-heavy"));
-        assert!(labels.contains(&"draft-cv"), "got {labels:?}");
-        assert_eq!(options.len(), 3);
+        assert_eq!(groups.len(), 2, "one row per document, got {labels:?}");
+        let named = groups
+            .iter()
+            .find(|g| g.stem == "sofiia-senior-swe")
+            .expect("named");
+        assert_eq!(named.label, "Sofiia Medvedenko");
+        assert_eq!(named.presets, vec!["FAANG · concise", "Infra-heavy"]);
 
-        // The preset a snapshot records is the one that was picked, and the
-        // bare document records none rather than inventing a name.
-        let bare_option = options.iter().find(|o| o.stem == "draft-cv").expect("bare");
-        assert_eq!(bare_option.preset, "");
+        // A document with no presets is still offerable, labelled by its file
+        // stem rather than by nothing — dropping it would make its CV
+        // unsendable from the board for no reason the user could see.
+        let bare = groups.iter().find(|g| g.stem == "draft-cv").expect("bare");
+        assert_eq!(bare.label, "draft-cv");
+        assert!(bare.presets.is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

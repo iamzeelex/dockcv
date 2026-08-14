@@ -28,7 +28,6 @@ use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use super::applications_card::column_tint;
 use super::applications_menu::{application_menu, MenuContext};
-use super::applications_snapshot::pin_options;
 use super::applications_data::{
     matches_query, next_step_caption, short_date, sort_rows, ApplicationSort,
 };
@@ -235,7 +234,6 @@ impl Shell {
                         cx.weak_entity(),
                         index,
                         &app,
-                        pin_options(self.cache.metadata()),
                     )))
                     .child(identity),
             ))

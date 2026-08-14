@@ -32,6 +32,7 @@ use super::applications_data::{ApplicationSort, ApplicationsView};
 use super::diary_capture::DiaryPaste;
 use super::diary_use::DiaryUse;
 use super::library::LibrarySort;
+use super::applications_pin::PinPick;
 use super::library_edit::LibraryEdit;
 use super::confirm;
 use super::save_status;
@@ -85,6 +86,8 @@ pub struct Shell {
     pub(super) library_sort: LibrarySort,
     /// The open block form — new when its index is `None`, otherwise an edit.
     pub(super) library_edit: Option<LibraryEdit>,
+    /// The open "which CV did you send?" picker.
+    pub(super) pin_pick: Option<PinPick>,
     /// Mirror of `config.library_helper_dismissed`, read once at startup.
     /// Held in memory because the library screen consults it every frame, and
     /// a config file read per frame is a file read per frame.
@@ -162,6 +165,7 @@ impl Shell {
             library_filter: None,
             library_sort: LibrarySort::default(),
             library_edit: None,
+            pin_pick: None,
             library_helper_dismissed,
             diary_draft: None,
             diary_tags: None,

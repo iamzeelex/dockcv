@@ -8,6 +8,7 @@ mod applications_drag;
 mod applications_list;
 mod applications_menu;
 mod applications_funnel;
+mod applications_pin;
 mod applications_snapshot;
 mod confirm;
 mod diary;

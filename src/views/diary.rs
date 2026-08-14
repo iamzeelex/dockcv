@@ -499,51 +499,55 @@ impl Shell {
                             })),
                     ),
             )
+            // Positioned on the wrapper, not on the trigger — see the note on
+            // the library card. A `dropdown_menu` trigger that positions
+            // itself paints correctly and never opens.
             .child(
-                Button::new(SharedString::from(format!("diary-menu-{index}")))
-                    .icon(IconName::Ellipsis)
-                    .ghost()
-                    .xsmall()
-                    .cursor_pointer()
-                    .tooltip("More")
-                    .absolute()
-                    .top(px(10.0))
-                    .right(px(8.0))
-                    .dropdown_menu(move |menu, _window, _cx| {
-                        let shell = shell.clone();
-                        let shell_mark = shell.clone();
-                        menu.item(
-                            PopupMenuItem::new(if is_confidential {
-                                "Remove confidential mark"
-                            } else {
-                                "Mark confidential"
-                            })
-                            .on_click(move |_ev, _window, cx| {
-                                let _ = shell_mark.update(cx, |this, cx| {
-                                    this.toggle_diary_confidential(index, cx);
-                                });
-                            }),
-                        )
-                        .separator()
-                        .item(PopupMenuItem::new("Delete").on_click(
-                            move |_ev, window, cx| {
-                                let _ = shell.update(cx, |_this, cx| {
-                                    confirm::destructive(
-                                        "Delete this diary entry?".into(),
-                                        format!(
-                                            "{} A diary entry is the record a CV bullet is \
-                                             drawn from, and nothing else holds it.",
-                                            confirm::CANNOT_UNDO
-                                        ),
-                                        "Delete",
-                                        window,
-                                        cx,
-                                        move |this, _window, cx| this.delete_diary_entry(index, cx),
-                                    );
-                                });
-                            },
-                        ))
-                    }),
+                div().absolute().top(px(10.0)).right(px(8.0)).child(
+                    Button::new(SharedString::from(format!("diary-menu-{index}")))
+                        .icon(IconName::Ellipsis)
+                        .ghost()
+                        .xsmall()
+                        .cursor_pointer()
+                        .tooltip("More")
+                        .dropdown_menu(move |menu, _window, _cx| {
+                            let shell = shell.clone();
+                            let shell_mark = shell.clone();
+                            menu.item(
+                                PopupMenuItem::new(if is_confidential {
+                                    "Remove confidential mark"
+                                } else {
+                                    "Mark confidential"
+                                })
+                                .on_click(move |_ev, _window, cx| {
+                                    let _ = shell_mark.update(cx, |this, cx| {
+                                        this.toggle_diary_confidential(index, cx);
+                                    });
+                                }),
+                            )
+                            .separator()
+                            .item(PopupMenuItem::new("Delete").on_click(
+                                move |_ev, window, cx| {
+                                    let _ = shell.update(cx, |_this, cx| {
+                                        confirm::destructive(
+                                            "Delete this diary entry?".into(),
+                                            format!(
+                                                "{} A diary entry is the record a CV bullet \
+                                                 is drawn from, and nothing else holds it.",
+                                                confirm::CANNOT_UNDO
+                                            ),
+                                            "Delete",
+                                            window,
+                                            cx,
+                                            move |this, _window, cx| {
+                                                this.delete_diary_entry(index, cx)
+                                            },
+                                        );
+                                    });
+                                },
+                            ))
+                        }),
+                ),
             )
     }
 
