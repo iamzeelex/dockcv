@@ -30,6 +30,7 @@ use crate::typst_engine::TypstEngine;
 use crate::vault;
 
 use super::applications_data::{ApplicationSort, ApplicationsView};
+use super::diary_capture::DiaryPaste;
 use super::diary_use::DiaryUse;
 use super::library::LibrarySort;
 use super::confirm;
@@ -98,6 +99,8 @@ pub struct Shell {
     pub(super) diary_role_filter: Option<String>,
     /// The open `Use in a CV` sheet, if any.
     pub(super) diary_use: Option<DiaryUse>,
+    /// The open paste-and-triage sheet (US-34), if any.
+    pub(super) diary_paste: Option<DiaryPaste>,
     /// Diary search box. Its own, not shared: a query typed here must not
     /// follow the user to the library when they tab across.
     pub(super) diary_search: Option<Entity<TextFieldState>>,
@@ -162,6 +165,7 @@ impl Shell {
             diary_role: String::new(),
             diary_role_filter: None,
             diary_use: None,
+            diary_paste: None,
             diary_search: None,
             applications_search: None,
             applications_view: ApplicationsView::default(),

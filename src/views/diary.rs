@@ -119,6 +119,7 @@ impl Shell {
                     .child(body),
             )
             .children(self.render_diary_use_sheet(cx))
+            .children(self.render_diary_paste_sheet(cx))
     }
 
     fn diary_header(&self, cx: &mut Context<Self>, total: usize) -> impl IntoElement {
@@ -276,6 +277,21 @@ impl Shell {
                             ),
                     )
                     .child(div().flex_1())
+                    .child(
+                        // The way in for the person the review says will not
+                        // keep a diary: they already wrote this week's status
+                        // to their manager. Beside "Log win", not hidden in a
+                        // menu, because for that person it is the *more*
+                        // likely of the two.
+                        Button::new("diary-paste")
+                            .cursor_pointer()
+                            .toolbar_secondary()
+                            .label("Paste a status…")
+                            .tooltip("Find wins in something you already wrote")
+                            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                                this.open_diary_paste(window, cx);
+                            })),
+                    )
                     .child(
                         Button::new("diary-log-win")
                             .cursor_pointer()
