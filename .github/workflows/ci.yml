@@ -1,0 +1,95 @@
+name: CI
+
+# The four gates CLAUDE.md names, plus the two supply-chain checks nothing was
+# running. Until this existed they were run by hand, by one person, on one
+# machine — which is the same as not being run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # GPUI's tree is large and the logs are not the interesting part.
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  gate:
+    name: check · clippy · test
+    # macOS is the primary target and the only one with Metal, so the gate runs
+    # where the app actually ships.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the channel; this action honours it, so the
+      # version is not restated here and cannot drift.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Zed's git dependencies dominate the build; caching them is the
+          # difference between a 3-minute run and a 25-minute one.
+          cache-on-failure: true
+
+      - name: cargo check
+        run: cargo check --workspace --locked
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace --locked
+
+      # `cargo fmt --check` is deliberately NOT a gate yet. The tree has 187
+      # pre-existing diffs, so turning it on means one reformat commit touching
+      # nearly every file — which ROADMAP.md already flagged as a diff wider
+      # than any work it accompanies. Land that reformat on its own, then add
+      # the gate here in the same commit.
+
+  supply-chain:
+    name: audit · deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Advisories only: this job reads Cargo.lock and never builds the tree,
+      # so it does not need macOS or the GPUI toolchain.
+      - name: cargo-audit
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses bans sources
+
+  bundle:
+    name: macOS bundle
+    runs-on: macos-14
+    needs: gate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: librsvg (for the icon)
+        run: brew install librsvg
+
+      # Unsigned on CI, deliberately: a Developer ID certificate does not belong
+      # in a repository, and an unsigned artifact that says so is more honest
+      # than a signing step that silently no-ops. Releases are signed locally
+      # with `scripts/bundle.sh --sign … --notarize …`.
+      - name: build the .app
+        run: ./scripts/bundle.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DockCV-unsigned-${{ github.sha }}
+          path: dist/DockCV.app
+          if-no-files-found: error

@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+#
+# Build DockCV.app (and optionally a DMG) from a release binary.
+#
+# Usage:
+#   scripts/bundle.sh                     # unsigned .app — local use only
+#   scripts/bundle.sh --sign "Developer ID Application: Name (TEAMID)"
+#   scripts/bundle.sh --sign "..." --notarize KEYCHAIN_PROFILE
+#   scripts/bundle.sh --sign "..." --notarize PROFILE --dmg
+#
+# Signing and notarisation need an Apple Developer ID certificate in the login
+# keychain and, for notarisation, credentials stored with
+#
+#   xcrun notarytool store-credentials KEYCHAIN_PROFILE \
+#       --apple-id you@example.com --team-id TEAMID --password <app-specific>
+#
+# Neither can be done for you: they are tied to an Apple Developer account.
+# Without them the .app still runs on the machine that built it, and is blocked
+# by Gatekeeper on every other machine.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DIST="$ROOT/dist"
+APP="$DIST/DockCV.app"
+
+SIGN_IDENTITY=""
+NOTARY_PROFILE=""
+MAKE_DMG=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sign)     SIGN_IDENTITY="${2:?--sign needs an identity}"; shift 2 ;;
+    --notarize) NOTARY_PROFILE="${2:?--notarize needs a keychain profile}"; shift 2 ;;
+    --dmg)      MAKE_DMG=1; shift ;;
+    -h|--help)  sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *)          echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "bundle.sh builds a macOS .app and only runs on macOS." >&2
+  exit 1
+fi
+
+# The single source of version truth. Parsed from the [package] section so a
+# dependency that happens to pin the same string cannot be picked up instead.
+VERSION="$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version[[:space:]]*=/{gsub(/[",]/,"",$3); print $3; exit}' "$ROOT/Cargo.toml")"
+[[ -n "$VERSION" ]] || { echo "could not read version from Cargo.toml" >&2; exit 1; }
+echo "==> DockCV $VERSION"
+
+echo "==> cargo build --release"
+(cd "$ROOT" && cargo build --release --locked)
+
+BIN="$ROOT/target/release/dockcv"
+[[ -x "$BIN" ]] || { echo "no release binary at $BIN" >&2; exit 1; }
+
+echo "==> assembling $APP"
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+
+cp "$BIN" "$APP/Contents/MacOS/dockcv"
+sed "s/@VERSION@/$VERSION/g" "$ROOT/packaging/Info.plist" > "$APP/Contents/Info.plist"
+printf 'APPL????' > "$APP/Contents/PkgInfo"
+
+# The licences are not documentation here — THIRD-PARTY-NOTICES.md says they
+# ship with the binary, and the OFL says the same about the font notices. The
+# bundle is the binary, so this is where they go.
+cp "$ROOT/LICENSE" "$ROOT/LICENSE-MIT" "$ROOT/LICENSE-APACHE" \
+   "$ROOT/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/"
+mkdir -p "$APP/Contents/Resources/fonts"
+cp "$ROOT/assets/fonts/LICENSE-OFL.txt" \
+   "$ROOT/assets/fonts/NOTICE-typst-assets.txt" \
+   "$APP/Contents/Resources/fonts/"
+
+echo "==> icon"
+if command -v rsvg-convert >/dev/null 2>&1; then
+  ICONSET="$DIST/AppIcon.iconset"
+  rm -rf "$ICONSET"; mkdir -p "$ICONSET"
+  # The set macOS actually asks for; anything missing falls back to a blurry
+  # upscale of whatever is nearest.
+  for spec in "16 icon_16x16" "32 icon_16x16@2x" "32 icon_32x32" "64 icon_32x32@2x" \
+              "128 icon_128x128" "256 icon_128x128@2x" "256 icon_256x256" \
+              "512 icon_256x256@2x" "512 icon_512x512" "1024 icon_512x512@2x"; do
+    set -- $spec
+    rsvg-convert -w "$1" -h "$1" "$ROOT/assets/icon.svg" -o "$ICONSET/$2.png"
+  done
+  iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+  rm -rf "$ICONSET"
+else
+  echo "    ! rsvg-convert not found (brew install librsvg) — shipping without an icon."
+  echo "    ! macOS will draw the generic application icon."
+fi
+
+if [[ -n "$SIGN_IDENTITY" ]]; then
+  echo "==> signing"
+  # --options runtime is the hardened runtime, which notarisation requires.
+  # --timestamp too: an unstamped signature stops validating when the
+  # certificate expires.
+  codesign --force --deep --options runtime --timestamp \
+           --sign "$SIGN_IDENTITY" "$APP"
+  codesign --verify --strict --verbose=2 "$APP"
+else
+  echo "==> NOT SIGNED"
+  echo "    This bundle runs on this machine and nowhere else: Gatekeeper"
+  echo "    blocks an unsigned, un-notarised app on any Mac it did not build on."
+  echo "    Re-run with --sign \"Developer ID Application: … (TEAMID)\" to ship it."
+fi
+
+if [[ -n "$NOTARY_PROFILE" ]]; then
+  [[ -n "$SIGN_IDENTITY" ]] || { echo "notarisation requires --sign" >&2; exit 1; }
+  echo "==> notarising (this waits on Apple, typically a few minutes)"
+  ZIP="$DIST/DockCV-$VERSION.zip"
+  ditto -c -k --keepParent "$APP" "$ZIP"
+  xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  # Staple, so the app validates offline. Without this a user with no network
+  # on first launch still sees the Gatekeeper warning.
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+  rm -f "$ZIP"
+fi
+
+if [[ "$MAKE_DMG" == "1" ]]; then
+  echo "==> dmg"
+  DMG="$DIST/DockCV-$VERSION.dmg"
+  STAGE="$DIST/dmg-stage"
+  rm -rf "$STAGE" "$DMG"; mkdir -p "$STAGE"
+  cp -R "$APP" "$STAGE/"
+  ln -s /Applications "$STAGE/Applications"
+  hdiutil create -volname "DockCV $VERSION" -srcfolder "$STAGE" \
+                 -ov -format UDZO "$DMG" >/dev/null
+  rm -rf "$STAGE"
+  [[ -n "$SIGN_IDENTITY" ]] && codesign --force --sign "$SIGN_IDENTITY" "$DMG"
+  echo "    $DMG"
+fi
+
+echo "==> done: $APP"
+du -sh "$APP" | sed 's/^/    /'

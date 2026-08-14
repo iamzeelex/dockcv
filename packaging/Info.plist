@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template. `scripts/bundle.sh` substitutes @VERSION@ from Cargo.toml, so the
+  version lives in exactly one place and About cannot drift from the build.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>DockCV</string>
+  <key>CFBundleDisplayName</key>
+  <string>DockCV</string>
+  <!-- Reverse-DNS under a domain the project actually controls: the GitHub
+       repository in Cargo.toml. Changing it after the first signed release
+       makes macOS treat the result as a different application. -->
+  <key>CFBundleIdentifier</key>
+  <string>io.github.zeelex.dockcv</string>
+  <key>CFBundleExecutable</key>
+  <string>dockcv</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@VERSION@</string>
+
+  <!-- GPUI renders through Metal; 11.0 is the floor Zed itself targets. -->
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <!-- The app draws its own title bar content under the traffic lights
+       (`TitlebarOptions::appears_transparent`), so it must not be forced into
+       a light appearance by the system. -->
+  <key>NSRequiresAquaSystemAppearance</key>
+  <false/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © 2026 DockCV contributors. MIT OR Apache-2.0. Bundled fonts under SIL OFL 1.1 — see THIRD-PARTY-NOTICES.md.</string>
+
+  <!-- DockCV is a document workbench, not a background agent: it belongs in
+       the Dock and owns a menu bar. -->
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
+</dict>
+</plist>

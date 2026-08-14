@@ -1,53 +1,109 @@
 # DockCV
 
-A cross-platform desktop application built with [GPUI](https://www.gpui.rs/), the
-GPU-accelerated UI framework from the [Zed](https://github.com/zed-industries/zed)
-editor.
+A local-first résumé workbench: a native desktop app built with
+[GPUI](https://www.gpui.rs/) — the GPU-accelerated UI framework from the
+[Zed](https://github.com/zed-industries/zed) editor — with an **in-process
+Typst compiler** driving a live paper preview. No cloud, no Electron, no web
+view, and **no network request at runtime**.
+
+Your CVs live in a *vault*: a plain folder of human-readable TOML files, one per
+document, that you can open in any text editor, sync with iCloud or Dropbox, and
+keep under version control. File-over-App — the files are the product.
 
 **macOS is the primary target.** Linux and Windows are wired up through
-`gpui_platform` feature selection and are intended to build without source
-changes, but are not yet a focus.
+`gpui_platform` feature selection and are expected to build without source
+changes, but are not tested.
 
 ## Project layout
 
 ```
 src/
-├── main.rs        # entry point + platform attributes
-├── app.rs         # GPUI bootstrap: run loop, actions, menus, main window
-├── theme.rs       # color palette (single dark theme for now)
-└── ui/
-    ├── mod.rs
-    └── root.rs    # root view: title bar + sidebar + content shell
+  main.rs            entry point, platform attributes
+  app.rs             GPUI bootstrap: run loop, fonts, actions, menus, windows
+  config.rs          app preferences outside the vault (last vault path, theme)
+  vault.rs           the File-over-App store: TOML on disk, one file per document
+  typst_engine.rs    in-process Typst compile → rasterized pixels
+  render.rs          pixels → gpui::RenderImage
+  resume/            the data model, field addressing, Typst codegen, importers
+  import/            PDF / DOCX / LinkedIn / JSON Resume / text engines
+  views/             the screens: gallery, editor, library, diary, applications…
+crates/ui-components/  the design system: theme tokens and the widget facade
+assets/                bundled fonts, the app icon, the vendored Typst package
+packaging/             Info.plist template
+scripts/               bundle.sh
+docs/                  design specs, roadmap, the open-decisions ledger
 ```
+
+`CLAUDE.md` is the contributor guide: architecture, design-system rules, data
+model invariants and conventions.
 
 ## Requirements
 
-- Latest **stable** Rust (`rustup update stable`).
-- **macOS:** Xcode + command line tools installed and selected
-  (`xcode-select --install`), needed for Metal rendering.
+- Rust — the toolchain is **pinned** in `rust-toolchain.toml`; `rustup` picks it
+  up automatically.
+- **macOS:** Xcode command line tools (`xcode-select --install`), for Metal.
 - **Linux/FreeBSD:** a Wayland or X11 development environment.
+- To build the `.app` icon: `brew install librsvg`.
 
 ## Running
 
-```sh
+```bash
 cargo run
 ```
 
-The first build is slow: GPUI and its dependency tree are compiled from the
-Zed git repository. Subsequent builds are incremental.
+The first build is slow — GPUI and its dependency tree are compiled from the Zed
+git repository. Subsequent builds are incremental (`cargo check` on a warm
+target is a couple of seconds).
+
+## Verifying a change
+
+A change is not done until all three are clean:
+
+```bash
+cargo check --workspace
+```
+
+```bash
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
+```bash
+cargo test --workspace
+```
+
+CI runs the same three on macOS, plus `cargo-audit` and `cargo-deny`.
+
+## Building a distributable app
+
+```bash
+./scripts/bundle.sh
+```
+
+produces `dist/DockCV.app` — **unsigned**, which means it runs on the machine
+that built it and is blocked by Gatekeeper everywhere else. To ship it you need
+an Apple Developer ID certificate:
+
+```bash
+./scripts/bundle.sh --sign "Developer ID Application: Name (TEAMID)" --notarize PROFILE --dmg
+```
+
+`scripts/bundle.sh --help` explains how to store the notarisation credentials.
 
 ## Dependency pinning
 
-`gpui` and `gpui_platform` are pulled from the Zed git repo. GPUI is pre-1.0 and
-changes frequently, so pin both to the **same** git revision when you want
-reproducible builds:
+`gpui` and `gpui_platform` come from the Zed git repository and are deliberately
+**unpinned in the manifests** — `Cargo.lock` is the pin. Adding an explicit
+`rev` makes Cargo see a different source from `gpui-component`'s unpinned one
+and puts two incompatible copies of GPUI in the graph. Read the "Version
+coupling" section of `crates/ui-components/THIRD_PARTY.md` before touching a
+gpui line, and never run a plain `cargo update`.
 
-```toml
-gpui = { git = "https://github.com/zed-industries/zed", rev = "<commit>" }
-```
+## Licence
 
-(Apply the matching `rev` to every `gpui_platform` target entry as well.)
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your
+option.
 
-## License
-
-MIT OR Apache-2.0.
+DockCV embeds fonts, a Typst package and an icon set in its binary under their
+own licences — several of which require their notices to be distributed with it.
+Those are collected in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which
+ships inside the `.app` and must accompany any build.

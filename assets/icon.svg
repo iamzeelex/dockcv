@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    DockCV app icon.
+
+    Built from the documented Slate palette and nothing else: base #14161a,
+    raised #23272e, accent #6f8fd6, paper #f6f7f9 (CLAUDE.md, "Design system
+    rules"). The motif is the product's one-sentence description — a sheet of
+    paper docked against a rail — so the icon says what the app is rather than
+    abbreviating its name.
+
+    Geometry follows Apple's macOS icon grid: the squircle occupies 824 of the
+    1024pt canvas, centred, leaving the standard margin that keeps it the same
+    visual size as system apps in the Dock.
+
+    This file is the whole icon. `scripts/bundle.sh` rasterises it into the
+    .icns at build time, so replacing the artwork is replacing this one file.
+  -->
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#272b33"/>
+      <stop offset="1" stop-color="#14161a"/>
+    </linearGradient>
+    <linearGradient id="sheet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eef0f4"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#ground)"/>
+
+    <!-- The rail: the app's own left navigation, the thing everything docks to. -->
+    <rect x="100" y="100" width="150" height="824" fill="#23272e"/>
+    <g fill="#6f8fd6">
+      <rect x="152" y="330" width="46" height="10" rx="5"/>
+      <rect x="152" y="386" width="46" height="10" rx="5" opacity="0.45"/>
+      <rect x="152" y="442" width="46" height="10" rx="5" opacity="0.45"/>
+      <rect x="152" y="498" width="46" height="10" rx="5" opacity="0.45"/>
+    </g>
+
+    <!-- The sheet, lifted off the ground the way the preview pane draws it. -->
+    <g>
+      <rect x="330" y="212" width="470" height="640" rx="16" fill="#0d0f12" opacity="0.55"/>
+      <rect x="318" y="200" width="470" height="640" rx="16" fill="url(#sheet)"/>
+
+      <!-- Name and role: the two lines every CV opens with. -->
+      <rect x="374" y="278" width="252" height="30" rx="15" fill="#14161a"/>
+      <rect x="374" y="330" width="164" height="18" rx="9" fill="#6f8fd6"/>
+
+      <!-- Body: a section rule, then bullets. -->
+      <rect x="374" y="410" width="358" height="8" rx="4" fill="#c9ced8"/>
+      <g fill="#aeb5c2">
+        <rect x="374" y="452" width="358" height="14" rx="7"/>
+        <rect x="374" y="490" width="316" height="14" rx="7"/>
+        <rect x="374" y="528" width="342" height="14" rx="7"/>
+      </g>
+      <rect x="374" y="596" width="358" height="8" rx="4" fill="#c9ced8"/>
+      <g fill="#aeb5c2">
+        <rect x="374" y="638" width="330" height="14" rx="7"/>
+        <rect x="374" y="676" width="358" height="14" rx="7"/>
+        <rect x="374" y="714" width="248" height="14" rx="7"/>
+      </g>
+    </g>
+  </g>
+</svg>
