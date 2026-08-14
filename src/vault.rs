@@ -181,8 +181,10 @@ pub fn aggregate_variants(metas: &[DocMeta]) -> usize {
     metas.iter().map(|m| m.variants).sum()
 }
 
-/// Read a document's metadata without keeping the whole thing around.
-pub fn read_meta(path: &Path) -> DocMeta {
+/// Derive a document's card summary from an already-parsed document, or from
+/// nothing when it failed to parse. Split out so `load_all` can hand over the
+/// document it just read instead of provoking a second read.
+fn meta_from(path: &Path, doc: Option<&ResumeDoc>) -> DocMeta {
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -191,8 +193,8 @@ pub fn read_meta(path: &Path) -> DocMeta {
 
     let modified_secs = modified_epoch_secs(path);
 
-    match load(path) {
-        Ok(doc) => {
+    match doc {
+        Some(doc) => {
             let basics = doc.profile.active();
             let varied_sections = doc
                 .sections()
@@ -216,7 +218,7 @@ pub fn read_meta(path: &Path) -> DocMeta {
                 modified_secs,
             }
         }
-        Err(_) => DocMeta {
+        None => DocMeta {
             name: stem.clone(),
             label: String::new(),
             variants: 0,
@@ -231,11 +233,20 @@ pub fn read_meta(path: &Path) -> DocMeta {
     }
 }
 
-/// Metadata for every document in a vault.
-pub fn list_metadata(vault_dir: &Path) -> Vec<DocMeta> {
+/// Metadata **and** the parsed document for every file, from one read each.
+///
+/// `read_meta` parses a document to derive its summary and then drops it, so
+/// anything that needs the document itself would otherwise parse the whole
+/// vault a second time. `None` is a file that did not parse — the gallery
+/// still draws it (as "unreadable file"), so it stays in the list rather than
+/// being filtered out here.
+pub fn load_all(vault_dir: &Path) -> Vec<(DocMeta, Option<ResumeDoc>)> {
     list_documents(vault_dir)
-        .iter()
-        .map(|p| read_meta(p))
+        .into_iter()
+        .map(|path| {
+            let doc = load(&path).ok();
+            (meta_from(&path, doc.as_ref()), doc)
+        })
         .collect()
 }
 
@@ -691,7 +702,7 @@ mod tests {
         // rather than pretending the document does not exist.
         let listed = super::list_documents(&dir);
         assert_eq!(listed, vec![path.clone()]);
-        assert!(super::read_meta(&path).unreadable);
+        assert!(super::meta_from(&path, super::load(&path).ok().as_ref()).unreadable);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -890,7 +901,7 @@ mod tests {
         let path = dir.join("doc.toml");
         std::fs::write(&path, "").unwrap();
 
-        let meta = super::read_meta(&path);
+        let meta = super::meta_from(&path, super::load(&path).ok().as_ref());
         assert!(meta.modified_secs.is_some());
 
         std::fs::remove_dir_all(&dir).ok();
@@ -1020,7 +1031,7 @@ mod tests {
         doc.add_preset("Infra-heavy");
         let path = super::create_document(&dir, &doc, "sean senior swe").expect("create");
 
-        let meta = super::read_meta(&path);
+        let meta = super::meta_from(&path, super::load(&path).ok().as_ref());
         assert_eq!(meta.stem, "sean-senior-swe");
         assert_eq!(
             meta.preset_names,

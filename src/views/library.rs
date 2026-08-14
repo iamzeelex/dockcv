@@ -26,6 +26,8 @@ use dockcv_ui_components::{
 };
 
 use super::confirm;
+use super::applications_data::plural;
+use super::library_usage::UsageIndex;
 use super::shell::{remove_at, Screen, Shell};
 
 /// The five section kinds that have a library pool, in the order the screen
@@ -49,6 +51,14 @@ struct BlockCard {
     subtitle: String,
     body: String,
     keywords: Vec<String>,
+    /// Every bullet behind this block, whether or not the card draws it.
+    ///
+    /// The card shows one line; the block may hold six. Searching a library by
+    /// the *content* of its blocks is the feature the library exists for
+    /// (review P-14, US-20) and it was matching only what was on screen — so
+    /// the phrase you half-remember from a bullet three lines down found
+    /// nothing.
+    hidden_text: Vec<String>,
 }
 
 impl BlockCard {
@@ -58,11 +68,12 @@ impl BlockCard {
     /// covers what the card shows, not yet every bullet behind it.
     fn haystack(&self) -> String {
         format!(
-            "{} {} {} {}",
+            "{} {} {} {} {}",
             self.title,
             self.subtitle,
             self.body,
-            self.keywords.join(" ")
+            self.keywords.join(" "),
+            self.hidden_text.join(" ")
         )
         .to_lowercase()
     }
@@ -92,6 +103,69 @@ fn join_em(a: &str, b: &str) -> String {
     }
 }
 
+/// How the blocks inside each section group are ordered.
+///
+/// US-20 asks for "сортировка библиотеки по «давно не использовалось»" — and
+/// that is exactly what the usage index makes answerable. A pool you cannot
+/// sort by use is a pool you cannot prune: the formulations that have earned
+/// their place and the ones that never did look identical.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum LibrarySort {
+    /// The order the pool is stored in — the order blocks were added.
+    #[default]
+    Added,
+    /// Busiest first: what you actually reach for.
+    MostUsed,
+    /// Never-used first, then least. The pruning view.
+    LeastUsed,
+}
+
+impl LibrarySort {
+    pub(super) const ALL: [LibrarySort; 3] = [
+        LibrarySort::Added,
+        LibrarySort::MostUsed,
+        LibrarySort::LeastUsed,
+    ];
+
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            LibrarySort::Added => "Order added",
+            LibrarySort::MostUsed => "Most used first",
+            LibrarySort::LeastUsed => "Never used first",
+        }
+    }
+
+    pub(super) fn short_label(self) -> &'static str {
+        match self {
+            LibrarySort::Added => "Added",
+            LibrarySort::MostUsed => "Most used",
+            LibrarySort::LeastUsed => "Unused",
+        }
+    }
+}
+
+/// Order `cards` in place. `uses` gives each card's usage count; ties fall
+/// back to pool order so the arrangement is total and cannot reshuffle between
+/// renders of identical data.
+fn sort_cards(cards: &mut [BlockCard], uses: &dyn Fn(usize) -> usize, sort: LibrarySort) {
+    match sort {
+        LibrarySort::Added => cards.sort_by_key(|c| c.index),
+        LibrarySort::MostUsed => {
+            cards.sort_by(|a, b| uses(b.index).cmp(&uses(a.index)).then(a.index.cmp(&b.index)))
+        }
+        LibrarySort::LeastUsed => {
+            cards.sort_by(|a, b| uses(a.index).cmp(&uses(b.index)).then(a.index.cmp(&b.index)))
+        }
+    }
+}
+
+/// Append a clone of `block` to `into`, if there is one at that index.
+fn push_clone<T: Clone>(block: Option<&T>, into: &mut Vec<T>) {
+    if let Some(block) = block {
+        into.push(block.clone());
+    }
+}
+
 /// Flatten one section's pool into cards, in pool order.
 fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
     match section {
@@ -109,6 +183,11 @@ fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
                     w.summary.clone()
                 },
                 keywords: Vec::new(),
+                hidden_text: {
+                    let mut text = w.highlights.clone();
+                    text.push(w.summary.clone());
+                    text
+                },
             })
             .collect(),
         SectionKind::Education => library
@@ -121,6 +200,7 @@ fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
                 subtitle: join_em(&e.institution, &date_range(&e.start_date.text, &e.end_date.text)),
                 body: String::new(),
                 keywords: Vec::new(),
+                hidden_text: e.highlights.clone(),
             })
             .collect(),
         SectionKind::Skills => library
@@ -133,6 +213,7 @@ fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
                 subtitle: String::new(),
                 body: String::new(),
                 keywords: s.keywords.clone(),
+                hidden_text: Vec::new(),
             })
             .collect(),
         SectionKind::Certificates => library
@@ -145,6 +226,7 @@ fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
                 subtitle: join_em(&c.issuer, &c.date.text),
                 body: String::new(),
                 keywords: Vec::new(),
+                hidden_text: Vec::new(),
             })
             .collect(),
         SectionKind::Organizations => library
@@ -157,6 +239,7 @@ fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
                 subtitle: join_em(&v.organization, &date_range(&v.start_date.text, &v.end_date.text)),
                 body: v.highlights.first().cloned().unwrap_or_default(),
                 keywords: Vec::new(),
+                hidden_text: v.highlights.clone(),
             })
             .collect(),
         SectionKind::Profile | SectionKind::Custom(_) => Vec::new(),
@@ -167,6 +250,10 @@ impl Shell {
     pub(super) fn render_library_screen(&self, cx: &mut Context<Self>) -> gpui::Div {
         let library = self.cache.library();
         let query = self.library_query(cx);
+        // Once per render, not once per card: asking each card to walk every
+        // document would be the per-frame work this codebase has already been
+        // bitten by once.
+        let usage = UsageIndex::build(self.cache.readable_documents());
 
         // Counts describe the whole library, never the filtered view — same
         // rule the gallery header follows.
@@ -182,15 +269,20 @@ impl Shell {
                 *count > 0 && self.library_filter.is_none_or(|f| f == *section)
             })
             .filter_map(|&(section, title, _)| {
-                let cards: Vec<BlockCard> = cards_for(library, section)
+                let mut cards: Vec<BlockCard> = cards_for(library, section)
                     .into_iter()
                     .filter(|card| query.is_empty() || card.haystack().contains(&query))
                     .collect();
                 if cards.is_empty() {
                     return None;
                 }
+                sort_cards(
+                    &mut cards,
+                    &|index| usage.count_for(library, section, index),
+                    self.library_sort,
+                );
                 Some(
-                    self.library_group(cx, title, section, cards)
+                    self.library_group(cx, title, section, cards, &usage)
                         .into_any_element(),
                 )
             })
@@ -221,7 +313,7 @@ impl Shell {
             .h_full()
             .flex()
             .flex_col()
-            .child(self.library_header(cx, total))
+            .child(self.library_header(cx, total, usage.total_reuses(library)))
             .child(
                 div()
                     .id("library-scroll")
@@ -240,7 +332,12 @@ impl Shell {
     }
 
     /// Title, block count, search and the "New block" menu.
-    fn library_header(&self, cx: &mut Context<Self>, total: usize) -> impl IntoElement {
+    fn library_header(
+        &self,
+        cx: &mut Context<Self>,
+        total: usize,
+        reuses: usize,
+    ) -> impl IntoElement {
         let shell = cx.weak_entity();
         div()
             .flex()
@@ -260,21 +357,35 @@ impl Shell {
                             .text_color(cx.theme().text)
                             .child("Your library"),
                     )
-                    // The mockup's second figure here is "reused 14 times".
-                    // Nothing records reuse, so only the count that is real
-                    // gets drawn (see this module's header comment).
-                    .child(div().mt(px(7.0)).flex().items_center().gap_2().child(
-                        Tag::secondary().small().child(format!(
-                            "{total} block{}",
-                            if total == 1 { "" } else { "s" }
-                        )),
-                    )),
+                    // The mockup's `8 blocks · reused 14 times`. The second
+                    // figure is real now: it is derived by matching each block
+                    // against every document in the vault
+                    // (`library_usage`), never stored, so it cannot drift and
+                    // cannot be a number about the user's corpus that nothing
+                    // stands behind (US-14).
+                    .child(
+                        div()
+                            .mt(px(7.0))
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(Tag::secondary().small().child(format!(
+                                "{total} block{}",
+                                if total == 1 { "" } else { "s" }
+                            )))
+                            .children((reuses > 0).then(|| {
+                                Tag::secondary()
+                                    .small()
+                                    .child(format!("reused {reuses} time{}", plural(reuses)))
+                            })),
+                    ),
             )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_3()
+                    .child(self.library_sort_control(cx))
                     .child(self.library_search_box(cx))
                     .child(
                         Button::new("new-block")
@@ -297,6 +408,36 @@ impl Shell {
                             }),
                     ),
             )
+    }
+
+    /// The block order, as a menu — the same control shape the Applications
+    /// toolbar uses, because it is the same job.
+    fn library_sort_control(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let active = self.library_sort;
+        let shell = cx.weak_entity();
+        Button::new("library-sort")
+            .cursor_pointer()
+            .ghost()
+            .small()
+            .icon(IconName::SortAscending)
+            .label(active.short_label())
+            .tooltip("Order blocks")
+            .dropdown_menu(move |mut menu, _window, _cx| {
+                for sort in LibrarySort::ALL {
+                    let shell = shell.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(sort.label())
+                            .checked(sort == active)
+                            .on_click(move |_ev, _window, cx| {
+                                let _ = shell.update(cx, |this, cx| {
+                                    this.library_sort = sort;
+                                    cx.notify();
+                                });
+                            }),
+                    );
+                }
+                menu
+            })
     }
 
     fn library_search_box(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -461,6 +602,7 @@ impl Shell {
         title: &'static str,
         section: SectionKind,
         cards: Vec<BlockCard>,
+        usage: &UsageIndex,
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
         let count = cards.len();
@@ -512,7 +654,7 @@ impl Shell {
                     .children(
                         cards
                             .into_iter()
-                            .map(|card| self.block_card(cx, section, card)),
+                            .map(|card| self.block_card(cx, section, card, usage)),
                     ),
             )
     }
@@ -522,10 +664,27 @@ impl Shell {
         cx: &mut Context<Self>,
         section: SectionKind,
         card: BlockCard,
+        usage: &UsageIndex,
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
         let index = card.index;
         let shell = cx.weak_entity();
+        let used_in = usage.documents_for(self.cache.library(), section, index).to_vec();
+        // Every document in the vault, as somewhere this block could go.
+        let destinations: Vec<(String, std::path::PathBuf)> = self
+            .cache
+            .metadata()
+            .iter()
+            .filter(|m| !m.unreadable)
+            .map(|m| {
+                let label = if m.name.trim().is_empty() {
+                    m.stem.clone()
+                } else {
+                    format!("{} · {}", m.name, m.stem)
+                };
+                (label, m.path.clone())
+            })
+            .collect();
 
         div()
             .w(px(320.0))
@@ -604,6 +763,105 @@ impl Shell {
                         .map(|k| Tag::secondary().small().child(k.clone())),
                 )
             }))
+            // The footer is what turns a shelf into a workshop: where this
+            // block already is, and one move to put it somewhere else. Before
+            // this the Library was a screen you could only look at — every
+            // path out of it went through opening a CV first.
+            .child(
+                div()
+                    .mt(px(4.0))
+                    .pt(px(8.0))
+                    .border_t_1()
+                    .border_color(theme.border)
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .child(self.used_in_line(cx, used_in))
+                    .children((!destinations.is_empty()).then(|| {
+                        let shell = cx.weak_entity();
+                        Button::new(SharedString::from(format!("libuse-{section:?}-{index}")))
+                            .cursor_pointer()
+                            .ghost()
+                            .xsmall()
+                            .label("Reuse")
+                            .icon(IconName::ChevronDown)
+                            .tooltip("Add a copy of this block to a CV")
+                            .dropdown_menu(move |mut menu, _window, _cx| {
+                                for (label, path) in &destinations {
+                                    let shell = shell.clone();
+                                    let path = path.clone();
+                                    menu = menu.item(
+                                        PopupMenuItem::new(label.clone()).on_click(
+                                            move |_ev, _window, cx| {
+                                                let path = path.clone();
+                                                let _ = shell.update(cx, |this, cx| {
+                                                    this.copy_block_into_document(
+                                                        section, index, &path, cx,
+                                                    );
+                                                });
+                                            },
+                                        ),
+                                    );
+                                }
+                                menu
+                            })
+                    })),
+            )
+    }
+
+    /// `used in 3 CVs`, and clicking it says **which** — the reverse
+    /// navigation the review asks for by name (P-02: «на карточке есть
+    /// `Reuse ▾`, но нет обратного действия — показать, где используется»).
+    ///
+    /// A block nobody has placed says so out loud rather than drawing `0`: the
+    /// useful reading of this line is "is this formulation earning its keep",
+    /// and "not used yet" answers that where a zero just looks broken.
+    fn used_in_line(
+        &self,
+        cx: &mut Context<Self>,
+        used_in: Vec<super::library_usage::DocumentRef>,
+    ) -> AnyElement {
+        let theme = cx.theme().clone();
+        if used_in.is_empty() {
+            return div()
+                .text_style(TextStyle::meta())
+                .text_color(theme.text_subtle)
+                .child("not used yet")
+                .into_any_element();
+        }
+
+        let count = used_in.len();
+        let shell = cx.weak_entity();
+        Button::new(SharedString::from(format!(
+            "libused-{}",
+            used_in
+                .iter()
+                .map(|d| d.stem.as_str())
+                .collect::<Vec<_>>()
+                .join("-")
+        )))
+        .cursor_pointer()
+        .ghost()
+        .xsmall()
+        .label(format!("used in {count} CV{}", plural(count)))
+        .tooltip("Show which CVs")
+        .dropdown_menu(move |mut menu, _window, _cx| {
+            for reference in &used_in {
+                let shell = shell.clone();
+                let stem = reference.stem.clone();
+                menu = menu.item(
+                    PopupMenuItem::new(format!("Open {}", reference.label)).on_click(
+                        move |_ev, _window, cx| {
+                            let stem = stem.clone();
+                            let _ = shell.update(cx, |this, cx| this.open_doc_by_stem(&stem, cx));
+                        },
+                    ),
+                );
+            }
+            menu
+        })
+        .into_any_element()
     }
 
     /// First-run explanation of what the library is and how to fill it.
@@ -709,6 +967,70 @@ impl Shell {
                         cx.notify();
                     })),
             )
+    }
+
+    /// Append a copy of a library block to a document's **active** variant of
+    /// that section, and write the file.
+    ///
+    /// A copy, deliberately: a library block is a copy pool
+    /// (`CLAUDE.md`, data model invariants), and the `Linked`/`Detached`
+    /// status the design row draws is a stored field with a migration and a
+    /// push-to-all flow behind it (US-03, roadmap D2). Reuse is the half of
+    /// that story the copy pool already supports honestly.
+    ///
+    /// The document is read, changed and written here rather than opened,
+    /// because the point is to fill several CVs from one screen without
+    /// leaving it. Nothing can be editing it at the same time: the rail is
+    /// mounted on vault screens only, so no editor entity is alive while the
+    /// Library is showing.
+    pub(super) fn copy_block_into_document(
+        &mut self,
+        section: SectionKind,
+        index: usize,
+        path: &std::path::Path,
+        cx: &mut Context<Self>,
+    ) {
+        let library = self.cache.library().clone();
+        let mut doc = match vault::load(path) {
+            Ok(doc) => doc,
+            Err(message) => {
+                save_status::report_unreadable(cx, path, message);
+                cx.notify();
+                return;
+            }
+        };
+
+        use SectionKind::*;
+        match section {
+            Work => push_clone(library.work.get(index), doc.work.active_mut()),
+            Education => push_clone(library.education.get(index), doc.education.active_mut()),
+            Skills => push_clone(library.skills.get(index), doc.skills.active_mut()),
+            Certificates => push_clone(
+                library.certificates.get(index),
+                doc.certificates.active_mut(),
+            ),
+            Organizations => push_clone(library.volunteer.get(index), doc.volunteer.active_mut()),
+            // No pool for these — see `root.rs::save_block_to_library`.
+            Profile | Custom(_) => return,
+        }
+
+        save_status::record(cx, "document", vault::save(&doc, path));
+        cx.notify();
+    }
+
+    /// Open a document by its file stem — how the library's "used in N CVs"
+    /// list and `Application::source_doc` both refer to one.
+    pub(super) fn open_doc_by_stem(&mut self, stem: &str, cx: &mut Context<Self>) {
+        let Some(path) = self
+            .cache
+            .metadata()
+            .iter()
+            .find(|m| m.stem == stem)
+            .map(|m| m.path.clone())
+        else {
+            return;
+        };
+        self.open_doc(path, cx);
     }
 
     pub(super) fn remove_library_block(

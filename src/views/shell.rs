@@ -30,6 +30,7 @@ use crate::typst_engine::TypstEngine;
 use crate::vault;
 
 use super::applications_data::{ApplicationSort, ApplicationsView};
+use super::library::LibrarySort;
 use super::confirm;
 use super::save_status;
 use super::vault_cache::VaultCache;
@@ -78,6 +79,8 @@ pub struct Shell {
     pub(super) library_search: Option<Entity<TextFieldState>>,
     /// Library filter chip in force; `None` is the design's `All`.
     pub(super) library_filter: Option<SectionKind>,
+    /// How blocks are ordered inside each section group.
+    pub(super) library_sort: LibrarySort,
     /// Mirror of `config.library_helper_dismissed`, read once at startup.
     /// Held in memory because the library screen consults it every frame, and
     /// a config file read per frame is a file read per frame.
@@ -146,6 +149,7 @@ impl Shell {
             search: None,
             library_search: None,
             library_filter: None,
+            library_sort: LibrarySort::default(),
             library_helper_dismissed,
             diary_draft: None,
             diary_tags: None,

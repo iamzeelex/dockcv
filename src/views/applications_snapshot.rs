@@ -277,7 +277,9 @@ mod tests {
         let bare = ResumeDoc::from_resume(Resume::default(), "Base");
         vault::save(&bare, &dir.join("draft-cv.toml")).expect("save");
 
-        let options = pin_options(&vault::list_metadata(&dir));
+        let metas: Vec<vault::DocMeta> =
+            vault::load_all(&dir).into_iter().map(|(meta, _)| meta).collect();
+        let options = pin_options(&metas);
         let labels: Vec<&str> = options.iter().map(|o| o.label.as_str()).collect();
 
         assert!(labels.contains(&"Sofiia Medvedenko · FAANG · concise"));

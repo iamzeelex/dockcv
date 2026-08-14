@@ -2,7 +2,7 @@
 //! changed.
 //!
 //! Every vault screen used to read and parse its data **inside `render`**. The
-//! gallery did it twice a frame — `list_metadata` is a directory scan plus a
+//! gallery did it twice a frame — loading the vault is a directory scan plus a
 //! full TOML parse of every document, once for the header's aggregate and again
 //! for the grid — so typing one character into the search box re-parsed the
 //! whole vault, and the cost grew with the number of CVs the user owned. The
@@ -31,7 +31,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::resume::model::{Applications, Diary, Library};
+use crate::resume::model::{Applications, Diary, Library, ResumeDoc};
 use crate::vault::{self, DocMeta};
 
 /// What the directory looked like: one entry per `.toml`, sorted by name.
@@ -82,6 +82,12 @@ pub(super) struct VaultCache {
     revision: u64,
 
     metadata: Vec<DocMeta>,
+    /// The parsed document behind each entry of `metadata`, aligned by index;
+    /// `None` where the file did not parse. Kept rather than dropped because
+    /// deriving a document's card summary already parses it — throwing the
+    /// result away only bought a second parse for anything that needed the
+    /// document itself (`library_usage`).
+    documents: Vec<Option<ResumeDoc>>,
     library: Library,
     diary: Diary,
     applications: Applications,
@@ -108,7 +114,9 @@ impl VaultCache {
             return;
         }
 
-        self.metadata = vault::list_metadata(dir);
+        let loaded = vault::load_all(dir);
+        self.metadata = loaded.iter().map(|(meta, _)| meta.clone()).collect();
+        self.documents = loaded.into_iter().map(|(_, doc)| doc).collect();
         self.library = vault::load_library(dir);
         self.diary = vault::load_diary(dir);
         self.applications = vault::load_applications(dir);
@@ -120,6 +128,17 @@ impl VaultCache {
 
     pub(super) fn metadata(&self) -> &[DocMeta] {
         &self.metadata
+    }
+
+    /// Every document that parsed, paired with its summary — what
+    /// [`super::library_usage::UsageIndex`] walks. Unreadable files are
+    /// skipped: they contribute no blocks, and counting them as empty would
+    /// quietly lower a usage count for a file the user has not lost.
+    pub(super) fn readable_documents(&self) -> impl Iterator<Item = (&DocMeta, &ResumeDoc)> {
+        self.metadata
+            .iter()
+            .zip(self.documents.iter())
+            .filter_map(|(meta, doc)| doc.as_ref().map(|doc| (meta, doc)))
     }
 
     /// The document paths, in the order `vault::list_documents` would give
