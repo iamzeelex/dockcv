@@ -82,6 +82,15 @@ fn init(cx: &mut App) {
     cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
     cx.on_action(|_: &OpenSettings, cx: &mut App| open_settings_window(cx));
 
+    // The last chance to write. Quit observers run while the windows — and so
+    // the `Shell` — are still alive, which is why the flush hangs here rather
+    // than off a `Drop`.
+    cx.on_app_quit(|cx: &mut App| {
+        flush_open_document(cx);
+        async {}
+    })
+    .detach();
+
     cx.set_menus(vec![Menu {
         name: SharedString::from(APP_NAME),
         items: vec![
@@ -100,12 +109,31 @@ fn init(cx: &mut App) {
 /// The main window's id is kept beside it because "any window closed" is no
 /// longer the same event as "the app is done": closing Settings must not quit.
 struct AppWindows {
-    shell: gpui::WeakEntity<Shell>,
+    /// A **strong** handle, deliberately. The window's root view held the only
+    /// other one, so on the close-the-window path the `Shell` was already
+    /// released by the time anything could ask it to flush its pending write —
+    /// and that is exactly the path that has to flush. Keeping the app's one
+    /// and only `Shell` alive for the process's lifetime costs nothing;
+    /// [`Shell::flush_open_document`] having something to talk to is the point.
+    shell: gpui::Entity<Shell>,
     main: gpui::AnyWindowHandle,
     settings: Option<gpui::AnyWindowHandle>,
 }
 
 impl gpui::Global for AppWindows {}
+
+/// Write out whatever document is open, right now.
+///
+/// Called from both ways the app can end — `Quit` and the main window closing.
+/// Edits are saved on a 600 ms debounce that lives on a `Task` the editor
+/// entity owns, so shutting down without this cancelled the timer and threw
+/// away the last thing the user typed. Which is most of a sentence, every time.
+fn flush_open_document(cx: &mut App) {
+    let Some(shell) = cx.try_global::<AppWindows>().map(|w| w.shell.clone()) else {
+        return;
+    };
+    shell.update(cx, |shell, cx| shell.flush_open_document(cx));
+}
 
 /// Open Settings, or bring it forward if it is already up. A second Settings
 /// window would be two views of one truth, each able to contradict the other.
@@ -119,7 +147,12 @@ fn open_settings_window(cx: &mut App) {
         }
     }
 
-    let Some(shell) = cx.try_global::<AppWindows>().map(|w| w.shell.clone()) else {
+    // Weak on the way *into* the Settings window: it edits the running Shell
+    // and must never be what keeps it alive.
+    let Some(shell) = cx
+        .try_global::<AppWindows>()
+        .map(|w| w.shell.downgrade())
+    else {
         return;
     };
     let bounds = Bounds::centered(None, size(px(720.), px(520.)), cx);
@@ -174,6 +207,11 @@ fn open_main_window(cx: &mut App) {
             return;
         }
         if windows.main.window_id() == id {
+            // Write before quitting, not after. `cx.quit()` runs the quit
+            // observers, which flush too — but only because `AppWindows` now
+            // holds a *strong* `Shell` handle; the window's own reference is
+            // already gone by the time this fires.
+            flush_open_document(cx);
             cx.quit();
         }
     })
@@ -185,7 +223,7 @@ fn open_main_window(cx: &mut App) {
     // handle survives out here: the Settings window edits this exact instance
     // and must not construct a second one.
     let shell = cx.new(Shell::new);
-    let weak_shell = shell.downgrade();
+    let kept_shell = shell.clone();
     let handle = cx
         .open_window(options, move |window, cx| {
             dockcv_ui_components::input::window_root(shell, window, cx)
@@ -193,7 +231,7 @@ fn open_main_window(cx: &mut App) {
         .expect("failed to open the main DockCV window");
 
     cx.set_global(AppWindows {
-        shell: weak_shell,
+        shell: kept_shell,
         main: handle.into(),
         settings: None,
     });

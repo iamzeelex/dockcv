@@ -25,10 +25,12 @@ use crate::render::{self, Rendered};
 use crate::resume::diagnostics::{describe_all, CompileMessage};
 use crate::resume::edit::FieldId;
 use crate::resume::model::{Diary, DiaryEntry, Library, ResumeDoc, SectionKind};
-use crate::resume::{altacv, template};
+use crate::resume::template;
 use crate::theme::ActiveTheme;
 use crate::typst_engine::{PageGeometry, Severity, TypstEngine};
 use crate::vault;
+
+use super::save_status;
 
 use super::root_section_rename::SectionRename;
 use super::root_section_variants::VariantRename;
@@ -315,7 +317,20 @@ pub struct Root {
 impl EventEmitter<EditorEvent> for Root {}
 
 impl Root {
-    pub fn new(doc_path: PathBuf, cx: &mut Context<Self>) -> Self {
+    /// Build an editor over a document that has **already been read**.
+    ///
+    /// Taking `doc` rather than a path is the fix for the worst thing this file
+    /// did. It used to load the file itself and answer a parse failure by
+    /// seeding the bundled AltaCV sample and writing it straight to `doc_path`
+    /// — destroying a real CV whose only problem was a typo in a format the
+    /// product tells people to hand-edit. Reading is now `Shell::open_doc`'s
+    /// job, which can refuse and say so; by the time the editor exists there is
+    /// a document, so there is no failure left here to answer badly.
+    ///
+    /// New documents arrive the same way: `Shell::create_doc` writes the file
+    /// through `vault::create_document` and then opens it, so the "seed if
+    /// absent" branch had no legitimate caller either.
+    pub fn new(doc_path: PathBuf, doc: ResumeDoc, cx: &mut Context<Self>) -> Self {
         let vault_dir = doc_path
             .parent()
             .map(Path::to_path_buf)
@@ -323,14 +338,6 @@ impl Root {
         let library = vault::load_library(&vault_dir);
         let diary = vault::load_diary(&vault_dir);
 
-        // File-over-App: load the document file, or seed it from the bundled
-        // AltaCV sample if it doesn't exist yet.
-        let doc = vault::load(&doc_path).unwrap_or_else(|_| {
-            let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap_or_default();
-            let doc = ResumeDoc::from_resume(resume, "Base");
-            let _ = vault::save(&doc, &doc_path);
-            doc
-        });
         let engine = Arc::new(Mutex::new(TypstEngine::new(template::generate(
             &doc.compose(),
         ))));
@@ -451,7 +458,7 @@ impl Root {
             // scope for D-9's model-only task.
             Profile | Custom(_) => {}
         }
-        let _ = vault::save_library(&self.vault_dir, &self.library);
+        save_status::record(cx, "library", vault::save_library(&self.vault_dir, &self.library));
         cx.notify();
     }
 
@@ -594,7 +601,7 @@ impl Root {
                 source_doc,
             },
         );
-        let _ = vault::save_diary(&self.vault_dir, &diary);
+        save_status::record(cx, "diary", vault::save_diary(&self.vault_dir, &diary));
         self.diary = diary;
         self.capture_sheet = None;
         cx.notify();
@@ -647,17 +654,38 @@ impl Root {
     }
 
     /// Debounced background write of the document to its cvault file.
+    ///
+    /// The outcome is recorded rather than discarded: this is the write that
+    /// runs on every keystroke, so it is also the one whose silent failure cost
+    /// the most — a read-only vault meant an afternoon of edits existed only on
+    /// screen.
     pub(super) fn schedule_save(&mut self, cx: &mut Context<Self>) {
         let doc = self.doc.clone();
         let path = self.doc_path.clone();
         let executor = cx.background_executor().clone();
 
-        self.save_task = Some(cx.spawn(async move |_this, _cx| {
+        self.save_task = Some(cx.spawn(async move |_this, cx| {
             executor.timer(SAVE_DEBOUNCE).await;
-            let _ = executor
+            let result = executor
                 .spawn(async move { vault::save(&doc, &path) })
                 .await;
+            cx.update(|cx| {
+                save_status::record(cx, "document", result);
+                // The banner lives on `Shell`'s frame, which nothing else here
+                // touches, so this write needs its own repaint request.
+                cx.refresh_windows();
+            });
         }));
+    }
+
+    /// Write the document out now, ignoring the debounce.
+    ///
+    /// Called when the editor is about to stop existing — the app is quitting,
+    /// the window is closing, or `Shell` is swapping the screen out from under
+    /// it. Dropping the entity cancels [`Root::save_task`], so without this the
+    /// last 600 ms of typing goes nowhere.
+    pub fn flush_save(&self) -> Result<(), String> {
+        vault::save(&self.doc, &self.doc_path)
     }
 
     /// Synchronous compile, used once for the first frame so the preview is not

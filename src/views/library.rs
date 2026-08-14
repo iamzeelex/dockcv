@@ -19,6 +19,8 @@ use crate::config;
 use crate::resume::model::{Library, SectionKind};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
+
+use super::save_status;
 use dockcv_ui_components::{
     Button, ButtonExt, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, Tag, TextField,
 };
@@ -718,7 +720,7 @@ impl Shell {
             // No library pool for Profile or for custom sections (D-9).
             Profile | Custom(_) => {}
         }
-        let _ = vault::save_library(&vault, &library);
+        save_status::record(cx, "library", vault::save_library(&vault, &library));
         cx.notify();
     }
 }

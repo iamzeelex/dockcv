@@ -553,6 +553,45 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// A document that will not parse must come back as an error and be left
+    /// **byte for byte** as it was.
+    ///
+    /// The editor used to answer a failed load by seeding the bundled AltaCV
+    /// sample and writing it to that same path, so a stray character in a file
+    /// the product tells people to hand-edit destroyed the CV on one click.
+    /// Reading is now `Shell::open_doc`'s job and `Root::new` takes a document
+    /// it cannot have failed to load — but the property the fix rests on is
+    /// this one, and it belongs where the loading lives.
+    #[test]
+    fn a_document_that_will_not_parse_is_left_exactly_as_it_is() {
+        let dir = std::env::temp_dir().join(format!("dockcv-corrupt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp vault");
+        let path = dir.join("hand-edited.toml");
+
+        // A real document with one line mangled the way a person would.
+        let doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+        let good = super::to_toml(&doc).expect("serializes");
+        let broken = good.replace("[profile]", "[profile");
+        assert_ne!(broken, good, "the fixture must actually be broken");
+        std::fs::write(&path, &broken).expect("write");
+
+        assert!(super::load(&path).is_err(), "a broken document must not load");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("still there"),
+            broken,
+            "a failed load must not rewrite, repair or replace the file"
+        );
+
+        // And the vault still lists it, so the gallery can show it and say so
+        // rather than pretending the document does not exist.
+        let listed = super::list_documents(&dir);
+        assert_eq!(listed, vec![path.clone()]);
+        assert!(super::read_meta(&path).unreadable);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn civil_from_days_known_values() {
         assert_eq!(super::civil_from_days(0), (1970, 1, 1));

@@ -28,6 +28,8 @@ use crate::theme::ActiveTheme;
 use crate::theme::ThemeMode;
 use crate::typst_engine::TypstEngine;
 use crate::vault;
+
+use super::save_status;
 use super::import_flow::ImportStep;
 use super::{EditorEvent, Root};
 
@@ -387,7 +389,7 @@ impl Shell {
                     source_doc: None,
                 },
             );
-            let _ = vault::save_diary(&vault, &diary);
+            save_status::record(cx, "diary", vault::save_diary(&vault, &diary));
         }
         field.update(cx, |state, cx| state.seed("", window, cx));
         if let Some(tag_field) = tag_field {
@@ -428,7 +430,7 @@ impl Shell {
             // see `views/root.rs::save_block_to_library`.
             SectionKind::Profile | SectionKind::Custom(_) => {}
         }
-        let _ = vault::save_library(&vault, &library);
+        save_status::record(cx, "library", vault::save_library(&vault, &library));
         cx.notify();
     }
 
@@ -438,7 +440,7 @@ impl Shell {
         };
         let mut diary = vault::load_diary(&vault);
         remove_at(&mut diary.entries, index);
-        let _ = vault::save_diary(&vault, &diary);
+        save_status::record(cx, "diary", vault::save_diary(&vault, &diary));
         cx.notify();
     }
 
@@ -454,11 +456,38 @@ impl Shell {
 
     /// Open a specific document in the editor, returning to the gallery when
     /// the editor asks to.
+    ///
+    /// The document is loaded **here**, before the editor entity exists, and a
+    /// failure leaves the user where they are. `Root` used to load its own file
+    /// and answer a parse failure by seeding the bundled AltaCV sample *and
+    /// writing it to that path* — so a typo in a document the product
+    /// advertises as hand-editable was replaced by sample data on one click,
+    /// and the gallery happily routed a card marked "unreadable file" straight
+    /// into it. A document that will not parse is a document to leave alone.
     pub(super) fn open_doc(&mut self, doc_path: PathBuf, cx: &mut Context<Self>) {
+        let doc = match vault::load(&doc_path) {
+            Ok(doc) => doc,
+            Err(message) => {
+                save_status::report_unreadable(cx, &doc_path, message);
+                cx.notify();
+                return;
+            }
+        };
+        save_status::clear_open_failure(cx);
+
         self.editing_path = Some(doc_path.clone());
-        let editor = cx.new(move |cx| Root::new(doc_path, cx));
+        let editor = cx.new(move |cx| Root::new(doc_path, doc, cx));
         cx.subscribe(&editor, |this, editor, event, cx| match event {
             EditorEvent::BackToGallery => {
+                // Flush before leaving, exactly as the matrix arm below does.
+                // Saves are debounced by 600 ms on a `Task` the editor entity
+                // owns, and switching `self.screen` drops that entity — so
+                // without this the last keystrokes before clicking back were
+                // simply cancelled. The sibling arm has always done this and
+                // documented why; this one did not, which made "back" the one
+                // exit that quietly lost work.
+                this.flush_editor(&editor, cx);
+
                 // Invalidate the edited doc's thumbnail so it regenerates.
                 if let Some(path) = this.editing_path.take() {
                     this.thumbnails.remove(&path);
@@ -469,16 +498,9 @@ impl Shell {
             // P-01: the toolbar's preset menu is a door into the Preset
             // Matrix, scoped to the document currently open in the editor.
             EditorEvent::OpenPresetMatrix => {
-                // Flush the editor's pending write *before* leaving it. Saves
-                // are debounced by 600 ms on a `Task` the editor entity owns,
-                // and switching `self.screen` drops that entity — so without
-                // this the last keystrokes are cancelled, and the matrix (which
-                // re-reads the document from disk) would show the state before
-                // them.
-                {
-                    let root = editor.read(cx);
-                    let _ = vault::save(&root.doc, &root.doc_path);
-                }
+                // The matrix re-reads the document from disk, so an unflushed
+                // write would show it the state before the last keystrokes.
+                this.flush_editor(&editor, cx);
                 if let Some(path) = this.editing_path.clone() {
                     this.open_preset_matrix(path, cx);
                 }
@@ -487,6 +509,42 @@ impl Shell {
         .detach();
         self.screen = Screen::Editor(editor);
         cx.notify();
+    }
+
+    /// Write the editor's document out now, cancelling nothing and waiting for
+    /// nothing. Every exit from the editor goes through here.
+    ///
+    /// Synchronous on purpose: the alternative is to await the pending task,
+    /// and the pending task is a 600 ms timer we are trying to get *ahead* of.
+    /// A CV is kilobytes of TOML — this is one small write, not a reason to
+    /// build a handshake.
+    pub(super) fn flush_editor(&mut self, editor: &Entity<Root>, cx: &mut Context<Self>) {
+        // Two statements, not one: `record` needs `cx` mutably and `read` holds
+        // it immutably, and `flush_save` returning an owned `Result` is what
+        // lets the first borrow end before the second begins.
+        let result = editor.read(cx).flush_save();
+        save_status::record(cx, "document", result);
+    }
+
+    /// Write out whatever is open, whoever is asking.
+    ///
+    /// The quit and window-close hooks call this: they know the app is going
+    /// away, not which screen happens to be up. Both the editor and the Preset
+    /// Matrix hold a document that a debounce may not have written yet.
+    pub fn flush_open_document(&mut self, cx: &mut Context<Self>) {
+        match &self.screen {
+            Screen::Editor(editor) => {
+                let editor = editor.clone();
+                self.flush_editor(&editor, cx);
+            }
+            Screen::PresetMatrix(pm) => {
+                let result = vault::save(&pm.doc, &pm.path);
+                save_status::record(cx, "document", result);
+            }
+            // Every other screen writes synchronously as it edits; there is no
+            // pending state to lose.
+            _ => {}
+        }
     }
 
     /// Leave the Preset Matrix, back the way the user came in: to the editor
@@ -578,7 +636,7 @@ impl Shell {
             {
                 *slot = value;
             }
-            let _ = vault::save(&pm.doc, &pm.path);
+            save_status::record(cx, "document", vault::save(&pm.doc, &pm.path));
         }
         cx.notify();
     }
@@ -601,7 +659,7 @@ impl Shell {
             hidden,
         });
 
-        let _ = vault::save(&pm.doc, &pm.path);
+        save_status::record(cx, "document", vault::save(&pm.doc, &pm.path));
         cx.notify();
     }
 
@@ -667,7 +725,7 @@ impl Shell {
                 }
             }
         }
-        let _ = vault::save(&pm.doc, &pm.path);
+        save_status::record(cx, "document", vault::save(&pm.doc, &pm.path));
         cx.notify();
     }
 
@@ -952,9 +1010,16 @@ impl Render for Shell {
 
         div()
             .size_full()
+            // `relative` so the notice can be an overlay: a vault problem is
+            // reported without moving anything the user is looking at.
+            .relative()
             .bg(cx.theme().background)
             .text_color(cx.theme().text)
             .child(body)
+            // Drawn once, here, rather than per screen — this is the outermost
+            // element in the app, so one call covers the gallery, the library,
+            // the diary, the board, the matrix *and* the editor.
+            .children(save_status::banner(cx))
     }
 }
 

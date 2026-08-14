@@ -22,6 +22,8 @@ use crate::resume::template;
 use crate::typst_engine::TypstEngine;
 use crate::vault;
 
+use super::save_status;
+
 use super::shell::Shell;
 
 /// One choice in the card menu's "Pin CV" section: a document in the vault,
@@ -101,7 +103,7 @@ impl Shell {
         application.source_doc = Some(stem);
         application.preset = preset;
         let already_sent = application.status != ApplicationStatus::Wishlist;
-        let _ = vault::save_applications(&vault, &applications);
+        save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
         cx.notify();
 
         // Pinning a CV to a card that has already been sent is the user
@@ -164,10 +166,25 @@ impl Shell {
                 .await;
 
             let _ = this.update(cx, |_this, cx| {
-                let Ok(bytes) = bytes else { return };
-                let Ok(file) = vault::save_snapshot(&vault, &bytes, &company, version) else {
-                    return;
+                let bytes = match bytes {
+                    Ok(bytes) => bytes,
+                    // The compile failed, not the disk. Reported as a snapshot
+                    // failure because that is the action the user took.
+                    Err(message) => {
+                        save_status::record(cx, "snapshot", Err(message));
+                        cx.notify();
+                        return;
+                    }
                 };
+                let file = match vault::save_snapshot(&vault, &bytes, &company, version) {
+                    Ok(file) => file,
+                    Err(message) => {
+                        save_status::record(cx, "snapshot", Err(message));
+                        cx.notify();
+                        return;
+                    }
+                };
+                save_status::record(cx, "snapshot", Ok(()));
 
                 // Re-read rather than trusting the index we started with: the
                 // compile ran on the background executor, and the board is
@@ -187,7 +204,7 @@ impl Shell {
                     preset,
                     file,
                 });
-                let _ = vault::save_applications(&vault, &applications);
+                save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
                 cx.notify();
             });
         })

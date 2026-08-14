@@ -33,6 +33,8 @@ use crate::resume::model::{Application, ApplicationStatus, Applications, PresetC
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
+use super::save_status;
+
 use super::applications_data::{
     card_chip_text, conversion_line, interviews_this_week, matches_query, plural,
 };
@@ -684,7 +686,7 @@ impl Shell {
         // created straight into a later column.
         application.advance_to(target);
         applications.entries.push(application);
-        let _ = vault::save_applications(&vault, &applications);
+        save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
 
         self.applications_compose_target = None;
         if let Some(field) = self.applications_compose_company.clone() {
@@ -720,7 +722,7 @@ impl Shell {
                 first_send = true;
             }
         }
-        let _ = vault::save_applications(&vault, &applications);
+        save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
         cx.notify();
 
         // D4a: the moment "this is what they got" becomes a true statement is
@@ -737,7 +739,7 @@ impl Shell {
         };
         let mut applications = vault::load_applications(&vault);
         remove_at(&mut applications.entries, index);
-        let _ = vault::save_applications(&vault, &applications);
+        save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
         cx.notify();
     }
 }
