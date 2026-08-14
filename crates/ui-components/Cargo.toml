@@ -1,0 +1,30 @@
+[package]
+name = "dockcv-ui-components"
+version = "0.1.0"
+edition = "2021"
+description = "Reusable UI component library for DockCV, inspired by gpui-component"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed" }
+
+# Text input only — see crates/ui-components/THIRD_PARTY.md. Default features are
+# empty upstream, which keeps tree-sitter and its 35 grammars out of the graph.
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "6c804fa7acaf0bce4659401821969da2b283dc30", default-features = false }
+# The Lucide icon set, embedded. Registered together with DockCV's three additions
+# through `components::icon::Assets`.
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "6c804fa7acaf0bce4659401821969da2b283dc30" }
+serde = { version = "1.0.228", features = ["derive"] }
+# The theme projection is built in upstream's own JSON config format — see
+# src/theme/bridge.rs for why that is the only way in.
+serde_json = "1"
+smallvec = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+gpui_platform = { git = "https://github.com/zed-industries/zed" }

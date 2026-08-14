@@ -1,0 +1,82 @@
+[workspace]
+members = [".", "crates/ui-components"]
+resolver = "2"
+
+[package]
+name = "dockcv"
+version = "0.1.0"
+edition = "2021"
+description = "DockCV — a cross-platform desktop app built with GPUI"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/zeelex/dockcv"
+default-run = "dockcv"
+
+[[bin]]
+name = "dockcv"
+path = "src/main.rs"
+
+[dependencies]
+dockcv-ui-components = { path = "crates/ui-components" }
+gpui = { git = "https://github.com/zed-industries/zed" }
+
+# --- Typst pipeline (stage 1: in-process compile to SVG) ---
+# typst, typst-svg and typst-assets must share the SAME minor version.
+typst = "0.15"
+typst-render = "0.15"
+typst-assets = { version = "0.15", features = ["fonts"] }
+comemo = "0.5"
+# `PagedDocument`/`Page` (the laid-out frames) live in typst-layout, not
+# re-exported by the `typst` facade crate. Already pulled in transitively by
+# `typst`/`typst-render` at the same 0.15.0; declaring it directly just gives
+# `typst_engine.rs` a name for the type it needs to measure page geometry.
+typst-layout = "0.15"
+
+# --- Raster pipeline: typst-render rasterizes the document directly to a
+# pixmap (no SVG round-trip), we then swap to BGRA for gpui. ---
+
+# Pinned to match what gpui itself uses so `image::Frame` / `SmallVec` unify to
+# a single version and can be handed directly to `gpui::RenderImage::new`.
+image = "0.25"
+smallvec = "1"
+typst-pdf = "0.15"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.8"
+# PDF text extraction, pure Rust. Deliberately *not* `pdfium-render`: that binds
+# to a libpdfium the app does not ship, so import died at runtime on any machine
+# without one — see the note in src/import/engines/pdf.rs.
+pdf-extract = "0.12"
+docx-rs = "0.4"
+regex = "1.10"
+serde_json = "1"
+zip = "5"
+csv = "1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+
+# `gpui_platform` selects the windowing/rendering backend. Features differ per
+# OS, so it is declared per target rather than once with the union of features.
+
+# macOS — primary platform. font-kit gives system font discovery; rendering is
+# Metal via the default backend.
+[target.'cfg(target_os = "macos")'.dependencies]
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
+
+# Linux / FreeBSD — enable both windowing backends; the right one is chosen at
+# runtime depending on the session (Wayland preferred, X11 fallback).
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
+
+# Windows — default features; DirectX rendering and system fonts are built in.
+[target.'cfg(target_os = "windows")'.dependencies]
+gpui_platform = { git = "https://github.com/zed-industries/zed" }
+
+[profile.dev]
+# GPUI's dependency tree is large; optimizing deps keeps the dev binary usable
+# while leaving our own crate unoptimized for fast iteration.
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

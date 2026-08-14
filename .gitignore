@@ -1,0 +1,12 @@
+/target
+**/*.rs.bk
+*.pdb
+.DS_Store
+
+# Read-only reference checkouts (1.9 GB of gpui-component and friends). They are
+# other people's repositories, cloned for reading — never edited, never imported,
+# and reproducible with a clone. See CLAUDE.md.
+/.research/
+
+# Release scaffolding output.
+/dist/

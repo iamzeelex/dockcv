@@ -1,0 +1,207 @@
+# Multilingual section taxonomy for the DockCV importer.
+#
+# Each `[table]` is a **section family**: one heading, named in as many
+# languages as we know it by.
+#
+# Six family names route to a built-in section of the model — `work`,
+# `education`, `skills`, `certificates`, `volunteer`, `summary`. Every other
+# family is a heading we *recognise* but have no built-in shape for, and it
+# becomes a custom section (D-9) keeping its own title. That is why `projects`
+# is its own family below and no longer a synonym for `work`: a Projects
+# section is not a job history, and filing it as one appended three projects to
+# somebody's last employer.
+#
+# Adding a family is editing this file — no Rust changes. An unrecognised
+# heading is still imported: a line set in capitals is treated as a heading on
+# shape alone. The taxonomy only improves recall for title-case headings.
+
+[work]
+en = ["work", "experience", "employment", "career", "professional experience", "work history", "relevant experience"]
+ru = ["опыт работы", "карьера", "профессиональный опыт", "места работы"]
+de = ["berufserfahrung", "beruflicher werdegang", "arbeitserfahrung", "tätigkeiten"]
+fr = ["expérience professionnelle", "parcours professionnel", "expériences"]
+es = ["experiencia laboral", "experiencia profesional", "historial laboral"]
+it = ["esperienza professionale", "esperienze lavorative", "percorso professionale"]
+pt = ["experiência profissional", "histórico profissional"]
+nl = ["werkervaring", "professionele ervaring"]
+pl = ["doświadczenie zawodowe", "historia zatrudnienia"]
+
+[education]
+en = ["education", "academic", "qualification", "degrees", "educational background"]
+ru = ["образование", "обучение", "квалификация", "учебные заведения"]
+de = ["ausbildung", "studium", "bildungsweg", "akademische ausbildung"]
+fr = ["formation", "études", "cursus académique", "diplômes"]
+es = ["educación", "formación académica", "estudios", "titulaciones"]
+it = ["istruzione", "formazione", "percorso di studi", "titoli di studio"]
+pt = ["educação", "formação acadêmica", "escolaridade"]
+nl = ["opleiding", "studies", "onderwijs"]
+pl = ["wykształcenie", "edukacja", "studia"]
+
+[skills]
+en = ["skill", "skills", "technologies", "tech stack", "tools", "competencies", "core competencies", "technical skills", "skills & tools"]
+ru = ["навыки", "ключевые навыки", "стек", "технологии", "инструменты", "компетенции"]
+de = ["kenntnisse", "fähigkeiten", "qualifikationen", "technologien", "skills"]
+fr = ["compétences", "compétences techniques", "technologies", "outils"]
+es = ["habilidades", "competencias", "habilidades técnicas", "tecnologías"]
+it = ["competenze", "competenze tecniche", "tecnologie", "strumenti"]
+pt = ["habilidades", "competências", "conhecimentos técnicos", "tecnologias"]
+nl = ["vaardigheden", "competenties", "kennis", "technologieën"]
+pl = ["umiejętności", "kompetencje", "technologie"]
+
+[certificates]
+en = ["certif", "certificate", "certificates", "license", "licenses", "courses", "coursework", "training", "professional development", "continuing education"]
+ru = ["сертификаты", "лицензии", "курсы", "повышение квалификации", "дополнительное образование"]
+de = ["zertifikate", "zertifizierungen", "lizenzen", "kurse", "weiterbildung", "fortbildung"]
+fr = ["certifications", "certificats", "licences", "formations", "cours"]
+es = ["certificaciones", "certificados", "licencias", "cursos", "formación complementaria"]
+it = ["certificazioni", "certificati", "corsi"]
+pt = ["certificações", "certificados", "cursos", "formação complementar"]
+nl = ["certificaten", "diploma's", "cursussen", "trainingen"]
+pl = ["certyfikaty", "kursy", "licencje", "szkolenia"]
+
+[volunteer]
+en = ["volunteer", "volunteering", "community", "leadership", "activities"]
+ru = ["общественная деятельность", "волонтерство"]
+de = ["ehrenamtliches engagement", "ehrenamt", "soziales engagement"]
+fr = ["bénévolat", "engagement associatif", "activités"]
+es = ["voluntariado", "actividades comunitarias", "liderazgo"]
+it = ["volontariato", "attività sociali"]
+pt = ["trabalho voluntário", "voluntariado"]
+nl = ["vrijwilligerswerk", "nevenactiviteiten"]
+pl = ["wolontariat", "działalność społeczna"]
+
+[summary]
+en = ["summary", "profile", "about", "about me", "executive summary", "professional summary", "objective", "career objective", "personal statement"]
+ru = ["о себе", "профиль", "резюме"]
+de = ["über mich", "profil", "zusammenfassung"]
+fr = ["à propos", "profil", "résumé"]
+es = ["sobre mí", "perfil profesional", "resumen"]
+it = ["chi sono", "profilo professionale", "sommario"]
+pt = ["sobre mim", "perfil profissional", "resumo"]
+nl = ["over mij", "profiel", "samenvatting"]
+pl = ["o mnie", "profil zawodowy", "podsumowanie"]
+
+[contact]
+# Not a section: its lines are the profile's own fields — email, phone,
+# location, links. Routed into `basics`, never into a section of entries.
+en = ["contact", "contact details", "contact information", "get in touch", "details"]
+ru = ["контакты", "контактная информация", "связаться"]
+de = ["kontakt", "kontaktdaten"]
+fr = ["contact", "coordonnées"]
+es = ["contacto", "datos de contacto"]
+it = ["contatti", "contatto"]
+pt = ["contato", "contactos"]
+nl = ["contact", "contactgegevens"]
+pl = ["kontakt", "dane kontaktowe"]
+
+# ---------------------------------------------------------------------------
+# Families with no built-in shape. Each becomes a custom section, under the
+# title the document used.
+#
+# A name belongs to exactly one family — `no_name_belongs_to_two_families`
+# enforces it. A name in two families is a tie the ranking cannot break, and the
+# winner then falls out of map order rather than out of any stated rule. That is
+# why `courses` is not a family of its own: a completed course has a name, an
+# issuer and a date, which is exactly `Certificate`, and listing it twice made
+# `Kurse` resolve differently from `Weiterbildung`.
+# ---------------------------------------------------------------------------
+
+[projects]
+en = ["projects", "key projects", "selected projects", "personal projects", "side projects", "portfolio"]
+ru = ["проекты", "ключевые проекты", "личные проекты", "портфолио"]
+de = ["projekte", "ausgewählte projekte"]
+fr = ["projets", "projets personnels"]
+es = ["proyectos", "proyectos destacados"]
+it = ["progetti"]
+pt = ["projetos"]
+nl = ["projecten"]
+pl = ["projekty"]
+
+[languages]
+en = ["languages", "language skills", "spoken languages"]
+ru = ["языки", "владение языками", "иностранные языки"]
+de = ["sprachen", "sprachkenntnisse"]
+fr = ["langues", "compétences linguistiques"]
+es = ["idiomas", "lenguas"]
+it = ["lingue", "conoscenze linguistiche"]
+pt = ["idiomas", "línguas"]
+nl = ["talen", "talenkennis"]
+pl = ["języki", "znajomość języków"]
+
+[interests]
+en = ["interests", "hobbies", "activities and interests", "interests and hobbies", "personal interests"]
+ru = ["интересы", "увлечения", "хобби"]
+de = ["interessen", "hobbys", "freizeit"]
+fr = ["centres d'intérêt", "loisirs"]
+es = ["intereses", "aficiones", "pasatiempos"]
+it = ["interessi", "hobby"]
+pt = ["interesses", "hobbies"]
+nl = ["interesses", "hobby's"]
+pl = ["zainteresowania", "hobby"]
+
+[publications]
+en = ["publications", "papers", "selected publications", "research", "research experience"]
+ru = ["публикации", "статьи", "научные работы", "исследования"]
+de = ["publikationen", "veröffentlichungen", "forschung"]
+fr = ["publications", "recherche"]
+es = ["publicaciones", "investigación"]
+it = ["pubblicazioni", "ricerca"]
+pt = ["publicações", "pesquisa"]
+nl = ["publicaties", "onderzoek"]
+pl = ["publikacje", "badania"]
+
+[awards]
+en = ["awards", "honors", "honours", "awards and honors", "achievements", "accomplishments", "recognition"]
+ru = ["награды", "достижения", "поощрения"]
+de = ["auszeichnungen", "ehrungen", "erfolge"]
+fr = ["distinctions", "récompenses", "réalisations"]
+es = ["premios", "reconocimientos", "logros"]
+it = ["premi", "riconoscimenti"]
+pt = ["prêmios", "reconhecimentos", "conquistas"]
+nl = ["onderscheidingen", "prijzen"]
+pl = ["nagrody", "wyróżnienia", "osiągnięcia"]
+
+
+[talks]
+en = ["talks", "presentations", "conferences", "speaking", "speaking engagements"]
+ru = ["доклады", "выступления", "конференции"]
+de = ["vorträge", "konferenzen"]
+fr = ["conférences", "interventions"]
+es = ["conferencias", "ponencias"]
+it = ["conferenze", "interventi"]
+pt = ["palestras", "conferências"]
+nl = ["lezingen", "presentaties"]
+pl = ["wystąpienia", "konferencje"]
+
+[patents]
+en = ["patents", "patents and inventions"]
+ru = ["патенты", "изобретения"]
+de = ["patente"]
+fr = ["brevets"]
+es = ["patentes"]
+it = ["brevetti"]
+pt = ["patentes"]
+nl = ["patenten", "octrooien"]
+pl = ["patenty"]
+
+[memberships]
+en = ["memberships", "affiliations", "professional memberships", "associations"]
+ru = ["членство", "профессиональные объединения"]
+de = ["mitgliedschaften", "verbände"]
+fr = ["adhésions", "associations"]
+es = ["afiliaciones", "asociaciones"]
+it = ["associazioni"]
+pt = ["afiliações", "associações"]
+nl = ["lidmaatschappen"]
+pl = ["członkostwa"]
+
+[references]
+en = ["references", "referees"]
+ru = ["рекомендации", "рекомендатели"]
+de = ["referenzen"]
+fr = ["références"]
+es = ["referencias"]
+it = ["referenze"]
+pt = ["referências"]
+nl = ["referenties"]
+pl = ["referencje"]

@@ -1,0 +1,7 @@
+[toolchain]
+# Pinned to match the stable Rust that Zed/GPUI's `main` builds against. GPUI
+# tracks recent stdlib stabilizations (e.g. `slice_as_array`), so an older
+# stable will fail to compile its dependencies. Bump this in step with Zed's
+# own rust-toolchain.toml when you advance the gpui git revision.
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]

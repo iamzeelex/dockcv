@@ -1,0 +1,1045 @@
+//! The top-level navigation shell.
+//!
+//! `Shell` owns which [`Screen`] is showing and routes to it. It is what the
+//! window opens; the editor, setup, gallery, etc. are screens hosted inside it.
+//! On first launch it shows the welcome → setup flow; once a vault is chosen it
+//! remembers it (via `config`) and opens straight into the editor next time.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use gpui::{
+    div, ease_out_quint, linear_color_stop, linear_gradient, prelude::*, px, Animation,
+    AnimationExt, AnyElement, App, Context, Entity, PathPromptOptions, Subscription, Task, Window,
+};
+
+use dockcv_ui_components::{TextFieldEvent, TextFieldState};
+
+use crate::config;
+use crate::render::{self, Rendered};
+use crate::resume::model::{
+    ApplicationStatus, Certificate, DiaryEntry, Education, ResumeDoc, SectionKind, SkillGroup,
+    Volunteer, Work,
+};
+use crate::resume::template;
+use crate::theme::ActiveTheme;
+use crate::theme::ThemeMode;
+use crate::typst_engine::TypstEngine;
+use crate::vault;
+use super::import_flow::ImportStep;
+use super::{EditorEvent, Root};
+
+/// Pixels-per-point for gallery thumbnails (small + cheap).
+const THUMB_SCALE: f32 = 0.5;
+
+pub(super) enum Screen {
+    Welcome,
+    Setup,
+    Gallery,
+    Library,
+    Diary,
+    Applications,
+    Editor(Entity<Root>),
+    /// Boxed: the matrix carries a whole `ResumeDoc`, and an inline variant
+    /// would make every `Screen` that large.
+    PresetMatrix(Box<super::preset_matrix::PresetMatrix>),
+}
+
+pub struct Shell {
+    pub(super) screen: Screen,
+    /// The active vault directory once chosen.
+    pub(super) vault: Option<PathBuf>,
+    /// Which document the gallery is renaming inline, if any.
+    pub(super) renaming_doc: Option<PathBuf>,
+    /// The rename box. One field reused across cards — only one rename can be
+    /// open at a time, and a field per card would be a field per document.
+    pub(super) rename_field: Option<Entity<TextFieldState>>,
+    /// Whether the gallery is showing the "new document" template chooser.
+    pub(super) gallery_creating: bool,
+    /// Current step in the import wizard (bring document / review split).
+    pub(super) import_step: ImportStep,
+    /// Whether the user/avatar dropdown menu is open.
+    pub(super) menu_open: bool,
+    pub(super) setup_error: Option<String>,
+    /// Gallery search box. Created on the first frame — building a text field
+    /// needs a `Window`, which `new` does not have.
+    pub(super) search: Option<Entity<TextFieldState>>,
+    /// Library block search, created the same way. Deliberately *not* the
+    /// gallery's box: with the rail making these tabs of one window rather
+    /// than separate pages, a query typed on one screen would otherwise stay
+    /// live and silently filter the other when the user tabbed across.
+    pub(super) library_search: Option<Entity<TextFieldState>>,
+    /// Library filter chip in force; `None` is the design's `All`.
+    pub(super) library_filter: Option<SectionKind>,
+    /// Mirror of `config.library_helper_dismissed`, read once at startup.
+    /// Held in memory because the library screen consults it every frame, and
+    /// a config file read per frame is a file read per frame.
+    pub(super) library_helper_dismissed: bool,
+    /// Quick-capture box on the diary screen, created the same way.
+    pub(super) diary_draft: Option<Entity<TextFieldState>>,
+    /// The quick-capture's `# tag` box — space- or comma-separated.
+    pub(super) diary_tags: Option<Entity<TextFieldState>>,
+    /// The role the quick-capture will tag the next entry with. Sticky across
+    /// entries on purpose: a session of logging wins is almost always about
+    /// one job, so re-picking it per entry would be friction for nothing.
+    pub(super) diary_role: String,
+    /// Timeline filter from the rail's `Roles` list; `None` shows everything.
+    pub(super) diary_role_filter: Option<String>,
+    /// Applications board search box, created the same way — filters by
+    /// company/role, and (like `library_search`) deliberately not shared
+    /// with any other screen's box.
+    pub(super) applications_search: Option<Entity<TextFieldState>>,
+    /// Which column's compose box is open, if any. `None` means the board
+    /// shows no inline "new application" form.
+    pub(super) applications_compose_target: Option<ApplicationStatus>,
+    /// The compose box's two fields — company and role, the only two a new
+    /// card starts with (design doc's "Build these" instruction).
+    pub(super) applications_compose_company: Option<Entity<TextFieldState>>,
+    pub(super) applications_compose_role: Option<Entity<TextFieldState>>,
+    /// Kept alive so the boxes keep reporting changes.
+    pub(super) input_subscriptions: Vec<Subscription>,
+    /// Cached first-page thumbnails per document path.
+    pub(super) thumbnails: HashMap<PathBuf, Rendered>,
+    /// Shared engine for generating thumbnails (fonts load once).
+    pub(super) thumb_engine: Option<Arc<Mutex<TypstEngine>>>,
+    pub(super) thumb_task: Option<Task<()>>,
+    /// The document currently open in the editor (to invalidate its thumbnail
+    /// when we return).
+    pub(super) editing_path: Option<PathBuf>,
+}
+
+impl Shell {
+    pub fn new(_cx: &mut Context<Self>) -> Self {
+        // Open the gallery if a previously chosen vault is still valid;
+        // otherwise start the welcome → setup flow.
+        let config = config::load();
+        let library_helper_dismissed = config.library_helper_dismissed;
+        let (vault, screen) = match config.vault {
+            Some(dir) if vault::is_vault(&dir) => (Some(dir), Screen::Gallery),
+            _ => (None, Screen::Welcome),
+        };
+
+        Self {
+            screen,
+            vault,
+            renaming_doc: None,
+            rename_field: None,
+            gallery_creating: false,
+            import_step: ImportStep::default(),
+            menu_open: false,
+            setup_error: None,
+            search: None,
+            library_search: None,
+            library_filter: None,
+            library_helper_dismissed,
+            diary_draft: None,
+            diary_tags: None,
+            diary_role: String::new(),
+            diary_role_filter: None,
+            applications_search: None,
+            applications_compose_target: None,
+            applications_compose_company: None,
+            applications_compose_role: None,
+            input_subscriptions: Vec::new(),
+            thumbnails: HashMap::new(),
+            thumb_engine: None,
+            thumb_task: None,
+            editing_path: None,
+        }
+    }
+
+    /// Build the screens' text boxes on the first frame and keep their changes
+    /// flowing back into the shell.
+    pub(super) fn ensure_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search.is_none() {
+            let search = cx.new(|cx| TextFieldState::single_line(window, cx));
+            // The grid filters on every keystroke, so a change is a re-render.
+            self.input_subscriptions.push(
+                cx.subscribe(&search, |_this, _field, _event: &TextFieldEvent, cx| {
+                    cx.notify()
+                }),
+            );
+            self.search = Some(search);
+        }
+
+        if self.rename_field.is_none() {
+            let field = cx.new(|cx| TextFieldState::single_line(window, cx));
+            self.input_subscriptions.push(cx.subscribe_in(
+                &field,
+                window,
+                |this, _field, event: &TextFieldEvent, window, cx| match event {
+                    TextFieldEvent::Submitted => this.commit_rename(window, cx),
+                    TextFieldEvent::Changed => cx.notify(),
+                    _ => {}
+                },
+            ));
+            self.rename_field = Some(field);
+        }
+
+        if self.library_search.is_none() {
+            let search = cx.new(|cx| TextFieldState::single_line(window, cx));
+            self.input_subscriptions.push(
+                cx.subscribe(&search, |_this, _field, _event: &TextFieldEvent, cx| {
+                    cx.notify()
+                }),
+            );
+            self.library_search = Some(search);
+        }
+
+        if self.diary_draft.is_none() {
+            let draft = cx.new(|cx| TextFieldState::single_line(window, cx));
+            self.input_subscriptions.push(cx.subscribe_in(
+                &draft,
+                window,
+                |this, _field, event: &TextFieldEvent, window, cx| match event {
+                    TextFieldEvent::Submitted => this.commit_diary_entry(window, cx),
+                    TextFieldEvent::Changed => cx.notify(),
+                    _ => {}
+                },
+            ));
+            self.diary_draft = Some(draft);
+        }
+
+        if self.diary_tags.is_none() {
+            let tags = cx.new(|cx| TextFieldState::single_line(window, cx));
+            // Enter in the tag box commits the whole win, same as in the text
+            // box — the two are one form.
+            self.input_subscriptions.push(cx.subscribe_in(
+                &tags,
+                window,
+                |this, _field, event: &TextFieldEvent, window, cx| match event {
+                    TextFieldEvent::Submitted => this.commit_diary_entry(window, cx),
+                    TextFieldEvent::Changed => cx.notify(),
+                    _ => {}
+                },
+            ));
+            self.diary_tags = Some(tags);
+        }
+
+        if self.applications_search.is_none() {
+            let search = cx.new(|cx| TextFieldState::single_line(window, cx));
+            self.input_subscriptions.push(
+                cx.subscribe(&search, |_this, _field, _event: &TextFieldEvent, cx| {
+                    cx.notify()
+                }),
+            );
+            self.applications_search = Some(search);
+        }
+
+        if self.applications_compose_company.is_none() {
+            let company = cx.new(|cx| TextFieldState::single_line(window, cx));
+            // Enter in either compose field commits the new card, same as
+            // the diary's dual-field quick capture.
+            self.input_subscriptions.push(cx.subscribe_in(
+                &company,
+                window,
+                |this, _field, event: &TextFieldEvent, window, cx| match event {
+                    TextFieldEvent::Submitted => this.commit_applications_compose(window, cx),
+                    TextFieldEvent::Changed => cx.notify(),
+                    _ => {}
+                },
+            ));
+            self.applications_compose_company = Some(company);
+        }
+
+        if self.applications_compose_role.is_none() {
+            let role = cx.new(|cx| TextFieldState::single_line(window, cx));
+            self.input_subscriptions.push(cx.subscribe_in(
+                &role,
+                window,
+                |this, _field, event: &TextFieldEvent, window, cx| match event {
+                    TextFieldEvent::Submitted => this.commit_applications_compose(window, cx),
+                    TextFieldEvent::Changed => cx.notify(),
+                    _ => {}
+                },
+            ));
+            self.applications_compose_role = Some(role);
+        }
+    }
+
+    /// The gallery's current search query, lowercased and trimmed.
+    pub(super) fn search_query(&self, cx: &App) -> String {
+        self.search
+            .as_ref()
+            .map(|f| f.read(cx).value(cx).trim().to_lowercase())
+            .unwrap_or_default()
+    }
+
+    /// The library's current search query, lowercased and trimmed.
+    pub(super) fn library_query(&self, cx: &App) -> String {
+        self.library_search
+            .as_ref()
+            .map(|f| f.read(cx).value(cx).trim().to_lowercase())
+            .unwrap_or_default()
+    }
+
+    /// Kick off (once) background generation of any missing thumbnails.
+    pub(super) fn ensure_thumbnails(&mut self, cx: &mut Context<Self>) {
+        if self.thumb_task.is_some() {
+            return;
+        }
+        let Some(vault) = self.vault.clone() else {
+            return;
+        };
+        let pending: Vec<PathBuf> = vault::list_documents(&vault)
+            .into_iter()
+            .filter(|p| !self.thumbnails.contains_key(p))
+            .collect();
+        if pending.is_empty() {
+            return;
+        }
+
+        let engine = self
+            .thumb_engine
+            .get_or_insert_with(|| Arc::new(Mutex::new(TypstEngine::new(String::new()))))
+            .clone();
+        let executor = cx.background_executor().clone();
+
+        self.thumb_task = Some(cx.spawn(async move |this, cx| {
+            for path in pending {
+                let rendered = executor
+                    .spawn({
+                        let engine = engine.clone();
+                        let path = path.clone();
+                        async move {
+                            let doc = vault::load(&path).ok()?;
+                            let source = template::generate_for(&doc);
+                            let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
+                            engine.set_source(source);
+                            let (pixels, _geometry) = engine.compile_to_pixels(THUMB_SCALE).ok()?;
+                            render::pixels_to_render_image(pixels, THUMB_SCALE).ok()
+                        }
+                    })
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    if let Some(rendered) = rendered {
+                        this.thumbnails.insert(path.clone(), rendered);
+                    }
+                    cx.notify();
+                });
+            }
+            let _ = this.update(cx, |this, _cx| this.thumb_task = None);
+        }));
+    }
+
+    /// Switch palettes. The theme is a `Global`, so setting it repaints every
+    /// screen at once — nothing has to be pushed into the open editor.
+    pub(super) fn set_theme(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
+        if cx.theme().mode == mode {
+            return;
+        }
+        crate::theme::set_theme_mode(cx, mode);
+        config::set_theme(mode);
+        cx.notify();
+    }
+
+    pub(super) fn empty_trash(&mut self, cx: &mut Context<Self>) {
+        if let Some(vault) = self.vault.clone() {
+            let _ = vault::empty_trash(&vault);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn rebuild_thumbnails(&mut self, cx: &mut Context<Self>) {
+        self.thumbnails.clear();
+        cx.notify();
+    }
+
+    pub(super) fn duplicate_doc(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if vault::duplicate_document(&path).is_ok() {
+            cx.notify();
+        }
+    }
+
+    pub(super) fn delete_doc(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if vault::delete_document(&path).is_ok() {
+            self.thumbnails.remove(&path);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn commit_diary_entry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(field) = self.diary_draft.clone() else {
+            return;
+        };
+        let text = field.read(cx).value(cx).trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+        let tag_field = self.diary_tags.clone();
+        let tags = tag_field
+            .as_ref()
+            .map(|f| parse_tags(&f.read(cx).value(cx)))
+            .unwrap_or_default();
+
+        if let Some(vault) = self.vault.clone() {
+            let mut diary = vault::load_diary(&vault);
+            diary.entries.insert(
+                0,
+                DiaryEntry {
+                    date: vault::today_iso(),
+                    text,
+                    role: self.diary_role.clone(),
+                    tags,
+                    // Typed straight into the Diary — no document was open.
+                    source_doc: None,
+                },
+            );
+            let _ = vault::save_diary(&vault, &diary);
+        }
+        field.update(cx, |state, cx| state.seed("", window, cx));
+        if let Some(tag_field) = tag_field {
+            tag_field.update(cx, |state, cx| state.seed("", window, cx));
+        }
+        // The role deliberately survives the commit — see `diary_role`.
+        cx.notify();
+    }
+
+    /// Add a fresh placeholder block directly to a library section.
+    pub(super) fn add_library_block(&mut self, section: SectionKind, cx: &mut Context<Self>) {
+        let Some(vault) = self.vault.clone() else {
+            return;
+        };
+        let mut library = vault::load_library(&vault);
+        match section {
+            SectionKind::Work => library.work.push(Work {
+                position: "New role".into(),
+                ..Default::default()
+            }),
+            SectionKind::Education => library.education.push(Education {
+                study_type: "New qualification".into(),
+                ..Default::default()
+            }),
+            SectionKind::Skills => library.skills.push(SkillGroup {
+                name: "New category".into(),
+                keywords: Vec::new(),
+            }),
+            SectionKind::Certificates => library.certificates.push(Certificate {
+                name: "New certificate".into(),
+                ..Default::default()
+            }),
+            SectionKind::Organizations => library.volunteer.push(Volunteer {
+                position: "New role".into(),
+                ..Default::default()
+            }),
+            // No library pool for Profile or for custom sections (D-9) —
+            // see `views/root.rs::save_block_to_library`.
+            SectionKind::Profile | SectionKind::Custom(_) => {}
+        }
+        let _ = vault::save_library(&vault, &library);
+        cx.notify();
+    }
+
+    pub(super) fn delete_diary_entry(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(vault) = self.vault.clone() else {
+            return;
+        };
+        let mut diary = vault::load_diary(&vault);
+        remove_at(&mut diary.entries, index);
+        let _ = vault::save_diary(&vault, &diary);
+        cx.notify();
+    }
+
+    /// Adopt `vault_dir` as the active vault: remember it and show the gallery.
+    pub(super) fn open_vault(&mut self, vault_dir: PathBuf, cx: &mut Context<Self>) {
+        config::set_vault(vault_dir.clone());
+        let is_empty = vault::list_documents(&vault_dir).is_empty();
+        self.vault = Some(vault_dir);
+        self.gallery_creating = is_empty;
+        self.screen = Screen::Gallery;
+        cx.notify();
+    }
+
+    /// Open a specific document in the editor, returning to the gallery when
+    /// the editor asks to.
+    pub(super) fn open_doc(&mut self, doc_path: PathBuf, cx: &mut Context<Self>) {
+        self.editing_path = Some(doc_path.clone());
+        let editor = cx.new(move |cx| Root::new(doc_path, cx));
+        cx.subscribe(&editor, |this, editor, event, cx| match event {
+            EditorEvent::BackToGallery => {
+                // Invalidate the edited doc's thumbnail so it regenerates.
+                if let Some(path) = this.editing_path.take() {
+                    this.thumbnails.remove(&path);
+                }
+                this.screen = Screen::Gallery;
+                cx.notify();
+            }
+            // P-01: the toolbar's preset menu is a door into the Preset
+            // Matrix, scoped to the document currently open in the editor.
+            EditorEvent::OpenPresetMatrix => {
+                // Flush the editor's pending write *before* leaving it. Saves
+                // are debounced by 600 ms on a `Task` the editor entity owns,
+                // and switching `self.screen` drops that entity — so without
+                // this the last keystrokes are cancelled, and the matrix (which
+                // re-reads the document from disk) would show the state before
+                // them.
+                {
+                    let root = editor.read(cx);
+                    let _ = vault::save(&root.doc, &root.doc_path);
+                }
+                if let Some(path) = this.editing_path.clone() {
+                    this.open_preset_matrix(path, cx);
+                }
+            }
+        })
+        .detach();
+        self.screen = Screen::Editor(editor);
+        cx.notify();
+    }
+
+    /// Leave the Preset Matrix, back the way the user came in: to the editor
+    /// if a document is open behind it, otherwise to the gallery whose badge
+    /// opened it. `editing_path` is `Some` exactly while the editor holds a
+    /// document (`BackToGallery` takes it), which is what makes it a reliable
+    /// answer here rather than a guess.
+    pub(super) fn leave_preset_matrix(&mut self, cx: &mut Context<Self>) {
+        match self.editing_path.clone() {
+            Some(path) => self.open_doc(path, cx),
+            None => {
+                self.screen = Screen::Gallery;
+                cx.notify();
+            }
+        }
+    }
+
+    /// Open the Preset Matrix view for a document.
+    pub(super) fn open_preset_matrix(&mut self, doc_path: PathBuf, cx: &mut Context<Self>) {
+        if let Ok(doc) = vault::load(&doc_path) {
+            let pm = super::preset_matrix::PresetMatrix::new(doc_path, doc);
+            self.screen = Screen::PresetMatrix(Box::new(pm));
+            cx.notify();
+        }
+    }
+
+    /// Begin renaming the preset the left pill shows.
+    ///
+    /// `FieldId::PresetName` was addressable from the day presets existed and
+    /// no view drew it, so a preset created as `Preset 2` kept that name for
+    /// life (G-14). The gesture copies the editor's section rename — pen,
+    /// inline field, Enter or clicking away commits — because a user who has
+    /// renamed one should not have to learn a second way.
+    pub(super) fn start_preset_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Screen::PresetMatrix(ref mut pm) = self.screen else {
+            return;
+        };
+        let idx = pm.active_preset_idx;
+        let Some(current) = pm.doc.presets.get(idx).map(|p| p.name.clone()) else {
+            return;
+        };
+
+        let field = cx.new(|cx| {
+            let state = TextFieldState::single_line(window, cx);
+            state.seed(current, window, cx);
+            state
+        });
+        let subscription = cx.subscribe_in(
+            &field,
+            window,
+            move |this, _state, event: &TextFieldEvent, window, cx| match event {
+                TextFieldEvent::Submitted | TextFieldEvent::Blurred => {
+                    this.commit_preset_rename(window, cx)
+                }
+                TextFieldEvent::Changed | TextFieldEvent::Focused => {}
+            },
+        );
+
+        let handle = field.read(cx).focus_handle(cx);
+        if let Screen::PresetMatrix(ref mut pm) = self.screen {
+            pm.renaming_preset = Some(super::preset_matrix::PresetRename {
+                idx,
+                field,
+                _subscription: subscription,
+            });
+        }
+        handle.focus(window, cx);
+        cx.notify();
+    }
+
+    /// Write the typed name back and close the control. A blank name is
+    /// refused rather than stored: an unnamed preset is a column with no
+    /// header, and the matrix has no other way to tell its columns apart.
+    pub(super) fn commit_preset_rename(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let Screen::PresetMatrix(ref mut pm) = self.screen else {
+            return;
+        };
+        let Some(rename) = pm.renaming_preset.take() else {
+            return;
+        };
+        let value = rename.field.read(cx).value(cx).trim().to_string();
+        if !value.is_empty() {
+            // Written through the addressing layer rather than at the field:
+            // `FieldId::PresetName` has been addressable since presets existed
+            // and reaching past it would leave the variant dead, which is how
+            // a field ends up in the model and nowhere else (E-42).
+            if let Some(slot) = crate::resume::edit::FieldId::PresetName(rename.idx)
+                .get_mut(&mut pm.doc)
+            {
+                *slot = value;
+            }
+            let _ = vault::save(&pm.doc, &pm.path);
+        }
+        cx.notify();
+    }
+
+    /// Save current section variant configuration in the Preset Matrix as a new preset.
+    pub(super) fn save_matrix_as_preset(&mut self, cx: &mut Context<Self>) {
+        let Screen::PresetMatrix(ref mut pm) = self.screen else {
+            return;
+        };
+        let new_preset_name = format!("Preset {}", pm.doc.presets.len() + 1);
+        // `current_selection` walks the document's own sections, so a custom
+        // section (D-9) is pinned like any other — iterating the six built-ins
+        // would have silently dropped it out of every preset saved here.
+        let selection = pm.doc.current_selection();
+
+        let hidden = pm.doc.hidden_sections.clone();
+        pm.doc.presets.push(crate::resume::model::Preset {
+            name: new_preset_name,
+            selection,
+            hidden,
+        });
+
+        let _ = vault::save(&pm.doc, &pm.path);
+        cx.notify();
+    }
+
+    /// Move one matrix cell to the next variant that section has, and pin it
+    /// in the preset that column shows.
+    ///
+    /// `column` is 0 for the left preset, 1 for the right. Writing straight to
+    /// disk rather than debouncing: a preset is one line of TOML and this is a
+    /// deliberate click, not typing — there is nothing to coalesce.
+    pub(super) fn cycle_matrix_cell(
+        &mut self,
+        column: usize,
+        section: SectionKind,
+        cx: &mut Context<Self>,
+    ) {
+        let Screen::PresetMatrix(ref mut pm) = self.screen else {
+            return;
+        };
+        let Some(preset_idx) = (match column {
+            0 => Some(pm.active_preset_idx),
+            _ => pm.compare_preset_idx,
+        }) else {
+            return;
+        };
+
+        let variants = pm.doc.variant_names(section);
+        if variants.is_empty() {
+            return;
+        }
+        let Some(preset) = pm.doc.presets.get(preset_idx) else {
+            return;
+        };
+        let hidden = preset.hidden.contains(&section);
+        let current = preset.variant_for(section).map(|v| v.to_string());
+
+        // The cycle runs variant → variant → … → hidden → first variant, so
+        // "leave this section out of this preset" (O-13) is reachable from the
+        // same click as choosing a variant — it *is* one of the choices a
+        // preset makes about a section, not a separate mode. Profile is never
+        // hideable, so it cycles variants only.
+        let hideable = section != SectionKind::Profile;
+        let next_index = match current.and_then(|c| variants.iter().position(|v| *v == c)) {
+            // An unpinned cell starts at the first variant rather than the
+            // second: the first click should pin something visible.
+            None if !hidden => Some(0),
+            Some(i) if i + 1 < variants.len() => Some(i + 1),
+            // Past the last variant: hide, then wrap back to the first.
+            Some(_) if hideable && !hidden => None,
+            _ => Some(0),
+        };
+
+        let Some(preset) = pm.doc.presets.get_mut(preset_idx) else {
+            return;
+        };
+        match next_index {
+            Some(i) => {
+                preset.hidden.retain(|s| *s != section);
+                preset.set(section, variants[i].clone());
+            }
+            None => {
+                if !preset.hidden.contains(&section) {
+                    preset.hidden.push(section);
+                }
+            }
+        }
+        let _ = vault::save(&pm.doc, &pm.path);
+        cx.notify();
+    }
+
+    pub(super) fn cycle_matrix_preset_a(&mut self, cx: &mut Context<Self>) {
+        if let Screen::PresetMatrix(ref mut pm) = self.screen {
+            pm.cycle_preset_a();
+            cx.notify();
+        }
+    }
+
+    pub(super) fn cycle_matrix_preset_b(&mut self, cx: &mut Context<Self>) {
+        if let Screen::PresetMatrix(ref mut pm) = self.screen {
+            pm.cycle_preset_b();
+            cx.notify();
+        }
+    }
+
+    /// Start renaming `path`, seeding the box with its current file name.
+    pub(super) fn start_rename(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if let Some(field) = self.rename_field.clone() {
+            field.update(cx, |state, cx| state.seed(&stem, window, cx));
+        }
+        self.renaming_doc = Some(path);
+        cx.notify();
+    }
+
+    pub(super) fn cancel_rename(&mut self, cx: &mut Context<Self>) {
+        self.renaming_doc = None;
+        cx.notify();
+    }
+
+    /// Apply the rename. A failure (name taken, empty) leaves the box open
+    /// with the reason showing, rather than closing and losing what was typed.
+    pub(super) fn commit_rename(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let (Some(path), Some(field)) = (self.renaming_doc.clone(), self.rename_field.clone())
+        else {
+            return;
+        };
+        let name = field.read(cx).value(cx).trim().to_string();
+        match vault::rename_document(&path, &name) {
+            Ok(new_path) => {
+                // The thumbnail is keyed by path, so move it across rather
+                // than making the card flash back to "rendering…".
+                if let Some(rendered) = self.thumbnails.remove(&path) {
+                    self.thumbnails.insert(new_path, rendered);
+                }
+                self.renaming_doc = None;
+                self.setup_error = None;
+            }
+            Err(message) => self.setup_error = Some(message),
+        }
+        cx.notify();
+    }
+
+    /// Create a new document from a template and open it.
+    pub(super) fn create_doc(&mut self, doc: ResumeDoc, base: &str, cx: &mut Context<Self>) {
+        let Some(vault) = self.vault.clone() else {
+            return;
+        };
+        match vault::create_document(&vault, &doc, base) {
+            Ok(path) => {
+                self.gallery_creating = false;
+                self.open_doc(path, cx);
+            }
+            Err(message) => {
+                self.setup_error = Some(message);
+                cx.notify();
+            }
+        }
+    }
+
+    /// Prompt for a file (PDF, DOCX, JSON, TXT) and import it as a new CV.
+    pub(super) fn import_existing_resume(&mut self, cx: &mut Context<Self>) {
+        self.setup_error = None;
+        let prompt = PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Select Resume File (PDF, DOCX, JSON, TXT)".into()),
+        };
+        let receiver = cx.prompt_for_paths(prompt);
+        let executor = cx.background_executor().clone();
+
+        cx.spawn(async move |this, cx| {
+            let Some(file_path) = first_path(receiver.await) else {
+                return;
+            };
+            let filename = file_path
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| "resume".to_string());
+            let _ = this.update(cx, |this, cx| {
+                this.import_step = ImportStep::Parsing { filename };
+                cx.notify();
+            });
+            let result = executor
+                .spawn(async move { crate::import::import_file(&file_path) })
+                .await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(imported) => {
+                    this.import_step = ImportStep::Step2Review {
+                        imported: Box::new(imported),
+                    };
+                    cx.notify();
+                }
+                Err(message) => {
+                    this.setup_error = Some(message);
+                    this.import_step = ImportStep::Step1Drop;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Create a new `cvault` inside a user-chosen folder.
+    pub(super) fn create_new_vault(&mut self, cx: &mut Context<Self>) {
+        self.setup_error = None;
+        let receiver = cx.prompt_for_paths(pick_dir());
+        cx.spawn(async move |this, cx| {
+            let Some(parent) = first_path(receiver.await) else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| match vault::create_vault(&parent) {
+                Ok(dir) => this.open_vault(dir, cx),
+                Err(message) => {
+                    this.setup_error = Some(message);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Open an existing vault folder.
+    pub(super) fn open_existing_vault(&mut self, cx: &mut Context<Self>) {
+        self.setup_error = None;
+        let receiver = cx.prompt_for_paths(pick_dir());
+        cx.spawn(async move |this, cx| {
+            let Some(dir) = first_path(receiver.await) else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| {
+                if vault::is_vault(&dir) {
+                    this.open_vault(dir, cx);
+                } else {
+                    this.setup_error = Some("That folder is not a vault.".into());
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Clone a vault from a git URL on the clipboard into a chosen folder.
+    pub(super) fn clone_from_git(&mut self, cx: &mut Context<Self>) {
+        let url = cx
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .map(|s| s.trim().to_string())
+            .filter(|s| looks_like_git_url(s));
+
+        let Some(url) = url else {
+            self.setup_error = Some("Copy a git repository URL to the clipboard first.".into());
+            cx.notify();
+            return;
+        };
+
+        self.setup_error = None;
+        let receiver = cx.prompt_for_paths(pick_dir());
+        let executor = cx.background_executor().clone();
+        cx.spawn(async move |this, cx| {
+            let Some(parent) = first_path(receiver.await) else {
+                return;
+            };
+            let result = executor
+                .spawn(async move { git_clone(&url, &parent) })
+                .await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(dir) => this.open_vault(dir, cx),
+                Err(message) => {
+                    this.setup_error = Some(message);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// The shared gradient backdrop used by full-screen entry screens.
+    pub(super) fn backdrop(&self, cx: &App) -> gpui::Div {
+        let theme = cx.theme();
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(linear_gradient(
+                165.0,
+                linear_color_stop(theme.background, 0.0),
+                linear_color_stop(theme.hover, 1.0),
+            ))
+    }
+
+    /// Wrap content in a fade + gentle slide-up entrance.
+    pub(super) fn fade_in(&self, id: &'static str, content: gpui::Div) -> impl IntoElement {
+        content.with_animation(
+            id,
+            Animation::new(Duration::from_millis(650)).with_easing(ease_out_quint()),
+            |el, delta| el.opacity(delta).mt(px((1.0 - delta) * 18.0)),
+        )
+    }
+}
+
+impl Render for Shell {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.ensure_inputs(window, cx);
+        if matches!(self.screen, Screen::Gallery) {
+            self.ensure_thumbnails(cx);
+        }
+
+        // The vault's screens are **tabs of one window, not separate pages** —
+        // the rail stays put and only the main pane changes, which is how the
+        // mockup draws every one of them (each row's digest opens with the
+        // same `@@ sidebar` block). That is also why none of these screens
+        // draws a back control any more: the rail *is* the way back.
+        //
+        // Outside the chrome: Welcome/Setup (pre-vault, full-bleed), the
+        // Editor (its own 46px titlebar, `docs/design/editor.md` §3) and the
+        // Preset Matrix (document-scoped, reached from a document and drawn
+        // with a breadcrumb rather than the rail — see its own design row).
+        let body = match &self.screen {
+            Screen::Welcome => self.render_welcome(cx).into_any_element(),
+            Screen::Setup => self.render_setup(cx).into_any_element(),
+            Screen::Editor(editor) => editor.clone().into_any_element(),
+            Screen::PresetMatrix(pm) => pm.render_matrix(cx).into_any_element(),
+
+            // The import wizard takes the whole window rather than sitting as
+            // a card inside the gallery's scrolling body.
+            //
+            // Embedded, it was a fixed-height block with its own scrollbar
+            // *inside* the page's scrollbar — two scrollbars for one list, on
+            // a screen with room to spare — and the surrounding grid competed
+            // with it for attention. It is a modal step: one decision, one
+            // surface, and the rail is not navigation you want mid-import.
+            Screen::Gallery if self.gallery_creating => {
+                let wizard = self.render_template_chooser(cx).into_any_element();
+                self.backdrop(cx)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .p(px(40.0))
+                    .child(wizard)
+                    .into_any_element()
+            }
+            Screen::Gallery => {
+                let main = self.render_gallery_main(cx).into_any_element();
+                self.with_rail(main, cx)
+            }
+            Screen::Library => {
+                let main = slide_in("enter-library", self.render_library_screen(cx));
+                self.with_rail(main, cx)
+            }
+            Screen::Diary => {
+                let main = slide_in("enter-diary", self.render_diary_screen(cx));
+                self.with_rail(main, cx)
+            }
+            Screen::Applications => {
+                let main = slide_in("enter-applications", self.render_applications_screen(cx));
+                self.with_rail(main, cx)
+            }
+        };
+
+        div()
+            .size_full()
+            .bg(cx.theme().background)
+            .text_color(cx.theme().text)
+            .child(body)
+    }
+}
+
+/// Options for a single-folder picker.
+fn pick_dir() -> PathPromptOptions {
+    PathPromptOptions {
+        files: false,
+        directories: true,
+        multiple: false,
+        prompt: None,
+    }
+}
+
+/// Extract the first chosen path from a picker result.
+fn first_path<E>(result: Result<gpui::Result<Option<Vec<PathBuf>>>, E>) -> Option<PathBuf> {
+    match result {
+        Ok(Ok(Some(mut paths))) if !paths.is_empty() => Some(paths.remove(0)),
+        _ => None,
+    }
+}
+
+/// Wrap a secondary screen in a subtle fade + slide-in entrance.
+/// Split a `# tag` box into stored tags: `#` is decoration, separators are
+/// whatever the user reached for. Deduplicated, because a tag applied twice to
+/// one entry is a typo, not two facts.
+pub(super) fn parse_tags(raw: &str) -> Vec<String> {
+    let mut tags: Vec<String> = Vec::new();
+    for tag in raw
+        .split([',', ' ', '\t'])
+        .map(|t| t.trim().trim_start_matches('#').trim())
+        .filter(|t| !t.is_empty())
+    {
+        let tag = tag.to_lowercase();
+        if !tags.contains(&tag) {
+            tags.push(tag);
+        }
+    }
+    tags
+}
+
+fn slide_in(id: &'static str, content: gpui::Div) -> AnyElement {
+    content
+        .with_animation(
+            id,
+            Animation::new(Duration::from_millis(240)).with_easing(ease_out_quint()),
+            |el, delta| el.opacity(delta).ml(px((1.0 - delta) * 16.0)),
+        )
+        .into_any_element()
+}
+
+pub(super) fn remove_at<T>(items: &mut Vec<T>, index: usize) {
+    if index < items.len() {
+        items.remove(index);
+    }
+}
+
+fn looks_like_git_url(url: &str) -> bool {
+    url.ends_with(".git")
+        || url.starts_with("git@")
+        || (url.starts_with("http") && url.contains("/"))
+}
+
+fn repo_name(url: &str) -> String {
+    url.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("vault")
+        .trim_end_matches(".git")
+        .to_string()
+}
+
+fn git_clone(url: &str, parent: &Path) -> Result<PathBuf, String> {
+    let dest = parent.join(repo_name(url));
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("clone").arg(url).arg(&dest);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+    let status = cmd
+        .status()
+        .map_err(|e| format!("could not run git: {e}"))?;
+    if !status.success() {
+        return Err(format!("git clone failed ({status})"));
+    }
+    Ok(dest)
+}

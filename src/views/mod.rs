@@ -1,0 +1,39 @@
+//! UI views layer.
+
+mod applications;
+mod applications_card;
+mod applications_data;
+mod applications_drag;
+mod applications_snapshot;
+mod diary;
+mod gallery;
+pub mod import_flow;
+mod library;
+
+// Retained standalone component
+#[allow(dead_code)]
+mod preview;
+
+mod preset_matrix;
+mod root;
+mod root_custom_sections;
+mod root_highlights;
+mod root_layout_rail;
+mod root_overlays;
+mod root_section_drag;
+mod root_section_rename;
+mod root_section_variants;
+mod root_sidebar;
+mod root_dates;
+pub mod settings_window;
+mod setup;
+mod shell;
+mod sidebar;
+mod welcome;
+
+#[allow(unused_imports)]
+pub use import_flow::ImportStep;
+#[allow(unused_imports)]
+pub use preset_matrix::PresetMatrix;
+pub use root::{init_keybindings, EditorEvent, Root};
+pub use shell::Shell;
