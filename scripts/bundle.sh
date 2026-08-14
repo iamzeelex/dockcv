@@ -101,10 +101,21 @@ if [[ -n "$SIGN_IDENTITY" ]]; then
            --sign "$SIGN_IDENTITY" "$APP"
   codesign --verify --strict --verbose=2 "$APP"
 else
-  echo "==> NOT SIGNED"
-  echo "    This bundle runs on this machine and nowhere else: Gatekeeper"
-  echo "    blocks an unsigned, un-notarised app on any Mac it did not build on."
-  echo "    Re-run with --sign \"Developer ID Application: … (TEAMID)\" to ship it."
+  # Ad-hoc: a real, structurally valid signature with no identity behind it.
+  # It buys exactly one thing, and it is the thing that matters for handing a
+  # build to someone: without any signature macOS reports the app as *damaged*
+  # and offers no way past, while an ad-hoc signed app gets the ordinary
+  # "unidentified developer" dialog the recipient can approve. It is not
+  # notarisation and does not pretend to be.
+  echo "==> ad-hoc signing (no Developer ID available)"
+  codesign --force --sign - "$APP"
+  codesign --verify --strict "$APP"
+  echo "==> NOT NOTARISED"
+  echo "    On another Mac the first launch is blocked until the recipient"
+  echo "    approves it: System Settings ▸ Privacy & Security ▸ Open Anyway."
+  echo "    HOW-TO-OPEN.txt ships alongside saying so."
+  echo "    Re-run with --sign \"Developer ID Application: … (TEAMID)\" to"
+  echo "    remove that step for everyone."
 fi
 
 if [[ -n "$NOTARY_PROFILE" ]]; then
@@ -120,6 +131,38 @@ if [[ -n "$NOTARY_PROFILE" ]]; then
   rm -f "$ZIP"
 fi
 
+if [[ -z "$NOTARY_PROFILE" ]]; then
+  cat > "$DIST/HOW-TO-OPEN.txt" <<'NOTE'
+Opening DockCV the first time
+=============================
+
+This build is signed, but not notarised by Apple — notarisation needs a paid
+Apple Developer account. macOS therefore asks before running it once, and
+never again.
+
+  1. Drag DockCV to your Applications folder.
+  2. Double-click it. macOS will refuse and say it cannot verify the
+     developer. Click Done.
+  3. Open System Settings ▸ Privacy & Security, scroll to Security, and click
+     "Open Anyway" next to DockCV.
+  4. Double-click DockCV again and confirm. That is the last time you'll see
+     this.
+
+What it needs
+-------------
+
+macOS 11 or newer, Apple Silicon or Intel. Nothing else: DockCV makes no
+network connections at all, and everything it stores is plain TOML in a folder
+you choose.
+
+If something is wrong
+---------------------
+
+"DockCV is damaged and can't be opened" means the download was corrupted or
+altered in transit — get a fresh copy rather than working around it.
+NOTE
+fi
+
 if [[ "$MAKE_DMG" == "1" ]]; then
   echo "==> dmg"
   DMG="$DIST/DockCV-$VERSION.dmg"
@@ -127,6 +170,7 @@ if [[ "$MAKE_DMG" == "1" ]]; then
   rm -rf "$STAGE" "$DMG"; mkdir -p "$STAGE"
   cp -R "$APP" "$STAGE/"
   ln -s /Applications "$STAGE/Applications"
+  [[ -f "$DIST/HOW-TO-OPEN.txt" ]] && cp "$DIST/HOW-TO-OPEN.txt" "$STAGE/"
   hdiutil create -volname "DockCV $VERSION" -srcfolder "$STAGE" \
                  -ov -format UDZO "$DMG" >/dev/null
   rm -rf "$STAGE"

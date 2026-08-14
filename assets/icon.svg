@@ -1,68 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!--
-    DockCV app icon.
+<!--
+  The app icon, on Apple's macOS icon grid.
 
-    Built from the documented Slate palette and nothing else: base #14161a,
-    raised #23272e, accent #6f8fd6, paper #f6f7f9 (CLAUDE.md, "Design system
-    rules"). The motif is the product's one-sentence description — a sheet of
-    paper docked against a rail — so the icon says what the app is rather than
-    abbreviating its name.
+  The artwork is drawn in the 100×100 space below, exactly as designed. The
+  wrapper places it the way macOS expects an app icon: a 1024 canvas with the
+  body occupying the middle 824 and transparent margin around it, corners at
+  22.5% of the body. Without the margin the icon renders edge-to-edge and sits
+  visibly larger than every other app in the Dock; without the radius its
+  corners read as a different shape from its neighbours.
 
-    Geometry follows Apple's macOS icon grid: the squircle occupies 824 of the
-    1024pt canvas, centred, leaving the standard margin that keeps it the same
-    visual size as system apps in the Dock.
-
-    This file is the whole icon. `scripts/bundle.sh` rasterises it into the
-    .icns at build time, so replacing the artwork is replacing this one file.
-  -->
-  <defs>
-    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#272b33"/>
-      <stop offset="1" stop-color="#14161a"/>
-    </linearGradient>
-    <linearGradient id="sheet" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#eef0f4"/>
-    </linearGradient>
-    <clipPath id="squircle">
-      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
-    </clipPath>
-  </defs>
-
-  <g clip-path="url(#squircle)">
-    <rect x="100" y="100" width="824" height="824" fill="url(#ground)"/>
-
-    <!-- The rail: the app's own left navigation, the thing everything docks to. -->
-    <rect x="100" y="100" width="150" height="824" fill="#23272e"/>
-    <g fill="#6f8fd6">
-      <rect x="152" y="330" width="46" height="10" rx="5"/>
-      <rect x="152" y="386" width="46" height="10" rx="5" opacity="0.45"/>
-      <rect x="152" y="442" width="46" height="10" rx="5" opacity="0.45"/>
-      <rect x="152" y="498" width="46" height="10" rx="5" opacity="0.45"/>
-    </g>
-
-    <!-- The sheet, lifted off the ground the way the preview pane draws it. -->
-    <g>
-      <rect x="330" y="212" width="470" height="640" rx="16" fill="#0d0f12" opacity="0.55"/>
-      <rect x="318" y="200" width="470" height="640" rx="16" fill="url(#sheet)"/>
-
-      <!-- Name and role: the two lines every CV opens with. -->
-      <rect x="374" y="278" width="252" height="30" rx="15" fill="#14161a"/>
-      <rect x="374" y="330" width="164" height="18" rx="9" fill="#6f8fd6"/>
-
-      <!-- Body: a section rule, then bullets. -->
-      <rect x="374" y="410" width="358" height="8" rx="4" fill="#c9ced8"/>
-      <g fill="#aeb5c2">
-        <rect x="374" y="452" width="358" height="14" rx="7"/>
-        <rect x="374" y="490" width="316" height="14" rx="7"/>
-        <rect x="374" y="528" width="342" height="14" rx="7"/>
-      </g>
-      <rect x="374" y="596" width="358" height="8" rx="4" fill="#c9ced8"/>
-      <g fill="#aeb5c2">
-        <rect x="374" y="638" width="330" height="14" rx="7"/>
-        <rect x="374" y="676" width="358" height="14" rx="7"/>
-        <rect x="374" y="714" width="248" height="14" rx="7"/>
-      </g>
-    </g>
-  </g>
+  824 / 100 = 8.24, so one unit below is 8.24 canvas pixels and the corner
+  radius of 22.5 lands on Apple's 185.4.
+-->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(100 100) scale(8.24)">
+<rect width="100" height="100" rx="22.5" fill="url(#paint0_linear_4_789)"/>
+<path d="M49.8077 26H26.0012L31.0099 30.9551H49.8077C54.8979 30.9551 59.7795 32.9612 63.3789 36.5319C66.9782 40.1027 69.0005 44.9457 69.0005 49.9955C69.0005 55.0454 66.9782 59.8884 63.3789 63.4591C59.7795 67.0298 54.8979 69.036 49.8077 69.036H38.0731L42.6557 64.4962H49.8109C53.6864 64.4962 57.4032 62.969 60.1435 60.2502C62.8841 57.5316 64.4237 53.8443 64.4237 49.9996C64.4237 46.1548 62.8841 42.4676 60.1435 39.7489C57.4032 37.0303 53.6864 35.503 49.8109 35.503H35.5839L47.0122 46.8325H49.8077C50.6528 46.8325 51.4634 47.1655 52.061 47.7584C52.6587 48.3513 52.9944 49.1554 52.9944 49.9939C52.9944 50.8324 52.6587 51.6365 52.061 52.2294C51.4634 52.8222 50.6528 53.1553 49.8077 53.1553H47.0208L41.9038 58.2337H49.8077C50.8976 58.2337 51.977 58.0207 52.984 57.607C53.991 57.1931 54.906 56.5866 55.6767 55.822C56.4474 55.0574 57.0588 54.1497 57.4759 53.1507C57.893 52.1516 58.1077 51.0809 58.1077 49.9996C58.1077 48.9182 57.893 47.8475 57.4759 46.8485C57.0588 45.8495 56.4474 44.9417 55.6767 44.1771C54.906 43.4125 53.991 42.806 52.984 42.3922C51.977 41.9784 50.8976 41.7654 49.8077 41.7654H48.9683L47.7707 40.5753H47.8018L49.8077 40.57C52.3284 40.57 54.7459 41.5634 56.5283 43.3317C58.3107 45.1 59.312 47.4983 59.312 49.999C59.312 52.4997 58.3107 54.898 56.5283 56.6662C54.7459 58.4345 52.3284 59.428 49.8077 59.428H40.694L26.0065 74H49.8077C56.2239 74 62.3774 71.4713 66.9144 66.9703C71.4514 62.4694 74 56.3649 74 49.9996C74 43.6343 71.4514 37.5297 66.9144 33.0287C62.3774 28.5278 56.2239 26 49.8077 26Z" fill="white"/>
+<path d="M43.3643 49.9976L26 32.7715V67.2272L43.3643 49.9976Z" fill="white"/>
+</g>
+<defs>
+<!-- `userSpaceOnUse` resolves in the coordinate system where the gradient is
+     *referenced* — the transformed group's, not the canvas's. So these stay in
+     the artwork's own 100-unit space. -->
+<linearGradient id="paint0_linear_4_789" x1="50" y1="0" x2="50" y2="100" gradientUnits="userSpaceOnUse">
+<stop stop-color="#545454"/>
+<!-- The app's own base rather than pure black: at icon size the difference
+     is a shade, but a black that is not in the palette also merges into the
+     Dock's shadow at the bottom edge. -->
+<stop offset="1" stop-color="#14161a"/>
+</linearGradient>
+</defs>
 </svg>
