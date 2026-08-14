@@ -927,6 +927,30 @@ mod tests {
         );
     }
 
+    /// `used_in` arrived with `Use in a CV` (US-06). A diary written before it
+    /// existed must load with the list empty, and an entry that has never been
+    /// promoted must not gain a key — the vault is the user's own files, often
+    /// under git, and a diff full of `used_in = []` is noise.
+    #[test]
+    fn a_diary_without_used_in_still_loads_and_gains_no_key() {
+        let old = "[[entries]]\ndate = \"2026-06-18\"\ntext = \"Cut p99 latency in half\"\n";
+        let diary: Diary = toml::from_str(old).expect("a pre-used_in diary must load");
+        assert!(diary.entries[0].used_in.is_empty());
+
+        let untouched = toml::to_string_pretty(&diary).expect("serializes");
+        assert!(
+            !untouched.contains("used_in"),
+            "an entry that was never promoted must not gain the key:\n{untouched}"
+        );
+
+        // …and it round-trips once a win actually goes into a CV.
+        let mut promoted = diary;
+        promoted.entries[0].used_in = vec!["sofiia-senior-swe".into(), "sofiia-em".into()];
+        let text = toml::to_string_pretty(&promoted).expect("serializes");
+        let back: Diary = toml::from_str(&text).expect("round-trips");
+        assert_eq!(back.entries[0].used_in, vec!["sofiia-senior-swe", "sofiia-em"]);
+    }
+
     /// Role and tags arrived after entries were already on disk. A diary
     /// written before they existed must load with both empty, and neither may
     /// reach the file until it holds something — a `role = ""` line in every

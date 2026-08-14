@@ -632,6 +632,7 @@ impl Root {
                 // employer on a real achievement; the Diary screen can tag it.
                 role: String::new(),
                 tags: Vec::new(),
+                used_in: Vec::new(),
                 source_doc,
             },
         );

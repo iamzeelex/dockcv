@@ -208,6 +208,19 @@ pub struct DiaryEntry {
     /// job, under review, not a field the diary fills in silently.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Documents this win has been promoted into, as file stems.
+    ///
+    /// The other half of `Use in a CV` (US-06): six months later the question
+    /// is *did I ever use this?*, and answering it by opening every CV is the
+    /// reason people stop keeping a diary. The same idea as the library's
+    /// `used in N CVs`, except this one is recorded rather than derived — a
+    /// bullet is a bare `String` in the model, so there is nothing in a
+    /// document to match a diary entry back to.
+    ///
+    /// A label, not a link: the document can be renamed or deleted afterwards
+    /// and this still tells the truth about what was done at the time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub used_in: Vec<String>,
     /// The document that was open when this was captured, as its file stem.
     ///
     /// The review's whole complaint about `Use in a CV →` (P-05) is that the most

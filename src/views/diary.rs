@@ -62,6 +62,7 @@ impl Shell {
         entries.sort_by(|(_, a), (_, b)| b.date.cmp(&a.date));
 
         let total = entries.len();
+        let query = self.diary_query(cx);
         let shown: Vec<(usize, DiaryEntry)> = entries
             .into_iter()
             .filter(|(_, e)| {
@@ -69,6 +70,7 @@ impl Shell {
                     .as_ref()
                     .is_none_or(|role| &e.role == role)
             })
+            .filter(|(_, e)| matches_diary_query(e, &query))
             .collect();
 
         let body: AnyElement = if total == 0 {
@@ -77,7 +79,13 @@ impl Shell {
             div()
                 .text_style(TextStyle::body())
                 .text_color(cx.theme().text_muted)
-                .child("No wins logged for this role yet.")
+                .child(if query.is_empty() {
+                    "No wins logged for this role yet."
+                } else {
+                    // The search found nothing — say which of the two filters
+                    // is responsible rather than leaving the user to guess.
+                    "No wins match that search."
+                })
                 .into_any_element()
         } else {
             div()
@@ -92,6 +100,7 @@ impl Shell {
             .flex_1()
             .min_w_0()
             .h_full()
+            .relative()
             .flex()
             .flex_col()
             .child(self.diary_header(cx, total))
@@ -109,6 +118,7 @@ impl Shell {
                     .child(self.quick_capture(cx, diary))
                     .child(body),
             )
+            .children(self.render_diary_use_sheet(cx))
     }
 
     fn diary_header(&self, cx: &mut Context<Self>, total: usize) -> impl IntoElement {
@@ -138,6 +148,49 @@ impl Shell {
                         ),
                     ),
             )
+            .child(self.diary_search_box(cx))
+    }
+
+    /// Search across an entry's text, role and tags.
+    ///
+    /// US-20 asks for it and the screen needed it more than any other: the
+    /// diary's whole promise is that in March you can find what you fixed in
+    /// October, and a year of entries behind a month-by-month scroll is not
+    /// findable. The role facet in the rail narrows by *who you were*; this
+    /// narrows by *what happened*.
+    fn diary_search_box(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        div()
+            .w(px(230.0))
+            .h(px(34.0))
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_3()
+            .rounded(px(9.0))
+            .bg(theme.elevated)
+            .border_1()
+            .border_color(theme.border)
+            .child(
+                Icon::new(IconName::Search)
+                    .with_size(px(13.0))
+                    .text_color(theme.text_subtle),
+            )
+            .child(
+                div().flex_1().min_w_0().children(
+                    self.diary_search
+                        .as_ref()
+                        .map(|state| TextField::new(state).seamless().placeholder("Search wins")),
+                ),
+            )
+    }
+
+    /// The diary search query, lowercased and trimmed.
+    pub(super) fn diary_query(&self, cx: &gpui::App) -> String {
+        self.diary_search
+            .as_ref()
+            .map(|f| f.read(cx).value(cx).trim().to_lowercase())
+            .unwrap_or_default()
     }
 
     /// The design's capture block: one line about the week, the role it belongs
@@ -377,7 +430,39 @@ impl Shell {
                                     .text_color(theme.text_subtle),
                             )
                             .child(format!("captured from {doc}"))
-                    })),
+                    }))
+                    // The mockup draws `Use in a CV →` on every entry and it
+                    // was the one link with nothing behind it (P-05). A diary
+                    // you can only write into is a diary you stop keeping.
+                    .child(
+                        div()
+                            .mt(px(8.0))
+                            .flex()
+                            .items_center()
+                            .gap(px(10.0))
+                            .child(
+                                Button::new(SharedString::from(format!("diary-use-{index}")))
+                                    .cursor_pointer()
+                                    .ghost()
+                                    .xsmall()
+                                    .label("Use in a CV →")
+                                    .tooltip("Add this win as a bullet of a CV")
+                                    .on_click(cx.listener(
+                                        move |this, _: &ClickEvent, window, cx| {
+                                            this.open_diary_use(index, window, cx);
+                                        },
+                                    )),
+                            )
+                            .children((!entry.used_in.is_empty()).then(|| {
+                                // Recorded rather than derived — a bullet is a
+                                // bare string, so nothing in a document can be
+                                // matched back to the entry it came from.
+                                div()
+                                    .text_style(TextStyle::meta())
+                                    .text_color(theme.text_subtle)
+                                    .child(format!("used in {}", entry.used_in.join(", ")))
+                            })),
+                    ),
             )
             .child(
                 Button::new(SharedString::from(format!("diary-menu-{index}")))
@@ -482,6 +567,20 @@ impl Shell {
     }
 }
 
+/// Whether an entry matches the search box.
+///
+/// Text, role and tags together: the phrase you remember could be in any of
+/// them, and a search that only read the prose would miss `#reliability` —
+/// which is exactly the kind of thing people tag *so they can find it later*.
+pub(super) fn matches_diary_query(entry: &DiaryEntry, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    entry.text.to_lowercase().contains(query)
+        || entry.role.to_lowercase().contains(query)
+        || entry.tags.iter().any(|t| t.to_lowercase().contains(query))
+}
+
 fn plural(n: usize) -> &'static str {
     if n == 1 {
         ""
@@ -492,12 +591,31 @@ fn plural(n: usize) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_iso, MONTHS};
+    use super::{matches_diary_query, parse_iso, MONTHS};
+    use crate::resume::model::DiaryEntry;
     use crate::views::shell::parse_tags;
 
     /// The month index reaches straight into `MONTHS`, so a bad month must
     /// never come back as `Some` — that would be an out-of-bounds panic on a
     /// hand-edited `diary.toml`, which is a file the user is invited to edit.
+    #[test]
+    fn search_reads_the_text_the_role_and_the_tags() {
+        let entry = DiaryEntry {
+            date: "2026-06-18".into(),
+            text: "Cut p99 latency in half".into(),
+            role: "Acme Corp · Senior SWE".into(),
+            tags: vec!["performance".into(), "architecture".into()],
+            ..Default::default()
+        };
+
+        assert!(matches_diary_query(&entry, ""), "an empty query matches all");
+        assert!(matches_diary_query(&entry, "p99"));
+        assert!(matches_diary_query(&entry, "acme"), "role is searchable");
+        // The reason tags exist is to be findable later.
+        assert!(matches_diary_query(&entry, "architecture"));
+        assert!(!matches_diary_query(&entry, "kafka"));
+    }
+
     #[test]
     fn a_date_the_month_table_cannot_index_is_rejected() {
         assert_eq!(parse_iso("2026-06-18"), Some((2026, 6, 18)));

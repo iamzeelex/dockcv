@@ -30,6 +30,7 @@ use crate::typst_engine::TypstEngine;
 use crate::vault;
 
 use super::applications_data::{ApplicationSort, ApplicationsView};
+use super::diary_use::DiaryUse;
 use super::library::LibrarySort;
 use super::confirm;
 use super::save_status;
@@ -95,6 +96,11 @@ pub struct Shell {
     pub(super) diary_role: String,
     /// Timeline filter from the rail's `Roles` list; `None` shows everything.
     pub(super) diary_role_filter: Option<String>,
+    /// The open `Use in a CV` sheet, if any.
+    pub(super) diary_use: Option<DiaryUse>,
+    /// Diary search box. Its own, not shared: a query typed here must not
+    /// follow the user to the library when they tab across.
+    pub(super) diary_search: Option<Entity<TextFieldState>>,
     /// Applications board search box, created the same way — filters by
     /// company/role, and (like `library_search`) deliberately not shared
     /// with any other screen's box.
@@ -155,6 +161,8 @@ impl Shell {
             diary_tags: None,
             diary_role: String::new(),
             diary_role_filter: None,
+            diary_use: None,
+            diary_search: None,
             applications_search: None,
             applications_view: ApplicationsView::default(),
             applications_sort: ApplicationSort::default(),
@@ -196,6 +204,15 @@ impl Shell {
                 },
             ));
             self.rename_field = Some(field);
+        }
+
+        if self.diary_search.is_none() {
+            let field = cx.new(|cx| TextFieldState::single_line(window, cx));
+            self.input_subscriptions.push(cx.subscribe(
+                &field,
+                |_this, _field, _event: &TextFieldEvent, cx| cx.notify(),
+            ));
+            self.diary_search = Some(field);
         }
 
         if self.library_search.is_none() {
@@ -458,6 +475,7 @@ impl Shell {
                     text,
                     role: self.diary_role.clone(),
                     tags,
+                    used_in: Vec::new(),
                     // Typed straight into the Diary — no document was open.
                     source_doc: None,
                 },

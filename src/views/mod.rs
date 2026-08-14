@@ -11,6 +11,7 @@ mod applications_funnel;
 mod applications_snapshot;
 mod confirm;
 mod diary;
+mod diary_use;
 mod gallery;
 pub mod import_flow;
 mod library;
