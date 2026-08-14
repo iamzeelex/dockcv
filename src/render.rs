@@ -28,7 +28,10 @@ pub struct Rendered {
 /// Convert a rasterized `Pixels` buffer (rendered at `scale`) into a
 /// `gpui::RenderImage`.
 pub fn pixels_to_render_image(mut pixels: Pixels, scale: f32) -> Result<Rendered, String> {
-    let scale = scale.max(1.0);
+    // Matches `typst_engine::MIN_RENDER_SCALE`: this divides the raster back
+    // into logical pixels, so it has to use the same number the raster was
+    // produced with or a thumbnail reports the wrong display size.
+    let scale = scale.max(0.05);
 
     // RGBA (premultiplied) -> BGRA.
     for pixel in pixels.rgba.chunks_exact_mut(4) {

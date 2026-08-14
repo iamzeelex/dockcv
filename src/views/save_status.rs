@@ -35,6 +35,17 @@ use crate::theme::ActiveTheme;
 #[derive(Default)]
 pub struct SaveStatus {
     notice: Option<Notice>,
+    /// Bumped on every successful write, and read by
+    /// [`super::vault_cache::VaultCache::refresh`].
+    ///
+    /// The cache notices other people's edits by fingerprinting the directory;
+    /// this covers the one case a fingerprint cannot see — *our* write landing
+    /// inside the same filesystem timestamp tick as the previous one and
+    /// leaving the file exactly as long. It rides along here rather than in a
+    /// global of its own because this function is already the single point
+    /// every vault write passes through, and a second one would be a second
+    /// thing to forget.
+    revision: u64,
 }
 
 struct Notice {
@@ -68,6 +79,7 @@ impl SaveStatus {
     fn apply(&mut self, what: &'static str, result: Result<(), String>) {
         match result {
             Ok(()) => {
+                self.revision = self.revision.wrapping_add(1);
                 if self.notice.as_ref().is_some_and(|n| n.key == what) {
                     self.notice = None;
                 }
@@ -99,6 +111,16 @@ pub fn record(cx: &mut App, what: &'static str, result: Result<(), String>) {
         eprintln!("DockCV: could not save {what}: {message}");
     }
     cx.default_global::<SaveStatus>().apply(what, result);
+}
+
+/// How many successful vault writes this process has made.
+///
+/// [`super::vault_cache::VaultCache`] compares it against its own copy so a
+/// write DockCV made itself is never missed, whatever the filesystem's
+/// timestamp granularity happens to be. Wraps rather than saturates: the cache
+/// only ever asks "is this the same number as last time".
+pub fn vault_revision(cx: &App) -> u64 {
+    cx.try_global::<SaveStatus>().map_or(0, |s| s.revision)
 }
 
 /// Key used by the open/read half, so a later successful open clears it.
@@ -263,6 +285,7 @@ mod tests {
     #[test]
     fn a_successful_write_does_not_clear_an_unreadable_document() {
         let mut status = SaveStatus {
+            revision: 0,
             notice: Some(Notice {
                 key: OPEN,
                 title: "Couldn't open “broken”".into(),

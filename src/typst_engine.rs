@@ -73,6 +73,17 @@ const DOCUMENT_FONTS: &[&[u8]] = &[
 /// because the template sets `#set page(fill: white)`.
 const PAGE_GAP_PT: f64 = 28.0;
 
+/// Floor for `pixels_per_pt`, guarding only against a zero or negative scale
+/// producing a degenerate pixmap.
+///
+/// It was `1.0`, which was not a guard but an accident: gallery thumbnails ask
+/// for `THUMB_SCALE = 0.5` and were silently rasterized at full size — a whole
+/// A4 page each, four times the intended pixels, cached in memory and never
+/// evicted. The editor's own scale is clamped to `1.0` at its low end by
+/// `Root::crisp_scale`, so nothing that wants a sharp page is affected by
+/// lowering this.
+const MIN_RENDER_SCALE: f32 = 0.05;
+
 /// A rasterized document: RGBA-premultiplied pixels plus dimensions.
 pub struct Pixels {
     pub width: u32,
@@ -429,7 +440,7 @@ impl TypstEngine {
         let geometry = PageGeometry::measure(&document);
 
         let options = RenderOptions {
-            pixel_per_pt: Scalar::new(scale.max(1.0) as f64),
+            pixel_per_pt: Scalar::new(scale.max(MIN_RENDER_SCALE) as f64),
             render_bleed: false,
         };
         // No background fill: filling the whole merged raster white made the
@@ -474,7 +485,7 @@ impl TypstEngine {
             Ok(document) => {
                 let geometry = PageGeometry::measure(&document);
                 let options = RenderOptions {
-                    pixel_per_pt: Scalar::new(scale.max(1.0) as f64),
+                    pixel_per_pt: Scalar::new(scale.max(MIN_RENDER_SCALE) as f64),
                     render_bleed: false,
                 };
                 // Transparent gaps, same as `compile_to_pixels` — this is the

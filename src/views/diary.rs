@@ -21,7 +21,6 @@ use dockcv_ui_components::{
 
 use crate::resume::model::{Diary, DiaryEntry};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
-use crate::vault;
 
 use super::shell::Shell;
 
@@ -53,11 +52,7 @@ const MONTHS: [(&str, &str); 12] = [
 
 impl Shell {
     pub(super) fn render_diary_screen(&self, cx: &mut Context<Self>) -> gpui::Div {
-        let diary = self
-            .vault
-            .as_ref()
-            .map(|v| vault::load_diary(v))
-            .unwrap_or_default();
+        let diary = self.cache.diary();
 
         // Newest first, whatever order the file happens to be in — ISO dates
         // sort correctly as strings, which is half of why the vault writes them.
@@ -110,7 +105,7 @@ impl Shell {
                     .flex()
                     .flex_col()
                     .gap(px(24.0))
-                    .child(self.quick_capture(cx, &diary))
+                    .child(self.quick_capture(cx, diary))
                     .child(body),
             )
     }
@@ -435,9 +430,6 @@ impl Shell {
     /// plus every role in their library's work pool. Both come from data they
     /// entered themselves — this list never invents an employer.
     pub(super) fn known_roles(&self, diary: &Diary) -> Vec<String> {
-        let Some(vault) = self.vault.as_ref() else {
-            return Vec::new();
-        };
         let mut roles: Vec<String> = Vec::new();
         let mut push = |role: String| {
             if !role.is_empty() && !roles.contains(&role) {
@@ -448,7 +440,7 @@ impl Shell {
         for entry in &diary.entries {
             push(entry.role.clone());
         }
-        for work in vault::load_library(vault).work {
+        for work in &self.cache.library().work {
             let (employer, position) = (work.name.trim(), work.position.trim());
             match (employer.is_empty(), position.is_empty()) {
                 (false, false) => push(format!("{employer} · {position}")),
@@ -464,17 +456,14 @@ impl Shell {
     /// `Roles` facet. This is US-12's replacement for the streak: which roles
     /// are covered, not how many weeks in a row you showed up.
     pub(super) fn role_counts(&self, _cx: &mut Context<Self>) -> Vec<(String, usize)> {
-        let Some(vault) = self.vault.as_ref() else {
-            return Vec::new();
-        };
         let mut counts: Vec<(String, usize)> = Vec::new();
-        for entry in vault::load_diary(vault).entries {
+        for entry in &self.cache.diary().entries {
             if entry.role.is_empty() {
                 continue;
             }
             match counts.iter_mut().find(|(role, _)| role == &entry.role) {
                 Some((_, count)) => *count += 1,
-                None => counts.push((entry.role, 1)),
+                None => counts.push((entry.role.clone(), 1)),
             }
         }
         counts

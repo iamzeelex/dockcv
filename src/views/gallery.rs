@@ -24,13 +24,9 @@ impl Shell {
     pub(super) fn render_gallery_main(&self, cx: &mut Context<Self>) -> impl IntoElement {
         // Unfiltered — the header's aggregate always describes the whole
         // vault, independent of what the search box narrows the grid to.
-        let all_metas: Vec<vault::DocMeta> = self
-            .vault
-            .as_ref()
-            .map(|v| vault::list_metadata(v))
-            .unwrap_or_default();
+        let all_metas = self.cache.metadata();
         let doc_count = all_metas.len();
-        let variant_count = vault::aggregate_variants(&all_metas);
+        let variant_count = vault::aggregate_variants(all_metas);
         let preset_count: usize = all_metas.iter().map(|m| m.presets).sum();
         let vault_is_empty = all_metas.is_empty();
 
@@ -165,13 +161,16 @@ impl Shell {
 
     pub(super) fn render_doc_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let query = self.search_query(cx);
+        // Cloned, not re-read: the cards take a `DocMeta` by value, and a
+        // handful of small string clones per visible card is nothing beside the
+        // full-vault TOML parse this used to be — twice a frame, once here and
+        // once for the header's aggregate.
         let metas: Vec<vault::DocMeta> = self
-            .vault
-            .as_ref()
-            .map(|v| vault::list_metadata(v))
-            .unwrap_or_default()
-            .into_iter()
+            .cache
+            .metadata()
+            .iter()
             .filter(|m| query.is_empty() || m.name.to_lowercase().contains(&query))
+            .cloned()
             .collect();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

@@ -28,6 +28,7 @@ use super::shell::Shell;
 
 /// One choice in the card menu's "Pin CV" section: a document in the vault,
 /// optionally at one of its named presets.
+#[derive(Clone)]
 pub(super) struct PinOption {
     /// The document's file stem — what `Application::source_doc` stores.
     pub stem: String,
@@ -39,41 +40,39 @@ pub(super) struct PinOption {
 
 /// Every document × preset combination in the vault, for the pin menu.
 ///
-/// Deliberately computed when the menu opens rather than per frame: it loads
-/// every document in the vault to read its preset *names* (`DocMeta` carries
-/// only a count), which is far too much work to repeat on every render.
-pub(super) fn pin_options(vault: &std::path::Path) -> Vec<PinOption> {
+/// Served from the cache's `DocMeta`, which already carries the preset *names*
+/// (not just a count) and the person's name. It used to load and parse every
+/// document in the vault on its own — the comment here said that was fine
+/// because the menu opens rarely, but it is a full vault parse either way, and
+/// the data was already sitting in memory.
+pub(super) fn pin_options(metas: &[vault::DocMeta]) -> Vec<PinOption> {
     let mut options = Vec::new();
-    for path in vault::list_documents(vault) {
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+    for meta in metas {
+        if meta.unreadable {
+            // Nothing honest to offer: the file did not parse, so its presets
+            // are unknown and pinning it would record a cut that may not exist.
             continue;
-        };
-        let Ok(doc) = vault::load(&path) else {
-            continue;
-        };
-        let name = {
-            let person = doc.profile.active().name.trim().to_string();
-            if person.is_empty() {
-                stem.to_string()
-            } else {
-                person
-            }
+        }
+        let name = if meta.name.trim().is_empty() {
+            meta.stem.clone()
+        } else {
+            meta.name.clone()
         };
 
-        if doc.presets.is_empty() {
+        if meta.preset_names.is_empty() {
             // A document with no presets is still a document you can send;
             // it just has no name for the cut you sent.
             options.push(PinOption {
-                stem: stem.to_string(),
+                stem: meta.stem.clone(),
                 preset: String::new(),
                 label: name,
             });
         } else {
-            for preset in &doc.presets {
+            for preset in &meta.preset_names {
                 options.push(PinOption {
-                    stem: stem.to_string(),
-                    preset: preset.name.clone(),
-                    label: format!("{name} · {}", preset.name),
+                    stem: meta.stem.clone(),
+                    preset: preset.clone(),
+                    label: format!("{name} · {preset}"),
                 });
             }
         }
@@ -278,7 +277,7 @@ mod tests {
         let bare = ResumeDoc::from_resume(Resume::default(), "Base");
         vault::save(&bare, &dir.join("draft-cv.toml")).expect("save");
 
-        let options = pin_options(&dir);
+        let options = pin_options(&vault::list_metadata(&dir));
         let labels: Vec<&str> = options.iter().map(|o| o.label.as_str()).collect();
 
         assert!(labels.contains(&"Sofiia Medvedenko · FAANG · concise"));

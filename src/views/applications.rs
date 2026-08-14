@@ -53,11 +53,7 @@ const COLUMNS: [(ApplicationStatus, &str); 5] = [
 
 impl Shell {
     pub(super) fn render_applications_screen(&self, cx: &mut Context<Self>) -> gpui::Div {
-        let applications = self
-            .vault
-            .as_ref()
-            .map(|v| vault::load_applications(v))
-            .unwrap_or_default();
+        let applications = self.cache.applications();
         let query = self.applications_query(cx);
         let today = vault::today_iso();
         let now_secs = std::time::SystemTime::now()
@@ -72,9 +68,9 @@ impl Shell {
             .h_full()
             .flex()
             .flex_col()
-            .child(self.applications_header(cx, &applications, &today))
+            .child(self.applications_header(cx, applications, &today))
             .children(self.conversion_strip(cx, &conversions))
-            .child(self.board(cx, &applications, &query, now_secs))
+            .child(self.board(cx, applications, &query, now_secs))
     }
 
     /// Title, `N active · N interviews this week`, Board/List toggle, search
@@ -429,8 +425,12 @@ impl Shell {
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
         let shell = cx.weak_entity();
-        let vault_dir = self.vault.clone();
         let has_snapshot = !app.snapshots.is_empty();
+        // Built out here, from the cache, and moved into the menu closure.
+        // It used to be built *inside* the closure with a full vault parse, on
+        // the grounds that a menu opens rarely — but the closure borrows
+        // `self`, and `DocMeta` already carries the preset names it needed.
+        let pin_choices = pin_options(self.cache.metadata());
 
         // Only Interviewing and Offer draw the tinted border — Applied keeps
         // the neutral hairline per the design doc's own table (§4).
@@ -562,14 +562,8 @@ impl Shell {
                             );
                         }
 
-                        // Which CV this card was sent with. Loaded here rather
-                        // than per frame: naming the presets means reading
-                        // every document in the vault, which is far too much
-                        // work to repeat on every render.
-                        let options = vault_dir
-                            .as_ref()
-                            .map(|v| pin_options(v))
-                            .unwrap_or_default();
+                        // Which CV this card was sent with.
+                        let options = pin_choices.clone();
                         if !options.is_empty() {
                             menu = menu.separator();
                             for option in options {

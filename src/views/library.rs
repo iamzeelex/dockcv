@@ -164,18 +164,14 @@ fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
 
 impl Shell {
     pub(super) fn render_library_screen(&self, cx: &mut Context<Self>) -> gpui::Div {
-        let library = self
-            .vault
-            .as_ref()
-            .map(|v| vault::load_library(v))
-            .unwrap_or_default();
+        let library = self.cache.library();
         let query = self.library_query(cx);
 
         // Counts describe the whole library, never the filtered view — same
         // rule the gallery header follows.
         let counts: Vec<(SectionKind, &str, usize)> = POOLS
             .iter()
-            .map(|&(section, title)| (section, title, cards_for(&library, section).len()))
+            .map(|&(section, title)| (section, title, cards_for(library, section).len()))
             .collect();
         let total: usize = counts.iter().map(|(_, _, n)| n).sum();
 
@@ -185,7 +181,7 @@ impl Shell {
                 *count > 0 && self.library_filter.is_none_or(|f| f == *section)
             })
             .filter_map(|&(section, title, _)| {
-                let cards: Vec<BlockCard> = cards_for(&library, section)
+                let cards: Vec<BlockCard> = cards_for(library, section)
                     .into_iter()
                     .filter(|card| query.is_empty() || card.haystack().contains(&query))
                     .collect();

@@ -54,6 +54,10 @@ pub fn create_vault(parent: &Path) -> Result<PathBuf, String> {
 }
 
 /// Human-readable summary of a document, for the gallery cards.
+///
+/// `Clone` because the cache owns one copy and the cards take theirs by value —
+/// a few small string clones per visible card, in place of re-parsing the vault.
+#[derive(Clone)]
 pub struct DocMeta {
     pub path: PathBuf,
     /// The document's file stem — its name on disk, and the only thing that

@@ -26,6 +26,7 @@ mod root_section_variants;
 mod root_sidebar;
 mod root_dates;
 pub mod save_status;
+mod vault_cache;
 pub mod settings_window;
 mod setup;
 mod shell;

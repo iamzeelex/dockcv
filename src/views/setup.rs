@@ -44,11 +44,18 @@ impl Shell {
                 "Choose a cvault folder you already have.",
                 Box::new(|this, cx| this.open_existing_vault(cx)),
             ))
+            // The one place DockCV reaches the network, and it says so.
+            // "No network calls" (US-10) is a promise about the app: it holds
+            // for the editor, the preview, the fonts and every importer. Here
+            // the user asks for a repository to be fetched, and `git` — their
+            // git, with their credentials — does the fetching. Stating it on
+            // the card is cheaper than a footnote nobody reads.
             .child(self.setup_card(
                 cx,
                 "setup-clone",
                 "Clone from Git",
-                "Copy a repo URL to the clipboard, then pick where to clone it.",
+                "Copy a repo URL to the clipboard, then pick where to clone it. \
+                 Runs your own git, and is the only thing in DockCV that uses the network.",
                 Box::new(|this, cx| this.clone_from_git(cx)),
             ))
             .child(
