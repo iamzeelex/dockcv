@@ -36,6 +36,21 @@ pub(super) fn destructive<T: 'static>(
     cx: &mut Context<T>,
     then: impl FnOnce(&mut T, &mut Window, &mut Context<T>) + 'static,
 ) {
+    caution(title, detail, confirm_label, window, cx, then)
+}
+
+/// The same alert for something that is not a deletion but is still worth
+/// stopping for — an export that may carry a confidential note outward
+/// (US-36). Same mechanism, different name, because calling that call site
+/// `destructive` would be a lie in the code.
+pub(super) fn caution<T: 'static>(
+    title: String,
+    detail: String,
+    confirm_label: &'static str,
+    window: &mut Window,
+    cx: &mut Context<T>,
+    then: impl FnOnce(&mut T, &mut Window, &mut Context<T>) + 'static,
+) {
     let answer = window.prompt(
         PromptLevel::Warning,
         &title,

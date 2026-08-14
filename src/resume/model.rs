@@ -208,6 +208,21 @@ pub struct DiaryEntry {
     /// job, under review, not a field the diary fills in silently.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Marked as containing something that must not leave the vault verbatim.
+    ///
+    /// US-36, and the reason it is P0: the persona may work at a bank, a
+    /// hospital or a government body, where the *fact* of a win is fine and the
+    /// wording around it is not — "утечка ПДн у клиента ACME" is a real diary
+    /// entry and an unemployable CV bullet. The story's rule is that a
+    /// confidential entry is "**никогда** не предлагается в CV дословно —
+    /// только как абстрагированная метрика".
+    ///
+    /// The internal wording stays here, in the diary, which is the whole point:
+    /// you keep the record you need for a performance review and a different,
+    /// abstracted sentence goes outward. Nothing about this field redacts or
+    /// rewrites anything — it marks, and the surfaces that could leak it check.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub confidential: bool,
     /// Documents this win has been promoted into, as file stems.
     ///
     /// The other half of `Use in a CV` (US-06): six months later the question

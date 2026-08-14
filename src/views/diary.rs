@@ -364,6 +364,7 @@ impl Shell {
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
         let shell = cx.weak_entity();
+        let is_confidential = entry.confidential;
         let (day, month) = match parse_iso(&entry.date) {
             Some((_, m, d)) => (format!("{d:02}"), MONTHS[(m - 1) as usize].0.to_string()),
             None => ("--".to_string(), "···".to_string()),
@@ -447,6 +448,24 @@ impl Shell {
                             )
                             .child(format!("captured from {doc}"))
                     }))
+                    .children(entry.confidential.then(|| {
+                        // Visible on the entry, not only in the menu: the
+                        // author has to be able to see at a glance which of a
+                        // year's wins carry something that must not leave the
+                        // vault as written (US-36).
+                        // `flex` so the chip hugs its text: the parent is a
+                        // column, and a bare child stretches to its width — a
+                        // one-word mark drawn as a full-width bar reads as an
+                        // error banner, not a label.
+                        div().mt(px(6.0)).flex().child(
+                            Tag::custom(theme.warning.opacity(0.16), theme.warning, theme.warning)
+                                .px(px(7.0))
+                                .py(px(2.0))
+                                .rounded(px(5.0))
+                                .text_style(TextStyle::chip())
+                                .child("confidential"),
+                        )
+                    }))
                     // The mockup draws `Use in a CV →` on every entry and it
                     // was the one link with nothing behind it (P-05). A diary
                     // you can only write into is a diary you stop keeping.
@@ -492,7 +511,21 @@ impl Shell {
                     .right(px(8.0))
                     .dropdown_menu(move |menu, _window, _cx| {
                         let shell = shell.clone();
-                        menu.item(PopupMenuItem::new("Delete").on_click(
+                        let shell_mark = shell.clone();
+                        menu.item(
+                            PopupMenuItem::new(if is_confidential {
+                                "Remove confidential mark"
+                            } else {
+                                "Mark confidential"
+                            })
+                            .on_click(move |_ev, _window, cx| {
+                                let _ = shell_mark.update(cx, |this, cx| {
+                                    this.toggle_diary_confidential(index, cx);
+                                });
+                            }),
+                        )
+                        .separator()
+                        .item(PopupMenuItem::new("Delete").on_click(
                             move |_ev, window, cx| {
                                 let _ = shell.update(cx, |_this, cx| {
                                     confirm::destructive(

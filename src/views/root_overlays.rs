@@ -140,8 +140,11 @@ impl Root {
                         &ExportPdf,
                         Some(EDITOR_CONTEXT),
                     )
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        this.export_pdf(cx);
+                    // The checked path, same as ⌘E and the File menu — an
+                    // export that skipped the confidential warning would be
+                    // the one that actually leaves the machine.
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.export_pdf_checked(window, cx);
                     })),
             )
     }

@@ -951,6 +951,28 @@ mod tests {
         assert_eq!(back.entries[0].used_in, vec!["sofiia-senior-swe", "sofiia-em"]);
     }
 
+    /// The confidential mark (US-36) is additive, and an unmarked entry must
+    /// gain no key — the vault is the user's own files, often under git.
+    #[test]
+    fn a_diary_without_the_confidential_mark_still_loads() {
+        let old = "[[entries]]\ndate = \"2026-06-18\"\ntext = \"Cut p99 latency in half\"\n";
+        let diary: Diary = toml::from_str(old).expect("a pre-confidential diary must load");
+        assert!(!diary.entries[0].confidential);
+
+        let untouched = toml::to_string_pretty(&diary).expect("serializes");
+        assert!(
+            !untouched.contains("confidential"),
+            "an unmarked entry must not gain the key:\n{untouched}"
+        );
+
+        let mut marked = diary;
+        marked.entries[0].confidential = true;
+        let text = toml::to_string_pretty(&marked).expect("serializes");
+        assert!(text.contains("confidential = true"));
+        let back: Diary = toml::from_str(&text).expect("round-trips");
+        assert!(back.entries[0].confidential);
+    }
+
     /// Role and tags arrived after entries were already on disk. A diary
     /// written before they existed must load with both empty, and neither may
     /// reach the file until it holds something — a `role = ""` line in every

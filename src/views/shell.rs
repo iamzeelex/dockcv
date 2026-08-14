@@ -479,7 +479,8 @@ impl Shell {
                     text,
                     role: self.diary_role.clone(),
                     tags,
-                    used_in: Vec::new(),
+                    confidential: false,
+                used_in: Vec::new(),
                     // Typed straight into the Diary — no document was open.
                     source_doc: None,
                 },
@@ -526,6 +527,24 @@ impl Shell {
             SectionKind::Profile | SectionKind::Custom(_) => {}
         }
         save_status::record(cx, "library", vault::save_library(&vault, &library));
+        cx.notify();
+    }
+
+    /// Flip an entry's confidential mark (US-36).
+    ///
+    /// A mark, not a redaction: the wording stays exactly where it is, in the
+    /// diary, which is the point — you keep the record you need for a
+    /// performance review, and what goes outward is a different sentence.
+    pub(super) fn toggle_diary_confidential(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(vault) = self.vault.clone() else {
+            return;
+        };
+        let mut diary = vault::load_diary(&vault);
+        let Some(entry) = diary.entries.get_mut(index) else {
+            return;
+        };
+        entry.confidential = !entry.confidential;
+        save_status::record(cx, "diary", vault::save_diary(&vault, &diary));
         cx.notify();
     }
 

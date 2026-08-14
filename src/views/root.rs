@@ -30,6 +30,7 @@ use crate::theme::ActiveTheme;
 use crate::typst_engine::{PageGeometry, Severity, TypstEngine};
 use crate::vault;
 
+use super::confirm;
 use super::save_status;
 
 use super::root_section_rename::SectionRename;
@@ -632,6 +633,7 @@ impl Root {
                 // employer on a real achievement; the Diary screen can tag it.
                 role: String::new(),
                 tags: Vec::new(),
+                confidential: false,
                 used_in: Vec::new(),
                 source_doc,
             },
@@ -831,6 +833,75 @@ impl Root {
     }
 
     /// Export the current composition to PDF via a native Save dialog.
+    /// Diary entries marked confidential whose wording may have reached *this*
+    /// document.
+    ///
+    /// US-36 asks for a warning at export if a bullet came from a confidential
+    /// note. A bullet is a bare `String`, so it carries no provenance — but the
+    /// entry does: `Use in a CV` records the document it was promoted into
+    /// (`DiaryEntry::used_in`). Reading it from that side is what makes the
+    /// warning possible at all without changing every bullet in the model.
+    ///
+    /// It is honest about being a *may*: a promotion made before this field
+    /// existed is not recorded, and a bullet typed by hand from a confidential
+    /// note was never promoted at all. The dialog says so rather than claiming
+    /// a certainty it does not have.
+    fn confidential_sources(&self) -> Vec<String> {
+        let Some(stem) = self.doc_path.file_stem().and_then(|s| s.to_str()) else {
+            return Vec::new();
+        };
+        self.diary
+            .entries
+            .iter()
+            .filter(|e| e.confidential && e.used_in.iter().any(|d| d == stem))
+            .map(|e| e.text.clone())
+            .collect()
+    }
+
+    /// Export, warning first if a confidential note may have reached this CV.
+    pub(super) fn export_pdf_checked(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let sources = self.confidential_sources();
+        if sources.is_empty() {
+            self.export_pdf(cx);
+            return;
+        }
+
+        let listed: String = sources
+            .iter()
+            .take(3)
+            .map(|text| {
+                let mut line: String = text.chars().take(80).collect();
+                if text.chars().count() > 80 {
+                    line.push('…');
+                }
+                format!("\n• {line}")
+            })
+            .collect();
+        let more = sources.len().saturating_sub(3);
+
+        confirm::caution(
+            format!(
+                "This CV uses {} confidential {}.",
+                sources.len(),
+                if sources.len() == 1 { "note" } else { "notes" }
+            ),
+            format!(
+                "Check the bullets are abstracted before this leaves your machine — \
+                 the outcome and the number, not the client, the system or the \
+                 incident.{listed}{}",
+                if more > 0 {
+                    format!("\n…and {more} more.")
+                } else {
+                    String::new()
+                }
+            ),
+            "Export anyway",
+            window,
+            cx,
+            |this, _window, cx| this.export_pdf(cx),
+        );
+    }
+
     pub(super) fn export_pdf(&mut self, cx: &mut Context<Self>) {
         let raw_name = self.doc.profile.active().name.trim();
         let base = if raw_name.is_empty() {
@@ -1210,10 +1281,10 @@ impl Root {
     pub(super) fn on_export_pdf_action(
         &mut self,
         _: &ExportPdf,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.export_pdf(cx);
+        self.export_pdf_checked(window, cx);
     }
 
     pub(super) fn on_open_capture_action(

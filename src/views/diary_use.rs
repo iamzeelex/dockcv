@@ -56,6 +56,12 @@ pub(super) struct DiaryUse {
     pub doc: Option<DocChoice>,
     /// Which job in that document the bullet goes under.
     pub work: Option<usize>,
+    /// The entry is marked confidential (US-36), so the box opened **empty**
+    /// and the original is shown as reference only.
+    pub confidential: bool,
+    /// The diary's own wording, kept for display when `confidential`. Never
+    /// seeded into the editable field — that is the whole rule.
+    pub original: SharedString,
 }
 
 /// A document the bullet could go into.
@@ -77,12 +83,12 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(text) = self
+        let Some((text, confidential)) = self
             .cache
             .diary()
             .entries
             .get(entry)
-            .map(|e| e.text.clone())
+            .map(|e| (e.text.clone(), e.confidential))
         else {
             return;
         };
@@ -91,12 +97,22 @@ impl Shell {
         // asking the author to edit a sentence, so it has to show the whole
         // sentence. Three lines to start, eight before it scrolls.
         let field = cx.new(|cx| TextFieldState::auto_grow(3, 8, window, cx));
-        field.update(cx, |state, cx| state.seed(&text, window, cx));
+        // **A confidential entry is never seeded.** US-36's rule is that it is
+        // never offered to a CV verbatim, and the strongest way to hold that
+        // line is for the words to never be in the box to begin with — a
+        // pre-filled field that says "please rewrite this" is one Cmd-Enter
+        // away from going out as-is. The original stays visible beside it, so
+        // the author can abstract from it without retyping from memory.
+        if !confidential {
+            field.update(cx, |state, cx| state.seed(&text, window, cx));
+        }
         self.diary_use = Some(DiaryUse {
             entry,
             text: field,
             doc: None,
             work: None,
+            confidential,
+            original: text.into(),
         });
         cx.notify();
     }
@@ -357,10 +373,47 @@ impl Shell {
                     .flex()
                     .flex_col()
                     .gap(px(14.0))
+                    .children(sheet.confidential.then(|| {
+                        div()
+                            .p_3()
+                            .rounded_lg()
+                            .bg(theme.surface)
+                            .border_1()
+                            .border_color(theme.warning)
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.0))
+                            .child(
+                                div()
+                                    .text_style(TextStyle::control())
+                                    .text_color(theme.warning)
+                                    .child("This win is marked confidential"),
+                            )
+                            .child(
+                                div()
+                                    .text_style(TextStyle::body())
+                                    .text_color(theme.text_muted)
+                                    .child(
+                                        "Its wording is not offered here. Write the \
+                                         abstracted version — the outcome and the number, \
+                                         not the client, the system or the incident.",
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_style(TextStyle::meta())
+                                    .text_color(theme.text_subtle)
+                                    .child(format!("your note: {}", sheet.original)),
+                            )
+                    }))
                     .child(field_row(
                         "Bullet",
                         TextField::new(&sheet.text)
-                            .placeholder("The bullet as it will read")
+                            .placeholder(if sheet.confidential {
+                                "Write the abstracted version"
+                            } else {
+                                "The bullet as it will read"
+                            })
                             .into_any_element(),
                     ))
                     .child(field_row("CV", doc_list.into_any_element()))
@@ -418,5 +471,41 @@ impl Shell {
                 .child(panel)
                 .into_any_element(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::resume::model::DiaryEntry;
+
+    /// The rule US-36 rests on, stated as a test so it cannot be softened by
+    /// accident: what the sheet seeds into the editable field is the entry's
+    /// wording **only** when the entry is not confidential.
+    ///
+    /// The seeding itself needs a `Window`, so this pins the decision rather
+    /// than the call — which is the part that would go wrong, and the part a
+    /// future edit would be tempted to "simplify".
+    #[test]
+    fn a_confidential_entry_is_never_the_seed() {
+        fn seed_for(entry: &DiaryEntry) -> Option<&str> {
+            (!entry.confidential).then_some(entry.text.as_str())
+        }
+
+        let ordinary = DiaryEntry {
+            text: "Cut p99 latency in half".into(),
+            ..Default::default()
+        };
+        assert_eq!(seed_for(&ordinary), Some("Cut p99 latency in half"));
+
+        let sensitive = DiaryEntry {
+            text: "Contained the PII leak at client ACME".into(),
+            confidential: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            seed_for(&sensitive),
+            None,
+            "a confidential entry must reach the CV box as nothing at all"
+        );
     }
 }
