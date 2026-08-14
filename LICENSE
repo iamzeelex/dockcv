@@ -1,0 +1,18 @@
+DockCV is dual-licensed under either of
+
+  * Apache License, Version 2.0 — see LICENSE-APACHE
+  * MIT License                 — see LICENSE-MIT
+
+at your option. This matches the `license = "MIT OR Apache-2.0"` field in
+Cargo.toml and the convention of the Rust ecosystem DockCV is built on.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you shall be dual-licensed as above, without any
+additional terms or conditions.
+
+---
+
+DockCV *ships* third-party material inside its binary — fonts, a Typst package,
+a widget set and an icon set — under their own licences, several of which
+require their notices to travel with the binary. Those licences and notices are
+collected in THIRD-PARTY-NOTICES.md, which must be distributed with any build.
