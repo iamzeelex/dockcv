@@ -249,3 +249,314 @@ mod tests {
         assert!(!matches_query(&app, "meridian"));
     }
 }
+
+/// Which of the Applications screen's three surfaces is showing.
+///
+/// The mockup draws a two-way `Board`/`List` pill and never draws List's
+/// layout (design doc §10), which is why List shipped as an inert pill. Both
+/// halves are real now, and Insights is a third — the funnel is a question the
+/// board cannot answer no matter how it is arranged, because it is about the
+/// cards that have already left.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum ApplicationsView {
+    #[default]
+    Board,
+    List,
+    Insights,
+}
+
+impl ApplicationsView {
+    pub(super) const ALL: [ApplicationsView; 3] = [
+        ApplicationsView::Board,
+        ApplicationsView::List,
+        ApplicationsView::Insights,
+    ];
+
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            ApplicationsView::Board => "Board",
+            ApplicationsView::List => "List",
+            ApplicationsView::Insights => "Insights",
+        }
+    }
+}
+
+// --- sorting -------------------------------------------------------------
+
+/// How the board's columns and the list are ordered.
+///
+/// One setting drives both surfaces on purpose: switching Board→List must not
+/// silently re-order the same rows, or the two views stop being two views of
+/// one thing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum ApplicationSort {
+    /// Most recently created first — the order the board had before sorting
+    /// existed, reversed. Default because a tracker is mostly about what you
+    /// did lately.
+    #[default]
+    Newest,
+    /// Oldest first: the literal file order, and what you want when working
+    /// through a backlog.
+    Oldest,
+    /// Alphabetical by company, then role.
+    Company,
+    /// Furthest through the pipeline first — offers at the top.
+    Stage,
+    /// Longest since anything happened. The one that finds forgotten cards.
+    Stale,
+    /// Most recently *sent* first. Distinct from `Newest`, which is the day a
+    /// card was created: a company you added in January and applied to in June
+    /// is a June application, and the List's `Applied` column shows that date,
+    /// so the header has to sort by it or the caret is a lie. Entries never
+    /// sent sort last — they have no send date, not an early one.
+    Applied,
+}
+
+impl ApplicationSort {
+    pub(super) const ALL: [ApplicationSort; 6] = [
+        ApplicationSort::Newest,
+        ApplicationSort::Oldest,
+        ApplicationSort::Applied,
+        ApplicationSort::Company,
+        ApplicationSort::Stage,
+        ApplicationSort::Stale,
+    ];
+
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            ApplicationSort::Newest => "Newest first",
+            ApplicationSort::Oldest => "Oldest first",
+            ApplicationSort::Company => "Company A–Z",
+            ApplicationSort::Stage => "Furthest stage",
+            ApplicationSort::Stale => "Least recently touched",
+            ApplicationSort::Applied => "Most recently sent",
+        }
+    }
+
+    /// The short form the toolbar control shows once something is chosen.
+    pub(super) fn short_label(self) -> &'static str {
+        match self {
+            ApplicationSort::Newest => "Newest",
+            ApplicationSort::Oldest => "Oldest",
+            ApplicationSort::Company => "Company",
+            ApplicationSort::Stage => "Stage",
+            ApplicationSort::Stale => "Stale",
+            ApplicationSort::Applied => "Sent",
+        }
+    }
+}
+
+/// How far through the pipeline an entry has ever been, as a number that can
+/// be ordered. Mirrors `ApplicationStatus::depth` — which is private to the
+/// model, deliberately, because the enum's declaration order is pinned by
+/// serde and is not this order.
+fn stage_rank(app: &Application) -> u8 {
+    match app.furthest {
+        ApplicationStatus::Offer => 3,
+        ApplicationStatus::Interviewing => 2,
+        ApplicationStatus::Applied => 1,
+        // Rejected has no pipeline depth (it is an outcome, not a stage), and
+        // an entry still on the wishlist has not started one.
+        ApplicationStatus::Rejected | ApplicationStatus::Wishlist => 0,
+    }
+}
+
+/// The last date anything is known to have happened to an entry: the next
+/// step if one is scheduled, else the last snapshot, else the send date, else
+/// the day it was created. `""` sorts first, which is what "nothing is known
+/// about this one" should do under *Least recently touched*.
+fn last_touched(app: &Application) -> &str {
+    if let Some(step) = app.next_step.as_ref() {
+        if !step.date.is_empty() {
+            return &step.date;
+        }
+    }
+    if let Some(snapshot) = app.snapshots.last() {
+        if !snapshot.date.is_empty() {
+            return &snapshot.date;
+        }
+    }
+    if let Some(applied) = app.applied.as_deref() {
+        if !applied.is_empty() {
+            return applied;
+        }
+    }
+    &app.created
+}
+
+/// Order `rows` in place. Rows are `(index, application)` pairs, where the
+/// index is the entry's position in `Applications::entries` — the identity
+/// every action on the board addresses, so it must survive re-ordering.
+///
+/// Every comparison ends by falling back to that index, which makes the sort
+/// **total**: two entries that tie on the chosen key keep a stable, defined
+/// order rather than one the sort algorithm happens to produce. Without it a
+/// re-render could shuffle equal rows under the cursor.
+pub(super) fn sort_rows(rows: &mut [(usize, Application)], sort: ApplicationSort) {
+    match sort {
+        // ISO dates sort correctly as strings, which is half of why the vault
+        // writes them. Reversed for Newest so a missing date lands last
+        // rather than first.
+        ApplicationSort::Newest => {
+            rows.sort_by(|(ai, a), (bi, b)| b.created.cmp(&a.created).then(bi.cmp(ai)))
+        }
+        ApplicationSort::Oldest => {
+            rows.sort_by(|(ai, a), (bi, b)| a.created.cmp(&b.created).then(ai.cmp(bi)))
+        }
+        ApplicationSort::Company => rows.sort_by(|(ai, a), (bi, b)| {
+            a.company
+                .to_lowercase()
+                .cmp(&b.company.to_lowercase())
+                .then_with(|| a.role.to_lowercase().cmp(&b.role.to_lowercase()))
+                .then(ai.cmp(bi))
+        }),
+        ApplicationSort::Stage => rows.sort_by(|(ai, a), (bi, b)| {
+            stage_rank(b)
+                .cmp(&stage_rank(a))
+                .then_with(|| b.created.cmp(&a.created))
+                .then(bi.cmp(ai))
+        }),
+        ApplicationSort::Stale => rows.sort_by(|(ai, a), (bi, b)| {
+            last_touched(a).cmp(last_touched(b)).then(ai.cmp(bi))
+        }),
+        // An unsent entry has no send date. Sorting it as `""` would put it
+        // first under a descending sort, which reads as "sent longest ago" —
+        // the opposite of the truth — so absence is pushed to the end.
+        ApplicationSort::Applied => rows.sort_by(|(ai, a), (bi, b)| {
+            let sent = |app: &Application| {
+                app.applied
+                    .as_deref()
+                    .filter(|d| !d.is_empty())
+                    .map(str::to_string)
+            };
+            match (sent(a), sent(b)) {
+                (Some(a), Some(b)) => b.cmp(&a),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+            .then(bi.cmp(ai))
+        }),
+    }
+}
+
+#[cfg(test)]
+mod sort_tests {
+    use super::*;
+    use crate::resume::model::{Application, ApplicationStatus, NextStep};
+
+    fn app(company: &str, created: &str, furthest: ApplicationStatus) -> Application {
+        Application {
+            company: company.into(),
+            created: created.into(),
+            furthest,
+            ..Default::default()
+        }
+    }
+
+    fn rows() -> Vec<(usize, Application)> {
+        vec![
+            (0, app("Bramble Tech", "2026-03-01", ApplicationStatus::Applied)),
+            (1, app("acme", "2026-05-20", ApplicationStatus::Offer)),
+            (2, app("Cardinal", "2026-01-09", ApplicationStatus::Interviewing)),
+        ]
+    }
+
+    fn order(sort: ApplicationSort) -> Vec<usize> {
+        let mut r = rows();
+        sort_rows(&mut r, sort);
+        r.into_iter().map(|(i, _)| i).collect()
+    }
+
+    #[test]
+    fn each_sort_orders_by_the_thing_it_names() {
+        assert_eq!(order(ApplicationSort::Newest), vec![1, 0, 2]);
+        assert_eq!(order(ApplicationSort::Oldest), vec![2, 0, 1]);
+        // Case-insensitive, or "acme" sorts after every capitalised company.
+        assert_eq!(order(ApplicationSort::Company), vec![1, 0, 2]);
+        assert_eq!(order(ApplicationSort::Stage), vec![1, 2, 0]);
+    }
+
+    /// The index is the identity every board action addresses. Sorting must
+    /// re-order the rows and carry each index with its own entry.
+    /// The List's `Applied` column shows the send date, so its header has to
+    /// sort by the send date — not by the day the card was created, which is a
+    /// different date and was what the caret used to point at.
+    #[test]
+    fn most_recently_sent_orders_by_the_send_date_and_puts_unsent_last() {
+        let sent = |company: &str, created: &str, applied: Option<&str>| Application {
+            company: company.into(),
+            created: created.into(),
+            applied: applied.map(str::to_string),
+            ..Default::default()
+        };
+        // Created oldest, sent newest — the two orders disagree on purpose.
+        let mut rows = vec![
+            (0, sent("Early add, late send", "2026-01-01", Some("2026-06-01"))),
+            (1, sent("Late add, early send", "2026-05-01", Some("2026-05-02"))),
+            (2, sent("Never sent", "2026-04-01", None)),
+        ];
+        sort_rows(&mut rows, ApplicationSort::Applied);
+        assert_eq!(
+            rows.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
+            vec![0, 1, 2],
+            "newest send first, and the unsent one last"
+        );
+
+        // …and Newest, over the same rows, disagrees — which is the point.
+        sort_rows(&mut rows, ApplicationSort::Newest);
+        assert_eq!(rows[0].0, 1, "Newest is by creation, not by send");
+    }
+
+    #[test]
+    fn sorting_carries_each_entry_index_with_it() {
+        let mut r = rows();
+        sort_rows(&mut r, ApplicationSort::Company);
+        for (index, app) in &r {
+            assert_eq!(&rows()[*index].1.company, &app.company);
+        }
+    }
+
+    /// Ties must not shuffle between renders — the board re-sorts on every
+    /// frame, and a cursor over a card would land somewhere else.
+    #[test]
+    fn ties_keep_a_defined_order() {
+        let tied: Vec<(usize, Application)> = (0..4)
+            .map(|i| (i, app("Same Co", "2026-04-04", ApplicationStatus::Applied)))
+            .collect();
+        for sort in ApplicationSort::ALL {
+            let mut a = tied.clone();
+            let mut b = tied.clone();
+            b.reverse();
+            sort_rows(&mut a, sort);
+            sort_rows(&mut b, sort);
+            let ai: Vec<usize> = a.iter().map(|(i, _)| *i).collect();
+            let bi: Vec<usize> = b.iter().map(|(i, _)| *i).collect();
+            assert_eq!(ai, bi, "{sort:?} is not a total order");
+        }
+    }
+
+    /// `last_touched` walks a specific ladder — a scheduled next step beats a
+    /// snapshot beats the send date beats the creation date — because those
+    /// are in order of how recently a human looked at the card.
+    #[test]
+    fn least_recently_touched_prefers_the_most_specific_date_it_has() {
+        let mut bare = app("A", "2026-01-01", ApplicationStatus::Applied);
+        assert_eq!(last_touched(&bare), "2026-01-01");
+
+        bare.applied = Some("2026-02-02".into());
+        assert_eq!(last_touched(&bare), "2026-02-02");
+
+        bare.next_step = Some(NextStep {
+            label: "Onsite".into(),
+            date: "2026-06-06".into(),
+            time: String::new(),
+        });
+        assert_eq!(last_touched(&bare), "2026-06-06");
+
+        // Stale sorts the untouched one first.
+        let mut r = vec![(0, bare), (1, app("B", "2020-01-01", ApplicationStatus::Wishlist))];
+        sort_rows(&mut r, ApplicationSort::Stale);
+        assert_eq!(r[0].0, 1);
+    }
+}

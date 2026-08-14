@@ -29,6 +29,7 @@ use crate::theme::ThemeMode;
 use crate::typst_engine::TypstEngine;
 use crate::vault;
 
+use super::applications_data::{ApplicationSort, ApplicationsView};
 use super::confirm;
 use super::save_status;
 use super::vault_cache::VaultCache;
@@ -95,6 +96,11 @@ pub struct Shell {
     /// company/role, and (like `library_search`) deliberately not shared
     /// with any other screen's box.
     pub(super) applications_search: Option<Entity<TextFieldState>>,
+    /// Which of the Applications screen's three surfaces is showing.
+    pub(super) applications_view: ApplicationsView,
+    /// The order the board's columns and the list both use. One setting for
+    /// both, so switching views never silently re-orders the same rows.
+    pub(super) applications_sort: ApplicationSort,
     /// Which column's compose box is open, if any. `None` means the board
     /// shows no inline "new application" form.
     pub(super) applications_compose_target: Option<ApplicationStatus>,
@@ -146,6 +152,8 @@ impl Shell {
             diary_role: String::new(),
             diary_role_filter: None,
             applications_search: None,
+            applications_view: ApplicationsView::default(),
+            applications_sort: ApplicationSort::default(),
             applications_compose_target: None,
             applications_compose_company: None,
             applications_compose_role: None,

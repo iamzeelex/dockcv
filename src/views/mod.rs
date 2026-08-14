@@ -1,9 +1,13 @@
 //! UI views layer.
 
 mod applications;
+mod applications_analytics;
 mod applications_card;
 mod applications_data;
 mod applications_drag;
+mod applications_list;
+mod applications_menu;
+mod applications_funnel;
 mod applications_snapshot;
 mod confirm;
 mod diary;

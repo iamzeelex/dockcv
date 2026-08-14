@@ -28,7 +28,6 @@ actions!(
         SaveNow,
         CloseWindow,
         MinimizeWindow,
-        ZoomWindow,
         ShowNotices,
     ]
 );
@@ -126,11 +125,6 @@ fn init(cx: &mut App) {
             let _ = window.update(cx, |_, window, _| window.minimize_window());
         }
     });
-    cx.on_action(|_: &ZoomWindow, cx: &mut App| {
-        if let Some(window) = cx.active_window() {
-            let _ = window.update(cx, |_, window, _| window.zoom_window());
-        }
-    });
 
     // The last chance to write. Quit observers run while the windows — and so
     // the `Shell` — are still alive, which is why the flush hangs here rather
@@ -205,10 +199,11 @@ fn menus() -> Vec<Menu> {
         },
         Menu {
             name: SharedString::from("Window"),
-            items: vec![
-                MenuItem::action("Minimize", MinimizeWindow),
-                MenuItem::action("Zoom", ZoomWindow),
-            ],
+            // No "Zoom". `Window::zoom_window` is a no-op against this window —
+            // verified by clicking it — and a menu item that does nothing is
+            // the thing this menu was rebuilt to stop having. macOS still
+            // offers its own Window ▸ Fill / Center, which do work.
+            items: vec![MenuItem::action("Minimize", MinimizeWindow)],
             disabled: false,
         },
         Menu {

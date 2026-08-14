@@ -58,6 +58,24 @@ pub use gpui_component::{
     // document, which is what makes the change apply to the preview live.
     slider::{Slider, SliderEvent, SliderState},
     switch::Switch,
+    // The Applications list view. This is upstream's *compositional* table —
+    // stateless rows and cells — not `DataTable`, which virtualizes and owns
+    // its data through a `TableDelegate` entity. A vault holds tens of
+    // applications, not thousands, so virtualization buys nothing, and every
+    // cell here draws a `Tag`, a chip or a link rather than a string, which is
+    // what the composable form is for. Sorting is ours (`applications_data`),
+    // pure and tested, rather than delegated to the widget.
+    table::{Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow},
     tag::{Tag, TagVariant},
     tooltip::Tooltip,
 };
+
+// --- charts ---
+//
+// The Applications Insights view. `SankeyChart` renders through upstream's
+// `plot` layer, so it is a real element with hover tooltips rather than an
+// image; `SankeyLink` addresses nodes **by index into the node list**, which
+// is why `applications_analytics` builds its node vector first and maps names
+// to indices before constructing any link.
+pub use gpui_component::chart::{SankeyChart, SankeyLabel};
+pub use gpui_component::plot::shape::{SankeyAlign, SankeyLink, SankeyValueScale};

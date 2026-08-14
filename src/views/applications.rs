@@ -25,8 +25,8 @@ use gpui::{
 };
 
 use dockcv_ui_components::{
-    Button, ButtonExt, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, StatusTint, Tag,
-    TextField,
+    Button, ButtonExt, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable,
+    StatusTint, Tag, TextField,
 };
 
 use crate::resume::model::{Application, ApplicationStatus, Applications, PresetConversion};
@@ -36,11 +36,12 @@ use crate::vault;
 use super::save_status;
 
 use super::applications_data::{
-    card_chip_text, conversion_line, interviews_this_week, matches_query, plural,
+    card_chip_text, conversion_line, interviews_this_week, matches_query, plural, sort_rows,
+    ApplicationSort, ApplicationsView,
 };
 use super::applications_card::{card_meta, column_tint};
+use super::applications_menu::{application_menu, MenuContext};
 use super::applications_snapshot::pin_options;
-use super::confirm;
 use super::shell::{remove_at, Shell};
 
 /// The five board columns, in display order.
@@ -70,12 +71,37 @@ impl Shell {
             .flex()
             .flex_col()
             .child(self.applications_header(cx, applications, &today))
-            .children(self.conversion_strip(cx, &conversions))
-            .child(self.board(cx, applications, &query, now_secs))
+            // The conversion strip is the board's and the list's running
+            // total. Insights draws the same facts as a chart, so a duplicate
+            // strip above it would be the same numbers twice.
+            .children(
+                (self.applications_view != ApplicationsView::Insights)
+                    .then(|| self.conversion_strip(cx, &conversions))
+                    .flatten(),
+            )
+            .child(match self.applications_view {
+                ApplicationsView::Board => {
+                    self.board(cx, applications, &query, now_secs).into_any_element()
+                }
+                ApplicationsView::List => self
+                    .render_applications_list(cx, applications, &query)
+                    .into_any_element(),
+                ApplicationsView::Insights => self
+                    .render_applications_insights(cx, applications)
+                    .into_any_element(),
+            })
     }
 
-    /// Title, `N active · N interviews this week`, Board/List toggle, search
-    /// and "+ New application".
+    /// Two rows, not one.
+    ///
+    /// Five controls beside a title do not fit a default-width window: adding
+    /// Insights and the sort control first clipped "New application" off the
+    /// right edge, and squeezing the search to make room left it too narrow to
+    /// type in. Splitting them is not a workaround — it is the shape a tracker
+    /// toolbar takes anyway. The top row is *what you are looking at* (the
+    /// title, the view, and the one action that creates something); the second
+    /// is *how it is filtered and ordered*, which is where a sort and a search
+    /// belong and where the conversion strip already was.
     fn applications_header(
         &self,
         cx: &mut Context<Self>,
@@ -86,14 +112,11 @@ impl Shell {
         let active = applications.active();
         let interviews = interviews_this_week(applications, today);
 
-        div()
+        let title_row = div()
             .flex()
             .items_end()
             .justify_between()
             .gap_4()
-            .px(px(34.0))
-            .pt(px(30.0))
-            .pb(px(20.0))
             .child(
                 div()
                     .flex()
@@ -120,8 +143,7 @@ impl Shell {
                     .flex()
                     .items_center()
                     .gap(px(10.0))
-                    .child(self.board_toggle(cx))
-                    .child(self.applications_search_box(cx))
+                    .child(self.view_toggle(cx))
                     .child(
                         Button::new("new-application")
                             .cursor_pointer()
@@ -136,12 +158,38 @@ impl Shell {
                                 );
                             })),
                     ),
-            )
+            );
+
+        // Insights is neither ordered nor searched, so its second row would be
+        // empty — and an empty row is a gap the eye reads as a mistake.
+        let filters = (self.applications_view != ApplicationsView::Insights).then(|| {
+            div()
+                .mt(px(14.0))
+                .flex()
+                .items_center()
+                .gap(px(10.0))
+                .child(self.sort_control(cx))
+                .child(self.applications_search_box(cx))
+        });
+
+        div()
+            .flex()
+            .flex_col()
+            .px(px(34.0))
+            .pt(px(30.0))
+            .pb(px(18.0))
+            .child(title_row)
+            .children(filters)
     }
 
-    /// `Board` / `List`. Only `Board` is real — see this module's doc comment.
-    fn board_toggle(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// `Board` / `List` / `Insights`. All three are real now; the mockup's
+    /// two-way pill grew a third segment rather than a second control,
+    /// because these are three views of one set of applications and not three
+    /// destinations.
+    fn view_toggle(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
+        let active = self.applications_view;
+
         div()
             .flex()
             .items_center()
@@ -152,32 +200,82 @@ impl Shell {
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
-            .child(
+            .children(ApplicationsView::ALL.map(|view| {
+                let is_active = view == active;
                 div()
+                    .id(SharedString::from(format!("apps-view-{view:?}")))
                     .px(px(11.0))
                     .py(px(5.0))
                     .rounded(px(6.0))
-                    .bg(theme.text)
+                    .when(is_active, |el| el.bg(theme.text))
                     .text_style(TextStyle::control())
-                    .text_color(theme.on_accent)
-                    .child("Board"),
-            )
-            .child(
-                div()
-                    .px(px(11.0))
-                    .py(px(5.0))
-                    .rounded(px(6.0))
-                    .text_style(TextStyle::control())
-                    .font_weight(FontWeight::NORMAL)
-                    .text_color(theme.text_subtle)
-                    .child("List"),
-            )
+                    .when(!is_active, |el| el.font_weight(FontWeight::NORMAL))
+                    .text_color(if is_active {
+                        theme.on_accent
+                    } else {
+                        theme.text_subtle
+                    })
+                    .cursor_pointer()
+                    .when(!is_active, |el| {
+                        el.hover(|s| s.text_color(theme.text))
+                    })
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                        this.set_applications_view(view, cx);
+                    }))
+                    .child(view.label())
+            }))
+    }
+
+    /// The order both the board and the list use, as a menu rather than a row
+    /// of chips: five options is more than a toolbar should spend width on,
+    /// and the current one is the only part worth showing at rest.
+    fn sort_control(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let active = self.applications_sort;
+        let shell = cx.weak_entity();
+
+        Button::new("apps-sort")
+            .cursor_pointer()
+            .toolbar_secondary()
+            .icon(IconName::SortAscending)
+            .label(active.short_label())
+            .tooltip("Sort applications")
+            .dropdown_menu(move |mut menu, _window, _cx| {
+                for sort in ApplicationSort::ALL {
+                    let shell = shell.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(sort.label())
+                            .checked(sort == active)
+                            .on_click(move |_ev, _window, cx| {
+                                let _ = shell.update(cx, |this, cx| {
+                                    this.set_applications_sort(sort, cx);
+                                });
+                            }),
+                    );
+                }
+                menu
+            })
+    }
+
+    pub(super) fn set_applications_view(&mut self, view: ApplicationsView, cx: &mut Context<Self>) {
+        if self.applications_view == view {
+            return;
+        }
+        self.applications_view = view;
+        // A compose box open in a column the user just navigated away from
+        // would reappear, half-typed, the next time they came back.
+        self.applications_compose_target = None;
+        cx.notify();
+    }
+
+    pub(super) fn set_applications_sort(&mut self, sort: ApplicationSort, cx: &mut Context<Self>) {
+        self.applications_sort = sort;
+        cx.notify();
     }
 
     fn applications_search_box(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         div()
-            .w(px(190.0))
+            .w(px(230.0))
             .h(px(34.0))
             .flex()
             .items_center()
@@ -266,11 +364,15 @@ impl Shell {
             .px(px(34.0))
             .pb(px(24.0))
             .children(COLUMNS.into_iter().map(|(status, title)| {
-                let cards: Vec<(usize, Application)> = all
+                let mut cards: Vec<(usize, Application)> = all
                     .iter()
                     .filter(|(_, a)| a.status == status && matches_query(a, query))
                     .cloned()
                     .collect();
+                // Same order the list is in. A column sorted differently from
+                // the table showing the same cards would be two answers to one
+                // question.
+                sort_rows(&mut cards, self.applications_sort);
                 let total = applications.count(status);
                 self.column(cx, status, title, total, cards, now_secs)
                     .into_any_element()
@@ -334,8 +436,21 @@ impl Shell {
         // has to be droppable into a column that holds nothing yet.
         let column = div()
             .id(SharedString::from(format!("apps-col-{status:?}")))
-            .w(px(168.0))
-            .flex_none()
+            // Adaptive, not 168px fixed. Five fixed columns left two thirds of
+            // a wide window empty and huddled at the left edge; below a narrow
+            // window they were unreadably thin either way. `flex_1` with a
+            // floor gives each column an equal share of whatever there is, and
+            // the board's own `overflow_x_scroll` takes over once five columns
+            // can no longer fit above the floor.
+            .flex_1()
+            // Five columns plus their gaps and the pane's own padding come to
+            // `5 * min + 108`, so the floor is what decides whether a default
+            // 1100px window shows the whole board or hides Rejected behind a
+            // scroll. 150 fits; 184 did not. Above the floor they share the
+            // width evenly, and the ceiling keeps a two-card vault from
+            // drawing columns wider than a card ever needs.
+            .min_w(px(150.0))
+            .max_w(px(300.0))
             .h_full()
             .flex()
             .flex_col()
@@ -426,12 +541,16 @@ impl Shell {
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
         let shell = cx.weak_entity();
-        let has_snapshot = !app.snapshots.is_empty();
         // Built out here, from the cache, and moved into the menu closure.
         // It used to be built *inside* the closure with a full vault parse, on
         // the grounds that a menu opens rarely — but the closure borrows
         // `self`, and `DocMeta` already carries the preset names it needed.
-        let pin_choices = pin_options(self.cache.metadata());
+        let menu_context = MenuContext::of(
+            shell,
+            index,
+            &app,
+            pin_options(self.cache.metadata()),
+        );
 
         // Only Interviewing and Offer draw the tinted border — Applied keeps
         // the neutral hairline per the design doc's own table (§4).
@@ -506,6 +625,11 @@ impl Shell {
                     )
                     .child(
                         div()
+                            // `flex_1`, not just `min_w_0`. Without it the
+                            // block's basis is its content and flex-shrink
+                            // clipped names that had room to spare — a column
+                            // at its 300px ceiling still showed "Tesse…".
+                            .flex_1()
                             .min_w_0()
                             .flex()
                             .flex_col()
@@ -546,84 +670,7 @@ impl Shell {
                     .xsmall()
                     .cursor_pointer()
                     .tooltip("More")
-                    .dropdown_menu(move |mut menu, _window, _cx| {
-                        for (other_status, other_title) in COLUMNS {
-                            if other_status == status {
-                                continue;
-                            }
-                            let shell_move = shell.clone();
-                            menu = menu.item(
-                                PopupMenuItem::new(format!("Move to {other_title}")).on_click(
-                                    move |_ev, _window, cx| {
-                                        let _ = shell_move.update(cx, |this, cx| {
-                                            this.advance_application(index, other_status, cx);
-                                        });
-                                    },
-                                ),
-                            );
-                        }
-
-                        // Which CV this card was sent with.
-                        let options = pin_choices.clone();
-                        if !options.is_empty() {
-                            menu = menu.separator();
-                            for option in options {
-                                let shell_pin = shell.clone();
-                                let stem = option.stem.clone();
-                                let preset = option.preset.clone();
-                                menu = menu.item(
-                                    PopupMenuItem::new(format!("Pin CV: {}", option.label))
-                                        .on_click(move |_ev, _window, cx| {
-                                            let stem = stem.clone();
-                                            let preset = preset.clone();
-                                            let _ = shell_pin.update(cx, |this, cx| {
-                                                this.pin_application_cv(index, stem, preset, cx);
-                                            });
-                                        }),
-                                );
-                            }
-                        }
-
-                        if has_snapshot {
-                            let shell_open = shell.clone();
-                            menu = menu.separator().item(
-                                PopupMenuItem::new("Open sent PDF").on_click(
-                                    move |_ev, _window, cx| {
-                                        let _ = shell_open.update(cx, |this, cx| {
-                                            this.reveal_snapshot(index, cx);
-                                        });
-                                    },
-                                ),
-                            );
-                        }
-
-                        let shell_del = shell.clone();
-                        let company = app.company.clone();
-                        menu.separator().item(PopupMenuItem::new("Delete").on_click(
-                            move |_ev, window, cx| {
-                                let company = company.clone();
-                                let _ = shell_del.update(cx, |_this, cx| {
-                                    let who = if company.trim().is_empty() {
-                                        "this application".to_string()
-                                    } else {
-                                        format!("the application to {}", company.trim())
-                                    };
-                                    confirm::destructive(
-                                        format!("Delete {who}?"),
-                                        format!(
-                                            "{} Any PDF snapshots stay in your vault's \
-                                             snapshots folder — only the card goes.",
-                                            confirm::CANNOT_UNDO
-                                        ),
-                                        "Delete",
-                                        window,
-                                        cx,
-                                        move |this, _window, cx| this.delete_application(index, cx),
-                                    );
-                                });
-                            },
-                        ))
-                    }),
+                    .dropdown_menu(application_menu(menu_context)),
                     ),
             )
     }
