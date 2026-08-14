@@ -14,29 +14,13 @@
 //!    "Needs review"), 1-click "Undo import" back to Step 1, and
 //!    "Looks good — continue" to enter the editor.
 
-use std::path::PathBuf;
-
 use gpui::prelude::*;
-use gpui::{
-    div, px, ClickEvent, Context, FontWeight, IntoElement, PathPromptOptions,
-    SharedString,
-};
+use gpui::{div, px, ClickEvent, Context, FontWeight, IntoElement, SharedString};
 
 use dockcv_ui_components::{lucide, Button, ButtonExt, SANS, SERIF};
 
 use crate::import::model::{Confidence, ImportedDoc};
-use crate::resume::altacv;
-use crate::resume::model::ResumeDoc;
 use crate::theme::ActiveTheme;
-
-#[allow(dead_code)]
-fn first_path(
-    paths: Result<Result<Option<Vec<PathBuf>>, impl std::fmt::Debug>, impl std::fmt::Debug>,
-) -> Option<PathBuf> {
-    let opt_vec = paths.ok()?.ok()?;
-    let vec = opt_vec?;
-    vec.into_iter().next()
-}
 
 /// The formats the importer reads, named for the drop zone.
 ///
@@ -190,46 +174,6 @@ impl SectionReviewItem {
         }))
         .collect()
     }
-}
-
-/// Prompt for a file on disk (PDF, DOCX, JSON, TXT).
-#[allow(dead_code)]
-pub fn prompt_for_import_file<V: 'static>(
-    cx: &mut Context<V>,
-    on_result: impl Fn(&mut V, Result<ImportedDoc, String>, &mut Context<V>) + 'static + Copy,
-) {
-    let prompt = PathPromptOptions {
-        files: true,
-        directories: false,
-        multiple: false,
-        prompt: Some("Select a CV — PDF, DOCX, LinkedIn .zip, JSON Resume, TXT".into()),
-    };
-    let receiver = cx.prompt_for_paths(prompt);
-    let executor = cx.background_executor().clone();
-
-    cx.spawn(async move |this, cx| {
-        let Some(file_path) = first_path(receiver.await) else {
-            return;
-        };
-        let result = executor
-            .spawn(async move { crate::import::import_file(&file_path) })
-            .await;
-        let _ = this.update(cx, move |this, cx| {
-            on_result(this, result, cx);
-        });
-    })
-    .detach();
-}
-
-/// Build sample imported doc if none provided.
-#[allow(dead_code)]
-pub fn sample_imported_doc() -> ImportedDoc {
-    let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap_or_default();
-    let doc = ResumeDoc::from_resume(resume, "Base");
-    let mut imported = ImportedDoc::new("PDF", doc);
-    imported.set_confidence("education", Confidence::Low);
-    imported.set_confidence("skills", Confidence::Low);
-    imported
 }
 
 pub fn render_step1_bring_document<V: 'static>(

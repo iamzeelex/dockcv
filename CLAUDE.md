@@ -64,10 +64,13 @@ src/
     template.rs     codegen: Resume → self-contained Typst source
     altacv.rs       AltaCV importer
   views/
-    shell.rs        screen router (Welcome/Setup/Gallery/Library/Diary/Settings/Editor)
+    shell.rs        screen router (Welcome/Setup/Gallery/Library/Diary/Applications/Editor)
     sidebar.rs      the nav rail + `Shell::with_rail`, the vault chrome
     root.rs         the résumé editor screen
-    preview.rs      standalone Typst playground (not mounted)
+    root_undo.rs    document-level undo/redo — snapshot stacks + checkpoints
+    vault_cache.rs  the vault parsed once per change, not once per frame
+    save_status.rs  one banner for every failed vault read or write
+    confirm.rs      the alert in front of anything that cannot be undone
 crates/ui-components/  reusable widgets + theme tokens (own crate, no app deps)
 .design/               the design source of truth (see below)
 docs/                  user review, roadmap, per-screen specs

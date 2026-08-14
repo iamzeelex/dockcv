@@ -381,9 +381,7 @@ pub enum ListId {
     /// entries is out of scope for D-9's model half — but addressed and
     /// handled by `add`/`remove` like every other `ListId` so the editor
     /// UI has nothing left to wire beyond the buttons themselves.
-    #[allow(dead_code)]
     CustomEntries(CustomSectionId),
-    #[allow(dead_code)]
     CustomEntryHighlights(CustomSectionId, usize),
 }
 

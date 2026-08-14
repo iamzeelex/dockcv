@@ -208,6 +208,7 @@ fn raw_text(source: &Source, node: &SyntaxNode) -> String {
         .unwrap_or_default()
 }
 
+#[cfg(test)] // the fixture every parser/round-trip test builds on
 /// The AltaCV starter document (Typst Universe `@preview/altacv:1.5.0`), used
 /// as the built-in demo so the editor opens on a recognized resume.
 pub const ALTACV_SAMPLE: &str = r#"

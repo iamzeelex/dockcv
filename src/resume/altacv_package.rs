@@ -11,7 +11,6 @@
 //! `#import "altacv/lib.typ"`.
 
 /// Package sources, keyed by the virtual path Typst asks for.
-#[allow(dead_code)]
 pub const SOURCES: &[(&str, &str)] = &[
     ("altacv/internal/dates.typ", include_str!("../../assets/typst/altacv/internal/dates.typ")),
     ("altacv/internal/defaults.typ", include_str!("../../assets/typst/altacv/internal/defaults.typ")),
@@ -46,7 +45,6 @@ pub const SOURCES: &[(&str, &str)] = &[
 /// The first sweep collected `.typ` and `.svg` and missed the TOML — a
 /// package's data files are as load-bearing as its code, and the omission
 /// showed up only as a compile error, not as a missing import.
-#[allow(dead_code)]
 pub const BYTES: &[(&str, &[u8])] = &[
     ("altacv/assets/avatar-placeholder.svg", include_bytes!("../../assets/typst/altacv/assets/avatar-placeholder.svg")),
     ("altacv/internal/labels-en.toml", include_bytes!("../../assets/typst/altacv/internal/labels-en.toml")),
@@ -64,7 +62,6 @@ pub const BYTES: &[(&str, &[u8])] = &[
 ]; 
 
 /// Look up a vendored source by the path Typst asked for.
-#[allow(dead_code)]
 pub fn source(path: &str) -> Option<&'static str> {
     SOURCES
         .iter()
@@ -73,7 +70,6 @@ pub fn source(path: &str) -> Option<&'static str> {
 }
 
 /// Look up a vendored binary asset by path.
-#[allow(dead_code)]
 pub fn bytes(path: &str) -> Option<&'static [u8]> {
     BYTES
         .iter()

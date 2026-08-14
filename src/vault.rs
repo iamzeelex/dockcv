@@ -16,18 +16,9 @@ const VAULT_DIR_NAME: &str = "cvault";
 const LIBRARY_FILE: &str = "library.toml";
 const DIARY_FILE: &str = "diary.toml";
 const APPLICATIONS_FILE: &str = "applications.toml";
-#[allow(dead_code)] // wired up once the Applications screen lands
 const SNAPSHOTS_DIR: &str = "snapshots";
 /// Reserved files that live in the vault but are NOT CV documents.
 const RESERVED_FILES: [&str; 3] = [LIBRARY_FILE, DIARY_FILE, APPLICATIONS_FILE];
-
-/// A suggested default location for a new vault (`~/cvault`). Only a hint for
-/// the picker — the user chooses where their vault actually lives. (Used by the
-/// upcoming gallery's "create new" default.)
-#[allow(dead_code)]
-pub fn suggested_vault_dir() -> PathBuf {
-    user_home_dir().join(VAULT_DIR_NAME)
-}
 
 /// Cross-platform resolution of the current user's home directory.
 pub fn user_home_dir() -> PathBuf {
@@ -41,15 +32,102 @@ pub fn user_home_dir() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."))
 }
 
-/// Whether `dir` looks like a usable vault (an existing directory).
+/// Whether `dir` can be opened as a vault at all.
+///
+/// Deliberately just "is a directory": the startup path calls this on the
+/// remembered vault, and a stricter test here would hide an existing vault from
+/// its owner the first time they upgraded. [`vault_shape`] is the judgement;
+/// this is the precondition.
 pub fn is_vault(dir: &Path) -> bool {
     dir.is_dir()
+}
+
+/// How much a directory looks like a vault, for the picker to act on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VaultShape {
+    /// Carries the marker file DockCV writes when it adopts a folder.
+    Marked,
+    /// No marker, but the contents are a vault's: notebooks, a `.trash`, or
+    /// `.toml` files that parse as documents. Every vault made before the
+    /// marker existed looks like this.
+    Recognized,
+    /// Empty, or as good as. A fresh folder is a perfectly good new vault.
+    Empty,
+    /// A directory full of things that are not CVs. Picking `~/` or
+    /// `~/Library` lands here — and used to be accepted silently, after which
+    /// the gallery parsed every unrelated `.toml` on the machine and drew the
+    /// failures as cards reading "unreadable file".
+    Unrecognized {
+        /// How many `.toml` files are in it that are not documents. The number
+        /// is what makes the warning concrete rather than vague.
+        stray_toml: usize,
+    },
+}
+
+/// Marker file written when DockCV adopts a folder as a vault.
+///
+/// Dotfile, TOML, one line — File-over-App all the way down: the folder says
+/// what it is in a format the user can read, and nothing depends on a database
+/// entry somewhere else.
+const MARKER_FILE: &str = ".cvault";
+
+/// Classify a directory before making it the user's vault.
+pub fn vault_shape(dir: &Path) -> VaultShape {
+    if !dir.is_dir() {
+        return VaultShape::Unrecognized { stray_toml: 0 };
+    }
+    if dir.join(MARKER_FILE).exists() {
+        return VaultShape::Marked;
+    }
+    if dir.join(LIBRARY_FILE).exists()
+        || dir.join(DIARY_FILE).exists()
+        || dir.join(APPLICATIONS_FILE).exists()
+        || dir.join(".trash").is_dir()
+    {
+        return VaultShape::Recognized;
+    }
+
+    let documents = list_documents(dir);
+    if documents.is_empty() {
+        // No `.toml` at all. Whatever else is in there, nothing will be
+        // mistaken for a CV, so this is a usable — if unusual — new vault.
+        return VaultShape::Empty;
+    }
+
+    // Parse rather than count: a folder of *documents* is a vault whoever made
+    // it, and a folder of unrelated TOML is not. Bounded by the same 10 MB
+    // per-file guard `load` applies, and only reached for a folder that has no
+    // marker and no notebooks — which is once, at the picker.
+    let parses = documents.iter().filter(|p| load(p).is_ok()).count();
+    if parses > 0 {
+        VaultShape::Recognized
+    } else {
+        VaultShape::Unrecognized {
+            stray_toml: documents.len(),
+        }
+    }
+}
+
+/// Write the marker, so the folder answers for itself next time.
+///
+/// Best effort: a vault on a read-only volume is still a vault to read, and
+/// refusing to open it over a missing marker would be the tail wagging the dog.
+pub fn mark_as_vault(dir: &Path) {
+    let path = dir.join(MARKER_FILE);
+    if path.exists() {
+        return;
+    }
+    let _ = fs::write(
+        &path,
+        format!("# This folder is a DockCV vault.\ncreated = \"{}\"\n", today_iso()),
+    );
 }
 
 /// Create a fresh `cvault` directory inside `parent` and return its path.
 pub fn create_vault(parent: &Path) -> Result<PathBuf, String> {
     let dir = parent.join(VAULT_DIR_NAME);
     fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    mark_as_vault(&dir);
     Ok(dir)
 }
 
@@ -374,7 +452,6 @@ pub fn save_diary(vault_dir: &Path, diary: &Diary) -> Result<(), String> {
 }
 
 /// Path of the vault's applications file.
-#[allow(dead_code)] // wired up once the Applications screen lands
 pub fn applications_path(vault_dir: &Path) -> PathBuf {
     vault_dir.join(APPLICATIONS_FILE)
 }
@@ -387,7 +464,6 @@ pub fn applications_path(vault_dir: &Path) -> PathBuf {
 /// it raises each entry's `furthest` to at least its current `status`, so an
 /// old row's conversion funnel isn't silently zeroed just because the field
 /// wasn't there to deserialize.
-#[allow(dead_code)] // wired up once the Applications screen lands
 pub fn load_applications(vault_dir: &Path) -> Applications {
     let mut applications: Applications = fs::read_to_string(applications_path(vault_dir))
         .ok()
@@ -398,7 +474,6 @@ pub fn load_applications(vault_dir: &Path) -> Applications {
 }
 
 /// Atomically save the applications board.
-#[allow(dead_code)] // wired up once the Applications screen lands
 pub fn save_applications(vault_dir: &Path, applications: &Applications) -> Result<(), String> {
     let text = toml::to_string_pretty(applications).map_err(|e| format!("serialize: {e}"))?;
     let path = applications_path(vault_dir);
@@ -409,7 +484,6 @@ pub fn save_applications(vault_dir: &Path, applications: &Applications) -> Resul
 }
 
 /// Directory PDF snapshots are stored in — `<vault>/snapshots/`.
-#[allow(dead_code)] // wired up once the Applications screen lands
 pub fn snapshots_dir(vault_dir: &Path) -> PathBuf {
     vault_dir.join(SNAPSHOTS_DIR)
 }
@@ -421,7 +495,6 @@ pub fn snapshots_dir(vault_dir: &Path) -> PathBuf {
 /// non-alphanumeric characters that would otherwise leave `---` in the file
 /// name), and has its own "never produce an empty fragment" fallback
 /// (`"application"`, not `"resume"`).
-#[allow(dead_code)] // wired up once the Applications screen lands
 fn slugify_for_snapshot(s: &str) -> String {
     let mut slug = String::with_capacity(s.len());
     let mut last_was_dash = false;
@@ -448,7 +521,6 @@ fn slugify_for_snapshot(s: &str) -> String {
 ///
 /// Does not generate the PDF — producing the bytes is the Typst pipeline's
 /// job; this only stores what it is handed.
-#[allow(dead_code)] // wired up once the Applications screen lands
 pub fn save_snapshot(
     vault_dir: &Path,
     bytes: &[u8],
@@ -663,6 +735,82 @@ mod tests {
             .collect();
         recovered.sort();
         assert_eq!(recovered, vec!["The first one", "The second one"]);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The picker used to accept any directory, so choosing `~/` made the
+    /// gallery parse every unrelated `.toml` on the machine and draw the
+    /// failures as cards. These are the four answers that decides between.
+    #[test]
+    fn a_directory_is_classified_before_it_becomes_a_vault() {
+        use super::VaultShape;
+
+        let root = std::env::temp_dir().join(format!("dockcv-shape-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let make = |name: &str| {
+            let dir = root.join(name);
+            std::fs::create_dir_all(&dir).expect("temp dir");
+            dir
+        };
+
+        // A folder with nothing in it is a perfectly good new vault.
+        assert_eq!(super::vault_shape(&make("empty")), VaultShape::Empty);
+
+        // A real vault, made the normal way, carries the marker.
+        let created = super::create_vault(&make("parent")).expect("create");
+        assert_eq!(super::vault_shape(&created), VaultShape::Marked);
+
+        // A vault from before the marker existed: no `.cvault`, but its
+        // contents give it away. This is the case that must not regress —
+        // failing it would hide an existing vault from its owner.
+        let legacy = make("legacy");
+        let doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+        super::create_document(&legacy, &doc, "cv").expect("create");
+        assert_eq!(super::vault_shape(&legacy), VaultShape::Recognized);
+
+        // …and one recognised by its notebooks alone, with no documents yet.
+        let notebooks = make("notebooks");
+        super::save_diary(&notebooks, &Diary::default()).expect("save");
+        assert_eq!(super::vault_shape(&notebooks), VaultShape::Recognized);
+
+        // A folder of TOML that is not CVs — a config directory, say.
+        let strays = make("strays");
+        for name in ["Cargo.toml", "settings.toml", "rust-toolchain.toml"] {
+            std::fs::write(strays.join(name), "[package]\nname = \"x\"\n").expect("write");
+        }
+        assert_eq!(
+            super::vault_shape(&strays),
+            VaultShape::Unrecognized { stray_toml: 3 }
+        );
+
+        // Adopting it anyway leaves the marker, so it stops asking.
+        super::mark_as_vault(&strays);
+        assert_eq!(super::vault_shape(&strays), VaultShape::Marked);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The marker is a readable file, not a magic byte — and it is not a
+    /// document, so it must never show up in the gallery.
+    #[test]
+    fn the_marker_is_plain_text_and_is_not_a_document() {
+        let dir = std::env::temp_dir().join(format!("dockcv-marker-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp vault");
+
+        super::mark_as_vault(&dir);
+        let text = std::fs::read_to_string(dir.join(".cvault")).expect("marker exists");
+        assert!(text.contains("DockCV vault"), "{text}");
+        assert!(
+            toml::from_str::<toml::Value>(&text).is_ok(),
+            "the marker must parse as TOML: {text}"
+        );
+        assert!(super::list_documents(&dir).is_empty());
+
+        // Writing it twice must not clobber the original creation date.
+        super::mark_as_vault(&dir);
+        assert_eq!(std::fs::read_to_string(dir.join(".cvault")).unwrap(), text);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

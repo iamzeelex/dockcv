@@ -1,7 +1,7 @@
 //! Setup screen rendering for `Shell`.
 
 use gpui::prelude::*;
-use gpui::{div, px, ClickEvent, Context, IntoElement};
+use gpui::{div, px, ClickEvent, Context, IntoElement, Window};
 
 use crate::theme::ActiveTheme;
 
@@ -35,14 +35,14 @@ impl Shell {
                 "setup-create",
                 "Create a new vault",
                 "Pick a folder — we'll create a cvault inside it.",
-                Box::new(|this, cx| this.create_new_vault(cx)),
+                Box::new(|this, _window, cx| this.create_new_vault(cx)),
             ))
             .child(self.setup_card(
                 cx,
                 "setup-open",
                 "Open an existing vault",
                 "Choose a cvault folder you already have.",
-                Box::new(|this, cx| this.open_existing_vault(cx)),
+                Box::new(|this, window, cx| this.open_existing_vault(window, cx)),
             ))
             // The one place DockCV reaches the network, and it says so.
             // "No network calls" (US-10) is a promise about the app: it holds
@@ -56,7 +56,7 @@ impl Shell {
                 "Clone from Git",
                 "Copy a repo URL to the clipboard, then pick where to clone it. \
                  Runs your own git, and is the only thing in DockCV that uses the network.",
-                Box::new(|this, cx| this.clone_from_git(cx)),
+                Box::new(|this, _window, cx| this.clone_from_git(cx)),
             ))
             .child(
                 div()
@@ -89,7 +89,9 @@ impl Shell {
         id: &'static str,
         title: &'static str,
         description: &'static str,
-        action: Box<dyn Fn(&mut Self, &mut Context<Self>) + 'static>,
+        // Carries the `Window` because opening a vault may have to put a
+        // confirmation in front of itself.
+        action: Box<dyn Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static>,
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
         div()
@@ -106,8 +108,8 @@ impl Shell {
             .border_color(theme.border)
             .cursor_pointer()
             .hover(|s| s.border_color(theme.accent))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                action(this, cx);
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                action(this, window, cx);
             }))
             .child(div().text_color(theme.text).text_sm().child(title))
             .child(

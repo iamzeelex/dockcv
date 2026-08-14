@@ -10,11 +10,6 @@ mod diary;
 mod gallery;
 pub mod import_flow;
 mod library;
-
-// Retained standalone component
-#[allow(dead_code)]
-mod preview;
-
 mod preset_matrix;
 mod root;
 mod root_custom_sections;
@@ -25,19 +20,15 @@ mod root_section_drag;
 mod root_section_rename;
 mod root_section_variants;
 mod root_sidebar;
-mod root_undo;
 mod root_dates;
+mod root_undo;
 pub mod save_status;
-mod vault_cache;
 pub mod settings_window;
 mod setup;
 mod shell;
 mod sidebar;
+mod vault_cache;
 mod welcome;
 
-#[allow(unused_imports)]
-pub use import_flow::ImportStep;
-#[allow(unused_imports)]
-pub use preset_matrix::PresetMatrix;
 pub use root::{init_keybindings, EditorEvent, ExportPdf, Root};
 pub use shell::Shell;

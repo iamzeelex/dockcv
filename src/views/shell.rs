@@ -931,23 +931,63 @@ impl Shell {
     }
 
     /// Open an existing vault folder.
-    pub(super) fn open_existing_vault(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn open_existing_vault(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.setup_error = None;
         let receiver = cx.prompt_for_paths(pick_dir());
-        cx.spawn(async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             let Some(dir) = first_path(receiver.await) else {
                 return;
             };
-            let _ = this.update(cx, |this, cx| {
-                if vault::is_vault(&dir) {
-                    this.open_vault(dir, cx);
-                } else {
-                    this.setup_error = Some("That folder is not a vault.".into());
+            let _ = this.update_in(cx, |this, window, cx| {
+                if !vault::is_vault(&dir) {
+                    this.setup_error = Some("That is not a folder.".into());
                     cx.notify();
+                    return;
+                }
+                // `is_vault` only asks whether it is a directory, which is why
+                // picking `~/` used to be accepted in silence — after which the
+                // gallery parsed every unrelated `.toml` on the machine and drew
+                // the failures as cards reading "unreadable file".
+                match vault::vault_shape(&dir) {
+                    vault::VaultShape::Unrecognized { stray_toml } => {
+                        let detail = if stray_toml == 0 {
+                            "Nothing in it looks like a CV, a block library or a diary."
+                                .to_string()
+                        } else {
+                            format!(
+                                "It holds {stray_toml} .toml file{} and none of them is a CV. \
+                                 DockCV would list every one of them as an unreadable document.",
+                                if stray_toml == 1 { "" } else { "s" }
+                            )
+                        };
+                        // Not refused outright: it is the user's disk, and a
+                        // vault restored from a backup can look like anything.
+                        // But it is asked about, and the answer is No by
+                        // default.
+                        confirm::destructive(
+                            "That folder doesn't look like a vault.".into(),
+                            detail,
+                            "Use It Anyway",
+                            window,
+                            cx,
+                            move |this, _window, cx| this.adopt_vault(dir, cx),
+                        );
+                    }
+                    _ => this.adopt_vault(dir, cx),
                 }
             });
         })
         .detach();
+    }
+
+    /// Take a folder as the vault, and leave a marker saying so.
+    ///
+    /// The marker is what lets the folder answer for itself next time instead
+    /// of being re-classified by its contents — and what makes an intentionally
+    /// odd vault stop asking after the first time.
+    fn adopt_vault(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
+        vault::mark_as_vault(&dir);
+        self.open_vault(dir, cx);
     }
 
     /// Clone a vault from a git URL on the clipboard into a chosen folder.

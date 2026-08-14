@@ -239,7 +239,6 @@ pub struct DiaryEntry {
 /// why `Wishlist` — semantically the first column — is declared last here;
 /// `ApplicationStatus::default()` is what every other reader (counts,
 /// conversion) should use to mean "wishlist", not this declaration order.
-#[allow(dead_code)] // no view code yet (this task's scope stops at the model/vault layer)
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ApplicationStatus {
@@ -276,7 +275,6 @@ impl ApplicationStatus {
 /// The next thing that has to happen, as data rather than a caption. The
 /// review is explicit (P-04): `Decide by Fri` drawn as a label is a caption
 /// you cannot build a reminder from.
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct NextStep {
     /// What has to happen: "Onsite", "Take-home due", "Decide by".
@@ -289,7 +287,6 @@ pub struct NextStep {
 
 /// A PDF as it was actually sent. Never a live reference to a preset:
 /// editing the CV in July must not rewrite what a company saw in March (US-04).
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     /// 1-based per application — the mockup's `snapshot v1`, `v2`.
@@ -305,7 +302,6 @@ pub struct Snapshot {
 }
 
 /// One card on the Applications board.
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Application {
     pub company: String,
@@ -355,7 +351,6 @@ pub struct Application {
     pub snapshots: Vec<Snapshot>,
 }
 
-#[allow(dead_code)]
 impl Application {
     /// The one way `status` should change. Sets `status`, and raises
     /// `furthest` to the deeper of its current value and the new status —
@@ -380,7 +375,6 @@ impl Application {
 /// application that reached `Offer` was necessarily sent and interviewed, so
 /// it counts in `sent`, `interviews` and `offers` alike. `Applications::conversion`
 /// is what computes this — see its doc comment for the exact rule.
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PresetConversion {
     pub preset: String,
@@ -391,13 +385,11 @@ pub struct PresetConversion {
 
 /// The application board: every company/role the user is tracking. Stored at
 /// `<vault>/applications.toml`, mirroring Diary and Library.
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Applications {
     pub entries: Vec<Application>,
 }
 
-#[allow(dead_code)]
 impl Applications {
     /// Number of cards in a given column.
     pub fn count(&self, status: ApplicationStatus) -> usize {

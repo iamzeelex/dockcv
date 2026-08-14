@@ -940,6 +940,57 @@ mod font_tests {
     fn the_default_font_is_the_one_documents_already_used() {
         assert_eq!(DocumentFont::default(), DocumentFont::LibertinusSerif);
     }
+
+    /// Which offered families can actually set a CV in Cyrillic.
+    ///
+    /// This matters because Typst answers a missing **glyph** the same way it
+    /// answers a missing family: silently, by falling back to another font. A
+    /// CV written in Ukrainian and set in a Latin-only face does not fail and
+    /// does not warn — it comes out in a face the author did not choose, with
+    /// the name and the body in visibly different type.
+    ///
+    /// The test pins the fact rather than asserting a policy: it fails if a
+    /// family's coverage *changes*, which is the thing that would otherwise
+    /// happen quietly during a font bump. What to do about Newsreader — drop
+    /// it from the picker, mark it in the UI, or accept it — is L-11 in
+    /// `docs/OPEN.md`.
+    #[test]
+    fn which_document_fonts_can_set_a_cv_in_cyrillic() {
+        // Ukrainian needs the four letters Russian does not have; a face that
+        // stops at the Russian alphabet is still wrong for this persona.
+        const SAMPLE: &str = "Софія Медведенко ЄІЇҐ";
+
+        let engine = TypstEngine::new(String::new());
+        let covers = |font: DocumentFont| -> bool {
+            let family = font.family().to_lowercase();
+            engine
+                .fonts
+                .iter()
+                .filter(|f| f.info().family.to_lowercase() == family)
+                .any(|f| {
+                    SAMPLE
+                        .chars()
+                        .filter(|c| !c.is_whitespace())
+                        .all(|c| f.info().coverage.contains(c as u32))
+                })
+        };
+
+        for font in DocumentFont::ALL {
+            let expected = !matches!(font, DocumentFont::Newsreader);
+            assert_eq!(
+                covers(font),
+                expected,
+                "Cyrillic coverage of `{}` changed — update this test and L-11 \
+                 in docs/OPEN.md, do not just flip the expectation",
+                font.label()
+            );
+        }
+
+        // The point of recording it: there *is* a serif that works, so the
+        // limitation is a picker problem and not a missing-font problem.
+        assert!(covers(DocumentFont::PtSerif));
+        assert!(covers(DocumentFont::LibertinusSerif));
+    }
 }
 
 #[cfg(test)]

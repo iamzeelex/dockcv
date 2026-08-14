@@ -82,10 +82,23 @@ lopdf = { version = "0.42", default-features = false, features = ["wasm_js"] }
 # GPUI's dependency tree is large; optimizing deps keeps the dev binary usable
 # while leaving our own crate unoptimized for fast iteration.
 opt-level = 0
+# Full DWARF for ~1000 crates is what made `target/` 51 GB on its own. Line
+# tables keep every backtrace readable — file and line for each frame, which is
+# all a panic report needs — and cost a fraction of the disk. Step-debugging
+# variable values needs `debug = true` back; almost nothing here is debugged
+# that way, and it is one line to flip when something is.
+debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 2
+# Dependencies are not what anyone is debugging, and this is the bulk of it.
+debug = false
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
+# The shipped binary carries no symbol table. It is not obfuscation — the source
+# is MIT/Apache — it is that a 67 MB download to write a CV is rude, and nothing
+# in the release path reads these: panics in a distributed build are reported by
+# message, not by local backtrace.
+strip = "symbols"

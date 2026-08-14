@@ -119,7 +119,15 @@ actions!(
 /// The key context [`Render for Root`] sets, and every [`KeyBinding`] below
 /// is scoped to. Exposed so sibling files (`root_overlays.rs`) can build
 /// `Button::tooltip_with_action` hints against the same context string.
-pub(super) const EDITOR_CONTEXT: &str = "Root";
+///
+/// **Not** `"Root"`, which is what it used to be — and which is the exact
+/// string `gpui-component`'s own window `Root` declares
+/// (`crates/ui/src/root.rs`), where it binds `tab`, `shift-tab` and `cmd-c`.
+/// Two different elements answering to one context name meant the editor's
+/// bindings were dispatchable from every screen in the app, not just the
+/// editor, and that any chord upstream adds under `"Root"` would silently
+/// start fighting one of ours. Nothing collides today; the name did.
+pub(super) const EDITOR_CONTEXT: &str = "DockCvEditor";
 
 /// Chord literals, in `KeyBinding::new`'s own `-`-joined syntax. Centralized
 /// so `init_keybindings` and every on-screen hint read the same literal and

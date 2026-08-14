@@ -285,13 +285,6 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
     );
 }
 
-#[allow(dead_code)]
-fn page_setup(layout: &LayoutSettings) -> String {
-    let mut out = String::with_capacity(256);
-    page_setup_into(&mut out, layout);
-    out
-}
-
 /// Format a measurement to at most 2 decimal places with no trailing zeros,
 /// so a default layout (`16mm`, `10pt`, `0.62em`) reads exactly as the old
 /// hard-coded constants did rather than gaining spurious digits.
@@ -336,13 +329,6 @@ fn section_key(kind: SectionKind) -> Option<&'static str> {
         Organizations => "Organizations",
         Custom(_) => return None,
     })
-}
-
-#[allow(dead_code)]
-fn resume_to_dict(r: &Resume, dates: DateFormat) -> String {
-    let mut s = String::with_capacity(4096);
-    resume_to_dict_into(&mut s, r, dates);
-    s
 }
 
 fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
@@ -568,14 +554,6 @@ fn write_quoted(out: &mut String, value: &str) {
     out.push('"');
 }
 
-/// A quoted Typst string literal.
-#[allow(dead_code)]
-fn quote(value: &str) -> String {
-    let mut out = String::with_capacity(value.len() + 2);
-    write_quoted(&mut out, value);
-    out
-}
-
 /// Emit `key: "value",` only when non-empty.
 fn field(out: &mut String, indent: usize, key: &str, value: &str) {
     use std::fmt::Write;
@@ -606,7 +584,7 @@ fn neutralize_into(out: &mut String, markup: &str) {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)] // the String-returning shape; the app calls the `_into` form
 fn neutralize(markup: &str) -> String {
     let mut out = String::with_capacity(markup.len());
     neutralize_into(&mut out, markup);
