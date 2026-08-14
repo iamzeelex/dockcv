@@ -273,7 +273,8 @@ impl Shell {
                 this.diary_role_filter = role.clone();
                 cx.notify();
             }))
-            .child(div().min_w_0().truncate().child(label.to_string()))
+            // `flex_1` with the `min_w_0` — see the gallery card's title.
+            .child(div().flex_1().min_w_0().truncate().child(label.to_string()))
             .children(count.map(|count| {
                 div()
                     .flex_none()

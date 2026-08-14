@@ -361,7 +361,12 @@ impl Shell {
             .gap_2()
             .pr(px(26.0)) // clears the "···" trigger
             .child(
+                // `flex_1` alongside the `min_w_0`: without it the title box
+                // shrinks to its own minimum and ellipsises a name that had
+                // the whole card to sit in — "Leo Vaicer" came out
+                // "Leo Vai…" with 200px to spare.
                 div()
+                    .flex_1()
                     .min_w_0()
                     .truncate()
                     .font_family(SANS)
@@ -372,7 +377,9 @@ impl Shell {
             )
             .when(is_copy, |row| {
                 row.child(
+                    // The chip keeps its size; the title is what gives.
                     div()
+                        .flex_none()
                         .px_2()
                         .py(px(1.0))
                         .rounded_full()
