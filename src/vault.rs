@@ -295,8 +295,36 @@ pub fn delete_document(path: &Path) -> Result<(), String> {
     let trash = vault_dir.join(".trash");
     fs::create_dir_all(&trash).map_err(|e| format!("create .trash: {e}"))?;
     let name = path.file_name().ok_or("document has no file name")?;
-    fs::rename(path, trash.join(name)).map_err(|e| format!("move to .trash: {e}"))?;
+
+    // Never onto an occupied name. `fs::rename` replaces the destination
+    // silently on Unix, so deleting `cv.toml`, creating a new one, and deleting
+    // that too destroyed the first — inside the folder whose entire job is to
+    // make deletion reversible.
+    let dest = free_trash_path(&trash, name);
+    fs::rename(path, &dest).map_err(|e| format!("move to .trash: {e}"))?;
     Ok(())
+}
+
+/// A path in `trash` that nothing occupies, deduping with `-2`, `-3`, … before
+/// the extension. Mirrors `new_doc_path`'s scheme so a trashed file still looks
+/// like the document it came from.
+fn free_trash_path(trash: &Path, name: &std::ffi::OsStr) -> PathBuf {
+    let candidate = trash.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let name = Path::new(name);
+    let stem = name.file_stem().and_then(|s| s.to_str()).unwrap_or("cv");
+    let ext = name.extension().and_then(|s| s.to_str()).unwrap_or("toml");
+    // Bounded: a user who has trashed the same name a thousand times has a
+    // different problem, and an unbounded loop here would be a hang.
+    for n in 2..1000 {
+        let candidate = trash.join(format!("{stem}-{n}.{ext}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    trash.join(format!("{stem}-{}.{ext}", today_iso()))
 }
 
 /// Path of the vault's block library file.
@@ -592,6 +620,49 @@ mod tests {
         let listed = super::list_documents(&dir);
         assert_eq!(listed, vec![path.clone()]);
         assert!(super::read_meta(&path).unreadable);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The trash exists to make deletion reversible, so a delete must never
+    /// destroy something already in it. `fs::rename` replaces the destination
+    /// silently on Unix, so this was a real way to lose a document permanently
+    /// through the reversible path.
+    #[test]
+    fn trashing_the_same_name_twice_keeps_both() {
+        let dir = std::env::temp_dir().join(format!("dockcv-trash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp vault");
+
+        let mut first = ResumeDoc::from_resume(crate::resume::model::Resume::default(), "Base");
+        first.profile.active_mut().name = "The first one".into();
+        let path = super::create_document(&dir, &first, "cv").expect("create");
+        super::delete_document(&path).expect("delete");
+
+        // Same name again, different contents.
+        let mut second = ResumeDoc::from_resume(crate::resume::model::Resume::default(), "Base");
+        second.profile.active_mut().name = "The second one".into();
+        let path = super::create_document(&dir, &second, "cv").expect("recreate");
+        assert_eq!(path.file_name().unwrap(), "cv.toml", "the name is free again");
+        super::delete_document(&path).expect("delete again");
+
+        assert_eq!(super::trash_count(&dir), 2, "both must survive");
+        let names: Vec<String> = std::fs::read_dir(dir.join(".trash"))
+            .expect("trash")
+            .flatten()
+            .filter_map(|e| e.file_name().to_str().map(String::from))
+            .collect();
+        assert!(names.contains(&"cv.toml".to_string()), "{names:?}");
+        assert!(names.contains(&"cv-2.toml".to_string()), "{names:?}");
+
+        let mut recovered: Vec<String> = std::fs::read_dir(dir.join(".trash"))
+            .expect("trash")
+            .flatten()
+            .filter_map(|e| super::load(&e.path()).ok())
+            .map(|d| d.profile.active().name.clone())
+            .collect();
+        recovered.sort();
+        assert_eq!(recovered, vec!["The first one", "The second one"]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

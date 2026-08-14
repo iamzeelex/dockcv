@@ -22,6 +22,7 @@ use dockcv_ui_components::{
 use crate::resume::model::{Diary, DiaryEntry};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
+use super::confirm;
 use super::shell::Shell;
 
 /// `2026-06-18` → `(2026, 6, 18)`. The vault writes this format itself
@@ -391,9 +392,20 @@ impl Shell {
                     .dropdown_menu(move |menu, _window, _cx| {
                         let shell = shell.clone();
                         menu.item(PopupMenuItem::new("Delete").on_click(
-                            move |_ev, _window, cx| {
-                                let _ = shell.update(cx, |this, cx| {
-                                    this.delete_diary_entry(index, cx);
+                            move |_ev, window, cx| {
+                                let _ = shell.update(cx, |_this, cx| {
+                                    confirm::destructive(
+                                        "Delete this diary entry?".into(),
+                                        format!(
+                                            "{} A diary entry is the record a CV bullet is \
+                                             drawn from, and nothing else holds it.",
+                                            confirm::CANNOT_UNDO
+                                        ),
+                                        "Delete",
+                                        window,
+                                        cx,
+                                        move |this, _window, cx| this.delete_diary_entry(index, cx),
+                                    );
                                 });
                             },
                         ))

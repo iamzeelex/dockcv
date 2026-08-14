@@ -25,6 +25,7 @@ use dockcv_ui_components::{
     Button, ButtonExt, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, Tag, TextField,
 };
 
+use super::confirm;
 use super::shell::{remove_at, Screen, Shell};
 
 /// The five section kinds that have a library pool, in the order the screen
@@ -554,9 +555,23 @@ impl Shell {
                     .dropdown_menu(move |menu, _window, _cx| {
                         let shell = shell.clone();
                         menu.item(PopupMenuItem::new("Delete").on_click(
-                            move |_ev, _window, cx| {
-                                let _ = shell.update(cx, |this, cx| {
-                                    this.remove_library_block(section, index, cx);
+                            move |_ev, window, cx| {
+                                let _ = shell.update(cx, |_this, cx| {
+                                    confirm::destructive(
+                                        "Delete this block from your library?".into(),
+                                        format!(
+                                            "{} Copies already placed in a CV are not \
+                                             affected — a library block is a source to \
+                                             copy from, not a link.",
+                                            confirm::CANNOT_UNDO
+                                        ),
+                                        "Delete",
+                                        window,
+                                        cx,
+                                        move |this, _window, cx| {
+                                            this.remove_library_block(section, index, cx)
+                                        },
+                                    );
                                 });
                             },
                         ))

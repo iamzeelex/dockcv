@@ -28,6 +28,7 @@ use crate::resume::edit::FieldId;
 use crate::resume::model::SectionKind;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
+use super::confirm;
 use super::Root;
 
 /// Live state while `section`'s active variant is mid-rename. One at a time
@@ -189,13 +190,38 @@ impl Root {
                     .cursor_pointer()
                     .hover(|s| s.text_color(theme.danger))
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        // Committed first: the name in the dialog has to be the
+                        // one on screen, including an edit still in the box.
                         this.flush_variant_rename(section, window, cx);
                         let active = this.doc.active_variant(section);
-                        this.doc.remove_variant(section, active);
-                        this.schedule_save(cx);
-                        this.fields_stale = true;
-                        cx.notify();
-                        this.schedule_recompile(window, cx);
+                        let name = this
+                            .doc
+                            .variant_names(section)
+                            .get(active)
+                            .cloned()
+                            .unwrap_or_default();
+                        confirm::destructive(
+                            format!("Delete the “{name}” variant?"),
+                            format!(
+                                "{} The section keeps its other variants, and any preset \
+                                 that selected this one falls back to the section's first.",
+                                confirm::CANNOT_UNDO
+                            ),
+                            "Delete",
+                            window,
+                            cx,
+                            move |this, window, cx| {
+                                // Re-read rather than closing over `active`: the
+                                // dialog is modal, but the selection is state and
+                                // reading it late is free.
+                                let active = this.doc.active_variant(section);
+                                this.doc.remove_variant(section, active);
+                                this.schedule_save(cx);
+                                this.fields_stale = true;
+                                cx.notify();
+                                this.schedule_recompile(window, cx);
+                            },
+                        );
                     }))
                     .child(Icon::new(IconName::Close).with_size(px(11.0))),
             );

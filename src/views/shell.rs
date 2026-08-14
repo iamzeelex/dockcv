@@ -29,6 +29,7 @@ use crate::theme::ThemeMode;
 use crate::typst_engine::TypstEngine;
 use crate::vault;
 
+use super::confirm;
 use super::save_status;
 use super::vault_cache::VaultCache;
 use super::import_flow::ImportStep;
@@ -348,14 +349,40 @@ impl Shell {
         cx.notify();
     }
 
-    pub(super) fn empty_trash(&mut self, cx: &mut Context<Self>) {
-        if let Some(vault) = self.vault.clone() {
-            let _ = vault::empty_trash(&vault);
-            cx.notify();
+    /// Permanently remove everything in the vault's `.trash`.
+    ///
+    /// The one button in DockCV that destroys data outright — deleting a
+    /// document only moves it here — so it is the one that asks first, and the
+    /// dialog says how many files are about to go.
+    pub(super) fn empty_trash(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(vault) = self.vault.clone() else {
+            return;
+        };
+        let count = vault::trash_count(&vault);
+        if count == 0 {
+            return;
         }
+        confirm::destructive(
+            format!(
+                "Permanently delete {count} deleted {}?",
+                if count == 1 { "CV" } else { "CVs" }
+            ),
+            format!(
+                "{} Everything in the vault's .trash folder is removed from disk. \
+                 To keep any of it, move it out in Finder first.",
+                confirm::CANNOT_UNDO
+            ),
+            "Empty Trash",
+            window,
+            cx,
+            move |_this, _window, cx| {
+                save_status::record(cx, "trash", vault::empty_trash(&vault));
+                cx.notify();
+            },
+        );
     }
 
-    pub(super) fn rebuild_thumbnails(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn rebuild_thumbnails(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.thumbnails.clear();
         cx.notify();
     }

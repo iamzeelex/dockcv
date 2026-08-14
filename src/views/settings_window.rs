@@ -82,7 +82,9 @@ fn action_button(
     id: &'static str,
     label: String,
     danger: bool,
-    action: fn(&mut Shell, &mut Context<Shell>),
+    // Takes the `Window` too, because a destructive action has to be able to
+    // put an alert in front of itself, and an alert belongs to a window.
+    action: fn(&mut Shell, &mut Window, &mut Context<Shell>),
     cx: &mut App,
 ) -> impl IntoElement {
     let theme = cx.theme().clone();
@@ -99,8 +101,8 @@ fn action_button(
         .text_color(if danger { theme.danger } else { theme.text })
         .cursor_pointer()
         .hover(|s| s.bg(theme.hover))
-        .on_click(move |_: &ClickEvent, _window, cx| {
-            let _ = shell.update(cx, action);
+        .on_click(move |_: &ClickEvent, window, cx| {
+            let _ = shell.update(cx, |shell, cx| action(shell, window, cx));
         })
         .child(label)
 }

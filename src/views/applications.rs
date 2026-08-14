@@ -40,6 +40,7 @@ use super::applications_data::{
 };
 use super::applications_card::{card_meta, column_tint};
 use super::applications_snapshot::pin_options;
+use super::confirm;
 use super::shell::{remove_at, Shell};
 
 /// The five board columns, in display order.
@@ -597,10 +598,28 @@ impl Shell {
                         }
 
                         let shell_del = shell.clone();
+                        let company = app.company.clone();
                         menu.separator().item(PopupMenuItem::new("Delete").on_click(
-                            move |_ev, _window, cx| {
-                                let _ = shell_del.update(cx, |this, cx| {
-                                    this.delete_application(index, cx);
+                            move |_ev, window, cx| {
+                                let company = company.clone();
+                                let _ = shell_del.update(cx, |_this, cx| {
+                                    let who = if company.trim().is_empty() {
+                                        "this application".to_string()
+                                    } else {
+                                        format!("the application to {}", company.trim())
+                                    };
+                                    confirm::destructive(
+                                        format!("Delete {who}?"),
+                                        format!(
+                                            "{} Any PDF snapshots stay in your vault's \
+                                             snapshots folder — only the card goes.",
+                                            confirm::CANNOT_UNDO
+                                        ),
+                                        "Delete",
+                                        window,
+                                        cx,
+                                        move |this, _window, cx| this.delete_application(index, cx),
+                                    );
                                 });
                             },
                         ))
