@@ -38,5 +38,5 @@ mod welcome;
 pub use import_flow::ImportStep;
 #[allow(unused_imports)]
 pub use preset_matrix::PresetMatrix;
-pub use root::{init_keybindings, EditorEvent, Root};
+pub use root::{init_keybindings, EditorEvent, ExportPdf, Root};
 pub use shell::Shell;

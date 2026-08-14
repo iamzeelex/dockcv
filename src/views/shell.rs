@@ -382,6 +382,29 @@ impl Shell {
         );
     }
 
+    /// Start a new CV — the gallery's template chooser, reached from ⌘N and
+    /// the File menu as well as the gallery's own button.
+    pub fn start_new_cv(&mut self, cx: &mut Context<Self>) {
+        if self.vault.is_none() {
+            return;
+        }
+        self.screen = Screen::Gallery;
+        self.gallery_creating = true;
+        cx.notify();
+    }
+
+    /// Show the vault folder in Finder.
+    ///
+    /// US-09: the user must always be able to see the real path *and* open it.
+    /// Settings has shown the path since O-21; this is the other half, and it
+    /// is the answer to "where are my files" that does not involve retyping a
+    /// path into a Go-to-Folder box.
+    pub fn reveal_vault(&mut self, cx: &mut Context<Self>) {
+        if let Some(vault) = self.vault.clone() {
+            cx.open_with_system(&vault);
+        }
+    }
+
     pub(super) fn rebuild_thumbnails(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.thumbnails.clear();
         cx.notify();

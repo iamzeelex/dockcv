@@ -229,9 +229,18 @@ fn storage_page(shell: &WeakEntity<Shell>) -> SettingPage {
                 .title("About")
                 .description("Local-first, File-over-App.")
                 .item(SettingItem::new(
-                    "Application",
+                    "Version",
                     SettingField::render(|_o, _window, cx: &mut App| {
-                        readout("DockCV".to_string(), false, cx).into_any_element()
+                        // Mono, because a version is data — and present at all,
+                        // because this row used to read the literal word
+                        // "DockCV", which made a bug report impossible to place
+                        // against a build.
+                        readout(
+                            format!("{} {}", crate::app::APP_NAME, crate::app::APP_VERSION),
+                            true,
+                            cx,
+                        )
+                        .into_any_element()
                     }),
                 )),
         )

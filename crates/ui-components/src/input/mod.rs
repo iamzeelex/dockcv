@@ -18,6 +18,16 @@ pub use field::{TextField, TextFieldEvent, TextFieldState};
 /// Exported under our own name so app code never writes `gpui_component`.
 pub use gpui_component::Root as WindowRoot;
 
+/// The editing actions the text input already binds (`cmd-c`, `cmd-v`, `cmd-z`…).
+///
+/// Re-exported because the app's **menu bar** has to name them: a macOS Edit
+/// menu is not decoration, it is where the OS looks to decide whether Cut,
+/// Copy, Paste and Undo are available at all, and `MenuItem::os_action` needs
+/// the real action type to pair each item with its responder-chain equivalent.
+/// Without this, app code would have to reach for `gpui_component::` directly —
+/// the one thing this crate exists to prevent.
+pub use gpui_component::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
+
 use gpui::{AnyView, App, AppContext as _, Entity, Window};
 
 use crate::theme::Theme;

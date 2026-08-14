@@ -2,8 +2,8 @@
 //! and menus, and open the main window.
 
 use gpui::{
-    actions, point, px, size, App, AppContext, Bounds, KeyBinding, Menu, MenuItem, SharedString,
-    TitlebarOptions, WindowBounds, WindowOptions,
+    actions, point, px, size, App, AppContext, Bounds, KeyBinding, Menu, MenuItem, OsAction,
+    SharedString, TitlebarOptions, WindowBounds, WindowOptions,
 };
 
 use crate::views::settings_window::SettingsWindow;
@@ -12,9 +12,26 @@ use crate::views::Shell;
 /// Human-readable application name, surfaced in the title bar and menus.
 pub const APP_NAME: &str = "DockCV";
 
+/// The version the About box and the bundle report, from one place.
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 // Top-level actions. `actions!` generates a unit struct per name plus the
 // machinery GPUI needs to bind them to keys and menu items.
-actions!(dockcv, [Quit, OpenSettings]);
+actions!(
+    dockcv,
+    [
+        Quit,
+        OpenSettings,
+        About,
+        NewCv,
+        RevealVault,
+        SaveNow,
+        CloseWindow,
+        MinimizeWindow,
+        ZoomWindow,
+        ShowNotices,
+    ]
+);
 
 /// Start the GPUI application. Blocks until the last window closes.
 pub fn run() {
@@ -76,11 +93,44 @@ fn init(cx: &mut App) {
         // pane (O-21) precisely so this shortcut means what it means
         // everywhere else.
         KeyBinding::new("cmd-,", OpenSettings, None),
+        KeyBinding::new("cmd-n", NewCv, None),
+        // Not "save" in the sense of a document that would otherwise be lost —
+        // writes are automatic. This flushes the 600 ms debounce, which is what
+        // the reflex is actually asking for.
+        KeyBinding::new("cmd-s", SaveNow, None),
+        KeyBinding::new("cmd-w", CloseWindow, None),
+        KeyBinding::new("cmd-m", MinimizeWindow, None),
     ]);
     crate::views::init_keybindings(cx);
 
     cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
     cx.on_action(|_: &OpenSettings, cx: &mut App| open_settings_window(cx));
+    cx.on_action(|_: &About, cx: &mut App| show_about(cx));
+    cx.on_action(|_: &ShowNotices, cx: &mut App| show_notices(cx));
+    cx.on_action(|_: &SaveNow, cx: &mut App| flush_open_document(cx));
+    cx.on_action(|_: &NewCv, cx: &mut App| {
+        with_shell(cx, |shell, cx| shell.start_new_cv(cx));
+    });
+    cx.on_action(|_: &RevealVault, cx: &mut App| {
+        with_shell(cx, |shell, cx| shell.reveal_vault(cx));
+    });
+    cx.on_action(|_: &CloseWindow, cx: &mut App| {
+        // Whichever window is in front — Settings closing must not take the
+        // main window with it, and `on_window_closed` already tells them apart.
+        if let Some(window) = cx.active_window() {
+            let _ = window.update(cx, |_, window, _| window.remove_window());
+        }
+    });
+    cx.on_action(|_: &MinimizeWindow, cx: &mut App| {
+        if let Some(window) = cx.active_window() {
+            let _ = window.update(cx, |_, window, _| window.minimize_window());
+        }
+    });
+    cx.on_action(|_: &ZoomWindow, cx: &mut App| {
+        if let Some(window) = cx.active_window() {
+            let _ = window.update(cx, |_, window, _| window.zoom_window());
+        }
+    });
 
     // The last chance to write. Quit observers run while the windows — and so
     // the `Shell` — are still alive, which is why the flush hangs here rather
@@ -91,15 +141,82 @@ fn init(cx: &mut App) {
     })
     .detach();
 
-    cx.set_menus(vec![Menu {
-        name: SharedString::from(APP_NAME),
-        items: vec![
-            MenuItem::action("Settings…", OpenSettings),
-            MenuItem::separator(),
-            MenuItem::action("Quit", Quit),
-        ],
-        disabled: false,
-    }]);
+    cx.set_menus(menus());
+}
+
+/// The application menu bar.
+///
+/// It used to be three items — Settings, a separator, Quit — under one
+/// "DockCV" title. That is not a small omission on macOS: the **Edit** menu is
+/// where the system looks to decide whether Cut, Copy, Paste and Undo are
+/// offered at all (which is what `MenuItem::os_action` pairs up), and an app
+/// with no File and no Window menu reads as unfinished before the user has
+/// clicked anything.
+///
+/// Every item here does something. There is no Save: writes are debounced and
+/// automatic, so a "Save" that pretended otherwise would be theatre — but
+/// people press ⌘S anyway, so it is bound to an honest **Save Now**, which
+/// flushes the pending write instead of waiting out the debounce.
+fn menus() -> Vec<Menu> {
+    use dockcv_ui_components::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
+
+    vec![
+        Menu {
+            name: SharedString::from(APP_NAME),
+            items: vec![
+                MenuItem::action("About DockCV", About),
+                MenuItem::separator(),
+                MenuItem::action("Settings…", OpenSettings),
+                MenuItem::separator(),
+                MenuItem::action("Quit DockCV", Quit),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: SharedString::from("File"),
+            items: vec![
+                MenuItem::action("New CV", NewCv),
+                MenuItem::separator(),
+                MenuItem::action("Save Now", SaveNow),
+                MenuItem::action("Export PDF…", crate::views::ExportPdf),
+                MenuItem::separator(),
+                MenuItem::action("Reveal Vault in Finder", RevealVault),
+                MenuItem::separator(),
+                MenuItem::action("Close Window", CloseWindow),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: SharedString::from("Edit"),
+            items: vec![
+                // `os_action` is what connects each to the responder chain, so
+                // the items are live inside a focused text field rather than
+                // greyed out next to a caret that plainly can copy.
+                MenuItem::os_action("Undo", Undo, OsAction::Undo),
+                MenuItem::os_action("Redo", Redo, OsAction::Redo),
+                MenuItem::separator(),
+                MenuItem::os_action("Cut", Cut, OsAction::Cut),
+                MenuItem::os_action("Copy", Copy, OsAction::Copy),
+                MenuItem::os_action("Paste", Paste, OsAction::Paste),
+                MenuItem::separator(),
+                MenuItem::os_action("Select All", SelectAll, OsAction::SelectAll),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: SharedString::from("Window"),
+            items: vec![
+                MenuItem::action("Minimize", MinimizeWindow),
+                MenuItem::action("Zoom", ZoomWindow),
+            ],
+            disabled: false,
+        },
+        Menu {
+            name: SharedString::from("Help"),
+            items: vec![MenuItem::action("Licences & Notices", ShowNotices)],
+            disabled: false,
+        },
+    ]
 }
 
 /// Handles the app needs after the first window exists.
@@ -129,10 +246,62 @@ impl gpui::Global for AppWindows {}
 /// entity owns, so shutting down without this cancelled the timer and threw
 /// away the last thing the user typed. Which is most of a sentence, every time.
 fn flush_open_document(cx: &mut App) {
+    with_shell(cx, |shell, cx| shell.flush_open_document(cx));
+}
+
+/// Run something against the running [`Shell`], if there is one.
+fn with_shell(cx: &mut App, f: impl FnOnce(&mut Shell, &mut gpui::Context<Shell>)) {
     let Some(shell) = cx.try_global::<AppWindows>().map(|w| w.shell.clone()) else {
         return;
     };
-    shell.update(cx, |shell, cx| shell.flush_open_document(cx));
+    shell.update(cx, f);
+}
+
+/// The About box: the app's name, its version, and where the licences are.
+///
+/// A native alert rather than a window, because there are three facts in it.
+/// The version in particular was previously nowhere in the UI at all — the
+/// Settings "About" row read the literal string "DockCV" — which makes a bug
+/// report from a user impossible to place against a build.
+fn show_about(cx: &mut App) {
+    let Some(window) = cx.active_window() else {
+        return;
+    };
+    let _ = window.update(cx, |_, window, cx| {
+        // The receiver is dropped: there is one button, so there is no answer
+        // worth waiting for. Dropping it does not close the dialog.
+        let _dismissed = window.prompt(
+            gpui::PromptLevel::Info,
+            &format!("{APP_NAME} {APP_VERSION}"),
+            Some(
+                "A local-first CV workbench. Your documents are plain TOML files \
+                 in a folder you chose; nothing is sent anywhere.\n\n\
+                 MIT OR Apache-2.0. Bundled fonts, the Typst compiler and the icon \
+                 set ship under their own licences — see Help → Licences & Notices.",
+            ),
+            &["OK"],
+            cx,
+        );
+    });
+}
+
+/// Open the licence notices that ship inside the bundle.
+///
+/// `THIRD-PARTY-NOTICES.md` is copied into `Contents/Resources` by
+/// `scripts/bundle.sh` precisely so it travels with the binary; this is the
+/// path a user can reach it by. Running from `cargo run` there is no bundle, so
+/// it falls back to the file in the source tree.
+fn show_notices(cx: &mut App) {
+    let bundled = std::env::current_exe()
+        .ok()
+        .and_then(|exe| Some(exe.parent()?.parent()?.join("Resources").join("THIRD-PARTY-NOTICES.md")))
+        .filter(|path| path.exists());
+
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("THIRD-PARTY-NOTICES.md");
+    match bundled.or_else(|| repo.exists().then_some(repo)) {
+        Some(path) => cx.open_with_system(&path),
+        None => eprintln!("DockCV: THIRD-PARTY-NOTICES.md is not where it should be"),
+    }
 }
 
 /// Open Settings, or bring it forward if it is already up. A second Settings
