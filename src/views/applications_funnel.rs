@@ -79,7 +79,7 @@ impl Outcome {
             ApplicationStatus::Wishlist => None,
             ApplicationStatus::Offer => Some(Outcome::Offer),
             _ if reached_interview => Some(Outcome::Interviewed),
-            _ if app.status == ApplicationStatus::Rejected => Some(Outcome::Rejected),
+            _ if app.status() == ApplicationStatus::Rejected => Some(Outcome::Rejected),
             ApplicationStatus::Applied => Some(Outcome::Awaiting),
             // `furthest` should never be Rejected — it has no pipeline depth,
             // so nothing in the model assigns it — but a hand-edited file can
@@ -223,7 +223,7 @@ mod tests {
         Application {
             company: "Acme".into(),
             preset: preset.into(),
-            status,
+            status_word: status.word().into(),
             furthest,
             ..Default::default()
         }

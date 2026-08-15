@@ -368,7 +368,7 @@ impl Shell {
             .children(COLUMNS.into_iter().map(|(status, title)| {
                 let mut cards: Vec<(usize, Application)> = all
                     .iter()
-                    .filter(|(_, a)| a.status == status && matches_query(a, query))
+                    .filter(|(_, a)| a.status() == status && matches_query(a, query))
                     .cloned()
                     .collect();
                 // Same order the list is in. A column sorted differently from

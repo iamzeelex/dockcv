@@ -144,7 +144,7 @@ impl Shell {
 
     fn list_row(&self, cx: &mut Context<Self>, index: usize, app: Application) -> TableRow {
         let theme = cx.theme().clone();
-        let tint = column_tint(&theme, app.status);
+        let tint = column_tint(&theme, app.status());
 
         let company = if app.company.trim().is_empty() {
             "Untitled".to_string()
@@ -180,7 +180,7 @@ impl Shell {
             .py(px(2.0))
             .rounded(px(5.0))
             .text_style(TextStyle::chip())
-            .child(status_label(app.status));
+            .child(status_label(app.status()));
 
         let cv: SharedString = match (app.preset.trim(), app.source_doc.as_deref()) {
             ("", None) => "—".into(),

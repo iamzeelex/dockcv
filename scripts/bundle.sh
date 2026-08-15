@@ -149,7 +149,8 @@ else
   echo "==> NOT NOTARISED"
   echo "    On another Mac the first launch is blocked until the recipient"
   echo "    approves it: System Settings ▸ Privacy & Security ▸ Open Anyway."
-  echo "    HOW-TO-OPEN.txt ships alongside saying so."
+  echo "    HOW-TO-OPEN.txt is written beside the .app as the text for the"
+  echo "    download page — the .dmg itself carries only the app."
   echo "    Re-run with --sign \"Developer ID Application: … (TEAMID)\" to"
   echo "    remove that step for everyone."
 fi
@@ -176,6 +177,10 @@ if [[ -z "$NOTARY_PROFILE" ]]; then
     *arm64*)                       ARCH_LINE="Apple Silicon Macs (M1 or newer). Not Intel." ;;
     *)                             ARCH_LINE="Intel Macs. Not Apple Silicon." ;;
   esac
+  # Written next to the .app, not into the .dmg: distribution is through the
+  # website, and the place to explain a first launch is the page someone is
+  # already reading, not a file inside a disk image they have to open first.
+  # This is that text, kept in sync with the build it describes.
   cat > "$DIST/HOW-TO-OPEN.txt" <<NOTE
 Opening DockCV the first time
 =============================
@@ -222,7 +227,6 @@ if [[ "$MAKE_DMG" == "1" ]]; then
   rm -rf "$STAGE" "$DMG"; mkdir -p "$STAGE"
   cp -R "$APP" "$STAGE/"
   ln -s /Applications "$STAGE/Applications"
-  [[ -f "$DIST/HOW-TO-OPEN.txt" ]] && cp "$DIST/HOW-TO-OPEN.txt" "$STAGE/"
   hdiutil create -volname "DockCV $VERSION" -srcfolder "$STAGE" \
                  -ov -format UDZO "$DMG" >/dev/null
   rm -rf "$STAGE"

@@ -89,7 +89,7 @@ impl Shell {
         };
         application.source_doc = Some(stem);
         application.preset = preset;
-        let already_sent = application.status != ApplicationStatus::Wishlist;
+        let already_sent = application.status() != ApplicationStatus::Wishlist;
         save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
         cx.notify();
 

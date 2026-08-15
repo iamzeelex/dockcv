@@ -279,7 +279,37 @@ pub enum ApplicationStatus {
     Wishlist,
 }
 
+fn wishlist_word() -> String {
+    "wishlist".to_string()
+}
+
 impl ApplicationStatus {
+    /// The spelling this build writes. Lowercase, matching serde's own
+    /// `rename_all` so a file written before this existed round-trips
+    /// unchanged.
+    pub fn word(self) -> &'static str {
+        match self {
+            ApplicationStatus::Wishlist => "wishlist",
+            ApplicationStatus::Applied => "applied",
+            ApplicationStatus::Interviewing => "interviewing",
+            ApplicationStatus::Offer => "offer",
+            ApplicationStatus::Rejected => "rejected",
+        }
+    }
+
+    /// The status a word names, or `None` when this build does not know it —
+    /// which is the distinction the whole round-trip rests on.
+    pub fn from_word(word: &str) -> Option<Self> {
+        match word.trim().to_lowercase().as_str() {
+            "wishlist" => Some(ApplicationStatus::Wishlist),
+            "applied" => Some(ApplicationStatus::Applied),
+            "interviewing" => Some(ApplicationStatus::Interviewing),
+            "offer" => Some(ApplicationStatus::Offer),
+            "rejected" => Some(ApplicationStatus::Rejected),
+            _ => None,
+        }
+    }
+
     /// Ordinal depth of a *pipeline* stage, used only to track how far an
     /// application has ever gotten (`Application::furthest`).
     ///
@@ -334,8 +364,20 @@ pub struct Snapshot {
 pub struct Application {
     pub company: String,
     pub role: String,
-    #[serde(default)]
-    pub status: ApplicationStatus,
+    /// The `status` word exactly as the file spells it — and the only form
+    /// that round-trips.
+    ///
+    /// `ApplicationStatus` takes `#[serde(other)]`, so a word this build does
+    /// not know reads as `Wishlist`; that is the right trade, since one bad
+    /// word should cost a card rather than the whole board. What was *not*
+    /// right is what happened next: the enum was written back, so a
+    /// hand-edited `status = "ofer"` was silently rewritten to `"wishlist"`
+    /// and an offer stopped having ever existed. The word is kept verbatim,
+    /// This is the **only** stored form: [`Application::status`] reads it,
+    /// [`Application::advance_to`] writes it, and there is no second field to
+    /// drift out of step with it.
+    #[serde(rename = "status", default = "wishlist_word")]
+    pub status_word: String,
     /// The deepest stage this application ever reached, which is not the
     /// same as where it sits now: most interviews end in a rejection, and a
     /// funnel counted from `status` alone would erase every one of them
@@ -385,8 +427,24 @@ impl Application {
     /// never backwards, and `Rejected` (which has no `depth()`) never raises
     /// it at all, since a rejection is a terminal outcome, not a deeper
     /// pipeline stage than `Offer`.
+    /// Where this application sits now.
+    ///
+    /// A word this build does not know reads as `Wishlist` — one bad word
+    /// costs a card rather than the whole board — while
+    /// [`Application::status_word`] keeps what the file actually said.
+    pub fn status(&self) -> ApplicationStatus {
+        ApplicationStatus::from_word(&self.status_word).unwrap_or(ApplicationStatus::Wishlist)
+    }
+
+    /// Whether this build understood the file's `status` word.
+    pub fn status_is_recognised(&self) -> bool {
+        ApplicationStatus::from_word(&self.status_word).is_some()
+    }
+
     pub fn advance_to(&mut self, status: ApplicationStatus) {
-        self.status = status;
+        // Whatever the file used to say, the user has now said otherwise —
+        // this is the one place an unrecognised word is allowed to be lost.
+        self.status_word = status.word().to_string();
         if let Some(new_depth) = status.depth() {
             let furthest_depth = self.furthest.depth().unwrap_or(0);
             if new_depth > furthest_depth {
@@ -421,14 +479,14 @@ pub struct Applications {
 impl Applications {
     /// Number of cards in a given column.
     pub fn count(&self, status: ApplicationStatus) -> usize {
-        self.entries.iter().filter(|a| a.status == status).count()
+        self.entries.iter().filter(|a| a.status() == status).count()
     }
 
     /// Everything not `Rejected` — the header line's "N active".
     pub fn active(&self) -> usize {
         self.entries
             .iter()
-            .filter(|a| a.status != ApplicationStatus::Rejected)
+            .filter(|a| a.status() != ApplicationStatus::Rejected)
             .count()
     }
 
@@ -503,10 +561,10 @@ impl Applications {
     /// deserializing; safe to call again on an already-normalized board.
     pub fn normalize(&mut self) {
         for entry in &mut self.entries {
-            if let Some(status_depth) = entry.status.depth() {
+            if let Some(status_depth) = entry.status().depth() {
                 let furthest_depth = entry.furthest.depth().unwrap_or(0);
                 if status_depth > furthest_depth {
-                    entry.furthest = entry.status;
+                    entry.furthest = entry.status();
                 }
             }
         }
@@ -1916,7 +1974,7 @@ mod applications_tests {
         Application {
             company: "Bramble Tech".into(),
             role: "Staff Engineer".into(),
-            status: ApplicationStatus::Interviewing,
+            status_word: ApplicationStatus::Interviewing.word().into(),
             furthest: ApplicationStatus::Interviewing,
             created: "2026-06-01".into(),
             applied: Some("2026-06-02".into()),
@@ -1964,7 +2022,7 @@ mod applications_tests {
         let entry = &apps.entries[0];
         assert_eq!(entry.company, "Acme");
         assert_eq!(entry.role, "SWE");
-        assert_eq!(entry.status, ApplicationStatus::Applied);
+        assert_eq!(entry.status(), ApplicationStatus::Applied);
         assert_eq!(entry.created, "");
         assert!(entry.applied.is_none());
         assert!(entry.source_doc.is_none());
@@ -1982,7 +2040,7 @@ mod applications_tests {
             "[[entries]]\ncompany = \"Acme\"\nrole = \"SWE\"\nstatus = \"ghosted\"\n";
         let apps: Applications =
             toml::from_str(toml_text).expect("a typo'd status must not fail the whole file");
-        assert_eq!(apps.entries[0].status, ApplicationStatus::Wishlist);
+        assert_eq!(apps.entries[0].status(), ApplicationStatus::Wishlist);
     }
 
     /// Empty/absent optional fields must not be written to disk at all —
@@ -1993,7 +2051,7 @@ mod applications_tests {
             entries: vec![Application {
                 company: "Acme".into(),
                 role: "SWE".into(),
-                status: ApplicationStatus::Wishlist,
+                status_word: ApplicationStatus::Wishlist.word().into(),
                 ..Default::default()
             }],
         };
@@ -2014,19 +2072,19 @@ mod applications_tests {
         let apps = Applications {
             entries: vec![
                 Application {
-                    status: ApplicationStatus::Wishlist,
+                    status_word: ApplicationStatus::Wishlist.word().into(),
                     ..Default::default()
                 },
                 Application {
-                    status: ApplicationStatus::Applied,
+                    status_word: ApplicationStatus::Applied.word().into(),
                     ..Default::default()
                 },
                 Application {
-                    status: ApplicationStatus::Applied,
+                    status_word: ApplicationStatus::Applied.word().into(),
                     ..Default::default()
                 },
                 Application {
-                    status: ApplicationStatus::Rejected,
+                    status_word: ApplicationStatus::Rejected.word().into(),
                     ..Default::default()
                 },
             ],
@@ -2053,7 +2111,7 @@ mod applications_tests {
         rejected_after_onsite.advance_to(ApplicationStatus::Interviewing);
         rejected_after_onsite.advance_to(ApplicationStatus::Rejected);
         // Terminal, not deep: the card is out, but it did interview.
-        assert_eq!(rejected_after_onsite.status, ApplicationStatus::Rejected);
+        assert_eq!(rejected_after_onsite.status(), ApplicationStatus::Rejected);
         assert_eq!(
             rejected_after_onsite.furthest,
             ApplicationStatus::Interviewing
@@ -2079,7 +2137,7 @@ mod applications_tests {
                 // No preset attributed: nothing to credit it to.
                 Application {
                     company: "Cold Email Co".into(),
-                    status: ApplicationStatus::Applied,
+                    status_word: ApplicationStatus::Applied.word().into(),
                     furthest: ApplicationStatus::Applied,
                     ..Default::default()
                 },
@@ -2107,7 +2165,7 @@ mod applications_tests {
         assert_eq!(app.furthest, ApplicationStatus::Interviewing);
 
         app.advance_to(ApplicationStatus::Applied);
-        assert_eq!(app.status, ApplicationStatus::Applied);
+        assert_eq!(app.status(), ApplicationStatus::Applied);
         assert_eq!(app.furthest, ApplicationStatus::Interviewing);
 
         app.advance_to(ApplicationStatus::Wishlist);

@@ -39,7 +39,7 @@ impl MenuContext {
         Self {
             shell,
             index,
-            status: app.status,
+            status: app.status(),
             company: app.company.clone(),
             has_snapshot: !app.snapshots.is_empty(),
             pinned: app
@@ -124,6 +124,18 @@ pub(super) fn application_menu(
             menu = menu.separator().item(PopupMenuItem::new("Open sent PDF").on_click(
                 move |_ev, _window, cx| {
                     let _ = shell_open.update(cx, |this, cx| this.reveal_snapshot(index, cx));
+                },
+            ));
+        } else if pinned.is_some() {
+            // O-19: the capture that runs on send can fail — a document that
+            // no longer compiles, a vault gone read-only — and until now the
+            // only way to try again was to move the card out of its column and
+            // back. The banner that reported the failure is long gone by then.
+            let shell_retry = shell.clone();
+            let index = *index;
+            menu = menu.separator().item(PopupMenuItem::new("Capture snapshot now").on_click(
+                move |_ev, _window, cx| {
+                    let _ = shell_retry.update(cx, |this, cx| this.capture_snapshot(index, cx));
                 },
             ));
         }

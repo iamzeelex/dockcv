@@ -90,8 +90,26 @@ pub(super) fn card_meta(
             None if app.source_doc.is_none() => {
                 meta.push(meta_line(theme, "no CV pinned".to_string()))
             }
-            None => meta.push(meta_line(theme, "no snapshot yet".to_string())),
+            // O-19: "yet" was the whole problem. A capture is attempted the
+            // moment a card is sent, so by the time this card is drawn the
+            // attempt has already happened and failed — the banner said so
+            // once and then went away, leaving a line that reads as "not yet"
+            // forever. It says what is true instead, and the `···` menu
+            // carries the retry.
+            None => meta.push(meta_line(theme, "CV pinned, no snapshot".to_string())),
         }
+    }
+
+    // A word this build does not know (L-8). The card sits in Wishlist because
+    // that is where an unreadable status lands, so without this line the file
+    // says one thing and the board shows another with nothing to connect them.
+    // The word is quoted rather than corrected: it is the user's, it is still
+    // in the file, and only they know what they meant.
+    if !app.status_is_recognised() {
+        meta.push(meta_line(
+            theme,
+            format!("status “{}” not recognised", app.status_word),
+        ));
     }
 
     meta

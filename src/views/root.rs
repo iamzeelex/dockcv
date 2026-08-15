@@ -578,6 +578,35 @@ impl Root {
             .unwrap_or_else(|| "untitled".to_string())
     }
 
+    /// What the capture sheet offers as roles.
+    ///
+    /// This document's own jobs first — a win captured while editing a CV is
+    /// almost always about one of the jobs in it — then any role the diary
+    /// already uses, so a capture can join an existing bucket rather than
+    /// starting a near-duplicate. Same `employer · position` spelling the
+    /// Diary screen uses, or the two would not group together.
+    pub(super) fn capture_roles(&self) -> Vec<String> {
+        let mut roles: Vec<String> = Vec::new();
+        let mut push = |role: String| {
+            if !role.is_empty() && !roles.contains(&role) {
+                roles.push(role);
+            }
+        };
+        for work in self.doc.work.active() {
+            let (employer, position) = (work.name.trim(), work.position.trim());
+            match (employer.is_empty(), position.is_empty()) {
+                (false, false) => push(format!("{employer} · {position}")),
+                (false, true) => push(employer.to_string()),
+                (true, false) => push(position.to_string()),
+                (true, true) => {}
+            }
+        }
+        for entry in &self.diary.entries {
+            push(entry.role.clone());
+        }
+        roles
+    }
+
     pub(super) fn document_identity(&self) -> String {
         let profile = self.doc.profile.active();
         let name = profile.name.trim();
@@ -594,7 +623,10 @@ impl Root {
     /// `Window`, which the toolbar's `Capture` click handler has.
     pub(super) fn open_capture_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text = cx.new(|cx| TextFieldState::auto_grow(3, 10, window, cx));
-        self.capture_sheet = Some(CaptureSheet { text });
+        self.capture_sheet = Some(CaptureSheet {
+            text,
+            role: String::new(),
+        });
         cx.notify();
     }
 
@@ -627,11 +659,12 @@ impl Root {
             DiaryEntry {
                 date: vault::today_iso(),
                 text,
-                // The sheet has no role picker, and the open document does not
-                // imply one — a CV holds several roles and the win could
-                // belong to any of them. Guessing here would put a wrong
-                // employer on a real achievement; the Diary screen can tag it.
-                role: String::new(),
+                // O-15: chosen in the sheet, from this document's own jobs.
+                // Never guessed — a CV holds several roles and putting the
+                // wrong employer on a real achievement is worse than leaving
+                // it untagged, which is why "No role" is still the default and
+                // still a legitimate answer.
+                role: sheet.role.clone(),
                 tags: Vec::new(),
                 confidential: false,
                 used_in: Vec::new(),
@@ -1429,6 +1462,8 @@ pub(super) struct FieldBinding {
 /// to `Root::diary` until the user clicks Save (`Root::commit_capture`).
 pub(super) struct CaptureSheet {
     pub(super) text: Entity<TextFieldState>,
+    /// The role this win belongs to, empty for none (O-15).
+    pub(super) role: String,
 }
 
 /// Push a clone of `item` (if present) onto a library pool.

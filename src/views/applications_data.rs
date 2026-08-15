@@ -73,7 +73,7 @@ pub(super) fn interviews_this_week(applications: &Applications, today: &str) -> 
     applications
         .entries
         .iter()
-        .filter(|a| a.status == ApplicationStatus::Interviewing)
+        .filter(|a| a.status() == ApplicationStatus::Interviewing)
         .filter_map(|a| a.next_step.as_ref())
         .filter(|step| same_week(&step.date, today))
         .count()

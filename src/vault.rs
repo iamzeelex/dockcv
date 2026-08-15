@@ -481,6 +481,15 @@ pub fn load_applications(vault_dir: &Path) -> Applications {
         .and_then(|text| toml::from_str(&text).ok())
         .unwrap_or_default();
     applications.normalize();
+    for entry in &applications.entries {
+        if !entry.status_is_recognised() {
+            log::warn!(
+                "applications.toml: status \"{}\" is not a word this build knows — \
+                 the card reads as Wishlist and the word is kept as written",
+                entry.status_word
+            );
+        }
+    }
     applications
 }
 
@@ -711,6 +720,71 @@ mod tests {
     /// destroy something already in it. `fs::rename` replaces the destination
     /// silently on Unix, so this was a real way to lose a document permanently
     /// through the reversible path.
+    /// L-8: a typo in a hand-edited `status` used to cost the record it named.
+    /// The word read as `Wishlist` — the right trade, one bad word costing one
+    /// card rather than the board — and was then **written back** as
+    /// `"wishlist"` on the next save, so `status = "ofer"` quietly turned an
+    /// offer into a wishlist entry with nothing left to notice.
+    #[test]
+    fn a_status_this_build_cannot_read_survives_a_save() {
+        let dir = std::env::temp_dir().join(format!("dockcv-status-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp vault");
+
+        std::fs::write(
+            super::applications_path(&dir),
+            "[[entries]]\ncompany = \"Acme\"\nrole = \"Engineer\"\nstatus = \"ofer\"\n",
+        )
+        .expect("write board");
+
+        let applications = super::load_applications(&dir);
+        assert_eq!(
+            applications.entries[0].status(),
+            crate::resume::model::ApplicationStatus::Wishlist,
+            "an unknown word still reads as Wishlist, so the board stays usable"
+        );
+
+        super::save_applications(&dir, &applications).expect("save");
+        let text = std::fs::read_to_string(super::applications_path(&dir)).expect("read back");
+        assert!(
+            text.contains("status = \"ofer\""),
+            "the user's own word must come back out; got:\n{text}"
+        );
+
+        // And a word we *do* understand is still written from the enum, so a
+        // card moved on the board writes where it was moved to.
+        let mut applications = super::load_applications(&dir);
+        applications.entries[0].advance_to(crate::resume::model::ApplicationStatus::Offer);
+        super::save_applications(&dir, &applications).expect("save");
+        let text = std::fs::read_to_string(super::applications_path(&dir)).expect("read back");
+        assert!(text.contains("status = \"offer\""), "got:\n{text}");
+        assert!(!text.contains("ofer\""), "the typo is gone once it is corrected");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A card built in code sets the enum and leaves the word at its default;
+    /// the file must say what the enum means, not what the default was.
+    #[test]
+    fn a_card_created_in_code_writes_the_status_it_was_given() {
+        let dir = std::env::temp_dir().join(format!("dockcv-status-new-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp vault");
+
+        let mut applications = crate::resume::model::Applications::default();
+        applications.entries.push(crate::resume::model::Application {
+            company: "Acme".into(),
+            status_word: crate::resume::model::ApplicationStatus::Applied.word().into(),
+            ..Default::default()
+        });
+        super::save_applications(&dir, &applications).expect("save");
+
+        let text = std::fs::read_to_string(super::applications_path(&dir)).expect("read back");
+        assert!(text.contains("status = \"applied\""), "got:\n{text}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn trashing_the_same_name_twice_keeps_both() {
         let dir = std::env::temp_dir().join(format!("dockcv-trash-{}", std::process::id()));
@@ -1200,7 +1274,7 @@ mod tests {
         applications.entries.push(Application {
             company: "Bramble Tech".into(),
             role: "Staff Engineer".into(),
-            status: ApplicationStatus::Interviewing,
+            status_word: ApplicationStatus::Interviewing.word().into(),
             preset: "FAANG · concise".into(),
             ..Default::default()
         });
@@ -1209,7 +1283,7 @@ mod tests {
         let back = super::load_applications(&dir);
         assert_eq!(back.entries.len(), 1);
         assert_eq!(back.entries[0].company, "Bramble Tech");
-        assert_eq!(back.entries[0].status, ApplicationStatus::Interviewing);
+        assert_eq!(back.entries[0].status(), ApplicationStatus::Interviewing);
 
         std::fs::remove_dir_all(&dir).ok();
     }

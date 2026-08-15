@@ -301,7 +301,11 @@ impl Root {
         };
 
         let panel = div()
-            .w(px(460.0))
+            // 560, not 460: the role chips are `employer · position` and a CV
+            // with six jobs fills the panel with them. The extra 100px is the
+            // difference between most chips reading whole and most of them
+            // ending in an ellipsis.
+            .w(px(560.0))
             .flex()
             .flex_col()
             .rounded_lg()
@@ -459,6 +463,73 @@ impl Root {
         let identity = self.document_identity();
         let date = vault::today_iso();
 
+        // Inline chips rather than a menu: a popover opened from inside a
+        // scrimmed sheet renders into the window's overlay layer, under the
+        // scrim, and a picker you cannot see is worse than a row that costs
+        // four more lines (the same finding as `diary_use`). It also suits the
+        // data — a CV holds a handful of jobs, not a hundred.
+        let chosen = sheet.role.clone();
+        let roles = self.capture_roles();
+        let chip = |label: SharedString, value: String, selected: bool, cx: &mut Context<Self>| {
+            div()
+                .id(SharedString::from(format!("capture-role-{value}")))
+                // A role is `employer · position` and a job title can run to a
+                // sentence; without a ceiling the longest one pushes the chip
+                // straight out of the panel. `flex_wrap` wraps between chips,
+                // never inside one.
+                // The chip sizes itself and the *text inside it* truncates.
+                // Putting `truncate()` on the chip made every chip ellipsise,
+                // including ones with room to spare: it sets `overflow_hidden`,
+                // which gives the box an automatic minimum of zero, and a box
+                // that may collapse does. With the clip one level in, the chip
+                // keeps its content width until `max_w` binds — and `max_w`
+                // sits under the panel's content width, so a capped chip wraps
+                // instead of leaving the panel. `flex_none` on top, because a
+                // flex item shrinks by default and two chips sharing a wrapped
+                // line would otherwise split it between them.
+                .flex_none()
+                .max_w(px(496.0))
+                .px_2()
+                .py(px(3.0))
+                .rounded_full()
+                .border_1()
+                .border_color(if selected { theme.accent } else { theme.border })
+                .bg(if selected { theme.selected } else { theme.surface })
+                .text_style(TextStyle::label())
+                .text_color(if selected { theme.text } else { theme.text_muted })
+                .cursor_pointer()
+                .hover(|s| s.border_color(theme.accent))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                    if let Some(sheet) = this.capture_sheet.as_mut() {
+                        sheet.role = value.clone();
+                    }
+                    cx.notify();
+                }))
+                .child(div().truncate().child(label))
+        };
+
+        let role_picker = div()
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .text_style(TextStyle::label())
+                    .text_color(theme.text_subtle)
+                    .child("Role"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(6.0))
+                    .child(chip("No role".into(), String::new(), chosen.is_empty(), cx))
+                    .children(roles.into_iter().map(|role| {
+                        let selected = role == chosen;
+                        chip(SharedString::from(role.clone()), role, selected, cx)
+                    })),
+            );
+
         let panel = div()
             .w(px(460.0))
             .flex()
@@ -536,6 +607,7 @@ impl Root {
                         TextField::new(&text)
                             .placeholder("What happened? Shipped a fix, landed an offer…"),
                     )
+                    .child(role_picker)
                     .child(
                         div()
                             .flex()
