@@ -208,9 +208,13 @@ fn raw_text(source: &Source, node: &SyntaxNode) -> String {
         .unwrap_or_default()
 }
 
-#[cfg(test)] // the fixture every parser/round-trip test builds on
-/// The AltaCV starter document (Typst Universe `@preview/altacv:1.5.0`), used
-/// as the built-in demo so the editor opens on a recognized resume.
+#[cfg(test)]
+/// The AltaCV starter document (Typst Universe `@preview/altacv:1.5.0`), and
+/// the fixture every parser and round-trip test builds on.
+///
+/// Test-only, and the `cfg` is the point: it is a whole résumé for a person
+/// who does not exist, and a shipped build must not carry one. It was the
+/// built-in demo once; nothing opens on it now.
 pub const ALTACV_SAMPLE: &str = r#"
 #import "@preview/altacv:1.5.0": alta, avatar-placeholder
 

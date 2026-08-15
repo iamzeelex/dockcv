@@ -49,11 +49,47 @@ VERSION="$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version[[:space:]]*=/
 [[ -n "$VERSION" ]] || { echo "could not read version from Cargo.toml" >&2; exit 1; }
 echo "==> DockCV $VERSION"
 
+# Panic locations and dependency paths otherwise embed the absolute path of the
+# machine that built this — `/Users/<name>/.cargo/registry/...` — so every copy
+# handed to anyone carries one person's home directory and directory layout to
+# whoever runs `strings` on it. Cargo's own `trim-paths` would be the place for
+# this, but it is not stable on the pinned toolchain; the flags below are what
+# it does. Set here rather than in `.cargo/config.toml` on purpose: a global
+# RUSTFLAGS change invalidates every cached build, and this only ever needs to
+# be true of what ships. Panics still name a file and a line, which is all a
+# report from a user can use.
+REMAP="--remap-path-prefix=$HOME/.cargo/registry=/cargo/registry"
+REMAP="$REMAP --remap-path-prefix=$HOME/.cargo/git=/cargo/git"
+REMAP="$REMAP --remap-path-prefix=$HOME/.rustup=/rustup"
+REMAP="$REMAP --remap-path-prefix=$ROOT=/dockcv"
+
 echo "==> cargo build --release"
-(cd "$ROOT" && cargo build --release --locked)
+(cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} $REMAP" cargo build --release --locked)
 
 BIN="$ROOT/target/release/dockcv"
 [[ -x "$BIN" ]] || { echo "no release binary at $BIN" >&2; exit 1; }
+
+# A build handed to someone else must not describe the machine that made it.
+# The remapping above removes the compile-time paths rustc embeds; this checks
+# it actually held, because the failure is silent and the next person to add an
+# `env!("CARGO_MANIFEST_DIR")` would not notice.
+#
+# The exception is GPUI's Metal shaders: `xcrun metal` records its own source
+# locations in the .metallib and takes no flag to stop, so those paths are the
+# dependency's to fix, not ours. They are named here rather than waved away so
+# the day one of them changes, this fires and someone looks.
+echo "==> checking the binary describes nothing local"
+LOCAL="$(strings -a "$BIN" | grep -F "$HOME" | grep -vE 'shaders\.(metal|air|metallib)' || true)"
+if [[ -n "$LOCAL" ]]; then
+  echo "    ! the binary carries paths from this machine:" >&2
+  # The offending strings themselves, clipped: extracting "just the path" needs
+  # a regex over $HOME, and $HOME is not a safe regex.
+  echo "$LOCAL" | sort -u | head -5 | cut -c1-100 | sed 's/^/    ! /' >&2
+  echo "    ! fix the source of these before shipping — see REMAP above." >&2
+  exit 1
+fi
+SHADER_PATHS="$(strings -a "$BIN" | grep -Fc "$HOME" || true)"
+echo "    clean, apart from $SHADER_PATHS Metal shader paths from gpui's build script"
 
 echo "==> assembling $APP"
 rm -rf "$APP"

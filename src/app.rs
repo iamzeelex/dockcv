@@ -292,8 +292,19 @@ fn show_notices(cx: &mut App) {
         .and_then(|exe| Some(exe.parent()?.parent()?.join("Resources").join("THIRD-PARTY-NOTICES.md")))
         .filter(|path| path.exists());
 
-    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("THIRD-PARTY-NOTICES.md");
-    match bundled.or_else(|| repo.exists().then_some(repo)) {
+    // The repo copy, for `cargo run` — where there is no bundle to read from.
+    // Debug builds only, and deliberately: `CARGO_MANIFEST_DIR` is the path the
+    // binary was *built* in, so shipping it bakes one machine's home directory
+    // into every copy and points the fallback at a directory the recipient does
+    // not have. In a bundle the first branch always wins, which is the other
+    // half of why this can go.
+    #[cfg(debug_assertions)]
+    let bundled = bundled.or_else(|| {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("THIRD-PARTY-NOTICES.md");
+        repo.exists().then_some(repo)
+    });
+
+    match bundled {
         Some(path) => cx.open_with_system(&path),
         None => eprintln!("DockCV: THIRD-PARTY-NOTICES.md is not where it should be"),
     }
