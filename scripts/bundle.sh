@@ -204,6 +204,12 @@ folder you choose.
 If something is wrong
 ---------------------
 
+DockCV keeps a log of what it did, at ~/Library/Logs/DockCV/dockcv.log —
+Help ▸ Reveal Log in Finder opens the folder. It records what happened, never
+what you wrote: no CV text, no diary entries, and your home folder is written
+as ~ rather than by your account name. Send it with a bug report and it will
+usually say what went wrong.
+
 "DockCV is damaged and can't be opened" means the download was corrupted or
 altered in transit — get a fresh copy rather than working around it.
 NOTE

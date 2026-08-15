@@ -14,6 +14,7 @@
 mod app;
 mod config;
 mod import;
+mod logging;
 mod render;
 mod resume;
 mod theme;
@@ -22,5 +23,8 @@ mod vault;
 mod views;
 
 fn main() {
+    // First, and before any window: everything after this point can fail, and
+    // a failure nobody can read is the thing this exists to end.
+    logging::init();
     app::run();
 }

@@ -945,9 +945,14 @@ impl Root {
                 // compile error still on screen. A failure reuses the same
                 // error surface `render_preview` already draws, since export
                 // and compile failures share that one banner slot today.
-                if let Err(message) = result.and_then(|bytes| {
+                let outcome = result.and_then(|bytes| {
                     std::fs::write(&path, bytes).map_err(|e| format!("write failed: {e}"))
-                }) {
+                });
+                match &outcome {
+                    Ok(()) => log::info!("exported PDF to {}", path.display()),
+                    Err(message) => log::error!("PDF export to {} failed: {message}", path.display()),
+                }
+                if let Err(message) = outcome {
                     this.compile_state = CompileState::Error {
                         messages: vec![CompileMessage {
                             severity: Severity::Error,

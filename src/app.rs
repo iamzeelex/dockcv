@@ -29,6 +29,7 @@ actions!(
         CloseWindow,
         MinimizeWindow,
         ShowNotices,
+        RevealLog,
     ]
 );
 
@@ -77,7 +78,7 @@ fn register_fonts(cx: &mut App) {
     if let Err(error) = cx.text_system().add_fonts(fonts) {
         // Falling back to system faces silently would change the whole look of
         // the app without saying so.
-        eprintln!("DockCV: bundled fonts failed to register: {error}");
+        log::error!("bundled fonts failed to register: {error}");
     }
 }
 
@@ -106,6 +107,13 @@ fn init(cx: &mut App) {
     cx.on_action(|_: &OpenSettings, cx: &mut App| open_settings_window(cx));
     cx.on_action(|_: &About, cx: &mut App| show_about(cx));
     cx.on_action(|_: &ShowNotices, cx: &mut App| show_notices(cx));
+    cx.on_action(|_: &RevealLog, cx: &mut App| {
+        // The folder, not the file: a log is something a user drags into a
+        // chat, and the same wording the vault's own menu item uses.
+        if let Some(dir) = crate::logging::log_path().parent() {
+            cx.open_with_system(dir);
+        }
+    });
     cx.on_action(|_: &SaveNow, cx: &mut App| flush_open_document(cx));
     cx.on_action(|_: &NewCv, cx: &mut App| {
         with_shell(cx, |shell, cx| shell.start_new_cv(cx));
@@ -130,6 +138,9 @@ fn init(cx: &mut App) {
     // the `Shell` — are still alive, which is why the flush hangs here rather
     // than off a `Drop`.
     cx.on_app_quit(|cx: &mut App| {
+        // Logged so a report can be read for what it is: a session that ends
+        // here exited cleanly, and one that stops mid-file did not.
+        log::info!("quitting — flushing any pending write");
         flush_open_document(cx);
         async {}
     })
@@ -208,7 +219,11 @@ fn menus() -> Vec<Menu> {
         },
         Menu {
             name: SharedString::from("Help"),
-            items: vec![MenuItem::action("Licences & Notices", ShowNotices)],
+            items: vec![
+                MenuItem::action("Reveal Log in Finder", RevealLog),
+                MenuItem::separator(),
+                MenuItem::action("Licences & Notices", ShowNotices),
+            ],
             disabled: false,
         },
     ]
@@ -306,7 +321,7 @@ fn show_notices(cx: &mut App) {
 
     match bundled {
         Some(path) => cx.open_with_system(&path),
-        None => eprintln!("DockCV: THIRD-PARTY-NOTICES.md is not where it should be"),
+        None => log::warn!("THIRD-PARTY-NOTICES.md is not where it should be"),
     }
 }
 
@@ -349,7 +364,7 @@ fn open_settings_window(cx: &mut App) {
                 cx.global_mut::<AppWindows>().settings = Some(handle.into());
             }
         }
-        Err(error) => eprintln!("DockCV: could not open the Settings window: {error}"),
+        Err(error) => log::error!("could not open the Settings window: {error}"),
     }
 }
 

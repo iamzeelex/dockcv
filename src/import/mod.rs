@@ -38,7 +38,7 @@ pub fn import_file(path: &Path) -> Result<ImportedDoc, String> {
         .map(|s| s.to_lowercase())
         .unwrap_or_default();
 
-    match ext.as_str() {
+    let outcome = match ext.as_str() {
         "pdf" => engines::pdf::import_pdf(path),
         "zip" => engines::linkedin::import_linkedin(path),
         "docx" => engines::docx::import_docx(path),
@@ -48,5 +48,20 @@ pub fn import_file(path: &Path) -> Result<ImportedDoc, String> {
         _ => engines::structured::import_structured(path)
             .or_else(|_| engines::text::import_text(path))
             .map_err(|_| format!("Unsupported file extension '.{ext}'")),
+    };
+
+    // Import is where a bug report is most likely to start, and where the
+    // recipient least wants to send their CV to prove it. So: the shape of
+    // what came out, and not one line of what was in it.
+    match &outcome {
+        Ok(imported) => log::info!(
+            "imported .{ext} as {}: {} sections, {} jobs, {} unparsed lines",
+            imported.format_name,
+            imported.doc.sections().len(),
+            imported.doc.work.active().len(),
+            imported.unparsed.len(),
+        ),
+        Err(message) => log::error!("import of .{ext} failed: {message}"),
     }
+    outcome
 }

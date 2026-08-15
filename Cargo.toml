@@ -16,6 +16,10 @@ name = "dockcv"
 path = "src/main.rs"
 
 [dependencies]
+# Already in the tree via GPUI, which logs its font, asset and renderer
+# problems through it — taking it directly adds no crate and lets one global
+# logger capture ours and GPUI's alike. See `src/logging.rs`.
+log = "0.4"
 dockcv-ui-components = { path = "crates/ui-components" }
 gpui = { git = "https://github.com/zed-industries/zed" }
 
@@ -97,8 +101,11 @@ debug = false
 [profile.release]
 lto = "thin"
 codegen-units = 1
-# The shipped binary carries no symbol table. It is not obfuscation — the source
-# is MIT/Apache — it is that a 67 MB download to write a CV is rude, and nothing
-# in the release path reads these: panics in a distributed build are reported by
-# message, not by local backtrace.
-strip = "symbols"
+# DWARF goes; the symbol table stays. The old setting was `symbols`, on the
+# grounds that nothing in the release path read them — true until `logging`
+# started capturing a backtrace on panic, which without symbols is a column of
+# hex addresses and with them names `dockcv::main`. Measured, because "it is
+# only a few MB" is how a download gets rude: 58.0 → 65.1 MB unpacked, 30.0 →
+# 32.5 MB in the .dmg. Two and a half megabytes for a crash report that says
+# where it crashed.
+strip = "debuginfo"

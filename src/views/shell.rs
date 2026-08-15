@@ -146,10 +146,29 @@ impl Shell {
         // otherwise start the welcome → setup flow.
         let config = config::load();
         let library_helper_dismissed = config.library_helper_dismissed;
+        // Kept for the log below: the *recorded* path and the *usable* one are
+        // different facts, and which one is missing is the diagnosis.
+        let recorded = config
+            .vault
+            .as_ref()
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|| "none recorded".into());
         let (vault, screen) = match config.vault {
             Some(dir) if vault::is_vault(&dir) => (Some(dir), Screen::Gallery),
             _ => (None, Screen::Welcome),
         };
+        // Most sessions begin here rather than in `open_vault`, so this is the
+        // line that says which vault a report is about. The `None` case is
+        // worth saying too: "no vault" and "vault that would not open" look
+        // identical from the outside and are not the same bug.
+        match &vault {
+            Some(dir) => log::info!(
+                "vault restored: {} ({} documents)",
+                dir.display(),
+                vault::list_documents(dir).len()
+            ),
+            None => log::info!("no usable vault in config ({recorded}) — starting at Welcome"),
+        }
 
         Self {
             screen,
@@ -534,6 +553,13 @@ impl Shell {
     pub(super) fn open_vault(&mut self, vault_dir: PathBuf, cx: &mut Context<Self>) {
         config::set_vault(vault_dir.clone());
         let is_empty = vault::list_documents(&vault_dir).is_empty();
+        // The first line of any useful report: which vault, and how much is in
+        // it. A count, never a name — see `logging`'s content rule.
+        log::info!(
+            "vault opened: {} ({} documents)",
+            vault_dir.display(),
+            vault::list_documents(&vault_dir).len()
+        );
         self.vault = Some(vault_dir);
         self.gallery_creating = is_empty;
         self.screen = Screen::Gallery;

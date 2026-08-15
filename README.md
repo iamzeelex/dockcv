@@ -89,6 +89,25 @@ an Apple Developer ID certificate:
 
 `scripts/bundle.sh --help` explains how to store the notarisation credentials.
 
+## Logs
+
+`~/Library/Logs/DockCV/dockcv.log`, or **Help ▸ Reveal Log in Finder**. One
+previous log is kept as `dockcv.log.1`; both are capped at 2 MB.
+
+The log records what the app did — vault opened, import outcome, export, every
+failed read or write, and any panic with its backtrace — and never what the
+user wrote. No field values, no bullets, no diary entries; the home directory
+is rewritten to `~` so the log does not carry an account name either. It is a
+local file and nothing sends it anywhere: DockCV makes no network calls at all.
+
+`DOCKCV_LOG` sets the level for DockCV's own crates (default `info`),
+`DOCKCV_LOG_DEPS` for everything else (default `warn`, which is what keeps
+GPUI's chatter out of an ordinary session):
+
+```bash
+DOCKCV_LOG=debug cargo run
+```
+
 ## Dependency pinning
 
 `gpui` and `gpui_platform` come from the Zed git repository and are deliberately

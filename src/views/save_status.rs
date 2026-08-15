@@ -107,8 +107,14 @@ impl SaveStatus {
 pub fn record(cx: &mut App, what: &'static str, result: Result<(), String>) {
     // Also to stderr: a user who hits this and reports it should have something
     // to paste, and the banner deliberately does not carry the whole OS error.
+    // Debug, not info: writes are debounced every 600 ms while typing, so at
+    // info this one line would bury the session. `DOCKCV_LOG=debug` turns the
+    // full write trace on when a corruption report needs it.
+    if result.is_ok() {
+        log::debug!("wrote {what}");
+    }
     if let Err(message) = &result {
-        eprintln!("DockCV: could not save {what}: {message}");
+        log::error!("could not save {what}: {message}");
     }
     cx.default_global::<SaveStatus>().apply(what, result);
 }
@@ -133,7 +139,7 @@ pub fn report_unreadable(cx: &mut App, path: &Path, message: String) {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("this document");
-    eprintln!("DockCV: could not open {}: {message}", path.display());
+    log::error!("could not open {}: {message}", path.display());
     cx.default_global::<SaveStatus>().notice = Some(Notice {
         key: OPEN,
         title: format!("Couldn't open “{name}”"),
