@@ -1,14 +1,22 @@
 [workspace]
-members = [".", "crates/ui-components"]
+members = [".", "crates/dockcv-core", "crates/ui-components"]
 resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/zeelex/dockcv"
+publish = false
 
 [package]
 name = "dockcv"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 description = "DockCV — a cross-platform desktop app built with GPUI"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/zeelex/dockcv"
 default-run = "dockcv"
 
 [[bin]]
@@ -20,29 +28,16 @@ path = "src/main.rs"
 # problems through it — taking it directly adds no crate and lets one global
 # logger capture ours and GPUI's alike. See `src/logging.rs`.
 log = "0.4"
+dockcv-core = { path = "crates/dockcv-core" }
 dockcv-ui-components = { path = "crates/ui-components" }
 gpui = { git = "https://github.com/zed-industries/zed" }
 
-# --- Typst pipeline (stage 1: in-process compile to SVG) ---
-# typst, typst-svg and typst-assets must share the SAME minor version.
-typst = "0.15"
-typst-render = "0.15"
-typst-assets = { version = "0.15", features = ["fonts"] }
-comemo = "0.5"
-# `PagedDocument`/`Page` (the laid-out frames) live in typst-layout, not
-# re-exported by the `typst` facade crate. Already pulled in transitively by
-# `typst`/`typst-render` at the same 0.15.0; declaring it directly just gives
-# `typst_engine.rs` a name for the type it needs to measure page geometry.
-typst-layout = "0.15"
-
-# --- Raster pipeline: typst-render rasterizes the document directly to a
-# pixmap (no SVG round-trip), we then swap to BGRA for gpui. ---
-
-# Pinned to match what gpui itself uses so `image::Frame` / `SmallVec` unify to
-# a single version and can be handed directly to `gpui::RenderImage::new`.
+# The Typst pipeline moved to `dockcv-core`; what stays here is the last step
+# of it. `render.rs` turns the engine's pixmap into a `gpui::RenderImage`, and
+# these two are pinned to match what gpui itself uses so `image::Frame` and
+# `SmallVec` unify to a single version and can be handed to it directly.
 image = "0.25"
 smallvec = "1"
-typst-pdf = "0.15"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = "0.8"
 # PDF text extraction, pure Rust. Deliberately *not* `pdfium-render`: that binds
@@ -74,6 +69,10 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["fo
 gpui_platform = { git = "https://github.com/zed-industries/zed" }
 
 [dev-dependencies]
+# The same crate, with its fixture switched on. Dev-only, so `cargo test` can
+# build a document out of the sample résumé and `cargo build` still ships
+# without one — verified by the string sweep in `scripts/bundle.sh`.
+dockcv-core = { path = "crates/dockcv-core", features = ["fixtures"] }
 # Tests only — used to *build* a malformed PDF, so the guard against
 # `pdf-extract`'s panics is proven against a real file rather than asserted.
 # Flags mirror `pdf-extract`'s own request exactly (`default-features = false`,

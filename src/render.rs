@@ -48,3 +48,27 @@ pub fn pixels_to_render_image(mut pixels: Pixels, scale: f32) -> Result<Rendered
         height: pixels.height as f32 / scale,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use dockcv_core::resume::model::{Resume, ResumeDoc};
+    use dockcv_core::resume::template;
+    use dockcv_core::typst_engine::TypstEngine;
+
+    /// The GPUI half of what used to be an engine test: `dockcv-core` proves
+    /// the compile produces pixels, and this proves those pixels become an
+    /// image GPUI will draw. The split is the crate boundary — core knows
+    /// nothing about `RenderImage`, and this is the only place that should.
+    #[test]
+    fn a_compiled_page_becomes_an_image_gpui_can_draw() {
+        // Any real document will do, and an empty one keeps the fixture out
+        // of it — the sample résumé is core's own `cfg(test)` data and has no
+        // business crossing a crate boundary to prove a channel swap.
+        let doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        let engine = TypstEngine::new(template::generate_for(&doc));
+        let (pixels, _) = engine.compile_to_pixels(2.0).expect("compiles");
+
+        let rendered = super::pixels_to_render_image(pixels, 2.0).expect("rasterizes");
+        assert!(rendered.width > 0.0 && rendered.height > 0.0);
+    }
+}

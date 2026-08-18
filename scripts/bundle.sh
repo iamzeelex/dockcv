@@ -43,9 +43,14 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-# The single source of version truth. Parsed from the [package] section so a
-# dependency that happens to pin the same string cannot be picked up instead.
-VERSION="$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version[[:space:]]*=/{gsub(/[",]/,"",$3); print $3; exit}' "$ROOT/Cargo.toml")"
+# The single source of version truth — asked of cargo rather than read out of
+# the manifest by eye. The hand-rolled parser this replaces looked for
+# `version = ` inside `[package]`, and stopped finding it the day the version
+# moved to `[workspace.package]` and the package started inheriting it: the
+# build failed with "could not read version from Cargo.toml" for a manifest
+# that was perfectly valid.
+VERSION="$(cargo metadata --format-version 1 --no-deps --manifest-path "$ROOT/Cargo.toml" \
+  | python3 -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="dockcv"))')"
 [[ -n "$VERSION" ]] || { echo "could not read version from Cargo.toml" >&2; exit 1; }
 echo "==> DockCV $VERSION"
 

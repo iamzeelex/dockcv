@@ -208,7 +208,7 @@ fn raw_text(source: &Source, node: &SyntaxNode) -> String {
         .unwrap_or_default()
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "fixtures"))]
 /// The AltaCV starter document (Typst Universe `@preview/altacv:1.5.0`), and
 /// the fixture every parser and round-trip test builds on.
 ///
@@ -322,7 +322,6 @@ pub const ALTACV_SAMPLE: &str = r#"
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render;
     use crate::resume::template;
     use crate::typst_engine::TypstEngine;
 
@@ -363,9 +362,6 @@ mod tests {
             (pixels.width * pixels.height * 4) as usize
         );
         assert!(geometry.page_count >= 1);
-
-        let rendered = render::pixels_to_render_image(pixels, 2.0).expect("rasterizes");
-        assert!(rendered.width > 0.0 && rendered.height > 0.0);
     }
 
     #[test]

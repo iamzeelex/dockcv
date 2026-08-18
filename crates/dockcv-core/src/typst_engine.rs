@@ -35,6 +35,10 @@ fn global_fonts() -> &'static (LazyHash<FontBook>, Vec<Font>) {
                 index += 1;
             }
         };
+        // Typst's fallback pack. Behind a feature because it is 9.2 MB and a
+        // browser has no use for three maths faces — see this crate's
+        // `Cargo.toml`. The document faces below always load.
+        #[cfg(feature = "fallback-fonts")]
         for data in typst_assets::fonts() {
             load(data);
         }
@@ -53,16 +57,16 @@ fn global_library() -> &'static LazyHash<Library> {
 /// résumé can be set in a family the user recognises. Bundled, never fetched
 /// (US-10) — the same bytes the UI already carries.
 const DOCUMENT_FONTS: &[&[u8]] = &[
-    include_bytes!("../assets/fonts/Geist-Regular.ttf"),
-    include_bytes!("../assets/fonts/Geist-Medium.ttf"),
-    include_bytes!("../assets/fonts/Geist-SemiBold.ttf"),
-    include_bytes!("../assets/fonts/Geist-Bold.ttf"),
-    include_bytes!("../assets/fonts/Newsreader.ttf"),
-    include_bytes!("../assets/fonts/Newsreader-Italic.ttf"),
-    include_bytes!("../assets/fonts/PTSerif-Regular.ttf"),
-    include_bytes!("../assets/fonts/PTSerif-Bold.ttf"),
-    include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"),
-    include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf"),
+    include_bytes!("../../../assets/fonts/Geist-Regular.ttf"),
+    include_bytes!("../../../assets/fonts/Geist-Medium.ttf"),
+    include_bytes!("../../../assets/fonts/Geist-SemiBold.ttf"),
+    include_bytes!("../../../assets/fonts/Geist-Bold.ttf"),
+    include_bytes!("../../../assets/fonts/Newsreader.ttf"),
+    include_bytes!("../../../assets/fonts/Newsreader-Italic.ttf"),
+    include_bytes!("../../../assets/fonts/PTSerif-Regular.ttf"),
+    include_bytes!("../../../assets/fonts/PTSerif-Bold.ttf"),
+    include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf"),
+    include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf"),
 ];
 
 /// Gap inserted between pages in the merged raster, in typographic points.

@@ -1,0 +1,56 @@
+# The engine: the path from stored data to a typeset page, and nothing else.
+#
+# Split out of the binary so it can be compiled and tested without a window —
+# and, as it turns out, without an operating system: this crate builds for
+# `wasm32-unknown-unknown` and runs there (`docs/research/wasm-web-demo.md`).
+#
+# The rule that keeps it that way: **no GPUI, no filesystem, no clock, no
+# environment.** `render.rs` (pixels → `gpui::RenderImage`) and `vault.rs`
+# (TOML on disk) are the binary's, deliberately. The importers are the
+# binary's too — they need `std::fs`, `pdf-extract` and `docx-rs`, and the
+# dependency only ever runs one way (`import` reads `resume::model`, never the
+# reverse), so keeping them out costs nothing and makes this crate portable by
+# construction rather than by a feature flag someone has to set correctly.
+[package]
+name = "dockcv-core"
+# Inherited, like `crates/ui-components` — a crate on a different edition from
+# the workspace picks up different lints, which is how this one arrived with
+# clippy errors the same code never had inside the binary.
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "DockCV's engine: résumé model, Typst codegen and the in-process compiler"
+
+[features]
+default = ["fallback-fonts"]
+# Typst's own font pack — 9.2 MB, of which 3.8 MB is three NewCM *math* faces
+# a résumé will never set. It is the right default for the app, where a
+# document may contain anything and a missing glyph is worse than a large
+# binary. It is the wrong default for a browser, where it is 3.9 MB over the
+# wire for glyphs the demo cannot reach. Off, the five document faces still
+# ship: they are what a CV is actually set in.
+fallback-fonts = ["typst-assets/fonts"]
+# The AltaCV starter document — a whole résumé for a person who does not exist.
+# It is the fixture half the test suite is built on, and the binary's tests need
+# it too now that the model lives here. A feature rather than a plain `pub`,
+# because a shipped build must not carry one: the binary enables it from
+# `[dev-dependencies]`, so `cargo test` sees it and `cargo build` does not.
+fixtures = []
+
+[dependencies]
+typst = "0.15"
+typst-render = "0.15"
+typst-layout = "0.15"
+typst-pdf = "0.15"
+typst-assets = "0.15"
+comemo = "0.5"
+serde = { version = "1.0.228", features = ["derive"] }
+
+[dev-dependencies]
+# TOML is the wire format the model is shaped around — field order, defaults,
+# what a migration must keep reading — so the round-trip assertions belong
+# here. Dev-only: this crate never touches a file, and `vault.rs` in the binary
+# is what actually reads and writes them.
+toml = "0.8"

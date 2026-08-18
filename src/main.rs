@@ -16,11 +16,15 @@ mod config;
 mod import;
 mod logging;
 mod render;
-mod resume;
 mod theme;
-mod typst_engine;
 mod vault;
 mod views;
+
+// The engine lives in `dockcv-core` now — see that crate's manifest for why.
+// Re-exported under the names it had here so every `crate::resume::…` path in
+// the app keeps resolving: the move is a change of *where the code lives*, and
+// making it also a change of what everything is called would bury it.
+pub use dockcv_core::{resume, typst_engine};
 
 fn main() {
     // First, and before any window: everything after this point can fail, and

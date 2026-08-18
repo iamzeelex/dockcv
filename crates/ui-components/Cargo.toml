@@ -1,9 +1,11 @@
 [package]
 name = "dockcv-ui-components"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
 description = "Reusable UI component library for DockCV, inspired by gpui-component"
-license = "MIT OR Apache-2.0"
 
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed" }

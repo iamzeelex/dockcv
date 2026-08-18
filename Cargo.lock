@@ -1720,8 +1720,8 @@ name = "dockcv"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "comemo",
  "csv",
+ "dockcv-core",
  "dockcv-ui-components",
  "docx-rs",
  "gpui",
@@ -1735,12 +1735,21 @@ dependencies = [
  "serde_json",
  "smallvec",
  "toml 0.8.23",
+ "zip 5.1.1",
+]
+
+[[package]]
+name = "dockcv-core"
+version = "0.1.0"
+dependencies = [
+ "comemo",
+ "serde",
+ "toml 0.8.23",
  "typst",
  "typst-assets",
  "typst-layout",
  "typst-pdf",
  "typst-render",
- "zip 5.1.1",
 ]
 
 [[package]]
