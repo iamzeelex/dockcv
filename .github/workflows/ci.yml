@@ -62,6 +62,8 @@ jobs:
         run: cargo check -p dockcv-core --locked --target wasm32-unknown-unknown
       - name: …and without the fallback fonts
         run: cargo check -p dockcv-core --locked --no-default-features --target wasm32-unknown-unknown
+      - name: The browser shim itself
+        run: cargo check -p dockcv-wasm --locked --target wasm32-unknown-unknown
 
   matrix:
     name: Cross-Platform Build Check

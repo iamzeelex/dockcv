@@ -45,9 +45,26 @@ fn global_fonts() -> &'static (LazyHash<FontBook>, Vec<Font>) {
         for data in DOCUMENT_FONTS {
             load(data);
         }
+        #[cfg(feature = "libertinus")]
+        for data in LIBERTINUS {
+            load(data);
+        }
         (LazyHash::new(FontBook::from_fonts(&fonts)), fonts)
     })
 }
+
+/// Libertinus Serif, for builds without `typst-assets`' font pack.
+///
+/// `DocumentFont` defaults to this family, so a build that dropped the pack
+/// and did not put it back would render the default face as whatever Typst
+/// fell back to — silently, which is the whole complaint in L-11. Three faces,
+/// not six: regular, bold and italic are what a CV sets.
+#[cfg(feature = "libertinus")]
+const LIBERTINUS: &[&[u8]] = &[
+    include_bytes!("../../../assets/fonts/web/LibertinusSerif-Regular.otf"),
+    include_bytes!("../../../assets/fonts/web/LibertinusSerif-Bold.otf"),
+    include_bytes!("../../../assets/fonts/web/LibertinusSerif-Italic.otf"),
+];
 
 fn global_library() -> &'static LazyHash<Library> {
     GLOBAL_LIBRARY.get_or_init(|| LazyHash::new(Library::builder().build()))
@@ -468,7 +485,33 @@ impl TypstEngine {
         ))
     }
 
+    /// Compile the current document to one SVG per page.
+    ///
+    /// The browser's output. `typst-render` gives the app a pixmap because
+    /// GPUI draws textures; a page in a web page wants to stay sharp when the
+    /// visitor zooms, and SVG also skips the pixmap → BGRA conversion that
+    /// only exists to feed `RenderImage`.
+    ///
+    /// One string per page rather than a merged canvas: the app's raster path
+    /// merges pages so it can paint one image with a gap drawn between them,
+    /// and a document in a web page is better served by real elements the page
+    /// can lay out, scroll and style itself.
+    #[cfg(feature = "svg")]
+    pub fn compile_to_svg(&self) -> Result<Vec<String>, String> {
+        let Warned { output, .. } = typst::compile::<PagedDocument>(self);
+        let document = output.map_err(join_diagnostics)?;
+        let options = typst_svg::SvgOptions::default();
+        let pages: Vec<String> = document
+            .pages()
+            .iter()
+            .map(|page| typst_svg::svg(page, &options))
+            .collect();
+        comemo::evict(COMEMO_MAX_AGE);
+        Ok(pages)
+    }
+
     /// Compile the current document to PDF bytes.
+    #[cfg(feature = "pdf")]
     pub fn compile_to_pdf(&self) -> Result<Vec<u8>, String> {
         let Warned { output, .. } = typst::compile(self);
         let document = output.map_err(join_diagnostics)?;

@@ -1,6 +1,19 @@
 [workspace]
-members = [".", "crates/dockcv-core", "crates/ui-components"]
+members = [".", "crates/dockcv-core", "crates/dockcv-wasm", "crates/ui-components"]
 resolver = "2"
+
+# The browser module, built for size rather than speed — the download is the
+# cost a visitor actually pays, and a one-page CV compiles in milliseconds
+# either way. A profile of its own because the app wants the opposite: it keeps
+# its symbols for readable crash reports (see `[profile.release]`), which a web
+# page has no use for.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
 
 [workspace.package]
 version = "0.1.0"

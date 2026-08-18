@@ -24,7 +24,7 @@ publish.workspace = true
 description = "DockCV's engine: résumé model, Typst codegen and the in-process compiler"
 
 [features]
-default = ["fallback-fonts"]
+default = ["fallback-fonts", "pdf"]
 # Typst's own font pack — 9.2 MB, of which 3.8 MB is three NewCM *math* faces
 # a résumé will never set. It is the right default for the app, where a
 # document may contain anything and a missing glyph is worse than a large
@@ -38,13 +38,35 @@ fallback-fonts = ["typst-assets/fonts"]
 # because a shipped build must not carry one: the binary enables it from
 # `[dev-dependencies]`, so `cargo test` sees it and `cargo build` does not.
 fixtures = []
+# `compile_to_svg`. Off by default because the app rasterizes with
+# `typst-render` and has no use for it; on for the browser, where SVG is sharp
+# at any zoom and skips the pixmap → BGRA step entirely.
+svg = ["dep:typst-svg"]
+# PDF export. On by default — it is how a CV leaves the app — but the browser
+# demo shows pages rather than producing files, and the PDF writer drags in
+# krilla and hayro behind it. Measured before making it optional.
+pdf = ["dep:typst-pdf"]
+# Adds Libertinus Serif — three faces, 0.92 MB — from our own assets.
+#
+# For builds with `fallback-fonts` off, which is where Libertinus normally
+# comes from and which is also the *default* `DocumentFont`: without it a
+# browser build would silently set the default face as something else, the same
+# silent substitution `docs/OPEN.md` L-11 is about.
+#
+# **Additive, and it has to be.** The first version of this replaced the
+# document font list rather than adding to it, which is not what a Cargo
+# feature may do: `cargo test --workspace` unifies features across the graph,
+# so the browser crate asking for it deleted Newsreader from the *app's* font
+# set. `every_offered_font_is_registered_and_changes_the_render` caught it.
+libertinus = []
 
 [dependencies]
 typst = "0.15"
 typst-render = "0.15"
 typst-layout = "0.15"
-typst-pdf = "0.15"
+typst-pdf = { version = "0.15", optional = true }
 typst-assets = "0.15"
+typst-svg = { version = "0.15", optional = true }
 comemo = "0.5"
 serde = { version = "1.0.228", features = ["derive"] }
 
