@@ -1448,6 +1448,93 @@ pub struct HeaderLayout {
     pub separator: SkillSeparator,
 }
 
+/// The size of each element that is not body text, as **points added to the
+/// document's base size**.
+///
+/// Deltas rather than absolutes, so that "Text scale" means what its name
+/// says. Before this the name was a flat `20pt` while the body scaled with
+/// the control, so a CV set to 85% had a *larger* size contrast than the same
+/// CV at 100%: the scale control was quietly editing the hierarchy instead of
+/// the size. Storing offsets makes the hierarchy the user's decision and the
+/// scale a multiplier over all of it.
+///
+/// Every default reproduces the number the template used to hard-code, at the
+/// default base of 10pt: name 10+10=20, title 10+2=12, heading 10−1=9, entry
+/// title 10+0=10.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TypeSizes {
+    #[serde(default = "TypeSizes::default_name")]
+    pub name_pt: f32,
+    /// The professional title beside the name.
+    #[serde(default = "TypeSizes::default_title")]
+    pub title_pt: f32,
+    /// The bar above each section.
+    #[serde(default = "TypeSizes::default_heading")]
+    pub heading_pt: f32,
+    /// A dated entry's title line — job title, degree, certificate.
+    #[serde(default)]
+    pub entry_pt: f32,
+}
+
+impl Default for TypeSizes {
+    fn default() -> Self {
+        Self {
+            name_pt: Self::default_name(),
+            title_pt: Self::default_title(),
+            heading_pt: Self::default_heading(),
+            entry_pt: 0.0,
+        }
+    }
+}
+
+impl TypeSizes {
+    fn default_name() -> f32 {
+        10.0
+    }
+    fn default_title() -> f32 {
+        2.0
+    }
+    fn default_heading() -> f32 {
+        -1.0
+    }
+
+    /// Below this nothing survives being printed, and it is also what keeps
+    /// `base + delta` positive when the base is at its floor and the offset
+    /// at its own — a negative text size is a Typst compile error.
+    pub const MIN_PT: f32 = 4.0;
+    /// How far an element may be pushed from the body size. One range for all
+    /// four: the floor above is what protects legibility, so this only has to
+    /// stop a hand-edited file from asking for a 90pt name.
+    pub const DELTA_RANGE: (f32, f32) = (-4.0, 18.0);
+    /// What one press of the rail's `+`/`−` moves. Half a point, because the
+    /// difference between a 12pt and a 12.5pt title is visible on a page and
+    /// a whole point is a coarser adjustment than this control is for.
+    pub const STEP_PT: f32 = 0.5;
+
+    /// The date/location line, and the pills a bubbled Skills section is made
+    /// of. Not controls — they are *derived* from the body size and always sit
+    /// just under it — but expressed the same way, so they follow the base
+    /// like everything else. At the default base they are still the 9pt and
+    /// 8.5pt the template used to hard-code.
+    pub const META_PT: f32 = -1.0;
+    pub const PILL_PT: f32 = -1.5;
+
+    /// The size an element is actually set at, given the document's base.
+    pub fn resolve(base_pt: f32, delta_pt: f32) -> f32 {
+        (base_pt + delta_pt).max(Self::MIN_PT)
+    }
+
+    fn sanitized(&self) -> Self {
+        let (lo, hi) = Self::DELTA_RANGE;
+        Self {
+            name_pt: self.name_pt.clamp(lo, hi),
+            title_pt: self.title_pt.clamp(lo, hi),
+            heading_pt: self.heading_pt.clamp(lo, hi),
+            entry_pt: self.entry_pt.clamp(lo, hi),
+        }
+    }
+}
+
 /// Page layout and type scale for the rendered document. See `ResumeDoc::layout`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LayoutSettings {
@@ -1480,6 +1567,11 @@ pub struct LayoutSettings {
     /// before this existed keeps the shape it had.
     #[serde(default)]
     pub header: HeaderLayout,
+    /// The size of the name, the professional title, the section bars and
+    /// an entry's title. `#[serde(default)]` so a document written before
+    /// this existed keeps the sizes the template hard-coded.
+    #[serde(default)]
+    pub sizes: TypeSizes,
     /// Body text size as a percentage of the template's base size (10pt).
     /// 100 is the old hard-coded default; the layout rail's own readout
     /// (`docs/design/typst-controls.md` — "107%") is this same unit.
@@ -1499,6 +1591,7 @@ impl Default for LayoutSettings {
             skills: SkillsLayout::default(),
             entries: EntryLayout::default(),
             header: HeaderLayout::default(),
+            sizes: TypeSizes::default(),
             text_scale_pct: 100,
             leading_em: 0.62,
             margins: Margins::default(),
@@ -1530,6 +1623,14 @@ impl LayoutSettings {
     /// computed from the page size in `sanitized`.
     const MIN_MARGIN_MM: f32 = 3.0;
 
+    /// The size body text is set at, in points — `text_scale_pct` applied to
+    /// the template's 10pt base. Every other size in the document is this
+    /// plus a [`TypeSizes`] offset, so the rail's readouts and the generated
+    /// Typst have to agree on it.
+    pub fn base_size_pt(&self) -> f32 {
+        10.0 * self.text_scale_pct as f32 / 100.0
+    }
+
     /// A copy of these settings with every value clamped into a range Typst
     /// can render and a human can read — called once, at the point
     /// `resume/template.rs` turns settings into Typst source, so nothing
@@ -1550,6 +1651,7 @@ impl LayoutSettings {
             skills: self.skills,
             entries: self.entries,
             header: self.header,
+            sizes: self.sizes.sanitized(),
             text_scale_pct: self.text_scale_pct.clamp(min_scale, max_scale),
             leading_em: self.leading_em.clamp(min_leading, max_leading),
             margins: Margins {
@@ -2238,6 +2340,12 @@ mod layout_tests {
             skills: Default::default(),
             entries: Default::default(),
             header: Default::default(),
+            sizes: TypeSizes {
+                name_pt: 400.0,
+                title_pt: -90.0,
+                heading_pt: 0.0,
+                entry_pt: 0.0,
+            },
             text_scale_pct: 0,
             leading_em: -3.0,
             margins: Margins {
@@ -2252,6 +2360,11 @@ mod layout_tests {
         assert!(safe.margins.x_mm >= 3.0);
         assert!(safe.margins.top_mm >= 3.0 && safe.margins.top_mm <= 297.0 / 3.0);
         assert!(safe.margins.bottom_mm >= 3.0);
+        let (lo, hi) = TypeSizes::DELTA_RANGE;
+        assert!(safe.sizes.name_pt <= hi && safe.sizes.title_pt >= lo);
+        // The clamp exists to keep the *rendered* size positive, so check the
+        // thing that actually reaches Typst rather than only the offset.
+        assert!(TypeSizes::resolve(safe.base_size_pt(), safe.sizes.title_pt) >= TypeSizes::MIN_PT);
     }
 
     #[test]
@@ -2263,6 +2376,12 @@ mod layout_tests {
             skills: Default::default(),
             entries: Default::default(),
             header: Default::default(),
+            sizes: TypeSizes {
+                name_pt: 12.5,
+                title_pt: 2.0,
+                heading_pt: -1.5,
+                entry_pt: 0.5,
+            },
             text_scale_pct: 107,
             leading_em: 0.7,
             margins: Margins {

@@ -40,7 +40,7 @@ use dockcv_ui_components::{Accordion,
 use crate::resume::model::{
     BulletGlyph, CategoryMark, ContactLayout, DateFormat, DocumentFont, Emphasis, EntryLayout,
     HeaderAlign, HeaderLayout, LayoutSettings, MetaOrder, MetaPosition, PageSize, ResumeDoc,
-    RowSpacing, SectionKind, SkillSeparator, SkillsLayout, SkillsStyle, TrimCandidate,
+    RowSpacing, SectionKind, SkillSeparator, SkillsLayout, SkillsStyle, TrimCandidate, TypeSizes,
 };
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -186,7 +186,9 @@ impl Root {
                                             .gap(px(10.0))
                                             .pt(px(4.0))
                                             .child(self.font_row(cx, layout.font))
-                                            .child(self.text_scale_row(cx, &layout)),
+                                            .child(self.text_scale_row(cx, &layout))
+                                            .child(self.rail_subsection(cx, "Element sizes"))
+                                            .child(self.size_rows(cx)),
                                     )
                             })
                             .item(|item| {
@@ -682,6 +684,84 @@ impl Root {
             .child(self.rail_readout(cx, format!("{}%", layout.text_scale_pct)))
     }
 
+    /// The four sizes a CV's hierarchy is made of.
+    ///
+    /// Steppers rather than dropdowns because the value is a quantity, not a
+    /// choice from a set — and half a point at a time is the granularity that
+    /// decides whether a name looks set or shouted.
+    ///
+    /// Each readout is the size the element is **actually set at**, not the
+    /// offset stored in the file. That is the whole reason offsets are what is
+    /// stored: turning Text scale down moves all four readouts together, which
+    /// says "these follow the base" without a word of explanation.
+    fn size_rows(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .child(self.size_row(cx, "Name", |s| s.name_pt, |s, v| s.name_pt = v))
+            .child(self.size_row(cx, "Title", |s| s.title_pt, |s, v| s.title_pt = v))
+            .child(self.size_row(cx, "Headings", |s| s.heading_pt, |s, v| s.heading_pt = v))
+            .child(self.size_row(cx, "Entry title", |s| s.entry_pt, |s, v| s.entry_pt = v))
+    }
+
+    fn size_row(
+        &self,
+        cx: &mut Context<Self>,
+        label: &'static str,
+        read: fn(&TypeSizes) -> f32,
+        write: fn(&mut TypeSizes, f32),
+    ) -> impl IntoElement {
+        let layout = self.doc.layout;
+        let resolved = TypeSizes::resolve(layout.base_size_pt(), read(&layout.sizes));
+        div()
+            .flex()
+            .items_center()
+            .gap(px(4.0))
+            .child(div().flex_1().min_w_0().child(self.rail_label(cx, label)))
+            .child(self.size_step(cx, label, false, read, write))
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(40.0))
+                    .flex()
+                    .justify_center()
+                    .text_style(TextStyle::meta())
+                    .text_color(cx.theme().text_subtle)
+                    .child(format!("{}pt", fmt_pt(resolved))),
+            )
+            .child(self.size_step(cx, label, true, read, write))
+    }
+
+    fn size_step(
+        &self,
+        cx: &mut Context<Self>,
+        label: &'static str,
+        up: bool,
+        read: fn(&TypeSizes) -> f32,
+        write: fn(&mut TypeSizes, f32),
+    ) -> impl IntoElement {
+        let step = if up {
+            TypeSizes::STEP_PT
+        } else {
+            -TypeSizes::STEP_PT
+        };
+        Button::new(SharedString::from(format!(
+            "size-{label}-{}",
+            if up { "up" } else { "down" }
+        )))
+        .icon(if up { IconName::Plus } else { IconName::Minus })
+        .ghost()
+        .xsmall()
+        .cursor_pointer()
+        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+            let (lo, hi) = TypeSizes::DELTA_RANGE;
+            let next = (read(&this.doc.layout.sizes) + step).clamp(lo, hi);
+            write(&mut this.doc.layout.sizes, next);
+            this.after_layout_change(window, cx);
+        }))
+    }
+
     /// A group's heading. `GroupBox` accepts any element, so the title keeps
     /// the eyebrow treatment the rail already used for "Layout" rather than
     /// upstream's default label size.
@@ -705,6 +785,16 @@ impl Root {
             .text_style(TextStyle::meta())
             .text_color(cx.theme().text_subtle)
             .child(text)
+    }
+}
+
+/// A point size with no trailing `.0` — `20pt`, `12.5pt`. The step is half a
+/// point, so one decimal is all a value can ever have.
+fn fmt_pt(pt: f32) -> String {
+    if (pt.fract()).abs() < 0.01 {
+        format!("{}", pt.round() as i32)
+    } else {
+        format!("{pt:.1}")
     }
 }
 
@@ -1001,6 +1091,7 @@ mod tests {
                     skills: Default::default(),
                     entries: Default::default(),
                     header: Default::default(),
+                    sizes: Default::default(),
                     text_scale_pct: scale,
                     leading_em: 0.62,
                     margins: Margins {

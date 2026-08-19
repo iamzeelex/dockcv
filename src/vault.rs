@@ -1393,7 +1393,7 @@ mod tests {
     /// existing vault's CVs render unchanged (US-07/C1).
     #[test]
     fn layout_defaults_and_old_docs_still_load() {
-        use crate::resume::model::{LayoutSettings, Margins, PageSize};
+        use crate::resume::model::{LayoutSettings, Margins, PageSize, TypeSizes};
 
         let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
         let doc = ResumeDoc::from_resume(resume, "Base");
@@ -1422,6 +1422,12 @@ mod tests {
             skills: Default::default(),
             entries: Default::default(),
             header: Default::default(),
+            sizes: TypeSizes {
+                name_pt: 8.5,
+                title_pt: 2.0,
+                heading_pt: -1.0,
+                entry_pt: 1.0,
+            },
             text_scale_pct: 90,
             leading_em: 0.65,
             margins: Margins {
@@ -1433,6 +1439,25 @@ mod tests {
         let text2 = super::to_toml(&with_layout).expect("serialize with layout set");
         let back2: ResumeDoc = toml::from_str(&text2).expect("round-trips");
         assert_eq!(back2.layout, with_layout.layout);
+
+        // The shape every document written between the two features is in: a
+        // `[layout]` table that predates `[layout.sizes]`. It has to keep the
+        // sizes the template hard-coded, not zeroes.
+        let mut without_sizes = String::new();
+        let mut in_sizes = false;
+        for line in text2.lines() {
+            if line.starts_with('[') {
+                in_sizes = line.starts_with("[layout.sizes]");
+            }
+            if !in_sizes {
+                without_sizes.push_str(line);
+                without_sizes.push('\n');
+            }
+        }
+        assert!(!without_sizes.contains("name_pt"), "the cut missed the table");
+        let back3: ResumeDoc = toml::from_str(&without_sizes).expect("loads without sizes");
+        assert_eq!(back3.layout.sizes, TypeSizes::default());
+        assert_eq!(back3.layout.text_scale_pct, 90, "the rest of the table survived the cut");
     }
 
     /// A document written before custom sections existed (D-9) — no

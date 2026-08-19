@@ -16,7 +16,7 @@
 //! blocks, keeping the author's emphasis markup — see `neutralize` for the
 //! syntax that is escaped instead, and why.
 
-use crate::resume::model::{DateFormat, LayoutSettings, Resume, ResumeDoc, SectionKind};
+use crate::resume::model::{DateFormat, LayoutSettings, Resume, ResumeDoc, SectionKind, TypeSizes};
 
 /// The renderer body, written in Typst: helper functions plus `render-cv`.
 /// Page/text setup is *not* here — it is generated per-document by
@@ -29,7 +29,7 @@ const RENDERER: &str = r##"
 #let section(title) = block(
   width: 100%, above: 12pt, below: 6pt,
   fill: luma(238), inset: (x: 8pt, y: 4pt), radius: 2pt,
-  align(center, text(weight: "bold", size: 9pt, tracking: 1pt, upper(title))),
+  align(center, text(weight: "bold", size: size-heading, tracking: 1pt, upper(title))),
 )
 
 #let daterange(start, end) = {
@@ -40,7 +40,7 @@ const RENDERER: &str = r##"
 
 #let meta(items) = {
   let parts = items.filter(x => x != none and x != "")
-  text(fill: muted, size: 9pt, parts.join("  |  "))
+  text(fill: muted, size: size-meta, parts.join("  |  "))
 }
 
 // The three ways a run of text can be emphasised, as one helper, so the
@@ -58,10 +58,10 @@ const RENDERER: &str = r##"
 // job with no location reads the same under either order.
 #let entry(title, subtitle, trailing) = {
   let ordered = if entry-meta-order == "location-first" { trailing.rev() } else { trailing }
-  let head = {
+  let head = text(size: size-entry, {
     text(weight: "bold", title)
     if subtitle != "" { styled(entry-subtitle, ", " + subtitle) }
-  }
+  })
   if entry-meta-position == "below" {
     // Its own line: the title is never squeezed by a long date range, at the
     // cost of a line per entry.
@@ -96,10 +96,10 @@ const RENDERER: &str = r##"
   let head-align = if header-align == "left" { left } else { center }
 
   align(head-align, {
-    text(size: 20pt, weight: "bold", b.at("name", default: ""))
+    text(size: size-name, weight: "bold", b.at("name", default: ""))
     if b.at("label", default: "") != "" {
       h(8pt)
-      text(size: 12pt, style: "italic", fill: muted, b.at("label", default: ""))
+      text(size: size-title, style: "italic", fill: muted, b.at("label", default: ""))
     }
   })
   v(2pt)
@@ -118,12 +118,12 @@ const RENDERER: &str = r##"
 
   if details.len() > 0 {
     if header-contacts == "stacked" {
-      align(head-align, text(fill: muted, size: 9pt,
+      align(head-align, text(fill: muted, size: size-meta,
         details.map(d => [#d]).join(linebreak())))
     } else if header-contacts == "columns" {
       // Half the rows of `stacked`, still one item each. A grid fills
       // row-major, so the items go in as they are.
-      text(fill: muted, size: 9pt, grid(
+      text(fill: muted, size: size-meta, grid(
         columns: (1fr, 1fr),
         column-gutter: 12pt,
         row-gutter: 2pt,
@@ -131,7 +131,7 @@ const RENDERER: &str = r##"
         ..details,
       ))
     } else {
-      align(head-align, text(fill: muted, size: 9pt,
+      align(head-align, text(fill: muted, size: size-meta,
         details.join(header-separator)))
     }
   }
@@ -194,7 +194,7 @@ const RENDERER: &str = r##"
     inset: (x: 5pt, y: 2.5pt),
     radius: 3pt,
     outset: (y: 2pt),
-    text(size: 8.5pt, weight: if strong { "bold" } else { "regular" }, body),
+    text(size: size-pill, weight: if strong { "bold" } else { "regular" }, body),
   )
 
   let render-skills() = {
@@ -405,12 +405,24 @@ pub fn generate_with_layout(resume: &Resume, layout: &LayoutSettings) -> String 
 fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
     use std::fmt::Write;
     let paper = layout.page_size.typst_paper_name();
-    let size_pt = 10.0 * layout.text_scale_pct as f32 / 100.0;
+    let size_pt = layout.base_size_pt();
+    let at = |delta: f32| fmt_measure(TypeSizes::resolve(size_pt, delta));
     let _ = write!(
         out,
         r##"#set page(paper: "{paper}", fill: white, margin: (x: {x}mm, top: {top}mm, bottom: {bottom}mm))
 #set text(font: "{font}", size: {size}pt, fill: rgb("#1a1a1a"))
 #set par(justify: true, leading: {leading}em)
+
+// Everything that is not body text, sized from the base above rather than in
+// absolute points — so `text_scale_pct` scales the document instead of only
+// its paragraphs. `size-meta` and `size-pill` are not controls: they are
+// derived, and only listed here so the renderer never states a size twice.
+#let size-name = {name}pt
+#let size-title = {title}pt
+#let size-heading = {heading}pt
+#let size-entry = {entry}pt
+#let size-meta = {meta}pt
+#let size-pill = {pill}pt
 
 // How the Skills section is set. One dict rather than five bindings: they are
 // one decision, and the renderer reads them together.
@@ -437,6 +449,12 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
 )
 "##,
         font = layout.font.family(),
+        name = at(layout.sizes.name_pt),
+        title = at(layout.sizes.title_pt),
+        heading = at(layout.sizes.heading_pt),
+        entry = at(layout.sizes.entry_pt),
+        meta = at(TypeSizes::META_PT),
+        pill = at(TypeSizes::PILL_PT),
         skills_style = layout.skills.style.keyword(),
         skills_sep = layout.skills.separator.printed(),
         mark_before = layout.skills.mark.wraps().0,
@@ -939,6 +957,111 @@ mod tests {
         );
     }
 
+
+    /// The per-element sizes, held to the two rules the other layout groups
+    /// are: each control has to reach the page, and a document nobody has
+    /// touched has to render exactly as it did before the controls existed.
+    ///
+    /// The second half is checked on the *numbers that reach Typst* rather
+    /// than on pixels, because the equality it guards is arithmetic: at the
+    /// default base of 10pt the six offsets have to resolve to the six
+    /// literals the renderer used to spell out. (That the substitution is
+    /// otherwise a no-op was confirmed once by rendering the sample against
+    /// both trees — identical bytes at 100%.)
+    #[test]
+    fn every_type_size_changes_the_page_and_the_default_resolves_to_the_old_literals() {
+        use crate::resume::model::{Basics, TypeSizes, Work};
+        use crate::typst_engine::TypstEngine;
+
+        let source = generate(&Resume::default());
+        for expected in [
+            "#let size-name = 20pt",
+            "#let size-title = 12pt",
+            "#let size-heading = 9pt",
+            "#let size-entry = 10pt",
+            "#let size-meta = 9pt",
+            "#let size-pill = 8.5pt",
+        ] {
+            assert!(
+                source.contains(expected),
+                "a default document no longer sets `{expected}` — every CV \
+                 written before this control existed has been re-typeset"
+            );
+        }
+
+        let resume = Resume {
+            basics: Basics {
+                name: "Sofiia Medvedenko".into(),
+                label: "Staff Engineer".into(),
+                ..Default::default()
+            },
+            work: vec![Work {
+                name: "Acme".into(),
+                position: "Staff Engineer".into(),
+                start_date: "2022-01".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let pixels = |sizes: TypeSizes| {
+            let layout = LayoutSettings {
+                sizes,
+                ..LayoutSettings::default()
+            };
+            let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
+            engine.compile_to_pixels(1.0).expect("compiles").0.rgba
+        };
+
+        let base = pixels(TypeSizes::default());
+        let variants: [(&str, TypeSizes); 4] = [
+            ("name", TypeSizes { name_pt: 14.0, ..Default::default() }),
+            ("professional title", TypeSizes { title_pt: 5.0, ..Default::default() }),
+            ("section headings", TypeSizes { heading_pt: 3.0, ..Default::default() }),
+            ("entry title", TypeSizes { entry_pt: 3.0, ..Default::default() }),
+        ];
+        for (what, sizes) in variants {
+            assert_ne!(
+                pixels(sizes),
+                base,
+                "the {what} size rendered identically to the default — the \
+                 control never reached the page"
+            );
+        }
+    }
+
+    /// Text scale scales the *document*, not only its paragraphs.
+    ///
+    /// This is the behaviour the offsets bought and the one thing about them
+    /// that is not backwards-compatible: before, the name was a flat 20pt at
+    /// every scale, so turning the body down to 85% widened the size contrast
+    /// instead of shrinking the page. Rendered documents at a non-default
+    /// scale therefore changed once, deliberately.
+    #[test]
+    fn every_size_follows_the_base_rather_than_standing_still() {
+        let smaller = generate_with_layout(
+            &Resume::default(),
+            &LayoutSettings {
+                text_scale_pct: 90,
+                ..LayoutSettings::default()
+            },
+        );
+        // 9pt base: 9+10, 9+2, 9−1, 9+0, 9−1, 9−1.5.
+        for expected in [
+            "#let size-name = 19pt",
+            "#let size-title = 11pt",
+            "#let size-heading = 8pt",
+            "#let size-entry = 9pt",
+            "#let size-pill = 7.5pt",
+        ] {
+            assert!(
+                smaller.contains(expected),
+                "at 90% the document does not set `{expected}` — some element \
+                 is pinned to an absolute size again"
+            );
+        }
+    }
+
     /// Every entry control has to reach the page, and the default has to
     /// leave a document rendering exactly as it did before the controls
     /// existed — the second half is what stops a layout feature from quietly
@@ -1137,6 +1260,12 @@ mod tests {
             skills: Default::default(),
             entries: Default::default(),
             header: Default::default(),
+            sizes: TypeSizes {
+                name_pt: 900.0,
+                title_pt: -900.0,
+                heading_pt: 0.0,
+                entry_pt: 0.0,
+            },
             text_scale_pct: 0,
             leading_em: -1.0,
             margins: Margins {
