@@ -44,6 +44,15 @@ use super::{EditorEvent, Root};
 const THUMB_SCALE: f32 = 0.5;
 
 pub(super) enum Screen {
+    /// Before the vault has been looked at.
+    ///
+    /// Exists so `Shell::new` can touch no filesystem: it runs *before*
+    /// `open_window`, so anything it blocks on delays the first frame — and on
+    /// macOS a vault under `~/Documents` means the OS raises its own consent
+    /// dialog, which then appears with no application behind it (L-16). The
+    /// backdrop only, for the frame or two it takes; showing `Welcome` here
+    /// would flash the wrong screen at everyone who already has a vault.
+    Opening,
     Welcome,
     Setup,
     Gallery,
@@ -141,38 +150,35 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
-        // Open the gallery if a previously chosen vault is still valid;
-        // otherwise start the welcome → setup flow.
+    pub fn new(cx: &mut Context<Self>) -> Self {
+        // `~/.config`, not the vault: a small file in a directory macOS does
+        // not gate. Reading it here is what lets the *vault* wait.
         let config = config::load();
         let library_helper_dismissed = config.library_helper_dismissed;
-        // Kept for the log below: the *recorded* path and the *usable* one are
-        // different facts, and which one is missing is the diagnosis.
-        let recorded = config
-            .vault
-            .as_ref()
-            .map(|d| d.display().to_string())
-            .unwrap_or_else(|| "none recorded".into());
-        let (vault, screen) = match config.vault {
-            Some(dir) if vault::is_vault(&dir) => (Some(dir), Screen::Gallery),
-            _ => (None, Screen::Welcome),
-        };
-        // Most sessions begin here rather than in `open_vault`, so this is the
-        // line that says which vault a report is about. The `None` case is
-        // worth saying too: "no vault" and "vault that would not open" look
-        // identical from the outside and are not the same bug.
-        match &vault {
-            Some(dir) => log::info!(
-                "vault restored: {} ({} documents)",
-                dir.display(),
-                vault::list_documents(dir).len()
-            ),
-            None => log::info!("no usable vault in config ({recorded}) — starting at Welcome"),
-        }
+        let recorded = config.vault.clone();
+
+        // The vault is opened after the window exists, and off the main
+        // thread. `Shell::new` runs before `open_window`, so a blocking read
+        // here is a frame that never gets painted — and on macOS the first
+        // read of a vault under `~/Documents` blocks in `open()` while the OS
+        // asks the user for consent, which is a dialog naming an app that is
+        // not on screen yet (L-16).
+        cx.spawn(async move |this, cx| {
+            let executor = cx.background_executor().clone();
+            let resolved = executor
+                .spawn(async move {
+                    let dir = recorded.filter(|d| vault::is_vault(d))?;
+                    let count = vault::list_documents(&dir).len();
+                    Some((dir, count))
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| this.finish_opening(resolved, cx));
+        })
+        .detach();
 
         Self {
-            screen,
-            vault,
+            screen: Screen::Opening,
+            vault: None,
             renaming_doc: None,
             rename_field: None,
             gallery_creating: false,
@@ -546,6 +552,29 @@ impl Shell {
         let mut diary = vault::load_diary(&vault);
         remove_at(&mut diary.entries, index);
         save_status::record(cx, "diary", vault::save_diary(&vault, &diary));
+        cx.notify();
+    }
+
+    /// Land the vault the startup task went looking for.
+    ///
+    /// The counterpart to [`Shell::new`] deferring it: `Some` means the
+    /// remembered directory is still a vault and the gallery can open, `None`
+    /// means it is gone, was never set, or could not be read — all of which
+    /// lead to Welcome, because from here they are the same situation for the
+    /// user even though the log tells them apart.
+    fn finish_opening(&mut self, resolved: Option<(PathBuf, usize)>, cx: &mut Context<Self>) {
+        match resolved {
+            Some((dir, documents)) => {
+                // The line that says which vault a report is about.
+                log::info!("vault restored: {} ({documents} documents)", dir.display());
+                self.vault = Some(dir);
+                self.screen = Screen::Gallery;
+            }
+            None => {
+                log::info!("no usable vault recorded — starting at Welcome");
+                self.screen = Screen::Welcome;
+            }
+        }
         cx.notify();
     }
 
@@ -1124,6 +1153,10 @@ impl Render for Shell {
         // Preset Matrix (document-scoped, reached from a document and drawn
         // with a breadcrumb rather than the rail — see its own design row).
         let body = match &self.screen {
+            // Deliberately empty. This state lasts a frame or two; anything
+            // drawn in it would be a flicker, and a spinner for work that is
+            // usually instant teaches the user to expect a wait.
+            Screen::Opening => self.backdrop(cx).into_any_element(),
             Screen::Welcome => self.render_welcome(cx).into_any_element(),
             Screen::Setup => self.render_setup(cx).into_any_element(),
             Screen::Editor(editor) => editor.clone().into_any_element(),
