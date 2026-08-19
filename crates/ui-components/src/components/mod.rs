@@ -18,6 +18,9 @@ pub use icon::{lucide, Assets, DockIcon, Icon, IconName};
 
 // --- upstream, re-exported under our roof ---
 pub use gpui_component::{
+    // The layout rail's grouping. Nine controls in one column is a list to
+    // scroll; four headings with one open is a decision to make.
+    accordion::{Accordion, AccordionItem},
     avatar::Avatar,
     badge::Badge,
     button::{Button, ButtonVariant, ButtonVariants},

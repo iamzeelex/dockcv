@@ -334,6 +334,11 @@ pub struct Root {
     /// The compiler's last measurement of the laid-out pages.
     pub(super) geometry: Option<PageGeometry>,
     pub(super) layout_rail_open: bool,
+    /// Which of the rail's groups is expanded. One at a time: the rail is
+    /// 220px of a window someone is reading a document in, and four headings
+    /// with one open is a shorter thing to scan than nine controls in a
+    /// column. Typography first, because type is what people change first.
+    pub(super) layout_group: usize,
     /// The rail's two sliders. Built lazily — a `SliderState` needs a
     /// `Window`, which `Root::new` does not have, same as `Root::fields`.
     pub(super) margin_slider: Option<Entity<SliderState>>,
@@ -402,6 +407,7 @@ impl Root {
             last_scale: 0.0,
             geometry: None,
             layout_rail_open: false,
+            layout_group: 0,
             margin_slider: None,
             scale_slider: None,
             slider_subscriptions: Vec::new(),

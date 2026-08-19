@@ -32,7 +32,7 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement, SharedString, Window};
 
-use dockcv_ui_components::{GroupBox, 
+use dockcv_ui_components::{Accordion, 
     Button, ButtonVariants, DropdownMenu, IconName, PopupMenuItem, Sizable, Slider, SliderEvent,
     SliderState, Tooltip,
 };
@@ -120,6 +120,9 @@ impl Root {
         let theme = cx.theme().clone();
         let layout = self.doc.layout;
 
+        let open = self.layout_group;
+        let root = cx.weak_entity();
+
         div()
             .absolute()
             .top_0()
@@ -132,12 +135,13 @@ impl Root {
             .border_l_1()
             .border_color(theme.border)
             .shadow_lg()
-            // The heading stays put; the controls scroll under it. Before this
-            // the whole rail was one column with no overflow, so on a short
-            // window — or simply once Sections added four more controls —
-            // everything past the fold was drawn outside the rail and could
-            // not be reached at all. A control you cannot scroll to is a
-            // control that does not exist.
+            // The rail floats *inside* the preview pane, which is itself a
+            // scroll container — so without this a wheel over the rail scrolled
+            // the document behind it, and the panel you were reaching into slid
+            // away under your cursor. `occlude` stops the event reaching what is
+            // painted behind, which is the same rule the gallery card's menu and
+            // the applications card already follow (E-16).
+            .occlude()
             .child(
                 div()
                     .flex_none()
@@ -154,45 +158,85 @@ impl Root {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .flex()
-                    .flex_col()
-                    .gap(px(16.0))
-                    .px(px(18.0))
+                    .px(px(12.0))
                     .pb(px(20.0))
-                    // Grouped rather than listed. Nine controls in a flat
-                    // column read as nine unrelated switches; they are four
-                    // decisions — how the type looks, how the sheet is cut,
-                    // how dates print, and how a section arranges itself. At
-                    // 220px there is no room to lay a label beside its
-                    // control, so the structure has to come from grouping
-                    // instead of from rows.
+                    // One heading open at a time. Four groups stacked open is
+                    // nine controls in a 220px column — a list to scroll past
+                    // rather than a choice to make — and it does not fit a
+                    // short window, which is how the rail came to be clipped.
+                    //
+                    // The wrapper is load-bearing: `Accordion` renders itself
+                    // `size_full` and every `AccordionItem` `flex_1`, so given
+                    // a definite height the four groups divide it evenly and
+                    // collapsed headings sit 120px apart. Inside a
+                    // content-height box there is nothing to divide.
                     .child(
-                        GroupBox::new()
-                            .title(self.rail_group_title(cx, "Typography"))
-                            .child(self.font_row(cx, layout.font))
-                            .child(self.text_scale_row(cx, &layout)),
-                    )
-                    .child(
-                        GroupBox::new()
-                            .title(self.rail_group_title(cx, "Page"))
-                            .child(self.page_size_row(cx, layout.page_size))
-                            .child(self.margins_row(cx, &layout)),
-                    )
-                    .child(
-                        GroupBox::new()
-                            .title(self.rail_group_title(cx, "Dates"))
-                            .child(self.date_format_row(cx, layout.date_format)),
-                    )
-                    // Sections: how a section arranges what is inside it, as
-                    // opposed to the document-wide decisions above. Skills
-                    // needed it most — a CV's technologies are what a reader
-                    // scans for, and this document spends most of a page on
-                    // them. Other sections get controls here as they grow
-                    // choices worth having.
-                    .child(
-                        GroupBox::new()
-                            .title(self.rail_group_title(cx, "Sections"))
-                            .child(self.skills_rows(cx, layout.skills)),
+                        div().child(
+                        Accordion::new("layout-groups")
+                            .multiple(false)
+                            .bordered(false)
+                            .item(|item| {
+                                item.title(self.rail_group_title(cx, "Typography"))
+                                    .open(open == 0)
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(10.0))
+                                            .pt(px(4.0))
+                                            .child(self.font_row(cx, layout.font))
+                                            .child(self.text_scale_row(cx, &layout)),
+                                    )
+                            })
+                            .item(|item| {
+                                item.title(self.rail_group_title(cx, "Page"))
+                                    .open(open == 1)
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(10.0))
+                                            .pt(px(4.0))
+                                            .child(self.page_size_row(cx, layout.page_size))
+                                            .child(self.margins_row(cx, &layout)),
+                                    )
+                            })
+                            .item(|item| {
+                                item.title(self.rail_group_title(cx, "Dates"))
+                                    .open(open == 2)
+                                    .child(
+                                        div()
+                                            .pt(px(4.0))
+                                            .child(self.date_format_row(cx, layout.date_format)),
+                                    )
+                            })
+                            // Sections: how a section arranges what is inside
+                            // it, as opposed to the document-wide decisions
+                            // above. Skills needed it most — a CV's
+                            // technologies are what a reader scans for, and
+                            // this document spends most of a page on them.
+                            .item(|item| {
+                                item.title(self.rail_group_title(cx, "Sections"))
+                                    .open(open == 3)
+                                    .child(
+                                        div()
+                                            .pt(px(4.0))
+                                            .child(self.skills_rows(cx, layout.skills)),
+                                    )
+                            })
+                            .on_toggle_click(move |open, _window, cx| {
+                                // `multiple(false)` means at most one index.
+                                // An empty slice is the group closing itself,
+                                // which leaves the rail with four headings and
+                                // nothing under them — a legitimate state, and
+                                // `usize::MAX` is how it is spelled here.
+                                let next = open.first().copied().unwrap_or(usize::MAX);
+                                let _ = root.update(cx, |this, cx| {
+                                    this.layout_group = next;
+                                    cx.notify();
+                                });
+                            }),
+                        ),
                     ),
             )
     }
