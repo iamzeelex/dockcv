@@ -38,9 +38,9 @@ use dockcv_ui_components::{Accordion,
 };
 
 use crate::resume::model::{
-    BulletGlyph, CategoryMark, DateFormat, DocumentFont, Emphasis, EntryLayout, LayoutSettings,
-    MetaOrder, MetaPosition, PageSize, ResumeDoc, RowSpacing, SectionKind, SkillSeparator,
-    SkillsLayout, SkillsStyle, TrimCandidate,
+    BulletGlyph, CategoryMark, ContactLayout, DateFormat, DocumentFont, Emphasis, EntryLayout,
+    HeaderAlign, HeaderLayout, LayoutSettings, MetaOrder, MetaPosition, PageSize, ResumeDoc,
+    RowSpacing, SectionKind, SkillSeparator, SkillsLayout, SkillsStyle, TrimCandidate,
 };
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -217,8 +217,17 @@ impl Root {
                             // technologies are what a reader scans for, and
                             // this document spends most of a page on them.
                             .item(|item| {
-                                item.title(self.rail_group_title(cx, "Sections"))
+                                item.title(self.rail_group_title(cx, "Header"))
                                     .open(open == 3)
+                                    .child(
+                                        div()
+                                            .pt(px(4.0))
+                                            .child(self.header_rows(cx, layout.header)),
+                                    )
+                            })
+                            .item(|item| {
+                                item.title(self.rail_group_title(cx, "Sections"))
+                                    .open(open == 4)
                                     .child(
                                         div()
                                             .flex()
@@ -334,6 +343,58 @@ impl Root {
                     .child(title),
             )
             .child(div().flex_1().h(px(1.0)).bg(theme.border))
+    }
+
+    /// The block above the first section: the name, the title under it, and
+    /// the contact details.
+    ///
+    /// No icon control. Drawing a glyph before each detail needs an icon font
+    /// inside the document, which is its own piece of work rather than a
+    /// fourth dropdown — see `HeaderLayout`.
+    fn header_rows(&self, cx: &mut Context<Self>, header: HeaderLayout) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(9.0))
+            .child(self.skills_pick(
+                cx,
+                "Alignment",
+                "layout-header-align",
+                header.align.label(),
+                HeaderAlign::ALL
+                    .iter()
+                    .map(|a| (a.label(), *a == header.align, *a))
+                    .collect(),
+                |doc, v| doc.layout.header.align = v,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Contact details",
+                "layout-header-contacts",
+                header.contacts.label(),
+                ContactLayout::ALL
+                    .iter()
+                    .map(|c| (c.label(), *c == header.contacts, *c))
+                    .collect(),
+                |doc, v| doc.layout.header.contacts = v,
+            ))
+            // Only when they share a line. On the two shapes that give each
+            // detail its own row there is nothing between them, and a control
+            // that changes nothing teaches the user something untrue about the
+            // product (E-43).
+            .children(header.contacts.uses_separator().then(|| {
+                self.skills_pick(
+                    cx,
+                    "Separator",
+                    "layout-header-sep",
+                    header.separator.label(),
+                    SkillSeparator::ALL
+                        .iter()
+                        .map(|s| (s.label(), *s == header.separator, *s))
+                        .collect(),
+                    |doc, v| doc.layout.header.separator = v,
+                )
+            }))
     }
 
     /// How a dated entry is set — a job, a degree, a certificate. The other
@@ -939,6 +1000,7 @@ mod tests {
                     date_format: Default::default(),
                     skills: Default::default(),
                     entries: Default::default(),
+                    header: Default::default(),
                     text_scale_pct: scale,
                     leading_em: 0.62,
                     margins: Margins {

@@ -1351,6 +1351,103 @@ pub struct EntryLayout {
     pub indent_body: bool,
 }
 
+/// Which edge the header sits against.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HeaderAlign {
+    /// What every document did before this existed.
+    #[default]
+    Center,
+    Left,
+}
+
+impl HeaderAlign {
+    pub const ALL: [HeaderAlign; 2] = [HeaderAlign::Center, HeaderAlign::Left];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            HeaderAlign::Center => "Centred",
+            HeaderAlign::Left => "Left",
+        }
+    }
+
+    pub fn keyword(self) -> &'static str {
+        match self {
+            HeaderAlign::Center => "center",
+            HeaderAlign::Left => "left",
+        }
+    }
+}
+
+/// How the contact details under the name are arranged.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ContactLayout {
+    /// One flowing line, items joined by a separator. Cheapest in space and
+    /// what the header has always done.
+    #[default]
+    Inline,
+    /// One per line. Costs several lines at the top of the page and buys a
+    /// header that never wraps mid-address.
+    Stacked,
+    /// Two columns — half the lines of `Stacked`, still one item per row.
+    Columns,
+}
+
+impl ContactLayout {
+    pub const ALL: [ContactLayout; 3] = [
+        ContactLayout::Inline,
+        ContactLayout::Stacked,
+        ContactLayout::Columns,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ContactLayout::Inline => "One line",
+            ContactLayout::Stacked => "One per line",
+            ContactLayout::Columns => "Two columns",
+        }
+    }
+
+    pub fn keyword(self) -> &'static str {
+        match self {
+            ContactLayout::Inline => "inline",
+            ContactLayout::Stacked => "stacked",
+            ContactLayout::Columns => "columns",
+        }
+    }
+
+    /// Whether a separator between items is a real choice for this shape.
+    ///
+    /// It is not, for the two that put each item on its own row — and a
+    /// control that changes nothing is a label pretending to be a control
+    /// (E-43). The rail hides it rather than offering a dead one.
+    pub fn uses_separator(self) -> bool {
+        matches!(self, ContactLayout::Inline)
+    }
+}
+
+/// How the block above the first section is set: the name, the title under it,
+/// and the contact details.
+///
+/// No icon control here. The reference layouts draw a glyph before each
+/// detail, which needs an icon font in the document — the vendored AltaCV
+/// package carries FontAwesome for exactly that — and wiring one into this
+/// template is its own piece of work rather than a fourth dropdown.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeaderLayout {
+    #[serde(default)]
+    pub align: HeaderAlign,
+    #[serde(default)]
+    pub contacts: ContactLayout,
+    /// Between contact details, when they share a line. Reuses the Skills
+    /// separator because it is the same question — what goes between items in
+    /// a run — and a second enum saying it would be a second thing to keep in
+    /// step.
+    #[serde(default)]
+    pub separator: SkillSeparator,
+}
+
 /// Page layout and type scale for the rendered document. See `ResumeDoc::layout`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LayoutSettings {
@@ -1379,6 +1476,10 @@ pub struct LayoutSettings {
     /// before this existed keeps the shape it had.
     #[serde(default)]
     pub entries: EntryLayout,
+    /// How the header is set. `#[serde(default)]` so a document written
+    /// before this existed keeps the shape it had.
+    #[serde(default)]
+    pub header: HeaderLayout,
     /// Body text size as a percentage of the template's base size (10pt).
     /// 100 is the old hard-coded default; the layout rail's own readout
     /// (`docs/design/typst-controls.md` — "107%") is this same unit.
@@ -1397,6 +1498,7 @@ impl Default for LayoutSettings {
             date_format: DateFormat::default(),
             skills: SkillsLayout::default(),
             entries: EntryLayout::default(),
+            header: HeaderLayout::default(),
             text_scale_pct: 100,
             leading_em: 0.62,
             margins: Margins::default(),
@@ -1447,6 +1549,7 @@ impl LayoutSettings {
             // Nothing to clamp: every variant is a valid arrangement.
             skills: self.skills,
             entries: self.entries,
+            header: self.header,
             text_scale_pct: self.text_scale_pct.clamp(min_scale, max_scale),
             leading_em: self.leading_em.clamp(min_leading, max_leading),
             margins: Margins {
@@ -2134,6 +2237,7 @@ mod layout_tests {
             date_format: Default::default(),
             skills: Default::default(),
             entries: Default::default(),
+            header: Default::default(),
             text_scale_pct: 0,
             leading_em: -3.0,
             margins: Margins {
@@ -2158,6 +2262,7 @@ mod layout_tests {
             date_format: Default::default(),
             skills: Default::default(),
             entries: Default::default(),
+            header: Default::default(),
             text_scale_pct: 107,
             leading_em: 0.7,
             margins: Margins {

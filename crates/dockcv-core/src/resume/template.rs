@@ -93,7 +93,9 @@ const RENDERER: &str = r##"
 #let render-cv(cv) = {
   let b = cv.at("basics", default: (:))
 
-  align(center, {
+  let head-align = if header-align == "left" { left } else { center }
+
+  align(head-align, {
     text(size: 20pt, weight: "bold", b.at("name", default: ""))
     if b.at("label", default: "") != "" {
       h(8pt)
@@ -101,14 +103,38 @@ const RENDERER: &str = r##"
     }
   })
   v(2pt)
+
   let links = b.at("profiles", default: ()).map(p => p.at("url", default: ""))
-  align(center, meta((
+  // Empty parts are dropped here rather than in each branch below, so a CV
+  // with no phone leaves no gap and no stray separator whichever shape is
+  // chosen.
+  let details = (
     b.at("location", default: ""),
     b.at("email", default: ""),
     b.at("phone", default: ""),
     b.at("url", default: ""),
     ..links,
-  )))
+  ).filter(x => x != none and x != "")
+
+  if details.len() > 0 {
+    if header-contacts == "stacked" {
+      align(head-align, text(fill: muted, size: 9pt,
+        details.map(d => [#d]).join(linebreak())))
+    } else if header-contacts == "columns" {
+      // Half the rows of `stacked`, still one item each. A grid fills
+      // row-major, so the items go in as they are.
+      text(fill: muted, size: 9pt, grid(
+        columns: (1fr, 1fr),
+        column-gutter: 12pt,
+        row-gutter: 2pt,
+        align: (head-align, head-align),
+        ..details,
+      ))
+    } else {
+      align(head-align, text(fill: muted, size: 9pt,
+        details.join(header-separator)))
+    }
+  }
 
   let summary = b.at("summary", default: none)
   let titles = cv.at("sectionTitles", default: (:))
@@ -388,6 +414,11 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
 
 // How the Skills section is set. One dict rather than five bindings: they are
 // one decision, and the renderer reads them together.
+// The block above the first section.
+#let header-align = "{header_align}"
+#let header-contacts = "{header_contacts}"
+#let header-separator = "{header_separator}"
+
 // How a dated entry is set — a job, a degree, a certificate.
 #let entry-meta-position = "{entry_meta_position}"
 #let entry-meta-order = "{entry_meta_order}"
@@ -418,6 +449,9 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
         entry_meta = layout.entries.meta.keyword(),
         entry_bullet = layout.entries.bullet.marker(),
         entry_indent = layout.entries.indent_body,
+        header_align = layout.header.align.keyword(),
+        header_contacts = layout.header.contacts.keyword(),
+        header_separator = layout.header.separator.printed(),
         x = fmt_measure(layout.margins.x_mm),
         top = fmt_measure(layout.margins.top_mm),
         bottom = fmt_measure(layout.margins.bottom_mm),
@@ -807,6 +841,7 @@ mod tests {
                     ..SkillsLayout::default()
                 },
                 entries: Default::default(),
+                header: Default::default(),
                 ..LayoutSettings::default()
             };
             let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
@@ -830,6 +865,77 @@ mod tests {
             of(SkillsStyle::Rows),
             of(SkillsStyle::Compact),
             "compact rendered identically to inline"
+        );
+    }
+
+    /// The header controls, held to the same two rules as the entry ones:
+    /// each has to change the page, and the default has to leave a document
+    /// exactly as it was.
+    #[test]
+    fn every_header_control_changes_the_page_and_the_default_changes_nothing() {
+        use crate::resume::model::{
+            Basics, ContactLayout, HeaderAlign, HeaderLayout, SkillSeparator,
+        };
+        use crate::typst_engine::TypstEngine;
+
+        let resume = Resume {
+            basics: Basics {
+                name: "Sofiia Medvedenko".into(),
+                label: "Staff Engineer".into(),
+                location: "Barcelona, Spain".into(),
+                email: "s@example.com".into(),
+                phone: "+34 000 000 000".into(),
+                url: "https://example.com".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let pixels = |header: HeaderLayout| {
+            let layout = LayoutSettings {
+                header,
+                ..LayoutSettings::default()
+            };
+            let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
+            engine.compile_to_pixels(1.0).expect("compiles").0.rgba
+        };
+
+        let base = pixels(HeaderLayout::default());
+        let engine = TypstEngine::new(generate(&resume));
+        assert_eq!(
+            engine.compile_to_pixels(1.0).expect("compiles").0.rgba,
+            base,
+            "the default header is not what `generate` produces"
+        );
+
+        let variants: [(&str, HeaderLayout); 4] = [
+            ("left aligned", HeaderLayout { align: HeaderAlign::Left, ..Default::default() }),
+            ("stacked contacts", HeaderLayout { contacts: ContactLayout::Stacked, ..Default::default() }),
+            ("two columns", HeaderLayout { contacts: ContactLayout::Columns, ..Default::default() }),
+            ("bullet separator", HeaderLayout { separator: SkillSeparator::Bullet, ..Default::default() }),
+        ];
+        for (what, header) in variants {
+            assert_ne!(
+                pixels(header),
+                base,
+                "{what} rendered identically to the default — the control never reached the page"
+            );
+        }
+
+        // The separator is only a choice when the details share a line, which
+        // is why the rail hides it otherwise. If that ever stops being true
+        // here, the rail is hiding a live control.
+        assert_eq!(
+            pixels(HeaderLayout {
+                contacts: ContactLayout::Stacked,
+                separator: SkillSeparator::Bullet,
+                ..Default::default()
+            }),
+            pixels(HeaderLayout {
+                contacts: ContactLayout::Stacked,
+                ..Default::default()
+            }),
+            "the separator changed a stacked header — the rail hides a control that does something"
         );
     }
 
@@ -967,6 +1073,7 @@ mod tests {
                     ..SkillsLayout::default()
                 },
                 entries: Default::default(),
+                header: Default::default(),
                 ..LayoutSettings::default()
             };
             let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
@@ -1029,6 +1136,7 @@ mod tests {
             date_format: Default::default(),
             skills: Default::default(),
             entries: Default::default(),
+            header: Default::default(),
             text_scale_pct: 0,
             leading_em: -1.0,
             margins: Margins {
