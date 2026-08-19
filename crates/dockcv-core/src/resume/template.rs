@@ -28,11 +28,20 @@ const RENDERER: &str = r##"
 // Light enough to read as a hairline rather than as a second row of type.
 #let hairline = 0.5pt + luma(150)
 
-// The bar above each section. Every branch is a whole `block` of its own
-// rather than one block with the differences inside it: the spacing above and
-// below a heading is part of the style, and nesting a block inside a block to
-// share those two numbers would add Typst's own block spacing to every variant.
-#let section(title) = {
+// The bar above each section. Takes the section's own key, because printing
+// a heading at all is a per-section decision (`no-heading`) — most CVs that
+// open with a summary print no "PROFILE" over it.
+//
+// Every branch is a whole `block` of its own rather than one block with the
+// differences inside it: the spacing above and below a heading is part of the
+// style, and nesting a block inside a block to share those two numbers would
+// add Typst's own block spacing to every variant.
+#let section(key, title) = if key in no-heading {
+  // The space the bar would have taken, so the section below still reads as a
+  // new section. Weak, so a headingless first section does not open the
+  // document with a gap.
+  v(12pt, weak: true)
+} else {
   let words = if heading-case == "upper" { upper(title) } else { title }
   let body = text(
     weight: "bold",
@@ -192,13 +201,13 @@ const RENDERER: &str = r##"
   // drag-reorderable field — reached the sidebar and stopped there: the PDF
   // always printed the built-in order no matter what the user arranged.
   let render-profile() = {
-    if summary != none { section(heading("Profile", "Profile")); summary }
+    if summary != none { section("profile", heading("Profile", "Profile")); summary }
   }
 
   let render-work() = {
   let work = cv.at("work", default: ())
   if work.len() > 0 {
-    section(heading("Work", "Work Experience"))
+    section("work", heading("Work", "Work Experience"))
     for w in work {
       entry(
         w.at("position", default: ""),
@@ -218,7 +227,7 @@ const RENDERER: &str = r##"
   let render-education() = {
   let edu = cv.at("education", default: ())
   if edu.len() > 0 {
-    section(heading("Education", "Education"))
+    section("education", heading("Education", "Education"))
     for e in edu {
       entry(
         e.at("studyType", default: ""),
@@ -248,7 +257,7 @@ const RENDERER: &str = r##"
   // is `groups`, named apart so the two cannot be confused.
   let groups = cv.at("skills", default: ())
   if groups.len() > 0 {
-    section(heading("Skills", "Skills"))
+    section("skills", heading("Skills", "Skills"))
 
     // A group with no name is a flat list — LinkedIn exports have no
     // categories at all, and a CV need not invent one. Every branch below has
@@ -326,7 +335,7 @@ const RENDERER: &str = r##"
   let render-certificates() = {
   let certs = cv.at("certificates", default: ())
   if certs.len() > 0 {
-    section(heading("Certificates", "Certifications"))
+    section("certificates", heading("Certificates", "Certifications"))
     for c in certs {
       entry(
         c.at("name", default: ""),
@@ -346,7 +355,7 @@ const RENDERER: &str = r##"
   let render-organizations() = {
   let orgs = cv.at("volunteer", default: ())
   if orgs.len() > 0 {
-    section(heading("Organizations", "Organizations"))
+    section("organizations", heading("Organizations", "Organizations"))
     for o in orgs {
       entry(
         o.at("position", default: ""),
@@ -374,7 +383,7 @@ const RENDERER: &str = r##"
       let cs = found.first()
       let items = cs.at("entries", default: ())
       if items.len() > 0 {
-        section(cs.at("title", default: ""))
+        section("custom" + str(id), cs.at("title", default: ""))
         for it in items {
           entry(
             it.at("title", default: ""),
@@ -445,12 +454,40 @@ pub fn generate_for(doc: &ResumeDoc) -> String {
 pub fn generate_with_layout(resume: &Resume, layout: &LayoutSettings) -> String {
     let mut out = String::with_capacity(8192);
     page_setup_into(&mut out, &layout.sanitized());
+    no_heading_into(&mut out, resume);
     out.push('\n');
     out.push_str(RENDERER);
     out.push_str("\n#let cv = ");
     resume_to_dict_into(&mut out, resume, layout.date_format);
     out.push_str("\n#render-cv(cv)\n");
     out
+}
+
+/// The sections that print no heading, as renderer keys.
+///
+/// Emitted beside the page setup rather than inside the `cv` dict because
+/// `section` is a plain helper that never sees `cv` — and beside it rather
+/// than *in* it because this is the document's data, not one of its layout
+/// knobs. Absent overrides produce an empty array, so a document nobody has
+/// touched emits `#let no-heading = ()` and renders as it always did.
+fn no_heading_into(out: &mut String, resume: &Resume) {
+    out.push_str("#let no-heading = (");
+    for (kind, overrides) in &resume.section_overrides {
+        if !overrides.no_heading {
+            continue;
+        }
+        match kind {
+            SectionKind::Custom(id) => {
+                out.push_str(&format!("\"custom{}\", ", id.as_u32()));
+            }
+            other => {
+                if let Some(key) = renderer_key(*other) {
+                    out.push_str(&format!("\"{key}\", "));
+                }
+            }
+        }
+    }
+    out.push_str(")\n");
 }
 
 fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
@@ -949,6 +986,107 @@ mod tests {
             of(SkillsStyle::Compact),
             "compact rendered identically to inline"
         );
+    }
+
+    /// The first per-section override: a section that prints no heading.
+    ///
+    /// Held to three rules. It has to take the heading off the page; it has
+    /// to leave the section's own content there (the whole point is a summary
+    /// with no "PROFILE" over it, not a missing summary); and a document that
+    /// never used it has to render exactly as it did.
+    #[test]
+    fn a_section_can_print_no_heading_without_losing_its_content() {
+        use crate::resume::model::{Basics, Work};
+        use crate::typst_engine::TypstEngine;
+
+        let resume = Resume {
+            basics: Basics {
+                name: "Sofiia Medvedenko".into(),
+                summary: "Backend engineer with eight years of experience.".into(),
+                ..Default::default()
+            },
+            work: vec![Work {
+                name: "Acme".into(),
+                position: "Staff Engineer".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut doc = ResumeDoc::from_resume(resume.clone(), "Base");
+
+        let ink = |doc: &ResumeDoc| {
+            TypstEngine::new(generate(&doc.compose()))
+                .compile_to_pixels(1.0)
+                .expect("compiles")
+                .0
+                .rgba
+                .chunks_exact(4)
+                .filter(|px| px[0] < 200 || px[1] < 200 || px[2] < 200)
+                .count()
+        };
+
+        let with_heading = ink(&doc);
+        doc.set_heading_printed(SectionKind::Profile, false);
+        let without = ink(&doc);
+        assert!(
+            without < with_heading,
+            "hiding the Profile heading drew as much ink as printing it \
+             ({without} vs {with_heading})"
+        );
+
+        // The summary itself is still there — a rule that would otherwise be
+        // satisfied by dropping the section altogether. Compared against the
+        // same document with nothing *in* the section, because Profile is the
+        // one section `set_hidden` refuses to touch (a CV without a name is
+        // not a shorter CV), so there is no "hidden" version to compare with.
+        let mut gutted = doc.clone();
+        gutted.profile.active_mut().summary.clear();
+        assert!(
+            ink(&gutted) < without,
+            "the section lost its content, not just its heading"
+        );
+
+        // Off again, and the document is byte for byte what it was: the row
+        // is removed rather than stored as a row of defaults.
+        doc.set_heading_printed(SectionKind::Profile, true);
+        assert!(
+            doc.section_overrides.is_empty(),
+            "turning the override off left a row behind: {:?}",
+            doc.section_overrides
+        );
+        assert_eq!(
+            generate(&doc.compose()),
+            generate(&ResumeDoc::from_resume(resume, "Base").compose()),
+            "a document that used and un-used the flag is not what it started as"
+        );
+    }
+
+    /// Every section can drop its heading, not just Profile — including a
+    /// custom one, whose key is its id and not its position.
+    #[test]
+    fn the_no_heading_flag_reaches_the_source_for_every_kind_of_section() {
+        let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        let custom = doc.add_custom_section("Publications");
+
+        assert!(
+            generate(&doc.compose()).contains("#let no-heading = ()"),
+            "an untouched document should carry an empty list"
+        );
+
+        for (section, key) in [
+            (SectionKind::Profile, "profile"),
+            (SectionKind::Skills, "skills"),
+            (SectionKind::Organizations, "organizations"),
+            (SectionKind::Custom(custom), "custom0"),
+        ] {
+            doc.set_heading_printed(section, false);
+            let source = generate(&doc.compose());
+            assert!(
+                source.contains(&format!("\"{key}\"")),
+                "{section:?} did not reach the source as `{key}`"
+            );
+            doc.set_heading_printed(section, true);
+        }
     }
 
     /// Every heading style has to compile, put ink on the page, and differ

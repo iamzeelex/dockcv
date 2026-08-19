@@ -26,6 +26,7 @@ mod root_highlights;
 mod root_layout_rail;
 mod root_overlays;
 mod root_section_drag;
+mod root_section_layout;
 mod root_section_rename;
 mod root_section_variants;
 mod root_sidebar;

@@ -1153,6 +1153,41 @@ mod tests {
         assert!(!text.contains("hidden_sections"), "an empty list must not be written");
     }
 
+    /// The first per-section override has to survive the disk, and — because
+    /// it is the first row of a table the rest of the per-section settings
+    /// will land in — an untouched document has to gain no key at all.
+    #[test]
+    fn a_sections_own_layout_survives_a_round_trip_and_is_absent_until_used() {
+        use crate::resume::model::SectionKind;
+
+        let mut doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+        let text = super::to_toml(&doc).expect("serializes");
+        assert!(
+            !text.contains("section_overrides"),
+            "a document nobody customised must carry no overrides table"
+        );
+
+        doc.set_heading_printed(SectionKind::Profile, false);
+        assert!(!doc.prints_heading(SectionKind::Profile));
+        assert!(doc.prints_heading(SectionKind::Work), "one section, not all of them");
+
+        let text = super::to_toml(&doc).expect("serializes");
+        let back: ResumeDoc = toml::from_str(&text).expect("round-trips");
+        assert!(!back.prints_heading(SectionKind::Profile));
+        assert!(back.prints_heading(SectionKind::Work));
+
+        // Following the document again removes the row rather than storing a
+        // row of defaults — "follow the document" is the absence of an entry.
+        let mut doc = back;
+        doc.set_heading_printed(SectionKind::Profile, true);
+        assert!(doc.section_overrides.is_empty());
+        let text = super::to_toml(&doc).expect("serializes");
+        assert!(
+            !text.contains("section_overrides"),
+            "an emptied table must not be written"
+        );
+    }
+
     /// Renaming is a file move, so the two failure modes that matter are
     /// clobbering an existing document and accepting a name the filesystem
     /// cannot hold.

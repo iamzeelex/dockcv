@@ -470,6 +470,7 @@ impl Root {
                 .child(drag_handle)
                 .child(heading)
                 .child(rename_button)
+                .child(self.section_layout_button(cx, section))
                 .child(self.visibility_button(cx, section))
                 .children(self.render_trim_chip(cx, section));
             if let Some(extra) = extra {

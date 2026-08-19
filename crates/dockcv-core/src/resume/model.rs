@@ -31,6 +31,10 @@ pub struct Resume {
     /// user's overrides. Renaming a section is only real if it reaches the PDF.
     #[serde(default)]
     pub section_titles: Vec<(SectionKind, String)>,
+    /// Where a section departs from the document's layout, already resolved.
+    /// Only the sections that actually differ appear.
+    #[serde(default)]
+    pub section_overrides: Vec<(SectionKind, SectionOverrides)>,
     /// The order sections print in, already resolved from the document.
     ///
     /// `Resume` is the flat, render-ready shape, and until this field existed
@@ -1465,6 +1469,39 @@ pub struct HeaderLayout {
     pub separator: SkillSeparator,
 }
 
+/// What one section sets differently from the document's own layout.
+///
+/// Sparse on purpose: a row exists only while a section actually differs, so a
+/// document nobody has customised carries no table at all and the
+/// document-wide setting stays the single place to change everything. On a CV,
+/// uniformity is the default and difference is the exception — a page assembled
+/// from seven layouts reads as broken, not as designed.
+///
+/// This is the shape the rest of the per-section settings land in: `Option`
+/// fields for the layouts that have a document-wide value to fall back to
+/// (`HeadingLayout`, `EntryLayout`), plain fields for the ones that only ever
+/// make sense for one section, like the flag below.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SectionOverrides {
+    /// Print no heading above this section.
+    ///
+    /// The case that asked for it is Profile: a great many CVs open with the
+    /// summary paragraph directly under the contact line, and the renderer
+    /// always printed "PROFILE" over it. Per section rather than a seventh
+    /// [`HeadingStyle`] because it is never a decision about the whole
+    /// document — a CV with no section headings at all is not a CV.
+    #[serde(default)]
+    pub no_heading: bool,
+}
+
+impl SectionOverrides {
+    /// Whether this row carries nothing. The signal to drop it rather than
+    /// write a line of defaults to disk — see the struct's own comment.
+    pub fn is_empty(self) -> bool {
+        self == Self::default()
+    }
+}
+
 /// How the bar above each section is drawn.
 ///
 /// The band is what every document has had until now, and it is a strong
@@ -1864,6 +1901,15 @@ pub struct ResumeDoc {
     /// natural TOML key — the same reason `section_titles` is a list of pairs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hidden_sections: Vec<SectionKind>,
+    /// Where a section departs from `layout`.
+    ///
+    /// Pairs, and on the document rather than inside [`LayoutSettings`], for
+    /// the same two reasons the two tables above are: `SectionKind` is not a
+    /// natural TOML key, and every other per-section table already lives
+    /// here. `LayoutSettings` also stays `Copy` this way, which a good deal of
+    /// the editor relies on.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub section_overrides: Vec<(SectionKind, SectionOverrides)>,
 }
 
 impl ResumeDoc {
@@ -1965,6 +2011,40 @@ impl ResumeDoc {
         }
     }
 
+    /// What `section` overrides from the document's layout. Absent means it
+    /// follows the document, which is what every section does until the user
+    /// says otherwise.
+    pub fn section_overrides(&self, section: SectionKind) -> SectionOverrides {
+        self.section_overrides
+            .iter()
+            .find(|(k, _)| *k == section)
+            .map(|(_, o)| *o)
+            .unwrap_or_default()
+    }
+
+    /// Set what `section` overrides. A row that carries nothing is removed
+    /// rather than stored, so "follow the document" is the absence of a row
+    /// and not a row full of defaults.
+    pub fn set_section_overrides(&mut self, section: SectionKind, overrides: SectionOverrides) {
+        self.section_overrides.retain(|(k, _)| *k != section);
+        if !overrides.is_empty() {
+            self.section_overrides.push((section, overrides));
+        }
+    }
+
+    /// Whether `section` prints a heading above it.
+    pub fn prints_heading(&self, section: SectionKind) -> bool {
+        !self.section_overrides(section).no_heading
+    }
+
+    /// Show or hide `section`'s heading, leaving the section itself in place.
+    /// Distinct from [`Self::set_hidden`], which drops the whole section.
+    pub fn set_heading_printed(&mut self, section: SectionKind, printed: bool) {
+        let mut overrides = self.section_overrides(section);
+        overrides.no_heading = !printed;
+        self.set_section_overrides(section, overrides);
+    }
+
     /// Move a section one place up or down, persisting the new order.
     pub fn move_section(&mut self, kind: SectionKind, delta: isize) {
         let mut order = self.sections();
@@ -1995,6 +2075,7 @@ impl ResumeDoc {
             next_custom_section_id: 0,
             custom_sections: Vec::new(),
             hidden_sections: Vec::new(),
+            section_overrides: Vec::new(),
         }
     }
 
@@ -2163,6 +2244,15 @@ impl ResumeDoc {
             section_titles: Self::SECTIONS
                 .iter()
                 .map(|&kind| (kind, self.section_title(kind)))
+                .collect(),
+            // Rows for sections that are not in the document are noise the
+            // renderer would have to skip, so they are dropped here rather
+            // than there.
+            section_overrides: self
+                .section_overrides
+                .iter()
+                .filter(|(kind, o)| !o.is_empty() && visible(*kind))
+                .copied()
                 .collect(),
             // Hidden sections stay in the order — they compose as empty, and
             // the renderer skips an empty section anyway. Filtering here would
