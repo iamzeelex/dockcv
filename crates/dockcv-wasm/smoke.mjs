@@ -27,3 +27,8 @@ ok(`reports a version (${m.version()})`, /^\d+\.\d+\.\d+$/.test(m.version()));
 let rejected = false;
 try { m.render("not a résumé in any format"); } catch { rejected = true; }
 ok(`nonsense is refused, not rendered`, rejected);
+
+// The PDF path: what "Download CV" actually hands over.
+const pdf = m.render_pdf(m.sample());
+ok(`PDF produced (${(pdf.length / 1024) | 0} KB)`, pdf.length > 1000);
+ok(`it is a PDF`, String.fromCharCode(...pdf.slice(0, 4)) === "%PDF");

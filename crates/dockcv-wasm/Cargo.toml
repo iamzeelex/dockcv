@@ -22,8 +22,14 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # No default features: `fallback-fonts` is 9.2 MB of faces a demo cannot
-# reach. `web-fonts` puts back the one that matters — see that feature's note.
-dockcv-core = { path = "../dockcv-core", default-features = false, features = ["svg", "libertinus", "fixtures"] }
+# reach, and `libertinus` puts back the one that matters — see that feature.
+#
+# `pdf` is on despite costing 0.3 MB compressed. A page that renders a CV and
+# cannot hand you the file is a demo; a page that replaces "Download CV" has to
+# produce the PDF, and producing it here rather than keeping a second copy on
+# the server is the entire point — the file and what you see are the same
+# compile, so they cannot drift apart.
+dockcv-core = { path = "../dockcv-core", default-features = false, features = ["svg", "pdf", "libertinus", "fixtures"] }
 wasm-bindgen = "0.2"
 serde_json = "1"
 toml = "0.8"

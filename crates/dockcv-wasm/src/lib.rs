@@ -60,6 +60,19 @@ pub fn render(input: &str) -> Result<Vec<JsValue>, JsValue> {
     Ok(pages.into_iter().map(|p| JsValue::from_str(&p)).collect())
 }
 
+/// Typeset a résumé and return the PDF bytes.
+///
+/// The same compile as [`render`], so what a visitor downloads is what they
+/// were looking at. That is the reason this exists rather than a file on the
+/// server: a checked-in PDF is a second copy that goes stale the first time
+/// the data changes and nobody remembers to re-export it.
+#[wasm_bindgen]
+pub fn render_pdf(input: &str) -> Result<Vec<u8>, JsValue> {
+    let doc = parse(input).map_err(|e| JsValue::from_str(&e))?;
+    let engine = TypstEngine::new(template::generate_for(&doc));
+    engine.compile_to_pdf().map_err(|e| JsValue::from_str(&e))
+}
+
 /// A document to show before the visitor has pasted anything.
 ///
 /// The AltaCV starter — a résumé for a person who does not exist, already in
