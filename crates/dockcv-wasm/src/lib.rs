@@ -73,6 +73,24 @@ pub fn render_pdf(input: &str) -> Result<Vec<u8>, JsValue> {
     engine.compile_to_pdf().map_err(|e| JsValue::from_str(&e))
 }
 
+/// The same résumé as data, in JSON Résumé shape.
+///
+/// For rendering the CV as **text** — semantic HTML a crawler can index and a
+/// screen reader can read aloud. The SVG cannot do that job and never will:
+/// Typst draws glyphs, so a rendered page holds 4266 `<use>` references and
+/// not one `<text>` element. It is a picture of a CV, and a picture is
+/// unreadable to everything that does not have eyes.
+///
+/// So the page gets both from one parse: this for meaning, [`render`] for
+/// looks. Sharing the parse is the point — a second reader written in
+/// TypeScript would be a second model to keep in step with this one.
+#[wasm_bindgen]
+pub fn to_json(input: &str) -> Result<String, JsValue> {
+    let doc = parse(input).map_err(|e| JsValue::from_str(&e))?;
+    serde_json::to_string(&doc.compose())
+        .map_err(|e| JsValue::from_str(&format!("could not serialise: {e}")))
+}
+
 /// A document to show before the visitor has pasted anything.
 ///
 /// The AltaCV starter — a résumé for a person who does not exist, already in
