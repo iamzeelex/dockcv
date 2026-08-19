@@ -123,21 +123,69 @@ const RENDERER: &str = r##"
   }
   }
 
+  // One pill. Same fill and radius as the section bars above, so a bubbled
+  // skills block reads as part of this document rather than as something
+  // borrowed from another template.
+  let pill(body, strong: false) = box(
+    fill: luma(if strong { 224 } else { 240 }),
+    inset: (x: 5pt, y: 2.5pt),
+    radius: 3pt,
+    outset: (y: 2pt),
+    text(size: 8.5pt, weight: if strong { "bold" } else { "regular" }, body),
+  )
+
   let render-skills() = {
   let skills = cv.at("skills", default: ())
   if skills.len() > 0 {
     section(heading("Skills", "Skills"))
-    for s in skills {
-      let label = s.at("name", default: "")
-      let kws = s.at("keywords", default: ()).join(", ")
-      // A group with no name is a flat list of skills — LinkedIn has no
-      // categories at all, and a CV need not invent them. Printing the label
-      // column regardless left a bare `:` in front of the list.
-      if label == "" { kws } else {
-        grid(columns: (auto, 1fr), column-gutter: 8pt,
-          text(weight: "bold", label + ":"), kws)
-      }
+
+    // A group with no name is a flat list — LinkedIn exports have no
+    // categories at all, and a CV need not invent them. Every style below
+    // has to survive that, which is why each one checks the label.
+    if skills-style == "compact" {
+      // Categories dropped entirely: one flowing list of everything, in the
+      // order the document holds it.
+      let all = skills.map(s => s.at("keywords", default: ())).flatten()
+      all.join(text(fill: muted, "  ·  "))
       v(2pt)
+    } else if skills-style == "bubbles" {
+      for s in skills {
+        let label = s.at("name", default: "")
+        let kws = s.at("keywords", default: ())
+        if kws.len() > 0 {
+          // `hanging-indent` so a wrapped row of pills lines up under the
+          // first pill rather than under the category.
+          par(hanging-indent: 1em, justify: false, {
+            if label != "" { pill(label, strong: true); h(4pt) }
+            kws.map(k => pill(k)).join(h(3pt))
+          })
+          v(3pt)
+        }
+      }
+    } else if skills-style == "grid" {
+      // Categories as a column: with several groups they line up, which is
+      // what makes this different from `inline`'s per-paragraph indent.
+      let rows = skills.filter(s => s.at("keywords", default: ()).len() > 0)
+      grid(
+        columns: (auto, 1fr),
+        column-gutter: 12pt,
+        row-gutter: 5pt,
+        ..rows.map(s => (
+          text(weight: "bold", s.at("name", default: "")),
+          s.at("keywords", default: ()).join(", "),
+        )).flatten(),
+      )
+      v(2pt)
+    } else {
+      for s in skills {
+        let label = s.at("name", default: "")
+        let kws = s.at("keywords", default: ()).join(", ")
+        if label == "" { kws } else {
+          grid(columns: (auto, 1fr), column-gutter: 8pt,
+            text(weight: "bold", label + ":"), kws)
+        }
+        v(2pt)
+      }
     }
   }
   }
@@ -275,8 +323,15 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
         out,
         r##"#set page(paper: "{paper}", fill: white, margin: (x: {x}mm, top: {top}mm, bottom: {bottom}mm))
 #set text(font: "{font}", size: {size}pt, fill: rgb("#1a1a1a"))
-#set par(justify: true, leading: {leading}em)"##,
+#set par(justify: true, leading: {leading}em)
+
+// How the Skills section arranges itself. A binding rather than a different
+// template: the document is one string, and branching inside it keeps every
+// other section byte-identical across the choice.
+#let skills-style = "{skills}"
+"##,
         font = layout.font.family(),
+        skills = layout.skills.keyword(),
         x = fmt_measure(layout.margins.x_mm),
         top = fmt_measure(layout.margins.top_mm),
         bottom = fmt_measure(layout.margins.bottom_mm),
@@ -635,7 +690,91 @@ fn string_array(out: &mut String, items: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+
     use crate::resume::model::{Margins, PageSize};
+
+    /// A skills style is only real if it reaches the page. Every one of them
+    /// **compiles**, and each produces a different number of laid-out items —
+    /// asserting on the generated source would pass for a style the compiler
+    /// then ignored, which is the mistake E-32 records (the whole layout rail
+    /// was inert while every source-level test was green).
+    #[test]
+    fn every_skills_style_compiles_and_lays_out_differently() {
+        use crate::resume::model::SkillsStyle;
+        use crate::typst_engine::TypstEngine;
+
+        let mut resume = Resume::default();
+        resume.skills = vec![
+            crate::resume::model::SkillGroup {
+                name: "Languages".into(),
+                keywords: vec!["Rust".into(), "Python".into(), "TypeScript".into()],
+            },
+            crate::resume::model::SkillGroup {
+                name: "Infrastructure".into(),
+                keywords: vec!["Kubernetes".into(), "Kafka".into()],
+            },
+        ];
+
+        let mut heights = Vec::new();
+        for style in SkillsStyle::ALL {
+            let layout = LayoutSettings {
+                skills: style,
+                ..LayoutSettings::default()
+            };
+            let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
+            let pdf = engine
+                .compile_to_pdf()
+                .unwrap_or_else(|e| panic!("{} did not compile: {e}", style.label()));
+            assert!(pdf.starts_with(b"%PDF"), "{} produced no PDF", style.label());
+            heights.push((style, pdf.len()));
+        }
+
+        // Not all four need differ from each other — `grid` and `inline` are
+        // close by design — but the two that rearrange the words must differ
+        // from the default, or nothing was actually applied.
+        let of = |s: SkillsStyle| heights.iter().find(|(k, _)| *k == s).unwrap().1;
+        assert_ne!(
+            of(SkillsStyle::Inline),
+            of(SkillsStyle::Bubbles),
+            "bubbles rendered identically to inline — the style never reached the page"
+        );
+        assert_ne!(
+            of(SkillsStyle::Inline),
+            of(SkillsStyle::Compact),
+            "compact rendered identically to inline"
+        );
+    }
+
+    /// A group with no category name is the ordinary shape of a LinkedIn
+    /// export, and every style has to survive it — a `bubbles` run that
+    /// emitted an empty pill, or a `grid` with a blank first column, would be
+    /// the bare-colon bug (E-36) wearing a new hat.
+    #[test]
+    fn every_skills_style_survives_a_group_with_no_category() {
+        use crate::resume::model::SkillsStyle;
+        use crate::typst_engine::TypstEngine;
+
+        let mut resume = Resume::default();
+        resume.skills = vec![crate::resume::model::SkillGroup {
+            name: String::new(),
+            keywords: vec!["Rust".into(), "Kafka".into()],
+        }];
+
+        for style in SkillsStyle::ALL {
+            let layout = LayoutSettings {
+                skills: style,
+                ..LayoutSettings::default()
+            };
+            let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
+            assert!(
+                engine.compile_to_pdf().is_ok(),
+                "{} failed on an unnamed group",
+                style.label()
+            );
+        }
+    }
 
     #[test]
     fn default_layout_renders_the_old_hard_coded_values() {
@@ -686,6 +825,7 @@ mod tests {
             page_size: PageSize::A4,
             font: Default::default(),
             date_format: Default::default(),
+            skills: Default::default(),
             text_scale_pct: 0,
             leading_em: -1.0,
             margins: Margins {

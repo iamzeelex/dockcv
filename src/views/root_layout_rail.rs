@@ -38,7 +38,7 @@ use dockcv_ui_components::{GroupBox,
 };
 
 use crate::resume::model::{
-    DateFormat, DocumentFont, LayoutSettings, PageSize, SectionKind, TrimCandidate,
+    DateFormat, DocumentFont, LayoutSettings, PageSize, SectionKind, SkillsStyle, TrimCandidate,
 };
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -161,6 +161,60 @@ impl Root {
                 GroupBox::new()
                     .title(self.rail_group_title(cx, "Dates"))
                     .child(self.date_format_row(cx, layout.date_format)),
+            )
+            // Sections: how a section arranges what is inside it, as opposed
+            // to the document-wide decisions above. Skills is the one that
+            // needed it most — a CV's technologies are what a reader scans
+            // for, and a comma list is the slowest possible way to present
+            // them. Other sections get their own controls here as they grow
+            // choices worth having.
+            .child(
+                GroupBox::new()
+                    .title(self.rail_group_title(cx, "Sections"))
+                    .child(self.skills_style_row(cx, layout.skills)),
+            )
+    }
+
+    /// How the Skills section arranges itself.
+    ///
+    /// Notably **not** a proficiency control: the model stores no level, and
+    /// a row of five-star ratings assembled from nothing is the invented
+    /// metric US-14 exists to forbid. Every option here is a different
+    /// arrangement of words the user typed.
+    fn skills_style_row(&self, cx: &mut Context<Self>, active: SkillsStyle) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let root = cx.weak_entity();
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(7.0))
+            .child(self.rail_label(cx, "Skills"))
+            .child(
+                Button::new("layout-skills")
+                    .cursor_pointer()
+                    .ghost()
+                    .w_full()
+                    .justify_between()
+                    .label(active.label())
+                    .icon(IconName::ChevronDown)
+                    .border_1()
+                    .border_color(theme.border)
+                    .dropdown_menu(move |mut menu, _window, _cx| {
+                        for style in SkillsStyle::ALL {
+                            let root = root.clone();
+                            menu = menu.item(
+                                PopupMenuItem::new(style.label())
+                                    .checked(style == active)
+                                    .on_click(move |_ev, window, cx| {
+                                        let _ = root.update(cx, |this, cx| {
+                                            this.doc.layout.skills = style;
+                                            this.after_layout_change(window, cx);
+                                        });
+                                    }),
+                            );
+                        }
+                        menu
+                    }),
             )
     }
 
@@ -642,6 +696,7 @@ mod tests {
                     page_size,
                     font: Default::default(),
                     date_format: Default::default(),
+                    skills: Default::default(),
                     text_scale_pct: scale,
                     leading_em: 0.62,
                     margins: Margins {

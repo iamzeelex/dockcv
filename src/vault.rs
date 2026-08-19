@@ -785,6 +785,55 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Every schema change needs a forward migration and a round-trip test
+    /// (CLAUDE.md). `LayoutSettings::skills` is `#[serde(default)]`, so a
+    /// document written before it existed must still load — and must load as
+    /// the arrangement it was actually printed with, not as whichever variant
+    /// happens to be listed first.
+    #[test]
+    fn a_document_without_a_skills_style_loads_as_the_one_it_was_printed_with() {
+        use crate::resume::model::SkillsStyle;
+
+        let dir = std::env::temp_dir().join(format!("dockcv-skills-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp vault");
+        let path = dir.join("cv.toml");
+
+        // Save with the default, then strip the key the way a file written
+        // before this field existed would not have had it at all.
+        let doc = crate::resume::model::ResumeDoc::from_resume(
+            crate::resume::model::Resume::default(),
+            "Base",
+        );
+        super::save(&doc, &path).expect("save");
+        let text = std::fs::read_to_string(&path).expect("read");
+        let without: String = text
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("skills = "))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!without.contains("skills = "), "the key really is gone");
+        std::fs::write(&path, &without).expect("write");
+
+        let loaded = super::load(&path).expect("an older document still loads");
+        assert_eq!(
+            loaded.layout.skills,
+            SkillsStyle::Inline,
+            "an older file must keep rendering the way it did"
+        );
+
+        // And a chosen style round-trips.
+        let mut doc = loaded;
+        doc.layout.skills = SkillsStyle::Bubbles;
+        super::save(&doc, &path).expect("save");
+        assert_eq!(
+            super::load(&path).expect("reload").layout.skills,
+            SkillsStyle::Bubbles
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn trashing_the_same_name_twice_keeps_both() {
         let dir = std::env::temp_dir().join(format!("dockcv-trash-{}", std::process::id()));
@@ -1370,6 +1419,7 @@ mod tests {
             page_size: PageSize::Letter,
             font: Default::default(),
             date_format: Default::default(),
+            skills: Default::default(),
             text_scale_pct: 90,
             leading_em: 0.65,
             margins: Margins {

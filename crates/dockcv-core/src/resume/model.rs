@@ -940,6 +940,75 @@ impl Default for Margins {
     }
 }
 
+/// How the Skills section is laid out.
+///
+/// Sections differ in what a layout choice even *means* — a skill group is a
+/// label and a bag of words, a job is a dated entry with bullets — so this is
+/// one enum for one section rather than a `SectionStyle` pretending to span
+/// all of them. When Work grows its own choices they get their own type.
+///
+/// Nothing here derives a proficiency level: the model stores no such field,
+/// and a bar chart of invented percentages is exactly the fabricated metric
+/// US-14 forbids. Every style below is a different arrangement of words the
+/// user actually typed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillsStyle {
+    /// `Category: one, two, three` — one line per group.
+    ///
+    /// The default, and deliberately the shape every document had before this
+    /// existed: a CV written last year renders byte-identically today.
+    #[default]
+    Inline,
+    /// Each keyword in its own pill, the category leading them.
+    ///
+    /// What a reader scanning for a technology finds fastest, and the reason
+    /// this work started — it is the shape every modern builder offers and
+    /// the one DockCV could not produce.
+    Bubbles,
+    /// The category in a fixed left column, keywords flowing beside it.
+    ///
+    /// Distinct from `Inline`, which wraps keywords under the category's own
+    /// indent; here the categories line up as a column, which reads as a
+    /// table when there are several.
+    Grid,
+    /// One flowing list, categories dropped.
+    ///
+    /// For a CV whose groups are an artefact of import rather than a
+    /// distinction worth printing — LinkedIn exports have no categories at
+    /// all, so this is the honest shape for that data.
+    Compact,
+}
+
+impl SkillsStyle {
+    pub const ALL: [SkillsStyle; 4] = [
+        SkillsStyle::Inline,
+        SkillsStyle::Bubbles,
+        SkillsStyle::Grid,
+        SkillsStyle::Compact,
+    ];
+
+    /// What the picker shows.
+    pub fn label(self) -> &'static str {
+        match self {
+            SkillsStyle::Inline => "Inline",
+            SkillsStyle::Bubbles => "Bubbles",
+            SkillsStyle::Grid => "Grid",
+            SkillsStyle::Compact => "Compact",
+        }
+    }
+
+    /// The word the generated Typst branches on.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            SkillsStyle::Inline => "inline",
+            SkillsStyle::Bubbles => "bubbles",
+            SkillsStyle::Grid => "grid",
+            SkillsStyle::Compact => "compact",
+        }
+    }
+}
+
 /// Page layout and type scale for the rendered document. See `ResumeDoc::layout`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LayoutSettings {
@@ -960,6 +1029,10 @@ pub struct LayoutSettings {
     /// it is *rendered*.
     #[serde(default)]
     pub date_format: DateFormat,
+    /// How the Skills section is arranged. `#[serde(default)]` so a document
+    /// written before this existed keeps the shape it had.
+    #[serde(default)]
+    pub skills: SkillsStyle,
     /// Body text size as a percentage of the template's base size (10pt).
     /// 100 is the old hard-coded default; the layout rail's own readout
     /// (`docs/design/typst-controls.md` — "107%") is this same unit.
@@ -976,6 +1049,7 @@ impl Default for LayoutSettings {
             page_size: PageSize::default(),
             font: DocumentFont::default(),
             date_format: DateFormat::default(),
+            skills: SkillsStyle::default(),
             text_scale_pct: 100,
             leading_em: 0.62,
             margins: Margins::default(),
@@ -1023,6 +1097,8 @@ impl LayoutSettings {
             page_size: self.page_size,
             font: self.font,
             date_format: self.date_format,
+            // Nothing to clamp: every variant is a valid arrangement.
+            skills: self.skills,
             text_scale_pct: self.text_scale_pct.clamp(min_scale, max_scale),
             leading_em: self.leading_em.clamp(min_leading, max_leading),
             margins: Margins {
@@ -1708,6 +1784,7 @@ mod layout_tests {
             page_size: PageSize::A4,
             font: DocumentFont::default(),
             date_format: Default::default(),
+            skills: Default::default(),
             text_scale_pct: 0,
             leading_em: -3.0,
             margins: Margins {
@@ -1730,6 +1807,7 @@ mod layout_tests {
             page_size: PageSize::Letter,
             font: DocumentFont::default(),
             date_format: Default::default(),
+            skills: Default::default(),
             text_scale_pct: 107,
             leading_em: 0.7,
             margins: Margins {
