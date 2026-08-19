@@ -64,6 +64,11 @@ jobs:
         run: cargo check -p dockcv-core --locked --no-default-features --target wasm32-unknown-unknown
       - name: The browser shim itself
         run: cargo check -p dockcv-wasm --locked --target wasm32-unknown-unknown
+      # The desktop clippy job runs on the host, where the raster path is on
+      # and every raster-only helper is used — so it cannot see a warning that
+      # only exists in the browser build. This can.
+      - name: Clippy, on the target the browser actually uses
+        run: cargo clippy -p dockcv-wasm --locked --target wasm32-unknown-unknown -- -D warnings
 
   matrix:
     name: Cross-Platform Build Check

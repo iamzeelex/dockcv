@@ -11,14 +11,22 @@
 use std::sync::OnceLock;
 use typst::diag::{FileError, FileResult, Severity as TypstSeverity, SourceDiagnostic, Warned};
 use typst::foundations::{Bytes, Datetime, Duration};
+#[cfg(feature = "raster")]
 use typst::layout::{Abs, Frame, FrameItem, Transform};
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 
 use crate::resume::altacv_package;
 use typst::text::{Font, FontBook};
-use typst::utils::{LazyHash, Scalar};
-use typst::{Library, LibraryExt, World, WorldExt};
+use typst::utils::LazyHash;
+#[cfg(feature = "raster")]
+use typst::utils::Scalar;
+use typst::{Library, LibraryExt, World};
+// Resolving a diagnostic's span to a source offset — the editor's
+// section-attribution path, and nothing the browser reports.
+#[cfg(feature = "raster")]
+use typst::WorldExt;
 use typst_layout::PagedDocument;
+#[cfg(feature = "raster")]
 use typst_render::RenderOptions;
 
 static GLOBAL_FONTS_AND_BOOK: OnceLock<(LazyHash<FontBook>, Vec<Font>)> = OnceLock::new();
@@ -53,17 +61,46 @@ fn global_fonts() -> &'static (LazyHash<FontBook>, Vec<Font>) {
     })
 }
 
+/// The browser's faces: the same families, subsetted.
+///
+/// Selected by **target**, not by a Cargo feature, and that is deliberate.
+/// Features unify across a workspace build, so a feature that swapped the font
+/// list would swap it for the desktop app too — which is exactly the bug
+/// `every_offered_font_is_registered_and_changes_the_render` caught the last
+/// time this was tried. A `cfg(target_arch)` cannot leak: nothing else in the
+/// workspace compiles to wasm.
+///
+/// The trade is 3574 KB of faces down to 557 KB — the largest single thing a
+/// visitor waits for, since fonts are already-compressed bytes that Brotli
+/// cannot help with. What it costs is coverage beyond the repertoire in
+/// `scripts/subset-fonts.sh`; `fonts_for_the_browser_cover_what_a_cv_can_contain`
+/// is what keeps that honest.
+#[cfg(target_arch = "wasm32")]
+const DOCUMENT_FONTS: &[&[u8]] = &[
+    include_bytes!("../../../assets/fonts/web/Geist-Regular.subset.ttf"),
+    include_bytes!("../../../assets/fonts/web/Geist-Bold.subset.ttf"),
+];
+
 /// Libertinus Serif, for builds without `typst-assets`' font pack.
 ///
 /// `DocumentFont` defaults to this family, so a build that dropped the pack
 /// and did not put it back would render the default face as whatever Typst
 /// fell back to — silently, which is the whole complaint in L-11. Three faces,
 /// not six: regular, bold and italic are what a CV sets.
-#[cfg(feature = "libertinus")]
+#[cfg(all(feature = "libertinus", not(target_arch = "wasm32")))]
 const LIBERTINUS: &[&[u8]] = &[
     include_bytes!("../../../assets/fonts/web/LibertinusSerif-Regular.otf"),
     include_bytes!("../../../assets/fonts/web/LibertinusSerif-Bold.otf"),
     include_bytes!("../../../assets/fonts/web/LibertinusSerif-Italic.otf"),
+];
+
+/// The same three, subsetted, for the browser. See `DOCUMENT_FONTS` above for
+/// why this is chosen by target rather than by feature.
+#[cfg(all(feature = "libertinus", target_arch = "wasm32"))]
+const LIBERTINUS: &[&[u8]] = &[
+    include_bytes!("../../../assets/fonts/web/LibertinusSerif-Regular.subset.otf"),
+    include_bytes!("../../../assets/fonts/web/LibertinusSerif-Bold.subset.otf"),
+    include_bytes!("../../../assets/fonts/web/LibertinusSerif-Italic.subset.otf"),
 ];
 
 fn global_library() -> &'static LazyHash<Library> {
@@ -73,6 +110,7 @@ fn global_library() -> &'static LazyHash<Library> {
 /// Faces registered with the Typst compiler on top of `typst-assets`, so a
 /// résumé can be set in a family the user recognises. Bundled, never fetched
 /// (US-10) — the same bytes the UI already carries.
+#[cfg(not(target_arch = "wasm32"))]
 const DOCUMENT_FONTS: &[&[u8]] = &[
     include_bytes!("../../../assets/fonts/Geist-Regular.ttf"),
     include_bytes!("../../../assets/fonts/Geist-Medium.ttf"),
@@ -92,6 +130,7 @@ const DOCUMENT_FONTS: &[&[u8]] = &[
 /// the bottom of one. The gap is left **transparent** (see `compile_to_pixels`)
 /// so the preview's canvas shows through it; the pages themselves are opaque
 /// because the template sets `#set page(fill: white)`.
+#[cfg(feature = "raster")]
 const PAGE_GAP_PT: f64 = 28.0;
 
 /// Floor for `pixels_per_pt`, guarding only against a zero or negative scale
@@ -103,9 +142,11 @@ const PAGE_GAP_PT: f64 = 28.0;
 /// evicted. The editor's own scale is clamped to `1.0` at its low end by
 /// `Root::crisp_scale`, so nothing that wants a sharp page is affected by
 /// lowering this.
+#[cfg(feature = "raster")]
 const MIN_RENDER_SCALE: f32 = 0.05;
 
 /// A rasterized document: RGBA-premultiplied pixels plus dimensions.
+#[cfg(feature = "raster")]
 pub struct Pixels {
     pub width: u32,
     pub height: u32,
@@ -172,6 +213,7 @@ impl PageGeometry {
     /// page's `frame` are exactly what `typst-render` and `typst-pdf` paint
     /// from, so this reads the same layout the user sees, not a re-derived
     /// approximation of it.
+#[cfg(feature = "raster")]
     fn measure(document: &PagedDocument) -> Self {
         let pages = document.pages();
         let page_count = pages.len();
@@ -221,6 +263,7 @@ impl PageGeometry {
 /// every layout our template produces, since nothing in it rotates, scales or
 /// skews content. A transformed group instead falls back to its own declared
 /// frame height, which in practice still bounds its content.
+#[cfg(feature = "raster")]
 fn frame_content_bottom(frame: &Frame) -> Abs {
     let mut bottom = Abs::zero();
     for (pos, item) in frame.items() {
@@ -245,6 +288,7 @@ fn frame_content_bottom(frame: &Frame) -> Abs {
 /// The highest y-coordinate any item in `frame` starts at, measured from the
 /// frame's top edge — i.e. where content begins under the top margin. Mirrors
 /// [`frame_content_bottom`], including its identity/translation assumption.
+#[cfg(feature = "raster")]
 fn frame_content_top(frame: &Frame) -> Abs {
     let mut top: Option<Abs> = None;
     for (pos, item) in frame.items() {
@@ -272,6 +316,7 @@ fn frame_content_top(frame: &Frame) -> Abs {
 /// `None` when there are fewer than three baselines: below that there is no
 /// typical anything, and the caller must say what it can measure instead of
 /// reporting a line count from one sample.
+#[cfg(feature = "raster")]
 fn measure_line_advance(frame: &Frame) -> Option<f64> {
     let mut baselines: Vec<f64> = Vec::new();
     collect_baselines(frame, Abs::zero(), &mut baselines);
@@ -296,6 +341,7 @@ fn measure_line_advance(frame: &Frame) -> Option<f64> {
 
 /// Absolute y of every text baseline in `frame`, following the same
 /// identity/translation assumption `frame_content_bottom` documents.
+#[cfg(feature = "raster")]
 fn collect_baselines(frame: &Frame, offset: Abs, out: &mut Vec<f64>) {
     for (pos, item) in frame.items() {
         match item {
@@ -370,6 +416,7 @@ pub struct Diagnostic {
 /// or the odd stray `#`), which is what this covers explicitly. Anything
 /// else falls back to Typst's own wording — still not a span dump, just not
 /// independently translated.
+#[cfg(feature = "raster")]
 fn humanize(raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
     if lower.contains("unclosed delimiter") {
@@ -394,6 +441,7 @@ fn humanize(raw: &str) -> String {
 /// entry point the editor's preview should call instead, since it needs the
 /// warnings `compile_to_pixels` throws away to answer "compiling / ready /
 /// error" (US-07) rather than just "did it produce pixels."
+#[cfg(feature = "raster")]
 pub struct CompileAttempt {
     /// `Ok` exactly when the compile succeeded. `Err(())` carries no
     /// message of its own — the *why* is always in `diagnostics`, which is
@@ -454,6 +502,7 @@ impl TypstEngine {
     /// image, not per-page virtualization; see `docs/research/gpui-pdf-architecture.md`
     /// §3) this returns [`PageGeometry`] measured from the same laid-out
     /// pages, before that per-page structure is flattened away.
+    #[cfg(feature = "raster")]
     pub fn compile_to_pixels(&self, scale: f32) -> Result<(Pixels, PageGeometry), String> {
         let Warned { output, .. } = typst::compile(self);
 
@@ -523,6 +572,7 @@ impl TypstEngine {
     /// see [`CompileAttempt`]. Duplicates that method's rasterization step
     /// rather than sharing it, so `compile_to_pixels` and its three tests
     /// stay exactly as they were.
+    #[cfg(feature = "raster")]
     pub fn compile_with_diagnostics(&self, scale: f32) -> CompileAttempt {
         let Warned { output, warnings } = typst::compile::<PagedDocument>(self);
 
@@ -567,6 +617,7 @@ impl TypstEngine {
     /// message, and resolve the span to a byte offset via `WorldExt::range`
     /// (blanket-implemented for any `World`, which `Self` is) when Typst can
     /// give one.
+    #[cfg(feature = "raster")]
     fn translate(&self, diag: &SourceDiagnostic) -> Diagnostic {
         Diagnostic {
             severity: diag.severity.into(),
@@ -1001,6 +1052,85 @@ mod font_tests {
     /// happen quietly during a font bump. What to do about Newsreader — drop
     /// it from the picker, mark it in the UI, or accept it — is L-11 in
     /// `docs/OPEN.md`.
+    /// The browser ships subsetted faces (`scripts/subset-fonts.sh`) — 557 KB
+    /// instead of 3574 KB, which is the largest saving available in a module a
+    /// visitor downloads. A subset trades weight for coverage, and Typst
+    /// answers a missing glyph the way it answers a missing family: silently,
+    /// by falling back. That is L-11 again, so it gets a guard.
+    ///
+    /// Read from the files rather than from `DOCUMENT_FONTS`, because this
+    /// test runs on the host where that constant is the *full* set. What is
+    /// asserted is the repertoire the subsetting script promises, plus every
+    /// non-ASCII character the generator and the vendored AltaCV package can
+    /// actually emit — collected by grepping both, not by imagination.
+    #[test]
+    fn fonts_for_the_browser_cover_what_a_cv_can_contain() {
+        const SUBSETS: &[(&str, &str)] = &[
+            (
+                "assets/fonts/web/LibertinusSerif-Regular.subset.otf",
+                "assets/fonts/web/LibertinusSerif-Regular.otf",
+            ),
+            (
+                "assets/fonts/web/LibertinusSerif-Bold.subset.otf",
+                "assets/fonts/web/LibertinusSerif-Bold.otf",
+            ),
+            (
+                "assets/fonts/web/LibertinusSerif-Italic.subset.otf",
+                "assets/fonts/web/LibertinusSerif-Italic.otf",
+            ),
+            (
+                "assets/fonts/web/Geist-Regular.subset.ttf",
+                "assets/fonts/Geist-Regular.ttf",
+            ),
+            (
+                "assets/fonts/web/Geist-Bold.subset.ttf",
+                "assets/fonts/Geist-Bold.ttf",
+            ),
+        ];
+
+        // Latin with the accents a European CV carries; Ukrainian, which needs
+        // the four letters Russian does not have; and the punctuation the
+        // template and the package emit — `–` `—` `…` `•` `·` `§` `©` `→` `≈`.
+        const REPERTOIRE: &str = "AZaz09 éòäûüñçßÅØ ĀŁŐ \
+                                  Софія Медведенко ЄІЇҐ ЁЪЫЭ \
+                                  –—…•·§©→≈×±≤≥ €₴ №";
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("workspace root");
+
+        let load = |relative: &str| {
+            let bytes = std::fs::read(root.join(relative))
+                .unwrap_or_else(|e| panic!("{relative} is missing ({e}) — run scripts/subset-fonts.sh"));
+            Font::new(Bytes::new(bytes), 0)
+                .unwrap_or_else(|| panic!("{relative} did not parse as a font"))
+        };
+
+        for (subset, original) in SUBSETS {
+            let (small, full) = (load(subset), load(original));
+
+            // Against the *original*, not against a list of characters I
+            // believe a font ought to have: Libertinus carries no ₴, and a
+            // test that demanded one would be asserting my imagination rather
+            // than the only thing that can regress — subsetting dropping
+            // something the face actually had.
+            let lost: Vec<char> = REPERTOIRE
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .filter(|c| full.info().coverage.contains(*c as u32))
+                .filter(|c| !small.info().coverage.contains(*c as u32))
+                .collect();
+
+            assert!(
+                lost.is_empty(),
+                "{subset} lost {lost:?} that {original} had — widen RANGES in \
+                 scripts/subset-fonts.sh and re-run it, or the browser will \
+                 silently set them in another face"
+            );
+        }
+    }
+
     #[test]
     fn which_document_fonts_can_set_a_cv_in_cyrillic() {
         // Ukrainian needs the four letters Russian does not have; a face that

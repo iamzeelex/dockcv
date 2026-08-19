@@ -24,7 +24,7 @@ publish.workspace = true
 description = "DockCV's engine: résumé model, Typst codegen and the in-process compiler"
 
 [features]
-default = ["fallback-fonts", "pdf"]
+default = ["fallback-fonts", "pdf", "raster"]
 # Typst's own font pack — 9.2 MB, of which 3.8 MB is three NewCM *math* faces
 # a résumé will never set. It is the right default for the app, where a
 # document may contain anything and a missing glyph is worse than a large
@@ -42,6 +42,10 @@ fixtures = []
 # `typst-render` and has no use for it; on for the browser, where SVG is sharp
 # at any zoom and skips the pixmap → BGRA step entirely.
 svg = ["dep:typst-svg"]
+# Rasterising to a pixmap — how the desktop app draws a page, and dead weight
+# in a browser that shows SVG. On by default because the app is the default
+# consumer; off for the web, where it was carried for no reason at all.
+raster = ["dep:typst-render"]
 # PDF export. On by default — it is how a CV leaves the app — but the browser
 # demo shows pages rather than producing files, and the PDF writer drags in
 # krilla and hayro behind it. Measured before making it optional.
@@ -62,7 +66,7 @@ libertinus = []
 
 [dependencies]
 typst = "0.15"
-typst-render = "0.15"
+typst-render = { version = "0.15", optional = true }
 typst-layout = "0.15"
 typst-pdf = { version = "0.15", optional = true }
 typst-assets = "0.15"
