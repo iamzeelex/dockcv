@@ -43,15 +43,52 @@ const RENDERER: &str = r##"
   text(fill: muted, size: 9pt, parts.join("  |  "))
 }
 
-#let entry(title, subtitle, trailing) = grid(
-  columns: (1fr, auto), column-gutter: 10pt,
-  align: (left + bottom, right + bottom),
-  {
+// The three ways a run of text can be emphasised, as one helper, so the
+// subtitle and the date/location line ask for it the same way.
+#let styled(how, body) = {
+  if how == "bold" { text(weight: "bold", body) }
+  else if how == "italic" { emph(body) }
+  else { body }
+}
+
+// A dated entry: title, subtitle, and the date/location pair.
+//
+// `trailing` arrives in document order (date, location); `entry-meta-order`
+// decides whether it prints that way. Empty parts are dropped by `meta`, so a
+// job with no location reads the same under either order.
+#let entry(title, subtitle, trailing) = {
+  let ordered = if entry-meta-order == "location-first" { trailing.rev() } else { trailing }
+  let head = {
     text(weight: "bold", title)
-    if subtitle != "" { emph(", " + subtitle) }
-  },
-  meta(trailing),
-)
+    if subtitle != "" { styled(entry-subtitle, ", " + subtitle) }
+  }
+  if entry-meta-position == "below" {
+    // Its own line: the title is never squeezed by a long date range, at the
+    // cost of a line per entry.
+    head
+    linebreak()
+    styled(entry-meta, meta(ordered))
+  } else {
+    grid(
+      columns: (1fr, auto), column-gutter: 10pt,
+      align: (left + bottom, right + bottom),
+      head,
+      styled(entry-meta, meta(ordered)),
+    )
+  }
+}
+
+// An entry's bullets. The marker is a setting, and `indent` decides whether
+// the block sits under the title or starts again at the margin.
+#let bullets(items) = {
+  let inner = if entry-bullet == "" {
+    // No marker: the indent is what says "these belong to the entry above".
+    for item in items [#pad(left: 0.4em, item)]
+  } else {
+    list(marker: [#entry-bullet], ..items)
+  }
+  if entry-indent { pad(left: 0.9em, inner) } else { inner }
+}
 
 #let render-cv(cv) = {
   let b = cv.at("basics", default: (:))
@@ -98,9 +135,9 @@ const RENDERER: &str = r##"
          w.at("location", default: "")),
       )
       let s = w.at("summary", default: none)
-      if s != none { s }
+      if s != none { if entry-indent { pad(left: 0.9em, s) } else { s } }
       let hs = w.at("highlights", default: ())
-      if hs.len() > 0 { list(..hs) }
+      if hs.len() > 0 { bullets(hs) }
       v(4pt)
     }
   }
@@ -117,7 +154,7 @@ const RENDERER: &str = r##"
         (daterange(e.at("startDate", default: ""), e.at("endDate", default: "")),),
       )
       let hs = e.at("highlights", default: ())
-      if hs.len() > 0 { list(..hs) }
+      if hs.len() > 0 { bullets(hs) }
       v(3pt)
     }
   }
@@ -245,7 +282,7 @@ const RENDERER: &str = r##"
         (daterange(o.at("startDate", default: ""), o.at("endDate", default: "")),),
       )
       let hs = o.at("highlights", default: ())
-      if hs.len() > 0 { list(..hs) }
+      if hs.len() > 0 { bullets(hs) }
       v(3pt)
     }
   }
@@ -268,7 +305,7 @@ const RENDERER: &str = r##"
             (daterange(it.at("startDate", default: ""), it.at("endDate", default: "")),),
           )
           let hs = it.at("highlights", default: ())
-          if hs.len() > 0 { list(..hs) }
+          if hs.len() > 0 { bullets(hs) }
           let u = it.at("url", default: "")
           if u != "" { meta((u,)) }
           v(3pt)
@@ -351,6 +388,14 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
 
 // How the Skills section is set. One dict rather than five bindings: they are
 // one decision, and the renderer reads them together.
+// How a dated entry is set — a job, a degree, a certificate.
+#let entry-meta-position = "{entry_meta_position}"
+#let entry-meta-order = "{entry_meta_order}"
+#let entry-subtitle = "{entry_subtitle}"
+#let entry-meta = "{entry_meta}"
+#let entry-bullet = "{entry_bullet}"
+#let entry-indent = {entry_indent}
+
 #let skills = (
   style: "{skills_style}",
   sep: "{skills_sep}",
@@ -367,6 +412,12 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
         mark_after = layout.skills.mark.wraps().1,
         skills_gap = fmt_measure(layout.skills.spacing.gap_pt()),
         skills_bullets = layout.skills.bullets,
+        entry_meta_position = layout.entries.meta_position.keyword(),
+        entry_meta_order = layout.entries.meta_order.keyword(),
+        entry_subtitle = layout.entries.subtitle.keyword(),
+        entry_meta = layout.entries.meta.keyword(),
+        entry_bullet = layout.entries.bullet.marker(),
+        entry_indent = layout.entries.indent_body,
         x = fmt_measure(layout.margins.x_mm),
         top = fmt_measure(layout.margins.top_mm),
         bottom = fmt_measure(layout.margins.bottom_mm),
@@ -755,6 +806,7 @@ mod tests {
                     style,
                     ..SkillsLayout::default()
                 },
+                entries: Default::default(),
                 ..LayoutSettings::default()
             };
             let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
@@ -779,6 +831,74 @@ mod tests {
             of(SkillsStyle::Compact),
             "compact rendered identically to inline"
         );
+    }
+
+    /// Every entry control has to reach the page, and the default has to
+    /// leave a document rendering exactly as it did before the controls
+    /// existed — the second half is what stops a layout feature from quietly
+    /// re-typesetting everyone's CV.
+    ///
+    /// Compared on pixels rather than on the generated source: E-32 was a
+    /// whole layout rail that reached the model, was saved, and never arrived
+    /// on the page while every source-level test stayed green.
+    #[test]
+    fn every_entry_control_changes_the_page_and_the_default_changes_nothing() {
+        use crate::resume::model::{
+            BulletGlyph, Emphasis, EntryLayout, MetaOrder, MetaPosition, Work,
+        };
+        use crate::typst_engine::TypstEngine;
+
+        let resume = Resume {
+            work: vec![Work {
+                name: "Acme".into(),
+                position: "Staff Engineer".into(),
+                location: "Barcelona, Spain".into(),
+                // Dates matter to this fixture: `meta` drops empty parts, so
+                // an undated entry has one thing to print and reversing the
+                // order of one thing proves nothing.
+                start_date: "2022-01".into(),
+                end_date: "2024-06".into(),
+                summary: "Recovered reliable state from unreliable measurement.".into(),
+                highlights: vec!["Cut p99 latency in half.".into(), "Rewrote the ingest.".into()],
+            }],
+            ..Default::default()
+        };
+
+        let pixels = |entries: EntryLayout| {
+            let layout = LayoutSettings {
+                entries,
+                ..LayoutSettings::default()
+            };
+            let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
+            engine.compile_to_pixels(1.0).expect("compiles").0.rgba
+        };
+
+        let base = pixels(EntryLayout::default());
+
+        // The default must be the old rendering, byte for byte.
+        let engine = TypstEngine::new(generate(&resume));
+        assert_eq!(
+            engine.compile_to_pixels(1.0).expect("compiles").0.rgba,
+            base,
+            "the default entry layout is not what `generate` produces"
+        );
+
+        let variants: [(&str, EntryLayout); 6] = [
+            ("meta below", EntryLayout { meta_position: MetaPosition::Below, ..Default::default() }),
+            ("place first", EntryLayout { meta_order: MetaOrder::LocationFirst, ..Default::default() }),
+            ("subtitle bold", EntryLayout { subtitle: Emphasis::Bold, ..Default::default() }),
+            ("meta bold", EntryLayout { meta: Emphasis::Bold, ..Default::default() }),
+            ("dash bullets", EntryLayout { bullet: BulletGlyph::Dash, ..Default::default() }),
+            ("indented body", EntryLayout { indent_body: true, ..Default::default() }),
+        ];
+
+        for (what, entries) in variants {
+            assert_ne!(
+                pixels(entries),
+                base,
+                "{what} rendered identically to the default — the control never reached the page"
+            );
+        }
     }
 
     /// The point of the options: a Skills section with sixty terms is the
@@ -846,6 +966,7 @@ mod tests {
                     style,
                     ..SkillsLayout::default()
                 },
+                entries: Default::default(),
                 ..LayoutSettings::default()
             };
             let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
@@ -907,6 +1028,7 @@ mod tests {
             font: Default::default(),
             date_format: Default::default(),
             skills: Default::default(),
+            entries: Default::default(),
             text_scale_pct: 0,
             leading_em: -1.0,
             margins: Margins {

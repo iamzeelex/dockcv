@@ -1420,6 +1420,7 @@ mod tests {
             font: Default::default(),
             date_format: Default::default(),
             skills: Default::default(),
+            entries: Default::default(),
             text_scale_pct: 90,
             leading_em: 0.65,
             margins: Margins {

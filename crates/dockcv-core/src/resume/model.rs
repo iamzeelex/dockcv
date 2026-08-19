@@ -1202,6 +1202,155 @@ impl<'de> Deserialize<'de> for SkillsLayout {
     }
 }
 
+/// Where a dated entry puts its date and location.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MetaPosition {
+    /// Right-aligned on the title's own line — compact, and what every
+    /// document did before this existed.
+    #[default]
+    Right,
+    /// On its own line under the title. Costs a line per entry and buys a
+    /// title that is never squeezed by a long date range.
+    Below,
+}
+
+impl MetaPosition {
+    pub const ALL: [MetaPosition; 2] = [MetaPosition::Right, MetaPosition::Below];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            MetaPosition::Right => "Right of title",
+            MetaPosition::Below => "Below title",
+        }
+    }
+
+    pub fn keyword(self) -> &'static str {
+        match self {
+            MetaPosition::Right => "right",
+            MetaPosition::Below => "below",
+        }
+    }
+}
+
+/// Which of the date and the location comes first.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MetaOrder {
+    #[default]
+    DateFirst,
+    LocationFirst,
+}
+
+impl MetaOrder {
+    pub const ALL: [MetaOrder; 2] = [MetaOrder::DateFirst, MetaOrder::LocationFirst];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            MetaOrder::DateFirst => "Date, place",
+            MetaOrder::LocationFirst => "Place, date",
+        }
+    }
+
+    pub fn keyword(self) -> &'static str {
+        match self {
+            MetaOrder::DateFirst => "date-first",
+            MetaOrder::LocationFirst => "location-first",
+        }
+    }
+}
+
+/// How a run of text is emphasised.
+///
+/// One type for the two places that need it — an entry's subtitle and its
+/// date/location line — because "regular, bold or italic" is the same choice
+/// twice and two enums saying it would be two things to keep in step.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Emphasis {
+    Regular,
+    Bold,
+    #[default]
+    Italic,
+}
+
+impl Emphasis {
+    pub const ALL: [Emphasis; 3] = [Emphasis::Regular, Emphasis::Bold, Emphasis::Italic];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Emphasis::Regular => "Regular",
+            Emphasis::Bold => "Bold",
+            Emphasis::Italic => "Italic",
+        }
+    }
+
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Emphasis::Regular => "regular",
+            Emphasis::Bold => "bold",
+            Emphasis::Italic => "italic",
+        }
+    }
+}
+
+/// The glyph a bullet list uses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BulletGlyph {
+    #[default]
+    Dot,
+    Dash,
+    /// No marker at all — the indent carries it. For a CV whose bullets are
+    /// full sentences and read as paragraphs.
+    None,
+}
+
+impl BulletGlyph {
+    pub const ALL: [BulletGlyph; 3] = [BulletGlyph::Dot, BulletGlyph::Dash, BulletGlyph::None];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            BulletGlyph::Dot => "• Dot",
+            BulletGlyph::Dash => "– Dash",
+            BulletGlyph::None => "None",
+        }
+    }
+
+    /// What Typst's `list(marker: …)` is given.
+    pub fn marker(self) -> &'static str {
+        match self {
+            BulletGlyph::Dot => "•",
+            BulletGlyph::Dash => "–",
+            BulletGlyph::None => "",
+        }
+    }
+}
+
+/// How a dated entry — a job, a degree, a certificate — is set.
+///
+/// Separate from [`SkillsLayout`] because they are different shapes of data:
+/// an entry is a title, a subtitle, two pieces of metadata and a list, and a
+/// skill group is a label and a bag of words. A single `SectionStyle` spanning
+/// both would have to pretend they answer the same questions.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryLayout {
+    #[serde(default)]
+    pub meta_position: MetaPosition,
+    #[serde(default)]
+    pub meta_order: MetaOrder,
+    #[serde(default)]
+    pub subtitle: Emphasis,
+    #[serde(default)]
+    pub meta: Emphasis,
+    #[serde(default)]
+    pub bullet: BulletGlyph,
+    /// Indent the summary and bullets under the entry's title, so the block
+    /// reads as belonging to it rather than starting again at the margin.
+    #[serde(default)]
+    pub indent_body: bool,
+}
+
 /// Page layout and type scale for the rendered document. See `ResumeDoc::layout`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LayoutSettings {
@@ -1226,6 +1375,10 @@ pub struct LayoutSettings {
     /// written before this existed keeps the shape it had.
     #[serde(default)]
     pub skills: SkillsLayout,
+    /// How a dated entry is set. `#[serde(default)]` so a document written
+    /// before this existed keeps the shape it had.
+    #[serde(default)]
+    pub entries: EntryLayout,
     /// Body text size as a percentage of the template's base size (10pt).
     /// 100 is the old hard-coded default; the layout rail's own readout
     /// (`docs/design/typst-controls.md` — "107%") is this same unit.
@@ -1243,6 +1396,7 @@ impl Default for LayoutSettings {
             font: DocumentFont::default(),
             date_format: DateFormat::default(),
             skills: SkillsLayout::default(),
+            entries: EntryLayout::default(),
             text_scale_pct: 100,
             leading_em: 0.62,
             margins: Margins::default(),
@@ -1292,6 +1446,7 @@ impl LayoutSettings {
             date_format: self.date_format,
             // Nothing to clamp: every variant is a valid arrangement.
             skills: self.skills,
+            entries: self.entries,
             text_scale_pct: self.text_scale_pct.clamp(min_scale, max_scale),
             leading_em: self.leading_em.clamp(min_leading, max_leading),
             margins: Margins {
@@ -1978,6 +2133,7 @@ mod layout_tests {
             font: DocumentFont::default(),
             date_format: Default::default(),
             skills: Default::default(),
+            entries: Default::default(),
             text_scale_pct: 0,
             leading_em: -3.0,
             margins: Margins {
@@ -2001,6 +2157,7 @@ mod layout_tests {
             font: DocumentFont::default(),
             date_format: Default::default(),
             skills: Default::default(),
+            entries: Default::default(),
             text_scale_pct: 107,
             leading_em: 0.7,
             margins: Margins {

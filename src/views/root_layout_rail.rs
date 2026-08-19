@@ -38,8 +38,9 @@ use dockcv_ui_components::{Accordion,
 };
 
 use crate::resume::model::{
-    CategoryMark, DateFormat, DocumentFont, LayoutSettings, PageSize, ResumeDoc, RowSpacing,
-    SectionKind, SkillSeparator, SkillsLayout, SkillsStyle, TrimCandidate,
+    BulletGlyph, CategoryMark, DateFormat, DocumentFont, Emphasis, EntryLayout, LayoutSettings,
+    MetaOrder, MetaPosition, PageSize, ResumeDoc, RowSpacing, SectionKind, SkillSeparator,
+    SkillsLayout, SkillsStyle, TrimCandidate,
 };
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -220,7 +221,13 @@ impl Root {
                                     .open(open == 3)
                                     .child(
                                         div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(12.0))
                                             .pt(px(4.0))
+                                            .child(self.rail_subsection(cx, "Entries"))
+                                            .child(self.entry_rows(cx, layout.entries))
+                                            .child(self.rail_subsection(cx, "Skills"))
                                             .child(self.skills_rows(cx, layout.skills)),
                                     )
                             })
@@ -308,8 +315,104 @@ impl Root {
             ))
     }
 
-    /// One labelled dropdown, since the Skills group needs five of them and
-    /// five hand-written copies is five places for one of them to drift.
+    /// A named subsection inside a rail group.
+    ///
+    /// Without it the Sections group was five bare labels — `Layout`,
+    /// `Separator`, `Category` — and nothing said they were about Skills.
+    /// `Bubbles` is an obvious answer to a question the panel never asked.
+    fn rail_subsection(&self, cx: &mut Context<Self>, title: &'static str) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .pt(px(2.0))
+            .child(
+                div()
+                    .text_style(TextStyle::chip())
+                    .text_color(theme.text)
+                    .child(title),
+            )
+            .child(div().flex_1().h(px(1.0)).bg(theme.border))
+    }
+
+    /// How a dated entry is set — a job, a degree, a certificate. The other
+    /// half of `Sections`, and the one that repeats most on a CV.
+    fn entry_rows(&self, cx: &mut Context<Self>, entries: EntryLayout) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(9.0))
+            .child(self.skills_pick(
+                cx,
+                "Date & place",
+                "layout-entry-meta-pos",
+                entries.meta_position.label(),
+                MetaPosition::ALL
+                    .iter()
+                    .map(|m| (m.label(), *m == entries.meta_position, *m))
+                    .collect(),
+                |doc, v| doc.layout.entries.meta_position = v,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Order",
+                "layout-entry-meta-order",
+                entries.meta_order.label(),
+                MetaOrder::ALL
+                    .iter()
+                    .map(|m| (m.label(), *m == entries.meta_order, *m))
+                    .collect(),
+                |doc, v| doc.layout.entries.meta_order = v,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Subtitle",
+                "layout-entry-subtitle",
+                entries.subtitle.label(),
+                Emphasis::ALL
+                    .iter()
+                    .map(|e| (e.label(), *e == entries.subtitle, *e))
+                    .collect(),
+                |doc, v| doc.layout.entries.subtitle = v,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Date & place style",
+                "layout-entry-meta-style",
+                entries.meta.label(),
+                Emphasis::ALL
+                    .iter()
+                    .map(|e| (e.label(), *e == entries.meta, *e))
+                    .collect(),
+                |doc, v| doc.layout.entries.meta = v,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Bullets",
+                "layout-entry-bullet",
+                entries.bullet.label(),
+                BulletGlyph::ALL
+                    .iter()
+                    .map(|b| (b.label(), *b == entries.bullet, *b))
+                    .collect(),
+                |doc, v| doc.layout.entries.bullet = v,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Body",
+                "layout-entry-indent",
+                if entries.indent_body { "Indented" } else { "Full width" },
+                vec![
+                    ("Full width", !entries.indent_body, false),
+                    ("Indented", entries.indent_body, true),
+                ],
+                |doc, v| doc.layout.entries.indent_body = v,
+            ))
+    }
+
+    /// One labelled dropdown, since these groups need eleven of them and
+    /// eleven hand-written copies is eleven places for one of them to drift.
     fn skills_pick<T: Copy + 'static>(
         &self,
         cx: &mut Context<Self>,
@@ -835,6 +938,7 @@ mod tests {
                     font: Default::default(),
                     date_format: Default::default(),
                     skills: Default::default(),
+                    entries: Default::default(),
                     text_scale_pct: scale,
                     leading_em: 0.62,
                     margins: Margins {
