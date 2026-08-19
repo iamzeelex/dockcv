@@ -25,12 +25,58 @@ use crate::resume::model::{DateFormat, LayoutSettings, Resume, ResumeDoc, Sectio
 /// packages, no network, bundled fonts only (US-10).
 const RENDERER: &str = r##"
 #let muted = luma(110)
+// Light enough to read as a hairline rather than as a second row of type.
+#let hairline = 0.5pt + luma(150)
 
-#let section(title) = block(
-  width: 100%, above: 12pt, below: 6pt,
-  fill: luma(238), inset: (x: 8pt, y: 4pt), radius: 2pt,
-  align(center, text(weight: "bold", size: size-heading, tracking: 1pt, upper(title))),
-)
+// The bar above each section. Every branch is a whole `block` of its own
+// rather than one block with the differences inside it: the spacing above and
+// below a heading is part of the style, and nesting a block inside a block to
+// share those two numbers would add Typst's own block spacing to every variant.
+#let section(title) = {
+  let words = if heading-case == "upper" { upper(title) } else { title }
+  let body = text(
+    weight: "bold",
+    size: size-heading,
+    // Letter-spacing is a decision about capitals — it is what stops a run of
+    // them setting solid. On mixed case it only loosens the word.
+    tracking: if heading-case == "upper" { 1pt } else { 0pt },
+    words,
+  )
+  let al = if heading-align == "left" { left } else { center }
+
+  if heading-style == "band" {
+    block(
+      width: 100%, above: 12pt, below: 6pt,
+      fill: luma(238), inset: (x: 8pt, y: 4pt), radius: 2pt,
+      align(al, body),
+    )
+  } else if heading-style == "boxed" {
+    block(
+      width: 100%, above: 12pt, below: 6pt,
+      stroke: hairline, inset: (x: 8pt, y: 4pt), radius: 2pt,
+      align(al, body),
+    )
+  } else if heading-style == "rule" {
+    block(width: 100%, above: 12pt, below: 6pt, {
+      align(al, body)
+      v(2pt)
+      line(length: 100%, stroke: hairline)
+    })
+  } else if heading-style == "rule-to-margin" {
+    // The rule takes whatever the words leave, so this style costs no line of
+    // its own — on a full CV that is a section's worth of page back.
+    block(width: 100%, above: 12pt, below: 6pt, grid(
+      columns: (auto, 1fr), column-gutter: 8pt,
+      align: (left + horizon, horizon),
+      body, line(length: 100%, stroke: hairline),
+    ))
+  } else if heading-style == "underline" {
+    block(width: 100%, above: 12pt, below: 6pt,
+      align(al, underline(offset: 3pt, stroke: hairline, body)))
+  } else {
+    block(width: 100%, above: 12pt, below: 6pt, align(al, body))
+  }
+}
 
 #let daterange(start, end) = {
   if start == "" and end == "" { "" }
@@ -426,6 +472,11 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
 
 // How the Skills section is set. One dict rather than five bindings: they are
 // one decision, and the renderer reads them together.
+// The bar above each section.
+#let heading-style = "{heading_style}"
+#let heading-case = "{heading_case}"
+#let heading-align = "{heading_align}"
+
 // The block above the first section.
 #let header-align = "{header_align}"
 #let header-contacts = "{header_contacts}"
@@ -467,6 +518,9 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
         entry_meta = layout.entries.meta.keyword(),
         entry_bullet = layout.entries.bullet.marker(),
         entry_indent = layout.entries.indent_body,
+        heading_style = layout.headings.style.keyword(),
+        heading_case = layout.headings.case.keyword(),
+        heading_align = layout.headings.align.keyword(),
         header_align = layout.header.align.keyword(),
         header_contacts = layout.header.contacts.keyword(),
         header_separator = layout.header.separator.printed(),
@@ -886,6 +940,145 @@ mod tests {
         );
     }
 
+    /// Every heading style has to compile, put ink on the page, and differ
+    /// from every other one — six branches of Typst is six chances for a
+    /// variant to silently fall through to the same drawing.
+    #[test]
+    fn every_heading_style_compiles_and_draws_something_different() {
+        use crate::resume::model::{HeadingLayout, HeadingStyle, Work};
+        use crate::typst_engine::TypstEngine;
+        use std::collections::HashMap;
+
+        let resume = Resume {
+            work: vec![Work {
+                name: "Acme".into(),
+                position: "Staff Engineer".into(),
+                start_date: "2022-01".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let mut seen: HashMap<Vec<u8>, &'static str> = HashMap::new();
+        for style in HeadingStyle::ALL {
+            let layout = LayoutSettings {
+                headings: HeadingLayout {
+                    style,
+                    ..Default::default()
+                },
+                ..LayoutSettings::default()
+            };
+            let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
+            let pixels = engine
+                .compile_to_pixels(1.0)
+                .unwrap_or_else(|e| panic!("{} did not compile: {e}", style.label()))
+                .0
+                .rgba;
+            // `Plain` is the one style with nothing but type, so it is the
+            // floor every other style has to draw more than.
+            if let Some(other) = seen.insert(pixels, style.label()) {
+                panic!("{} rendered identically to {other}", style.label());
+            }
+        }
+    }
+
+    /// The heading controls, on the same two rules as the rest of the rail:
+    /// each changes the page, and the default leaves a document alone.
+    #[test]
+    fn every_heading_control_changes_the_page_and_the_default_changes_nothing() {
+        use crate::resume::model::{
+            HeaderAlign, HeadingCase, HeadingLayout, HeadingStyle, Work,
+        };
+        use crate::typst_engine::TypstEngine;
+
+        let resume = Resume {
+            work: vec![Work {
+                name: "Acme".into(),
+                position: "Staff Engineer".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let pixels = |headings: HeadingLayout| {
+            let layout = LayoutSettings {
+                headings,
+                ..LayoutSettings::default()
+            };
+            let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
+            engine.compile_to_pixels(1.0).expect("compiles").0.rgba
+        };
+
+        let base = pixels(HeadingLayout::default());
+        let engine = TypstEngine::new(generate(&resume));
+        assert_eq!(
+            engine.compile_to_pixels(1.0).expect("compiles").0.rgba,
+            base,
+            "the default heading is not what `generate` produces"
+        );
+
+        let variants: [(&str, HeadingLayout); 3] = [
+            ("plain style", HeadingLayout { style: HeadingStyle::Plain, ..Default::default() }),
+            ("as-typed case", HeadingLayout { case: HeadingCase::AsTyped, ..Default::default() }),
+            ("left aligned", HeadingLayout { align: HeaderAlign::Left, ..Default::default() }),
+        ];
+        for (what, headings) in variants {
+            assert_ne!(
+                pixels(headings),
+                base,
+                "{what} rendered identically to the default — the control never reached the page"
+            );
+        }
+
+        // Alignment is hidden for the one style whose words cannot move, so
+        // it had better be true that they cannot. If this ever fails the rail
+        // is hiding a control that does something.
+        assert!(!HeadingStyle::RuleToMargin.can_align());
+        assert_eq!(
+            pixels(HeadingLayout {
+                style: HeadingStyle::RuleToMargin,
+                align: HeaderAlign::Center,
+                ..Default::default()
+            }),
+            pixels(HeadingLayout {
+                style: HeadingStyle::RuleToMargin,
+                align: HeaderAlign::Left,
+                ..Default::default()
+            }),
+            "alignment moved a rule-to-margin heading — the rail hides a live control"
+        );
+    }
+
+    /// Letter-spacing belongs to the capitals, so dropping the capitals has
+    /// to drop it too — otherwise "Work Experience" comes out gappy and the
+    /// case control looks broken rather than chosen.
+    #[test]
+    fn tracking_follows_the_capitals() {
+        use crate::resume::model::{HeadingCase, HeadingLayout};
+
+        let source = |case: HeadingCase| {
+            generate_with_layout(
+                &Resume::default(),
+                &LayoutSettings {
+                    headings: HeadingLayout {
+                        case,
+                        ..Default::default()
+                    },
+                    ..LayoutSettings::default()
+                },
+            )
+        };
+        assert!(source(HeadingCase::Upper).contains(r#"#let heading-case = "upper""#));
+        assert!(source(HeadingCase::AsTyped).contains(r#"#let heading-case = "as-typed""#));
+        // The renderer decides from that one binding, so the branch it drives
+        // is what has to stay honest.
+        assert!(
+            source(HeadingCase::Upper)
+                .contains(r#"tracking: if heading-case == "upper" { 1pt } else { 0pt },"#),
+            "tracking is no longer tied to the case"
+        );
+    }
+
     /// The header controls, held to the same two rules as the entry ones:
     /// each has to change the page, and the default has to leave a document
     /// exactly as it was.
@@ -1260,6 +1453,7 @@ mod tests {
             skills: Default::default(),
             entries: Default::default(),
             header: Default::default(),
+            headings: Default::default(),
             sizes: TypeSizes {
                 name_pt: 900.0,
                 title_pt: -900.0,

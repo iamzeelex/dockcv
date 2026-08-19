@@ -1422,6 +1422,7 @@ mod tests {
             skills: Default::default(),
             entries: Default::default(),
             header: Default::default(),
+            headings: Default::default(),
             sizes: TypeSizes {
                 name_pt: 8.5,
                 title_pt: 2.0,

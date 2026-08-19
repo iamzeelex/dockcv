@@ -39,8 +39,9 @@ use dockcv_ui_components::{Accordion,
 
 use crate::resume::model::{
     BulletGlyph, CategoryMark, ContactLayout, DateFormat, DocumentFont, Emphasis, EntryLayout,
-    HeaderAlign, HeaderLayout, LayoutSettings, MetaOrder, MetaPosition, PageSize, ResumeDoc,
-    RowSpacing, SectionKind, SkillSeparator, SkillsLayout, SkillsStyle, TrimCandidate, TypeSizes,
+    HeaderAlign, HeaderLayout, HeadingCase, HeadingLayout, HeadingStyle, LayoutSettings, MetaOrder,
+    MetaPosition, PageSize, ResumeDoc, RowSpacing, SectionKind, SkillSeparator, SkillsLayout,
+    SkillsStyle, TrimCandidate, TypeSizes,
 };
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -236,6 +237,8 @@ impl Root {
                                             .flex_col()
                                             .gap(px(12.0))
                                             .pt(px(4.0))
+                                            .child(self.rail_subsection(cx, "Headings"))
+                                            .child(self.heading_rows(cx, layout.headings))
                                             .child(self.rail_subsection(cx, "Entries"))
                                             .child(self.entry_rows(cx, layout.entries))
                                             .child(self.rail_subsection(cx, "Skills"))
@@ -395,6 +398,58 @@ impl Root {
                         .map(|s| (s.label(), *s == header.separator, *s))
                         .collect(),
                     |doc, v| doc.layout.header.separator = v,
+                )
+            }))
+    }
+
+    /// The bar above each section — the one piece of the layout that repeats
+    /// on every section of every page, which is why it gets its own
+    /// subsection rather than living under Entries.
+    ///
+    /// No icon control, for the reason `header_rows` gives: a glyph inside the
+    /// document needs an icon font in the Typst source, which is a piece of
+    /// work rather than a fourth dropdown.
+    fn heading_rows(&self, cx: &mut Context<Self>, headings: HeadingLayout) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(9.0))
+            .child(self.skills_pick(
+                cx,
+                "Style",
+                "layout-heading-style",
+                headings.style.label(),
+                HeadingStyle::ALL
+                    .iter()
+                    .map(|s| (s.label(), *s == headings.style, *s))
+                    .collect(),
+                |doc, v| doc.layout.headings.style = v,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Capitalization",
+                "layout-heading-case",
+                headings.case.label(),
+                HeadingCase::ALL
+                    .iter()
+                    .map(|c| (c.label(), *c == headings.case, *c))
+                    .collect(),
+                |doc, v| doc.layout.headings.case = v,
+            ))
+            // Hidden for the one style whose words have nowhere to go: the
+            // rule takes whatever they leave, so they are always at the left.
+            // A control that changes nothing teaches something untrue (E-43).
+            .children(headings.style.can_align().then(|| {
+                self.skills_pick(
+                    cx,
+                    "Alignment",
+                    "layout-heading-align",
+                    headings.align.label(),
+                    HeaderAlign::ALL
+                        .iter()
+                        .map(|a| (a.label(), *a == headings.align, *a))
+                        .collect(),
+                    |doc, v| doc.layout.headings.align = v,
                 )
             }))
     }
@@ -1091,6 +1146,7 @@ mod tests {
                     skills: Default::default(),
                     entries: Default::default(),
                     header: Default::default(),
+                    headings: Default::default(),
                     sizes: Default::default(),
                     text_scale_pct: scale,
                     leading_em: 0.62,

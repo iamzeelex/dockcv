@@ -1157,8 +1157,8 @@ mod font_tests {
     #[test]
     fn page_geometry_is_always_a_real_measurement() {
         use crate::resume::model::{
-            CategoryMark, LayoutSettings, Resume, RowSpacing, SkillGroup, SkillSeparator,
-            SkillsLayout, SkillsStyle,
+            CategoryMark, HeadingLayout, HeadingStyle, LayoutSettings, Resume, RowSpacing,
+            SkillGroup, SkillSeparator, SkillsLayout, SkillsStyle,
         };
         use crate::resume::template;
 
@@ -1172,33 +1172,45 @@ mod font_tests {
             ..Resume::default()
         };
 
+        // Heading styles are in the sweep because two of them put a `line`
+        // into the flow, and a rule is exactly the kind of zero-height,
+        // full-width element the geometry walk has come back `inf` from
+        // before.
         for style in SkillsStyle::ALL {
             for spacing in RowSpacing::ALL {
-                let layout = LayoutSettings {
-                    skills: SkillsLayout {
-                        style,
-                        separator: SkillSeparator::Rule,
-                        mark: CategoryMark::Dash,
-                        spacing,
-                        bullets: true,
-                    },
-                    ..LayoutSettings::default()
-                };
-                let engine = TypstEngine::new(template::generate_with_layout(&resume, &layout));
-                let (_, geometry) = engine.compile_to_pixels(1.0).expect("compiles");
+                for heading in HeadingStyle::ALL {
+                    let layout = LayoutSettings {
+                        skills: SkillsLayout {
+                            style,
+                            separator: SkillSeparator::Rule,
+                            mark: CategoryMark::Dash,
+                            spacing,
+                            bullets: true,
+                        },
+                        headings: HeadingLayout {
+                            style: heading,
+                            ..Default::default()
+                        },
+                        ..LayoutSettings::default()
+                    };
+                    let engine =
+                        TypstEngine::new(template::generate_with_layout(&resume, &layout));
+                    let (_, geometry) = engine.compile_to_pixels(1.0).expect("compiles");
 
-                for (what, value) in [
-                    ("last_page_used_pt", geometry.last_page_used_pt),
-                    ("page_height_pt", geometry.page_height_pt),
-                    ("overflow_pt", geometry.overflow_pt),
-                    ("last_page_content_top_pt", geometry.last_page_content_top_pt),
-                ] {
-                    assert!(
-                        value.is_finite(),
-                        "{what} was {value} for {} / {}",
-                        style.label(),
-                        spacing.label()
-                    );
+                    for (what, value) in [
+                        ("last_page_used_pt", geometry.last_page_used_pt),
+                        ("page_height_pt", geometry.page_height_pt),
+                        ("overflow_pt", geometry.overflow_pt),
+                        ("last_page_content_top_pt", geometry.last_page_content_top_pt),
+                    ] {
+                        assert!(
+                            value.is_finite(),
+                            "{what} was {value} for {} / {} / {}",
+                            style.label(),
+                            spacing.label(),
+                            heading.label()
+                        );
+                    }
                 }
             }
         }

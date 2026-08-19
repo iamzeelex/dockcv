@@ -1448,6 +1448,119 @@ pub struct HeaderLayout {
     pub separator: SkillSeparator,
 }
 
+/// How the bar above each section is drawn.
+///
+/// The band is what every document has had until now, and it is a strong
+/// choice: it reads as a divider, but it also spends a filled block of ink on
+/// every section of a page that is mostly white. The alternatives are the
+/// quieter ways the same job is done on a CV — a rule, a border, or nothing at
+/// all — so the decision stops being the template's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HeadingStyle {
+    /// A filled band across the column. What every document did before this.
+    #[default]
+    Band,
+    /// A hairline under the heading, the full width of the column.
+    Rule,
+    /// The heading, then a hairline carrying on to the right margin. Costs no
+    /// line of its own, which on a full CV is a section's worth of space.
+    RuleToMargin,
+    /// A hairline under the words only, as long as they are.
+    Underline,
+    /// A thin border around the heading — the band's shape without its fill.
+    Boxed,
+    /// The words alone. The type does the separating.
+    Plain,
+}
+
+impl HeadingStyle {
+    pub const ALL: [HeadingStyle; 6] = [
+        HeadingStyle::Band,
+        HeadingStyle::Rule,
+        HeadingStyle::RuleToMargin,
+        HeadingStyle::Underline,
+        HeadingStyle::Boxed,
+        HeadingStyle::Plain,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            HeadingStyle::Band => "Filled band",
+            HeadingStyle::Rule => "Rule under",
+            HeadingStyle::RuleToMargin => "Rule to margin",
+            HeadingStyle::Underline => "Underline",
+            HeadingStyle::Boxed => "Boxed",
+            HeadingStyle::Plain => "Plain",
+        }
+    }
+
+    pub fn keyword(self) -> &'static str {
+        match self {
+            HeadingStyle::Band => "band",
+            HeadingStyle::Rule => "rule",
+            HeadingStyle::RuleToMargin => "rule-to-margin",
+            HeadingStyle::Underline => "underline",
+            HeadingStyle::Boxed => "boxed",
+            HeadingStyle::Plain => "plain",
+        }
+    }
+
+    /// Whether the style puts the heading against an edge the alignment
+    /// control can move it along. `RuleToMargin` cannot: its rule fills
+    /// whatever the words leave, so the words are always at the left.
+    pub fn can_align(self) -> bool {
+        !matches!(self, HeadingStyle::RuleToMargin)
+    }
+}
+
+/// Whether a section title is shouted or printed as the user typed it.
+///
+/// Two options, not three. "Title Case" would mean rewriting the user's own
+/// words, and the rules for doing that are language-specific — this app is
+/// used in Ukrainian, where they are not English's. Upper-casing is a
+/// reversible display decision; re-capitalising is an edit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HeadingCase {
+    /// What every document did before this existed.
+    #[default]
+    Upper,
+    AsTyped,
+}
+
+impl HeadingCase {
+    pub const ALL: [HeadingCase; 2] = [HeadingCase::Upper, HeadingCase::AsTyped];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            HeadingCase::Upper => "UPPERCASE",
+            HeadingCase::AsTyped => "As typed",
+        }
+    }
+
+    pub fn keyword(self) -> &'static str {
+        match self {
+            HeadingCase::Upper => "upper",
+            HeadingCase::AsTyped => "as-typed",
+        }
+    }
+}
+
+/// How the bar above each section is set.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeadingLayout {
+    #[serde(default)]
+    pub style: HeadingStyle,
+    #[serde(default)]
+    pub case: HeadingCase,
+    /// Which edge the words sit against. Reuses [`HeaderAlign`] because it is
+    /// the same question the header already asks, and a second enum saying it
+    /// would be a second thing to keep in step.
+    #[serde(default)]
+    pub align: HeaderAlign,
+}
+
 /// The size of each element that is not body text, as **points added to the
 /// document's base size**.
 ///
@@ -1567,6 +1680,10 @@ pub struct LayoutSettings {
     /// before this existed keeps the shape it had.
     #[serde(default)]
     pub header: HeaderLayout,
+    /// How the bar above each section is set. `#[serde(default)]` so a
+    /// document written before this existed keeps the band it had.
+    #[serde(default)]
+    pub headings: HeadingLayout,
     /// The size of the name, the professional title, the section bars and
     /// an entry's title. `#[serde(default)]` so a document written before
     /// this existed keeps the sizes the template hard-coded.
@@ -1591,6 +1708,7 @@ impl Default for LayoutSettings {
             skills: SkillsLayout::default(),
             entries: EntryLayout::default(),
             header: HeaderLayout::default(),
+            headings: HeadingLayout::default(),
             sizes: TypeSizes::default(),
             text_scale_pct: 100,
             leading_em: 0.62,
@@ -1651,6 +1769,8 @@ impl LayoutSettings {
             skills: self.skills,
             entries: self.entries,
             header: self.header,
+            // Nothing to clamp: every combination is a valid heading.
+            headings: self.headings,
             sizes: self.sizes.sanitized(),
             text_scale_pct: self.text_scale_pct.clamp(min_scale, max_scale),
             leading_em: self.leading_em.clamp(min_leading, max_leading),
@@ -2340,6 +2460,7 @@ mod layout_tests {
             skills: Default::default(),
             entries: Default::default(),
             header: Default::default(),
+            headings: Default::default(),
             sizes: TypeSizes {
                 name_pt: 400.0,
                 title_pt: -90.0,
@@ -2376,6 +2497,7 @@ mod layout_tests {
             skills: Default::default(),
             entries: Default::default(),
             header: Default::default(),
+            headings: Default::default(),
             sizes: TypeSizes {
                 name_pt: 12.5,
                 title_pt: 2.0,
