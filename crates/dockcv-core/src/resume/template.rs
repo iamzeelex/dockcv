@@ -364,9 +364,14 @@ const RENDERER: &str = r##"
   // the same `section`/`entry`/`list` helpers the six built-ins use above,
   // so a custom section reads as part of the document, not a bolt-on.
   let customs = cv.at("customSections", default: ())
-  let render-custom(idx) = {
-    if idx < customs.len() {
-      let cs = customs.at(idx)
+  // By id, not by position: `order` names a section, and a hidden one simply
+  // matches nothing. Indexing this array instead meant that hiding a custom
+  // section shifted every later key by one and moved the survivor into the
+  // hidden one's place on the page.
+  let render-custom(id) = {
+    let found = customs.filter(c => c.at("id", default: -1) == id)
+    if found.len() > 0 {
+      let cs = found.first()
       let items = cs.at("entries", default: ())
       if items.len() > 0 {
         section(cs.at("title", default: ""))
@@ -391,7 +396,7 @@ const RENDERER: &str = r##"
   // order the six built-ins ship in, followed by every custom section.
   // One line on purpose: Typst ends a statement at the newline, so a leading
   // `+` on a continuation line parses as unary plus on an array.
-  let default-order = ("profile", "work", "education", "skills", "certificates", "organizations") + range(customs.len()).map(i => "custom" + str(i))
+  let default-order = ("profile", "work", "education", "skills", "certificates", "organizations") + customs.map(c => "custom" + str(c.at("id", default: 0)))
   let order = cv.at("order", default: default-order)
 
   for key in order {
@@ -548,8 +553,9 @@ fn fmt_measure(value: f32) -> String {
 }
 
 /// The key `render-cv`'s dispatch loop matches on for a built-in section.
-/// Custom sections are keyed positionally (`custom0`, `custom1`, …) instead,
-/// since they have no fixed name.
+/// Custom sections are keyed by their id (`custom7`) instead, since they have
+/// no fixed name — see the `order_keys` comment for why identity and not
+/// position.
 fn renderer_key(kind: SectionKind) -> Option<&'static str> {
     use SectionKind::*;
     Some(match kind {
@@ -704,25 +710,29 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
     // when the order differs from the shipped one — an untouched document then
     // produces exactly the source it produced before this existed.
     //
-    // `compose` emits custom sections already in document order, so the nth
-    // custom section in the order list is `custom{n}` in that array.
-    let mut custom_seen = 0usize;
+    // A custom section is named by its id (`custom7`), never counted to. The
+    // order list walks *every* section including the hidden ones, while the
+    // array beside it holds only the visible ones — so any scheme that
+    // counted would go off by one the moment a hidden custom section sat
+    // above a visible one, and put the survivor where the hidden one had been.
     let order_keys: Vec<String> = r
         .section_order
         .iter()
         .filter_map(|kind| match kind {
-            SectionKind::Custom(_) => {
-                let key = format!("custom{custom_seen}");
-                custom_seen += 1;
-                Some(key)
-            }
+            SectionKind::Custom(id) => Some(format!("custom{}", id.as_u32())),
             other => renderer_key(*other).map(|k| k.to_string()),
         })
         .collect();
+    // The renderer's own fallback, spelled the same way: the built-ins in
+    // their shipped order, then the custom sections it was actually handed.
     let default_order: Vec<String> = ResumeDoc::SECTIONS
         .iter()
         .filter_map(|k| renderer_key(*k).map(|s| s.to_string()))
-        .chain((0..custom_seen).map(|i| format!("custom{i}")))
+        .chain(
+            r.custom_sections
+                .iter()
+                .map(|cs| format!("custom{}", cs.id.as_u32())),
+        )
         .collect();
     if !order_keys.is_empty() && order_keys != default_order {
         s.push_str("  order: (");
@@ -758,6 +768,7 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
         s.push_str("  customSections: (\n");
         for cs in &r.custom_sections {
             s.push_str("    (\n");
+            s.push_str(&format!("      id: {},\n", cs.id.as_u32()));
             field(s, 6, "title", &cs.title);
             if !cs.entries.is_empty() {
                 s.push_str("      entries: (\n");
@@ -1751,24 +1762,27 @@ mod tests {
     /// matching — the document still compiles.
     #[test]
     fn custom_section_renders_and_compiles() {
-        use crate::resume::model::{ComposedCustomSection, CustomEntry};
+        use crate::resume::model::CustomEntry;
         use crate::typst_engine::TypstEngine;
 
+        // Built through the document rather than by hand: an id comes from
+        // `ResumeDoc`'s counter, and this is the path the app actually walks.
         let mut resume = Resume::default();
         resume.basics.name = "Test Person".into();
-        resume.custom_sections.push(ComposedCustomSection {
-            title: "Publications".into(),
-            entries: vec![CustomEntry {
-                title: "A Paper on Something".into(),
-                subtitle: "Journal of Examples".into(),
-                start_date: "2024".into(),
-                end_date: Default::default(),
-                url: "https://example.com/paper".into(),
-                highlights: vec!["Peer reviewed".into()],
-            }],
+        let mut doc = ResumeDoc::from_resume(resume, "Base");
+        let id = doc.add_custom_section("Publications");
+        let content = doc.custom_section_mut(id).unwrap().content.active_mut();
+        content.clear();
+        content.push(CustomEntry {
+            title: "A Paper on Something".into(),
+            subtitle: "Journal of Examples".into(),
+            start_date: "2024".into(),
+            end_date: Default::default(),
+            url: "https://example.com/paper".into(),
+            highlights: vec!["Peer reviewed".into()],
         });
 
-        let source = generate(&resume);
+        let source = generate(&doc.compose());
         assert!(source.contains("customSections"));
         assert!(source.contains("A Paper on Something"));
         assert!(source.contains("Publications"));
@@ -1825,6 +1839,95 @@ mod section_order_tests {
             education_at < work_at,
             "education must precede work in the emitted order: {order_line}"
         );
+    }
+
+    /// Hiding one custom section must not move another one.
+    ///
+    /// The renderer used to address custom sections by their **position** in
+    /// the emitted array, while the `order` list beside it is built by walking
+    /// every section including the hidden ones. The two walks agree right up
+    /// until a hidden custom section sits above a visible one — then the keys
+    /// are off by one, and the survivor is drawn at the hidden section's
+    /// place instead of its own. Nothing errored; the CV was just wrong.
+    ///
+    /// The invariant, stated so it cannot drift: hiding a section has to
+    /// render exactly like that section having nothing in it.
+    #[test]
+    fn hiding_a_custom_section_leaves_the_others_where_they_are() {
+        use crate::resume::model::CustomEntry;
+        use crate::typst_engine::TypstEngine;
+
+        // The document needs real content between the two custom sections:
+        // on an empty CV every other section renders nothing, so "first" and
+        // "last" collapse to the same place and a positional bug is invisible.
+        let seeded = || Resume {
+            basics: crate::resume::model::Basics {
+                name: "Sofiia Medvedenko".into(),
+                ..Default::default()
+            },
+            work: vec![crate::resume::model::Work {
+                name: "Acme".into(),
+                position: "Staff Engineer".into(),
+                ..Default::default()
+            }],
+            ..Resume::default()
+        };
+
+        let build = || {
+            let mut doc = ResumeDoc::from_resume(seeded(), "Base");
+            let upper = doc.add_custom_section("Talks");
+            let lower = doc.add_custom_section("Publications");
+            for (id, title) in [(upper, "A talk"), (lower, "A paper")] {
+                let content = doc.custom_section_mut(id).unwrap().content.active_mut();
+                content.clear();
+                content.push(CustomEntry {
+                    title: title.into(),
+                    ..Default::default()
+                });
+            }
+            // Off the default order, so the `order` list is actually emitted
+            // — that is the code path the keys are read on.
+            for _ in 0..doc.sections().len() {
+                doc.move_section(SectionKind::Custom(upper), -1);
+            }
+            (doc, upper, lower)
+        };
+
+        let pixels = |doc: &ResumeDoc| {
+            TypstEngine::new(generate(&doc.compose()))
+                .compile_to_pixels(1.0)
+                .expect("compiles")
+                .0
+                .rgba
+        };
+
+        let (mut hidden_doc, upper, lower) = build();
+        hidden_doc.set_hidden(SectionKind::Custom(upper), true);
+
+        let (mut emptied_doc, upper_b, _) = build();
+        emptied_doc
+            .custom_section_mut(upper_b)
+            .unwrap()
+            .content
+            .active_mut()
+            .clear();
+
+        assert!(
+            pixels(&hidden_doc) == pixels(&emptied_doc),
+            "hiding the section above moved the one below it — the renderer is \
+             counting custom sections instead of naming them"
+        );
+
+        // And the survivor is genuinely on the page, so the equality above
+        // cannot be satisfied by both documents drawing nothing.
+        let (mut both_gone, upper_c, lower_c) = build();
+        both_gone.set_hidden(SectionKind::Custom(upper_c), true);
+        both_gone.set_hidden(SectionKind::Custom(lower_c), true);
+        assert!(
+            pixels(&hidden_doc) != pixels(&both_gone),
+            "the surviving section drew nothing, so the comparison above proves nothing"
+        );
+        let _ = lower;
     }
 
     /// A custom section keeps its place in the order, and its renderer key

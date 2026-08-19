@@ -156,6 +156,15 @@ pub struct CustomEntry {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CustomSectionId(u32);
 
+impl CustomSectionId {
+    /// The number behind the id, for the one job that needs it: naming the
+    /// section in the generated Typst (`custom7`). Nothing else should care
+    /// what an id *is*.
+    pub fn as_u32(self) -> u32 {
+        self.0
+    }
+}
+
 /// A user-added section: a stable id, a user-editable title (the title lives
 /// on the section, never on the id — a preset holds selections, never
 /// content), and versioned content like every built-in section.
@@ -169,8 +178,16 @@ pub struct CustomSection {
 /// A custom section resolved to its active variant's entries — the shape
 /// [`Resume::compose`] emits for the renderer, mirroring how the six
 /// built-in sections are already flattened to their active content.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+///
+/// Deliberately not `Default`: an id is issued by [`ResumeDoc`]'s counter and
+/// a defaulted one would be `CustomSectionId(0)`, which is a real section's.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ComposedCustomSection {
+    /// The section's own id, carried through to the renderer so it is
+    /// addressed by identity rather than by where it happens to sit. Before
+    /// this the renderer indexed the array positionally, and hiding a custom
+    /// section that sat above another one moved the survivor into its place.
+    pub id: CustomSectionId,
     pub title: String,
     pub entries: Vec<CustomEntry>,
 }
@@ -2151,17 +2168,21 @@ impl ResumeDoc {
             // the renderer skips an empty section anyway. Filtering here would
             // make un-hiding lose the position it had.
             section_order: self.sections(),
-            // Emitted in the document's own order, not storage order, so the
-            // renderer's `custom0, custom1, …` indices line up with the
-            // `order` list `template.rs` writes beside them.
+            // Emitted in the document's own order, which is what the renderer
+            // falls back to when the document has not been reordered. Each
+            // one carries its id, so `order` names it rather than counting to
+            // it — see `ComposedCustomSection::id`.
             custom_sections: self
                 .sections()
                 .into_iter()
                 .filter_map(|kind| match kind {
-                    SectionKind::Custom(id) if visible(kind) => self.custom_section(id),
+                    SectionKind::Custom(id) if visible(kind) => {
+                        self.custom_section(id).map(|s| (id, s))
+                    }
                     _ => None,
                 })
-                .map(|s| ComposedCustomSection {
+                .map(|(id, s)| ComposedCustomSection {
+                    id,
                     title: s.title.clone(),
                     entries: s.content.active().clone(),
                 })
