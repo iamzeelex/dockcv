@@ -959,7 +959,8 @@ pub enum SkillsStyle {
     /// The default, and deliberately the shape every document had before this
     /// existed: a CV written last year renders byte-identically today.
     #[default]
-    Inline,
+    #[serde(alias = "inline")]
+    Rows,
     /// Each keyword in its own pill, the category leading them.
     ///
     /// What a reader scanning for a technology finds fastest, and the reason
@@ -982,7 +983,7 @@ pub enum SkillsStyle {
 
 impl SkillsStyle {
     pub const ALL: [SkillsStyle; 4] = [
-        SkillsStyle::Inline,
+        SkillsStyle::Rows,
         SkillsStyle::Bubbles,
         SkillsStyle::Grid,
         SkillsStyle::Compact,
@@ -991,7 +992,7 @@ impl SkillsStyle {
     /// What the picker shows.
     pub fn label(self) -> &'static str {
         match self {
-            SkillsStyle::Inline => "Inline",
+            SkillsStyle::Rows => "Rows",
             SkillsStyle::Bubbles => "Bubbles",
             SkillsStyle::Grid => "Grid",
             SkillsStyle::Compact => "Compact",
@@ -1001,11 +1002,203 @@ impl SkillsStyle {
     /// The word the generated Typst branches on.
     pub fn keyword(self) -> &'static str {
         match self {
-            SkillsStyle::Inline => "inline",
+            SkillsStyle::Rows => "rows",
             SkillsStyle::Bubbles => "bubbles",
             SkillsStyle::Grid => "grid",
             SkillsStyle::Compact => "compact",
         }
+    }
+}
+
+/// What goes between two keywords.
+///
+/// The reason this is a control at all: a Skills section is the densest text
+/// on a CV — a real one runs to sixty-odd terms — and a comma disappears
+/// between them, so the list reads as one long sentence.
+///
+/// Measured honestly: a rule is one character *wider* than a comma, so this
+/// buys scannability rather than space. The space comes from
+/// [`RowSpacing::Tight`] and from dropping the category mark; what this fixes
+/// is that sixty comma-separated terms are unreadable at any density.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillSeparator {
+    #[default]
+    Comma,
+    /// `a | b` — the densest of the four, and what the reference layouts use.
+    Rule,
+    /// `a · b`
+    Middot,
+    /// `a • b`
+    Bullet,
+}
+
+impl SkillSeparator {
+    pub const ALL: [SkillSeparator; 4] = [
+        SkillSeparator::Comma,
+        SkillSeparator::Rule,
+        SkillSeparator::Middot,
+        SkillSeparator::Bullet,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SkillSeparator::Comma => "a, b",
+            SkillSeparator::Rule => "a | b",
+            SkillSeparator::Middot => "a · b",
+            SkillSeparator::Bullet => "a • b",
+        }
+    }
+
+    /// The characters printed between two keywords, spacing included.
+    pub fn printed(self) -> &'static str {
+        match self {
+            SkillSeparator::Comma => ", ",
+            // Single spaces, not double. The first version padded these to
+            // `  |  ` and made the section *wider* than commas — it bought
+            // scannability and paid for it in the wrapping, which is the
+            // opposite of the point. One space each side still separates.
+            SkillSeparator::Rule => " | ",
+            SkillSeparator::Middot => " · ",
+            SkillSeparator::Bullet => " • ",
+        }
+    }
+}
+
+/// What follows a category name, before its keywords.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CategoryMark {
+    #[default]
+    Colon,
+    /// `Category — a, b`, which reads as a heading rather than a key.
+    Dash,
+    /// `(Category) a, b`
+    Bracket,
+    /// Nothing at all — the weight of the category carries it.
+    None,
+}
+
+impl CategoryMark {
+    pub const ALL: [CategoryMark; 4] = [
+        CategoryMark::Colon,
+        CategoryMark::Dash,
+        CategoryMark::Bracket,
+        CategoryMark::None,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            CategoryMark::Colon => "Name:",
+            CategoryMark::Dash => "Name —",
+            CategoryMark::Bracket => "(Name)",
+            CategoryMark::None => "Name",
+        }
+    }
+
+    /// `(before, after)` the category name.
+    pub fn wraps(self) -> (&'static str, &'static str) {
+        match self {
+            CategoryMark::Colon => ("", ":"),
+            CategoryMark::Dash => ("", " —"),
+            CategoryMark::Bracket => ("(", ")"),
+            CategoryMark::None => ("", ""),
+        }
+    }
+}
+
+/// How much air a Skills section leaves between its rows.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RowSpacing {
+    /// The old spacing.
+    #[default]
+    Spacious,
+    /// Half of it. Eight groups at spacious spacing cost most of a page.
+    Tight,
+}
+
+impl RowSpacing {
+    pub const ALL: [RowSpacing; 2] = [RowSpacing::Spacious, RowSpacing::Tight];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            RowSpacing::Spacious => "Spacious",
+            RowSpacing::Tight => "Tight",
+        }
+    }
+
+    /// Points between rows.
+    pub fn gap_pt(self) -> f32 {
+        match self {
+            RowSpacing::Spacious => 2.0,
+            RowSpacing::Tight => 0.5,
+        }
+    }
+}
+
+/// Everything about how the Skills section is set.
+///
+/// A struct rather than five fields on `LayoutSettings` because they belong
+/// together and TOML says so: `[layout.skills]` with five keys reads as one
+/// decision, `skills_separator = …` alongside `page_size` reads as debris.
+/// The cost is a migration, since documents already carry `skills = "inline"`
+/// — see the `Deserialize` impl, which accepts both shapes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct SkillsLayout {
+    pub style: SkillsStyle,
+    pub separator: SkillSeparator,
+    pub mark: CategoryMark,
+    pub spacing: RowSpacing,
+    /// Start each row with a bullet, so groups read as a list.
+    pub bullets: bool,
+}
+
+impl<'de> Deserialize<'de> for SkillsLayout {
+    /// Accepts the table this writes *and* the bare string that documents
+    /// written before the options existed carry (`skills = "inline"`).
+    ///
+    /// Without this every such document would fail to load — not fall back,
+    /// fail — because a string is not a table. A migration that loses the
+    /// user's chosen style would be quieter and worse.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Either {
+            JustTheStyle(SkillsStyle),
+            Whole {
+                #[serde(default)]
+                style: SkillsStyle,
+                #[serde(default)]
+                separator: SkillSeparator,
+                #[serde(default)]
+                mark: CategoryMark,
+                #[serde(default)]
+                spacing: RowSpacing,
+                #[serde(default)]
+                bullets: bool,
+            },
+        }
+
+        Ok(match Either::deserialize(deserializer)? {
+            Either::JustTheStyle(style) => SkillsLayout {
+                style,
+                ..SkillsLayout::default()
+            },
+            Either::Whole {
+                style,
+                separator,
+                mark,
+                spacing,
+                bullets,
+            } => SkillsLayout {
+                style,
+                separator,
+                mark,
+                spacing,
+                bullets,
+            },
+        })
     }
 }
 
@@ -1029,10 +1222,10 @@ pub struct LayoutSettings {
     /// it is *rendered*.
     #[serde(default)]
     pub date_format: DateFormat,
-    /// How the Skills section is arranged. `#[serde(default)]` so a document
+    /// How the Skills section is set. `#[serde(default)]` so a document
     /// written before this existed keeps the shape it had.
     #[serde(default)]
-    pub skills: SkillsStyle,
+    pub skills: SkillsLayout,
     /// Body text size as a percentage of the template's base size (10pt).
     /// 100 is the old hard-coded default; the layout rail's own readout
     /// (`docs/design/typst-controls.md` — "107%") is this same unit.
@@ -1049,7 +1242,7 @@ impl Default for LayoutSettings {
             page_size: PageSize::default(),
             font: DocumentFont::default(),
             date_format: DateFormat::default(),
-            skills: SkillsStyle::default(),
+            skills: SkillsLayout::default(),
             text_scale_pct: 100,
             leading_em: 0.62,
             margins: Margins::default(),

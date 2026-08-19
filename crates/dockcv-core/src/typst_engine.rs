@@ -267,6 +267,14 @@ impl PageGeometry {
 fn frame_content_bottom(frame: &Frame) -> Abs {
     let mut bottom = Abs::zero();
     for (pos, item) in frame.items() {
+        // A frame item can report an extent that is not a finite number —
+        // observed on a dense Skills section, where the measurement came back
+        // `inf` and would have reached the overflow chip as "+inf lines over".
+        // Which item does it is Typst's business; that this function only ever
+        // returns a real measurement is ours.
+        if !pos.y.to_pt().is_finite() {
+            continue;
+        }
         let extent = match item {
             FrameItem::Group(group) => {
                 if group.transform == Transform::identity() {
@@ -280,6 +288,9 @@ fn frame_content_bottom(frame: &Frame) -> Abs {
             FrameItem::Image(_, size, _) | FrameItem::Link(_, size) => size.y,
             FrameItem::Tag(_) => continue, // no visual extent
         };
+        if !extent.to_pt().is_finite() {
+            continue;
+        }
         bottom = bottom.max(pos.y + extent);
     }
     bottom
@@ -300,6 +311,11 @@ fn frame_content_top(frame: &Frame) -> Abs {
             FrameItem::Group(_) | FrameItem::Text(_) | FrameItem::Shape(..)
             | FrameItem::Image(..) | FrameItem::Link(..) => pos.y,
         };
+        // Same guard as `frame_content_bottom`: a non-finite candidate would
+        // win every `min` and make the whole page look like it starts nowhere.
+        if !candidate.to_pt().is_finite() {
+            continue;
+        }
         top = Some(top.map_or(candidate, |t: Abs| t.min(candidate)));
     }
     top.unwrap_or(Abs::zero())
@@ -1128,6 +1144,63 @@ mod font_tests {
                  scripts/subset-fonts.sh and re-run it, or the browser will \
                  silently set them in another face"
             );
+        }
+    }
+
+    /// The overflow chip does arithmetic on these numbers, so a non-finite
+    /// one reaches the user as "+inf lines over". It happened: a dense Skills
+    /// section measured `inf`, because some frame item reported an extent that
+    /// was not a real number and the walk trusted it.
+    ///
+    /// Asserted across arrangements that stress the layout differently, since
+    /// the one that broke looked like all the others from the outside.
+    #[test]
+    fn page_geometry_is_always_a_real_measurement() {
+        use crate::resume::model::{
+            CategoryMark, LayoutSettings, Resume, RowSpacing, SkillGroup, SkillSeparator,
+            SkillsLayout, SkillsStyle,
+        };
+        use crate::resume::template;
+
+        let resume = Resume {
+            skills: (0..8)
+                .map(|i| SkillGroup {
+                    name: format!("A rather long category name {i}"),
+                    keywords: (0..9).map(|k| format!("Technology {i}-{k}")).collect(),
+                })
+                .collect(),
+            ..Resume::default()
+        };
+
+        for style in SkillsStyle::ALL {
+            for spacing in RowSpacing::ALL {
+                let layout = LayoutSettings {
+                    skills: SkillsLayout {
+                        style,
+                        separator: SkillSeparator::Rule,
+                        mark: CategoryMark::Dash,
+                        spacing,
+                        bullets: true,
+                    },
+                    ..LayoutSettings::default()
+                };
+                let engine = TypstEngine::new(template::generate_with_layout(&resume, &layout));
+                let (_, geometry) = engine.compile_to_pixels(1.0).expect("compiles");
+
+                for (what, value) in [
+                    ("last_page_used_pt", geometry.last_page_used_pt),
+                    ("page_height_pt", geometry.page_height_pt),
+                    ("overflow_pt", geometry.overflow_pt),
+                    ("last_page_content_top_pt", geometry.last_page_content_top_pt),
+                ] {
+                    assert!(
+                        value.is_finite(),
+                        "{what} was {value} for {} / {}",
+                        style.label(),
+                        spacing.label()
+                    );
+                }
+            }
         }
     }
 

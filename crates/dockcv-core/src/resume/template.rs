@@ -135,23 +135,37 @@ const RENDERER: &str = r##"
   )
 
   let render-skills() = {
-  let skills = cv.at("skills", default: ())
-  if skills.len() > 0 {
+  // `skills` is the settings dict from the preamble; the section's own data
+  // is `groups`, named apart so the two cannot be confused.
+  let groups = cv.at("skills", default: ())
+  if groups.len() > 0 {
     section(heading("Skills", "Skills"))
 
     // A group with no name is a flat list — LinkedIn exports have no
-    // categories at all, and a CV need not invent them. Every style below
-    // has to survive that, which is why each one checks the label.
-    if skills-style == "compact" {
-      // Categories dropped entirely: one flowing list of everything, in the
-      // order the document holds it.
-      let all = skills.map(s => s.at("keywords", default: ())).flatten()
-      all.join(text(fill: muted, "  ·  "))
-      v(2pt)
-    } else if skills-style == "bubbles" {
-      for s in skills {
-        let label = s.at("name", default: "")
-        let kws = s.at("keywords", default: ())
+    // categories at all, and a CV need not invent one. Every branch below has
+    // to survive that, which is why each checks the label rather than
+    // assuming it.
+    let marked(label) = text(
+      weight: "bold",
+      skills.mark_before + label + skills.mark_after,
+    )
+    // The separator is drawn muted so it recedes: at sixty terms the rules
+    // are structure, not content, and printing them at full weight makes the
+    // section look like a table of pipes.
+    let joined(items) = items.join(text(fill: muted, skills.sep))
+    let lead = if skills.bullets { text(fill: muted, "• ") } else { none }
+
+    if skills.style == "compact" {
+      // Categories dropped: one flowing list, in document order. The densest
+      // arrangement there is, and honest for data that never had categories.
+      let all = groups.map(g => g.at("keywords", default: ())).flatten()
+      if lead != none { lead }
+      joined(all)
+      v(skills.gap)
+    } else if skills.style == "bubbles" {
+      for g in groups {
+        let label = g.at("name", default: "")
+        let kws = g.at("keywords", default: ())
         if kws.len() > 0 {
           // `hanging-indent` so a wrapped row of pills lines up under the
           // first pill rather than under the category.
@@ -159,32 +173,42 @@ const RENDERER: &str = r##"
             if label != "" { pill(label, strong: true); h(4pt) }
             kws.map(k => pill(k)).join(h(3pt))
           })
-          v(3pt)
+          v(skills.gap + 1pt)
         }
       }
-    } else if skills-style == "grid" {
+    } else if skills.style == "grid" {
       // Categories as a column: with several groups they line up, which is
-      // what makes this different from `inline`'s per-paragraph indent.
-      let rows = skills.filter(s => s.at("keywords", default: ()).len() > 0)
+      // what makes this different from `rows`, where each paragraph indents
+      // under its own category.
+      let rows = groups.filter(g => g.at("keywords", default: ()).len() > 0)
       grid(
         columns: (auto, 1fr),
         column-gutter: 12pt,
-        row-gutter: 5pt,
-        ..rows.map(s => (
-          text(weight: "bold", s.at("name", default: "")),
-          s.at("keywords", default: ()).join(", "),
+        row-gutter: skills.gap + 3pt,
+        ..rows.map(g => (
+          {
+            if lead != none { lead }
+            marked(g.at("name", default: ""))
+          },
+          joined(g.at("keywords", default: ())),
         )).flatten(),
       )
-      v(2pt)
+      v(skills.gap)
     } else {
-      for s in skills {
-        let label = s.at("name", default: "")
-        let kws = s.at("keywords", default: ()).join(", ")
-        if label == "" { kws } else {
-          grid(columns: (auto, 1fr), column-gutter: 8pt,
-            text(weight: "bold", label + ":"), kws)
+      // Rows: category and keywords in one paragraph, wrapping under a
+      // hanging indent so a long group does not start again at the margin
+      // and read as a new one.
+      for g in groups {
+        let label = g.at("name", default: "")
+        let kws = g.at("keywords", default: ())
+        if kws.len() > 0 {
+          par(hanging-indent: 1em, {
+            if lead != none { lead }
+            if label != "" { marked(label); h(0.35em) }
+            joined(kws)
+          })
+          v(skills.gap)
         }
-        v(2pt)
       }
     }
   }
@@ -325,13 +349,24 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
 #set text(font: "{font}", size: {size}pt, fill: rgb("#1a1a1a"))
 #set par(justify: true, leading: {leading}em)
 
-// How the Skills section arranges itself. A binding rather than a different
-// template: the document is one string, and branching inside it keeps every
-// other section byte-identical across the choice.
-#let skills-style = "{skills}"
+// How the Skills section is set. One dict rather than five bindings: they are
+// one decision, and the renderer reads them together.
+#let skills = (
+  style: "{skills_style}",
+  sep: "{skills_sep}",
+  mark_before: "{mark_before}",
+  mark_after: "{mark_after}",
+  gap: {skills_gap}pt,
+  bullets: {skills_bullets},
+)
 "##,
         font = layout.font.family(),
-        skills = layout.skills.keyword(),
+        skills_style = layout.skills.style.keyword(),
+        skills_sep = layout.skills.separator.printed(),
+        mark_before = layout.skills.mark.wraps().0,
+        mark_after = layout.skills.mark.wraps().1,
+        skills_gap = fmt_measure(layout.skills.spacing.gap_pt()),
+        skills_bullets = layout.skills.bullets,
         x = fmt_measure(layout.margins.x_mm),
         top = fmt_measure(layout.margins.top_mm),
         bottom = fmt_measure(layout.margins.bottom_mm),
@@ -690,11 +725,7 @@ fn string_array(out: &mut String, items: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-
-
     use crate::resume::model::{Margins, PageSize};
-
     /// A skills style is only real if it reaches the page. Every one of them
     /// **compiles**, and each produces a different number of laid-out items —
     /// asserting on the generated source would pass for a style the compiler
@@ -702,7 +733,7 @@ mod tests {
     /// was inert while every source-level test was green).
     #[test]
     fn every_skills_style_compiles_and_lays_out_differently() {
-        use crate::resume::model::SkillsStyle;
+        use crate::resume::model::{SkillsLayout, SkillsStyle};
         use crate::typst_engine::TypstEngine;
 
         let mut resume = Resume::default();
@@ -720,7 +751,10 @@ mod tests {
         let mut heights = Vec::new();
         for style in SkillsStyle::ALL {
             let layout = LayoutSettings {
-                skills: style,
+                skills: SkillsLayout {
+                    style,
+                    ..SkillsLayout::default()
+                },
                 ..LayoutSettings::default()
             };
             let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
@@ -736,14 +770,58 @@ mod tests {
         // from the default, or nothing was actually applied.
         let of = |s: SkillsStyle| heights.iter().find(|(k, _)| *k == s).unwrap().1;
         assert_ne!(
-            of(SkillsStyle::Inline),
+            of(SkillsStyle::Rows),
             of(SkillsStyle::Bubbles),
             "bubbles rendered identically to inline — the style never reached the page"
         );
         assert_ne!(
-            of(SkillsStyle::Inline),
+            of(SkillsStyle::Rows),
             of(SkillsStyle::Compact),
             "compact rendered identically to inline"
+        );
+    }
+
+    /// The point of the options: a Skills section with sixty terms is the
+    /// thing that pushes a CV onto a second page, and the dense settings have
+    /// to actually *be* denser on the laid-out page — not merely different.
+    ///
+    /// Measured in points of used page height, from the same geometry the
+    /// overflow chip reads, because "the source changed" would pass for
+    /// settings the compiler ignored (E-32).
+    #[test]
+    fn the_dense_settings_take_less_page_than_the_roomy_ones() {
+        use crate::resume::model::{CategoryMark, RowSpacing, SkillSeparator, SkillsLayout};
+        use crate::typst_engine::TypstEngine;
+
+        let mut resume = Resume::default();
+        resume.skills = (0..8)
+            .map(|i| crate::resume::model::SkillGroup {
+                name: format!("Category number {i}"),
+                keywords: (0..9).map(|k| format!("Technology {i}-{k}")).collect(),
+            })
+            .collect();
+
+        let used = |skills: SkillsLayout| {
+            let layout = LayoutSettings {
+                skills,
+                ..LayoutSettings::default()
+            };
+            let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
+            let (_, geometry) = engine.compile_to_pixels(1.0).expect("compiles");
+            geometry.page_count as f64 * 1000.0 + geometry.last_page_used_pt
+        };
+
+        let roomy = used(SkillsLayout::default());
+        let dense = used(SkillsLayout {
+            separator: SkillSeparator::Rule,
+            mark: CategoryMark::Dash,
+            spacing: RowSpacing::Tight,
+            ..SkillsLayout::default()
+        });
+
+        assert!(
+            dense < roomy,
+            "the dense settings used {dense} against {roomy} — they cost space instead of saving it"
         );
     }
 
@@ -753,7 +831,7 @@ mod tests {
     /// the bare-colon bug (E-36) wearing a new hat.
     #[test]
     fn every_skills_style_survives_a_group_with_no_category() {
-        use crate::resume::model::SkillsStyle;
+        use crate::resume::model::{SkillsLayout, SkillsStyle};
         use crate::typst_engine::TypstEngine;
 
         let mut resume = Resume::default();
@@ -764,7 +842,10 @@ mod tests {
 
         for style in SkillsStyle::ALL {
             let layout = LayoutSettings {
-                skills: style,
+                skills: SkillsLayout {
+                    style,
+                    ..SkillsLayout::default()
+                },
                 ..LayoutSettings::default()
             };
             let engine = TypstEngine::new(generate_with_layout(&resume, &layout));
@@ -939,10 +1020,6 @@ mod tests {
         let source = generate(&unnamed);
         let at = source.rfind("skills: (").expect("a skills array");
         assert!(source[at..].contains(r#"name: """#));
-        assert!(
-            RENDERER.contains(r#"if label == "" { kws }"#),
-            "the unnamed-group branch was removed from the renderer"
-        );
 
         for resume in [&named, &unnamed] {
             let engine = crate::typst_engine::TypstEngine::new(generate(resume));
@@ -951,6 +1028,51 @@ mod tests {
                 "skills must render either way"
             );
         }
+
+        // The actual bug (E-36) was a *printed* `:` in front of a list with no
+        // category, and neither the model nor the generated source can show
+        // that. The page can: with no name, the mark must make no difference
+        // at all, so rendering with a colon and with no mark has to produce
+        // the same pixels. This used to be a substring test against the
+        // renderer's source, which said nothing about the output and broke the
+        // moment the branch was rewritten with the same behaviour.
+        let pixels_with = |mark: crate::resume::model::CategoryMark| {
+            let layout = LayoutSettings {
+                skills: crate::resume::model::SkillsLayout {
+                    mark,
+                    ..Default::default()
+                },
+                ..LayoutSettings::default()
+            };
+            let engine =
+                crate::typst_engine::TypstEngine::new(generate_with_layout(&unnamed, &layout));
+            engine.compile_to_pixels(1.0).expect("compiles").0.rgba
+        };
+        assert_eq!(
+            pixels_with(crate::resume::model::CategoryMark::Colon),
+            pixels_with(crate::resume::model::CategoryMark::None),
+            "an unnamed group printed its mark — the bare colon is back"
+        );
+
+        // And with a name, the mark must change the page, or the control is
+        // decoration.
+        let named_pixels = |mark: crate::resume::model::CategoryMark| {
+            let layout = LayoutSettings {
+                skills: crate::resume::model::SkillsLayout {
+                    mark,
+                    ..Default::default()
+                },
+                ..LayoutSettings::default()
+            };
+            let engine =
+                crate::typst_engine::TypstEngine::new(generate_with_layout(&named, &layout));
+            engine.compile_to_pixels(1.0).expect("compiles").0.rgba
+        };
+        assert_ne!(
+            named_pixels(crate::resume::model::CategoryMark::Colon),
+            named_pixels(crate::resume::model::CategoryMark::Dash),
+            "the category mark never reached the page"
+        );
     }
 
     /// A certificate's link was emitted into the dictionary and dropped by the

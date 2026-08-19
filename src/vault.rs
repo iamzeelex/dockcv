@@ -817,17 +817,17 @@ mod tests {
 
         let loaded = super::load(&path).expect("an older document still loads");
         assert_eq!(
-            loaded.layout.skills,
-            SkillsStyle::Inline,
+            loaded.layout.skills.style,
+            SkillsStyle::Rows,
             "an older file must keep rendering the way it did"
         );
 
         // And a chosen style round-trips.
         let mut doc = loaded;
-        doc.layout.skills = SkillsStyle::Bubbles;
+        doc.layout.skills.style = SkillsStyle::Bubbles;
         super::save(&doc, &path).expect("save");
         assert_eq!(
-            super::load(&path).expect("reload").layout.skills,
+            super::load(&path).expect("reload").layout.skills.style,
             SkillsStyle::Bubbles
         );
 

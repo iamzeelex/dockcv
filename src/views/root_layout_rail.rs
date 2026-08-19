@@ -38,7 +38,8 @@ use dockcv_ui_components::{GroupBox,
 };
 
 use crate::resume::model::{
-    DateFormat, DocumentFont, LayoutSettings, PageSize, SectionKind, SkillsStyle, TrimCandidate,
+    CategoryMark, DateFormat, DocumentFont, LayoutSettings, PageSize, ResumeDoc, RowSpacing,
+    SectionKind, SkillSeparator, SkillsLayout, SkillsStyle, TrimCandidate,
 };
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -127,87 +128,180 @@ impl Root {
             .w(px(RAIL_WIDTH))
             .flex()
             .flex_col()
-            .gap(px(16.0))
-            .px(px(18.0))
-            .py(px(20.0))
             .bg(theme.surface)
             .border_l_1()
             .border_color(theme.border)
             .shadow_lg()
+            // The heading stays put; the controls scroll under it. Before this
+            // the whole rail was one column with no overflow, so on a short
+            // window — or simply once Sections added four more controls —
+            // everything past the fold was drawn outside the rail and could
+            // not be reached at all. A control you cannot scroll to is a
+            // control that does not exist.
             .child(
                 div()
+                    .flex_none()
+                    .px(px(18.0))
+                    .pt(px(20.0))
+                    .pb(px(12.0))
                     .text_style(TextStyle::eyebrow())
                     .text_color(theme.text_subtle)
                     .child(TextStyle::eyebrow().apply_case("Layout")),
             )
-            // Grouped rather than listed. Five controls in a flat column read
-            // as five unrelated switches; they are three decisions — how the
-            // type looks, how the sheet is cut, and how dates print. At 220px
-            // there is no room to lay a label beside its control, so the
-            // structure has to come from grouping instead of from rows.
             .child(
-                GroupBox::new()
-                    .title(self.rail_group_title(cx, "Typography"))
-                    .child(self.font_row(cx, layout.font))
-                    .child(self.text_scale_row(cx, &layout)),
-            )
-            .child(
-                GroupBox::new()
-                    .title(self.rail_group_title(cx, "Page"))
-                    .child(self.page_size_row(cx, layout.page_size))
-                    .child(self.margins_row(cx, &layout)),
-            )
-            .child(
-                GroupBox::new()
-                    .title(self.rail_group_title(cx, "Dates"))
-                    .child(self.date_format_row(cx, layout.date_format)),
-            )
-            // Sections: how a section arranges what is inside it, as opposed
-            // to the document-wide decisions above. Skills is the one that
-            // needed it most — a CV's technologies are what a reader scans
-            // for, and a comma list is the slowest possible way to present
-            // them. Other sections get their own controls here as they grow
-            // choices worth having.
-            .child(
-                GroupBox::new()
-                    .title(self.rail_group_title(cx, "Sections"))
-                    .child(self.skills_style_row(cx, layout.skills)),
+                div()
+                    .id("layout-rail-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .flex()
+                    .flex_col()
+                    .gap(px(16.0))
+                    .px(px(18.0))
+                    .pb(px(20.0))
+                    // Grouped rather than listed. Nine controls in a flat
+                    // column read as nine unrelated switches; they are four
+                    // decisions — how the type looks, how the sheet is cut,
+                    // how dates print, and how a section arranges itself. At
+                    // 220px there is no room to lay a label beside its
+                    // control, so the structure has to come from grouping
+                    // instead of from rows.
+                    .child(
+                        GroupBox::new()
+                            .title(self.rail_group_title(cx, "Typography"))
+                            .child(self.font_row(cx, layout.font))
+                            .child(self.text_scale_row(cx, &layout)),
+                    )
+                    .child(
+                        GroupBox::new()
+                            .title(self.rail_group_title(cx, "Page"))
+                            .child(self.page_size_row(cx, layout.page_size))
+                            .child(self.margins_row(cx, &layout)),
+                    )
+                    .child(
+                        GroupBox::new()
+                            .title(self.rail_group_title(cx, "Dates"))
+                            .child(self.date_format_row(cx, layout.date_format)),
+                    )
+                    // Sections: how a section arranges what is inside it, as
+                    // opposed to the document-wide decisions above. Skills
+                    // needed it most — a CV's technologies are what a reader
+                    // scans for, and this document spends most of a page on
+                    // them. Other sections get controls here as they grow
+                    // choices worth having.
+                    .child(
+                        GroupBox::new()
+                            .title(self.rail_group_title(cx, "Sections"))
+                            .child(self.skills_rows(cx, layout.skills)),
+                    ),
             )
     }
 
-    /// How the Skills section arranges itself.
+    /// How the Skills section is set — five decisions, because it is the
+    /// densest text on a CV and the one most likely to cost a page.
     ///
-    /// Notably **not** a proficiency control: the model stores no level, and
-    /// a row of five-star ratings assembled from nothing is the invented
-    /// metric US-14 exists to forbid. Every option here is a different
-    /// arrangement of words the user typed.
-    fn skills_style_row(&self, cx: &mut Context<Self>, active: SkillsStyle) -> impl IntoElement {
-        let theme = cx.theme().clone();
-        let root = cx.weak_entity();
+    /// Notably **not** a proficiency control. The model stores no level, and a
+    /// row of bars assembled from nothing is the invented metric US-14 exists
+    /// to forbid — the reference layouts that offer one are reading a field
+    /// their model has and ours does not. Where a person wants to say it, they
+    /// type it: `Expert: Python` is a keyword like any other.
+    fn skills_rows(&self, cx: &mut Context<Self>, skills: SkillsLayout) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
-            .gap(px(7.0))
-            .child(self.rail_label(cx, "Skills"))
+            .gap(px(9.0))
+            .child(self.skills_pick(
+                cx,
+                "Layout",
+                "layout-skills-style",
+                skills.style.label(),
+                SkillsStyle::ALL
+                    .iter()
+                    .map(|s| (s.label(), *s == skills.style, *s))
+                    .collect(),
+                |doc, style| doc.layout.skills.style = style,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Separator",
+                "layout-skills-sep",
+                skills.separator.label(),
+                SkillSeparator::ALL
+                    .iter()
+                    .map(|s| (s.label(), *s == skills.separator, *s))
+                    .collect(),
+                |doc, sep| doc.layout.skills.separator = sep,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Category",
+                "layout-skills-mark",
+                skills.mark.label(),
+                CategoryMark::ALL
+                    .iter()
+                    .map(|m| (m.label(), *m == skills.mark, *m))
+                    .collect(),
+                |doc, mark| doc.layout.skills.mark = mark,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Row spacing",
+                "layout-skills-spacing",
+                skills.spacing.label(),
+                RowSpacing::ALL
+                    .iter()
+                    .map(|s| (s.label(), *s == skills.spacing, *s))
+                    .collect(),
+                |doc, spacing| doc.layout.skills.spacing = spacing,
+            ))
+            .child(self.skills_pick(
+                cx,
+                "Row marker",
+                "layout-skills-bullets",
+                if skills.bullets { "Bullet" } else { "None" },
+                vec![("None", !skills.bullets, false), ("Bullet", skills.bullets, true)],
+                |doc, bullets| doc.layout.skills.bullets = bullets,
+            ))
+    }
+
+    /// One labelled dropdown, since the Skills group needs five of them and
+    /// five hand-written copies is five places for one of them to drift.
+    fn skills_pick<T: Copy + 'static>(
+        &self,
+        cx: &mut Context<Self>,
+        label: &'static str,
+        id: &'static str,
+        current: &str,
+        options: Vec<(&'static str, bool, T)>,
+        apply: fn(&mut ResumeDoc, T),
+    ) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let root = cx.weak_entity();
+        let current = SharedString::from(current.to_string());
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(5.0))
+            .child(self.rail_label(cx, label))
             .child(
-                Button::new("layout-skills")
+                Button::new(id)
                     .cursor_pointer()
                     .ghost()
                     .w_full()
                     .justify_between()
-                    .label(active.label())
+                    .label(current)
                     .icon(IconName::ChevronDown)
                     .border_1()
                     .border_color(theme.border)
                     .dropdown_menu(move |mut menu, _window, _cx| {
-                        for style in SkillsStyle::ALL {
+                        for (text, checked, value) in options.clone() {
                             let root = root.clone();
                             menu = menu.item(
-                                PopupMenuItem::new(style.label())
-                                    .checked(style == active)
+                                PopupMenuItem::new(text)
+                                    .checked(checked)
                                     .on_click(move |_ev, window, cx| {
                                         let _ = root.update(cx, |this, cx| {
-                                            this.doc.layout.skills = style;
+                                            apply(&mut this.doc, value);
                                             this.after_layout_change(window, cx);
                                         });
                                     }),
