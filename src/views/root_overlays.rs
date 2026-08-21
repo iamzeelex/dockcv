@@ -6,7 +6,7 @@ use gpui::{
     IntoElement, PinchEvent, SharedString, TouchPhase, Window,
 };
 
-use super::root_layout_rail::{MAX_ZOOM_PCT, MIN_ZOOM_PCT};
+use super::root_preview_chrome::{MAX_ZOOM_PCT, MIN_ZOOM_PCT};
 use dockcv_ui_components::{CHROME_HEIGHT, 
     Button, ButtonExt, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, TextField, SANS,
 };
