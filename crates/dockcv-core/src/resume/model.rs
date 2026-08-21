@@ -1492,6 +1492,32 @@ pub struct SectionOverrides {
     /// document — a CV with no section headings at all is not a CV.
     #[serde(default)]
     pub no_heading: bool,
+
+    // One `Option` per *field* rather than one per struct. Overriding a whole
+    // `HeadingLayout` would mean that choosing a style for one section quietly
+    // pins its capitalisation and alignment too — and then changing the
+    // document's capitalisation would visibly skip the section the user had
+    // only ever restyled. Per field, "Skills is set in a rule" stays true and
+    // stays *only* that.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_style: Option<HeadingStyle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_case: Option<HeadingCase>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_align: Option<HeaderAlign>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta_position: Option<MetaPosition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta_order: Option<MetaOrder>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitle: Option<Emphasis>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Emphasis>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bullet: Option<BulletGlyph>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indent_body: Option<bool>,
 }
 
 impl SectionOverrides {
@@ -1499,6 +1525,43 @@ impl SectionOverrides {
     /// write a line of defaults to disk — see the struct's own comment.
     pub fn is_empty(self) -> bool {
         self == Self::default()
+    }
+
+    /// Whether this section departs from the document's heading at all — the
+    /// question the generated Typst asks before emitting anything for it.
+    pub fn touches_heading(self) -> bool {
+        self.heading_style.is_some() || self.heading_case.is_some() || self.heading_align.is_some()
+    }
+
+    /// The same question for a dated entry.
+    pub fn touches_entries(self) -> bool {
+        self.meta_position.is_some()
+            || self.meta_order.is_some()
+            || self.subtitle.is_some()
+            || self.meta.is_some()
+            || self.bullet.is_some()
+            || self.indent_body.is_some()
+    }
+
+    /// This section's heading, resolved against the document's.
+    pub fn headings(self, document: HeadingLayout) -> HeadingLayout {
+        HeadingLayout {
+            style: self.heading_style.unwrap_or(document.style),
+            case: self.heading_case.unwrap_or(document.case),
+            align: self.heading_align.unwrap_or(document.align),
+        }
+    }
+
+    /// This section's dated entries, resolved against the document's.
+    pub fn entries(self, document: EntryLayout) -> EntryLayout {
+        EntryLayout {
+            meta_position: self.meta_position.unwrap_or(document.meta_position),
+            meta_order: self.meta_order.unwrap_or(document.meta_order),
+            subtitle: self.subtitle.unwrap_or(document.subtitle),
+            meta: self.meta.unwrap_or(document.meta),
+            bullet: self.bullet.unwrap_or(document.bullet),
+            indent_body: self.indent_body.unwrap_or(document.indent_body),
+        }
     }
 }
 
@@ -2035,6 +2098,17 @@ impl ResumeDoc {
     /// Whether `section` prints a heading above it.
     pub fn prints_heading(&self, section: SectionKind) -> bool {
         !self.section_overrides(section).no_heading
+    }
+
+    /// `section`'s heading, with the document's values wherever it does not
+    /// depart from them.
+    pub fn headings_for(&self, section: SectionKind) -> HeadingLayout {
+        self.section_overrides(section).headings(self.layout.headings)
+    }
+
+    /// `section`'s dated entries, resolved the same way.
+    pub fn entries_for(&self, section: SectionKind) -> EntryLayout {
+        self.section_overrides(section).entries(self.layout.entries)
     }
 
     /// Show or hide `section`'s heading, leaving the section itself in place.

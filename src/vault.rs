@@ -1176,9 +1176,37 @@ mod tests {
         assert!(!back.prints_heading(SectionKind::Profile));
         assert!(back.prints_heading(SectionKind::Work));
 
+        // A per-field departure survives the disk too, and only the field that
+        // departed is written — the rest stay absent so they keep following.
+        let mut doc = back;
+        doc.set_section_overrides(
+            SectionKind::Skills,
+            crate::resume::model::SectionOverrides {
+                heading_style: Some(crate::resume::model::HeadingStyle::Boxed),
+                ..doc.section_overrides(SectionKind::Skills)
+            },
+        );
+        let text = super::to_toml(&doc).expect("serializes");
+        assert!(text.contains("heading_style"), "{text}");
+        assert!(
+            !text.contains("heading_case"),
+            "a field nobody set was written, so it has stopped following the document"
+        );
+        let back: ResumeDoc = toml::from_str(&text).expect("round-trips");
+        assert_eq!(
+            back.headings_for(SectionKind::Skills).style,
+            crate::resume::model::HeadingStyle::Boxed
+        );
+        assert_eq!(
+            back.headings_for(SectionKind::Skills).case,
+            back.layout.headings.case,
+            "the section stopped following the document on a field it never set"
+        );
+
         // Following the document again removes the row rather than storing a
         // row of defaults — "follow the document" is the absence of an entry.
         let mut doc = back;
+        doc.set_section_overrides(SectionKind::Skills, Default::default());
         doc.set_heading_printed(SectionKind::Profile, true);
         assert!(doc.section_overrides.is_empty());
         let text = super::to_toml(&doc).expect("serializes");

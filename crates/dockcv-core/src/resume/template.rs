@@ -16,7 +16,11 @@
 //! blocks, keeping the author's emphasis markup — see `neutralize` for the
 //! syntax that is escaped instead, and why.
 
-use crate::resume::model::{DateFormat, LayoutSettings, Resume, ResumeDoc, SectionKind, TypeSizes};
+use std::fmt::Write as _;
+
+use crate::resume::model::{
+    DateFormat, LayoutSettings, Resume, ResumeDoc, SectionKind, SectionOverrides, TypeSizes,
+};
 
 /// The renderer body, written in Typst: helper functions plus `render-cv`.
 /// Page/text setup is *not* here — it is generated per-document by
@@ -27,6 +31,28 @@ const RENDERER: &str = r##"
 #let muted = luma(110)
 // Light enough to read as a hairline rather than as a second row of type.
 #let hairline = 0.5pt + luma(150)
+
+// A section's own layout, or the document's where it does not depart.
+//
+// `section-layout` holds only the sections that differ, and each one it holds
+// is already fully resolved — no merging happens here. The alternative, a
+// sparse dict merged against the defaults in Typst, puts the resolution rules
+// in the one place they cannot be unit-tested.
+#let heading-of(key) = section-layout.at(key, default: (:)).at(
+  "heading",
+  default: (style: heading-style, case: heading-case, align: heading-align),
+)
+#let entry-of(key) = section-layout.at(key, default: (:)).at(
+  "entry",
+  default: (
+    position: entry-meta-position,
+    order: entry-meta-order,
+    subtitle: entry-subtitle,
+    meta: entry-meta,
+    bullet: entry-bullet,
+    indent: entry-indent,
+  ),
+)
 
 // The bar above each section. Takes the section's own key, because printing
 // a heading at all is a per-section decision (`no-heading`) — most CVs that
@@ -42,36 +68,37 @@ const RENDERER: &str = r##"
   // document with a gap.
   v(12pt, weak: true)
 } else {
-  let words = if heading-case == "upper" { upper(title) } else { title }
+  let h = heading-of(key)
+  let words = if h.case == "upper" { upper(title) } else { title }
   let body = text(
     weight: "bold",
     size: size-heading,
     // Letter-spacing is a decision about capitals — it is what stops a run of
     // them setting solid. On mixed case it only loosens the word.
-    tracking: if heading-case == "upper" { 1pt } else { 0pt },
+    tracking: if h.case == "upper" { 1pt } else { 0pt },
     words,
   )
-  let al = if heading-align == "left" { left } else { center }
+  let al = if h.align == "left" { left } else { center }
 
-  if heading-style == "band" {
+  if h.style == "band" {
     block(
       width: 100%, above: 12pt, below: 6pt,
       fill: luma(238), inset: (x: 8pt, y: 4pt), radius: 2pt,
       align(al, body),
     )
-  } else if heading-style == "boxed" {
+  } else if h.style == "boxed" {
     block(
       width: 100%, above: 12pt, below: 6pt,
       stroke: hairline, inset: (x: 8pt, y: 4pt), radius: 2pt,
       align(al, body),
     )
-  } else if heading-style == "rule" {
+  } else if h.style == "rule" {
     block(width: 100%, above: 12pt, below: 6pt, {
       align(al, body)
       v(2pt)
       line(length: 100%, stroke: hairline)
     })
-  } else if heading-style == "rule-to-margin" {
+  } else if h.style == "rule-to-margin" {
     // The rule takes whatever the words leave, so this style costs no line of
     // its own — on a full CV that is a section's worth of page back.
     block(width: 100%, above: 12pt, below: 6pt, grid(
@@ -79,7 +106,7 @@ const RENDERER: &str = r##"
       align: (left + horizon, horizon),
       body, line(length: 100%, stroke: hairline),
     ))
-  } else if heading-style == "underline" {
+  } else if h.style == "underline" {
     block(width: 100%, above: 12pt, below: 6pt,
       align(al, underline(offset: 3pt, stroke: hairline, body)))
   } else {
@@ -111,38 +138,38 @@ const RENDERER: &str = r##"
 // `trailing` arrives in document order (date, location); `entry-meta-order`
 // decides whether it prints that way. Empty parts are dropped by `meta`, so a
 // job with no location reads the same under either order.
-#let entry(title, subtitle, trailing) = {
-  let ordered = if entry-meta-order == "location-first" { trailing.rev() } else { trailing }
+#let entry(el, title, subtitle, trailing) = {
+  let ordered = if el.order == "location-first" { trailing.rev() } else { trailing }
   let head = text(size: size-entry, {
     text(weight: "bold", title)
-    if subtitle != "" { styled(entry-subtitle, ", " + subtitle) }
+    if subtitle != "" { styled(el.subtitle, ", " + subtitle) }
   })
-  if entry-meta-position == "below" {
+  if el.position == "below" {
     // Its own line: the title is never squeezed by a long date range, at the
     // cost of a line per entry.
     head
     linebreak()
-    styled(entry-meta, meta(ordered))
+    styled(el.meta, meta(ordered))
   } else {
     grid(
       columns: (1fr, auto), column-gutter: 10pt,
       align: (left + bottom, right + bottom),
       head,
-      styled(entry-meta, meta(ordered)),
+      styled(el.meta, meta(ordered)),
     )
   }
 }
 
 // An entry's bullets. The marker is a setting, and `indent` decides whether
 // the block sits under the title or starts again at the margin.
-#let bullets(items) = {
-  let inner = if entry-bullet == "" {
+#let bullets(el, items) = {
+  let inner = if el.bullet == "" {
     // No marker: the indent is what says "these belong to the entry above".
     for item in items [#pad(left: 0.4em, item)]
   } else {
-    list(marker: [#entry-bullet], ..items)
+    list(marker: [#el.bullet], ..items)
   }
-  if entry-indent { pad(left: 0.9em, inner) } else { inner }
+  if el.indent { pad(left: 0.9em, inner) } else { inner }
 }
 
 #let render-cv(cv) = {
@@ -208,17 +235,19 @@ const RENDERER: &str = r##"
   let work = cv.at("work", default: ())
   if work.len() > 0 {
     section("work", heading("Work", "Work Experience"))
+    let el = entry-of("work")
     for w in work {
       entry(
+        el,
         w.at("position", default: ""),
         w.at("name", default: ""),
         (daterange(w.at("startDate", default: ""), w.at("endDate", default: "")),
          w.at("location", default: "")),
       )
       let s = w.at("summary", default: none)
-      if s != none { if entry-indent { pad(left: 0.9em, s) } else { s } }
+      if s != none { if el.indent { pad(left: 0.9em, s) } else { s } }
       let hs = w.at("highlights", default: ())
-      if hs.len() > 0 { bullets(hs) }
+      if hs.len() > 0 { bullets(el, hs) }
       v(4pt)
     }
   }
@@ -228,14 +257,16 @@ const RENDERER: &str = r##"
   let edu = cv.at("education", default: ())
   if edu.len() > 0 {
     section("education", heading("Education", "Education"))
+    let el = entry-of("education")
     for e in edu {
       entry(
+        el,
         e.at("studyType", default: ""),
         e.at("institution", default: ""),
         (daterange(e.at("startDate", default: ""), e.at("endDate", default: "")),),
       )
       let hs = e.at("highlights", default: ())
-      if hs.len() > 0 { bullets(hs) }
+      if hs.len() > 0 { bullets(el, hs) }
       v(3pt)
     }
   }
@@ -336,8 +367,10 @@ const RENDERER: &str = r##"
   let certs = cv.at("certificates", default: ())
   if certs.len() > 0 {
     section("certificates", heading("Certificates", "Certifications"))
+    let el = entry-of("certificates")
     for c in certs {
       entry(
+        el,
         c.at("name", default: ""),
         c.at("issuer", default: ""),
         (c.at("date", default: ""),),
@@ -356,14 +389,16 @@ const RENDERER: &str = r##"
   let orgs = cv.at("volunteer", default: ())
   if orgs.len() > 0 {
     section("organizations", heading("Organizations", "Organizations"))
+    let el = entry-of("organizations")
     for o in orgs {
       entry(
+        el,
         o.at("position", default: ""),
         o.at("organization", default: ""),
         (daterange(o.at("startDate", default: ""), o.at("endDate", default: "")),),
       )
       let hs = o.at("highlights", default: ())
-      if hs.len() > 0 { bullets(hs) }
+      if hs.len() > 0 { bullets(el, hs) }
       v(3pt)
     }
   }
@@ -384,14 +419,16 @@ const RENDERER: &str = r##"
       let items = cs.at("entries", default: ())
       if items.len() > 0 {
         section("custom" + str(id), cs.at("title", default: ""))
+        let el = entry-of("custom" + str(id))
         for it in items {
           entry(
+            el,
             it.at("title", default: ""),
             it.at("subtitle", default: ""),
             (daterange(it.at("startDate", default: ""), it.at("endDate", default: "")),),
           )
           let hs = it.at("highlights", default: ())
-          if hs.len() > 0 { bullets(hs) }
+          if hs.len() > 0 { bullets(el, hs) }
           let u = it.at("url", default: "")
           if u != "" { meta((u,)) }
           v(3pt)
@@ -455,6 +492,7 @@ pub fn generate_with_layout(resume: &Resume, layout: &LayoutSettings) -> String 
     let mut out = String::with_capacity(8192);
     page_setup_into(&mut out, &layout.sanitized());
     no_heading_into(&mut out, resume);
+    section_layout_into(&mut out, resume, &layout.sanitized());
     out.push('\n');
     out.push_str(RENDERER);
     out.push_str("\n#let cv = ");
@@ -472,22 +510,81 @@ pub fn generate_with_layout(resume: &Resume, layout: &LayoutSettings) -> String 
 /// touched emits `#let no-heading = ()` and renders as it always did.
 fn no_heading_into(out: &mut String, resume: &Resume) {
     out.push_str("#let no-heading = (");
-    for (kind, overrides) in &resume.section_overrides {
-        if !overrides.no_heading {
-            continue;
-        }
-        match kind {
-            SectionKind::Custom(id) => {
-                out.push_str(&format!("\"custom{}\", ", id.as_u32()));
-            }
-            other => {
-                if let Some(key) = renderer_key(*other) {
-                    out.push_str(&format!("\"{key}\", "));
-                }
-            }
+    for (kind, _) in resume
+        .section_overrides
+        .iter()
+        .filter(|(_, o)| o.no_heading)
+    {
+        if let Some(key) = section_layout_key(*kind) {
+            let _ = write!(out, "\"{key}\", ");
         }
     }
     out.push_str(")\n");
+}
+
+/// The sections that depart from the document's layout, each already resolved.
+///
+/// Only departures are emitted, and only the halves that departed: a section
+/// that restyles its heading gets a `heading` entry and no `entry` one, so the
+/// renderer's fallback keeps carrying the document's own value. A document
+/// nobody has customised emits `#let section-layout = (:)` and renders exactly
+/// as it did.
+///
+/// Resolution happens here rather than in Typst on purpose — the merge rules
+/// are the interesting part, and in Typst they would sit in the one place the
+/// test suite cannot reach.
+fn section_layout_into(out: &mut String, resume: &Resume, layout: &LayoutSettings) {
+    let rows: Vec<(String, SectionOverrides)> = resume
+        .section_overrides
+        .iter()
+        .filter(|(_, o)| o.touches_heading() || o.touches_entries())
+        .filter_map(|(kind, o)| section_layout_key(*kind).map(|key| (key, *o)))
+        .collect();
+
+    if rows.is_empty() {
+        out.push_str("#let section-layout = (:)\n");
+        return;
+    }
+
+    out.push_str("#let section-layout = (\n");
+    for (key, overrides) in rows {
+        let _ = writeln!(out, "  \"{key}\": (");
+        if overrides.touches_heading() {
+            let h = overrides.headings(layout.headings);
+            let _ = writeln!(
+                out,
+                "    heading: (style: \"{}\", case: \"{}\", align: \"{}\"),",
+                h.style.keyword(),
+                h.case.keyword(),
+                h.align.keyword()
+            );
+        }
+        if overrides.touches_entries() {
+            let e = overrides.entries(layout.entries);
+            let _ = writeln!(
+                out,
+                "    entry: (position: \"{}\", order: \"{}\", subtitle: \"{}\", \
+                 meta: \"{}\", bullet: \"{}\", indent: {}),",
+                e.meta_position.keyword(),
+                e.meta_order.keyword(),
+                e.subtitle.keyword(),
+                e.meta.keyword(),
+                e.bullet.marker(),
+                e.indent_body
+            );
+        }
+        out.push_str("  ),\n");
+    }
+    out.push_str(")\n");
+}
+
+/// The key a section is addressed by in `section-layout` and `no-heading` —
+/// the renderer key for a built-in, the id for a custom one.
+fn section_layout_key(kind: SectionKind) -> Option<String> {
+    match kind {
+        SectionKind::Custom(id) => Some(format!("custom{}", id.as_u32())),
+        other => renderer_key(other).map(|k| k.to_string()),
+    }
 }
 
 fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
@@ -1201,31 +1298,208 @@ mod tests {
     /// Letter-spacing belongs to the capitals, so dropping the capitals has
     /// to drop it too — otherwise "Work Experience" comes out gappy and the
     /// case control looks broken rather than chosen.
+    ///
+    /// Isolated on the page rather than in the source: the title is typed in
+    /// capitals already, so `upper()` is a no-op and the **only** thing left
+    /// between the two renders is the tracking. An earlier version of this
+    /// test matched the renderer's source text and broke the moment the branch
+    /// was rewritten with identical behaviour (E-36).
     #[test]
     fn tracking_follows_the_capitals() {
-        use crate::resume::model::{HeadingCase, HeadingLayout};
+        use crate::resume::model::{HeadingCase, Work};
+        use crate::typst_engine::TypstEngine;
 
-        let source = |case: HeadingCase| {
-            generate_with_layout(
-                &Resume::default(),
-                &LayoutSettings {
-                    headings: HeadingLayout {
-                        case,
-                        ..Default::default()
-                    },
-                    ..LayoutSettings::default()
-                },
-            )
-        };
-        assert!(source(HeadingCase::Upper).contains(r#"#let heading-case = "upper""#));
-        assert!(source(HeadingCase::AsTyped).contains(r#"#let heading-case = "as-typed""#));
-        // The renderer decides from that one binding, so the branch it drives
-        // is what has to stay honest.
-        assert!(
-            source(HeadingCase::Upper)
-                .contains(r#"tracking: if heading-case == "upper" { 1pt } else { 0pt },"#),
-            "tracking is no longer tied to the case"
+        let mut doc = ResumeDoc::from_resume(
+            Resume {
+                work: vec![Work {
+                    name: "Acme".into(),
+                    position: "Staff Engineer".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            "Base",
         );
+        doc.set_section_title(SectionKind::Work, "WORK");
+
+        let pixels = |case: HeadingCase| {
+            let mut doc = doc.clone();
+            doc.layout.headings.case = case;
+            // `generate_for`, not `generate`: the latter renders under the
+            // *default* layout, so a test that sets one and calls it proves
+            // nothing about the setting.
+            TypstEngine::new(generate_for(&doc))
+                .compile_to_pixels(1.0)
+                .expect("compiles")
+                .0
+                .rgba
+        };
+
+        assert!(
+            pixels(HeadingCase::Upper) != pixels(HeadingCase::AsTyped),
+            "a heading already typed in capitals rendered the same either way — \
+             the letter-spacing is no longer tied to the case"
+        );
+    }
+
+    /// A per-section departure has to reach the page, and reach **only** that
+    /// section — the whole risk of this feature is a setting that leaks.
+    #[test]
+    fn a_sections_own_heading_reaches_the_page_and_leaves_the_others_alone() {
+        use crate::resume::model::{Education, HeadingStyle, SectionOverrides, Work};
+        use crate::typst_engine::TypstEngine;
+
+        let doc = ResumeDoc::from_resume(
+            Resume {
+                work: vec![Work {
+                    name: "Acme".into(),
+                    position: "Staff Engineer".into(),
+                    ..Default::default()
+                }],
+                education: vec![Education {
+                    institution: "Tallaght".into(),
+                    study_type: "M.Sc.".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            "Base",
+        );
+
+        let pixels = |d: &ResumeDoc| {
+            TypstEngine::new(generate_for(d))
+                .compile_to_pixels(1.0)
+                .expect("compiles")
+                .0
+                .rgba
+        };
+        let base = pixels(&doc);
+
+        // One section restyled.
+        let mut one = doc.clone();
+        one.set_section_overrides(
+            SectionKind::Work,
+            SectionOverrides {
+                heading_style: Some(HeadingStyle::Plain),
+                ..Default::default()
+            },
+        );
+        assert!(pixels(&one) != base, "the override never reached the page");
+
+        // The same style applied to the whole document must differ from the
+        // one-section version — otherwise "only that section" is unproven.
+        let mut all = doc.clone();
+        all.layout.headings.style = HeadingStyle::Plain;
+        assert!(
+            pixels(&one) != pixels(&all),
+            "restyling one section rendered the same as restyling every section"
+        );
+
+        // And the section that was left alone is genuinely untouched: turning
+        // the *document* to the same style leaves Work where the override
+        // already put it, so only Education can account for the difference.
+        let mut both = one.clone();
+        both.layout.headings.style = HeadingStyle::Plain;
+        assert_eq!(
+            pixels(&both),
+            pixels(&all),
+            "an override and the document agreeing did not converge"
+        );
+    }
+
+    /// Overrides are per **field**, not per struct.
+    ///
+    /// A section that departs on style must still follow the document on
+    /// capitalisation — otherwise restyling one section silently freezes two
+    /// other decisions, and the next document-wide change skips it for
+    /// reasons the user never chose.
+    #[test]
+    fn overriding_one_field_does_not_pin_the_others() {
+        use crate::resume::model::{HeadingCase, HeadingStyle, SectionOverrides, Work};
+        use crate::typst_engine::TypstEngine;
+
+        let mut doc = ResumeDoc::from_resume(
+            Resume {
+                work: vec![Work {
+                    name: "Acme".into(),
+                    position: "Staff Engineer".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            "Base",
+        );
+        doc.set_section_overrides(
+            SectionKind::Work,
+            SectionOverrides {
+                heading_style: Some(HeadingStyle::Plain),
+                ..Default::default()
+            },
+        );
+
+        // The model's own answer…
+        assert_eq!(doc.headings_for(SectionKind::Work).style, HeadingStyle::Plain);
+        assert_eq!(doc.headings_for(SectionKind::Work).case, HeadingCase::Upper);
+        doc.layout.headings.case = HeadingCase::AsTyped;
+        assert_eq!(
+            doc.headings_for(SectionKind::Work).case,
+            HeadingCase::AsTyped,
+            "the section stopped following the document on a field it never set"
+        );
+        assert_eq!(
+            doc.headings_for(SectionKind::Work).style,
+            HeadingStyle::Plain,
+            "the field it did set was lost"
+        );
+
+        // …and the page's, since a resolution that never reaches Typst is not
+        // a resolution (E-32).
+        let pixels = |d: &ResumeDoc| {
+            TypstEngine::new(generate_for(d))
+                .compile_to_pixels(1.0)
+                .expect("compiles")
+                .0
+                .rgba
+        };
+        let following = pixels(&doc);
+        let mut pinned = doc.clone();
+        pinned.layout.headings.case = HeadingCase::Upper;
+        assert!(
+            following != pixels(&pinned),
+            "the document's capitalisation did not move the overridden section"
+        );
+    }
+
+    /// An untouched document emits an empty table and is unchanged.
+    #[test]
+    fn no_overrides_means_an_empty_table_and_the_document_it_always_was() {
+        use crate::resume::model::{SectionOverrides, HeadingStyle};
+
+        let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        let before = generate_for(&doc);
+        assert!(before.contains("#let section-layout = (:)"));
+
+        doc.set_section_overrides(
+            SectionKind::Skills,
+            SectionOverrides {
+                heading_style: Some(HeadingStyle::Boxed),
+                ..Default::default()
+            },
+        );
+        let with = generate_for(&doc);
+        assert!(with.contains("\"skills\": ("), "{with}");
+        assert!(
+            with.contains("heading: (style: \"boxed\""),
+            "the resolved heading is not in the source"
+        );
+        assert!(
+            !with.contains("    entry: ("),
+            "a section that only restyled its heading pinned its entries too"
+        );
+
+        // Back to following the document, byte for byte.
+        doc.set_section_overrides(SectionKind::Skills, SectionOverrides::default());
+        assert_eq!(generate_for(&doc), before);
     }
 
     /// The header controls, held to the same two rules as the entry ones:
