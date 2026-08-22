@@ -96,6 +96,10 @@ impl Shell {
                     .render_applications_insights(cx, applications)
                     .into_any_element(),
             })
+            // The detail drawer sits over the board and under the pin sheet:
+            // picking a CV is a decision made *from* the drawer, so it has to
+            // land on top of it.
+            .children(self.render_application_detail(cx))
             // Last child, so it paints over the board rather than under it.
             .children(self.render_pin_pick_sheet(cx))
     }
@@ -803,6 +807,15 @@ impl Shell {
         let mut applications = vault::load_applications(&vault);
         remove_at(&mut applications.entries, index);
         save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
+
+        // The detail panel holds an index into the list that just shifted.
+        // Left alone it would go on editing whichever card slid into the gap.
+        if let Some(detail) = self.applications_detail.as_mut() {
+            match super::applications_detail::index_after_removal(detail.index, index) {
+                Some(moved) => detail.index = moved,
+                None => self.applications_detail = None,
+            }
+        }
         cx.notify();
     }
 }

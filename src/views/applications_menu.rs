@@ -81,6 +81,22 @@ pub(super) fn application_menu(
             pinned,
         } = &ctx;
 
+        // First, and separated from the moves: everything below rearranges the
+        // card, this is the one item that opens what the card is *about*.
+        {
+            let shell_open = shell.clone();
+            let index = *index;
+            menu = menu
+                .item(
+                    PopupMenuItem::new("Details…").on_click(move |_ev, window, cx| {
+                        let _ = shell_open.update(cx, |this, cx| {
+                            this.open_application_detail(index, window, cx);
+                        });
+                    }),
+                )
+                .separator();
+        }
+
         for (other_status, other_title) in COLUMNS {
             if other_status == *status {
                 continue;

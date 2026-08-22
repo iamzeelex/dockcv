@@ -130,6 +130,9 @@ pub struct Shell {
     /// How far back Insights counts. Not persisted: it is a way of looking,
     /// not a property of the vault.
     pub(super) applications_period: super::applications_funnel::Period,
+    /// The open detail panel, if any — the fields it is editing live with it,
+    /// so closing the panel drops them.
+    pub(super) applications_detail: Option<super::applications_detail::ApplicationDetail>,
     /// Which column's compose box is open, if any. `None` means the board
     /// shows no inline "new application" form.
     pub(super) applications_compose_target: Option<ApplicationStatus>,
@@ -206,6 +209,7 @@ impl Shell {
             applications_view: ApplicationsView::default(),
             applications_sort: ApplicationSort::default(),
             applications_period: Default::default(),
+            applications_detail: None,
             applications_compose_target: None,
             applications_compose_company: None,
             applications_compose_role: None,
