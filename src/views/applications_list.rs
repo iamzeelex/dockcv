@@ -16,7 +16,7 @@
 //! board so switching views never silently re-orders the same rows.
 
 use gpui::prelude::*;
-use gpui::{div, px, ClickEvent, Context, IntoElement, SharedString};
+use gpui::{div, px, relative, ClickEvent, Context, IntoElement, SharedString};
 
 use dockcv_ui_components::{
     ContextMenuExt, EmptyState, Icon, IconName, Sizable, Table, TableBody, TableCell, TableHead,
@@ -33,19 +33,52 @@ use super::applications_data::{
 };
 use super::shell::Shell;
 
+/// A column: what it is called, the sort a header click selects, and how much
+/// of the row it gets.
+struct Column {
+    title: &'static str,
+    sort: Option<ApplicationSort>,
+    /// Share of the row's width, against the other columns' shares.
+    grow: f32,
+    /// Where it stops shrinking. Past this the table scrolls sideways rather
+    /// than squeezing every column into uselessness together.
+    min_px: f32,
+}
+
 /// The columns, and the sort each header click selects.
 ///
 /// A header is only clickable when there is a sort that means it — "Next step"
 /// and "CV" have no ordering anyone would ask for, so they are labels. A
 /// header that looks sortable and is not is worse than one that never offered.
-const COLUMNS: [(&str, Option<ApplicationSort>); 6] = [
-    ("Company", Some(ApplicationSort::Company)),
-    ("Stage", Some(ApplicationSort::Stage)),
-    ("CV sent", None),
-    ("Applied", Some(ApplicationSort::Applied)),
-    ("Next step", None),
-    ("Last touched", Some(ApplicationSort::Stale)),
+///
+/// **Weights, not equal shares.** Upstream hands every cell the same
+/// `flex_basis`, so "Applied" — six characters of date — was given exactly as
+/// much of the row as a company and a role stacked together, and the columns
+/// with something to say were the first to run out of room. The numbers below
+/// are read off what each column actually holds.
+const COLUMNS: [Column; 6] = [
+    Column { title: "Company",      sort: Some(ApplicationSort::Company), grow: 2.6, min_px: 150.0 },
+    Column { title: "Stage",        sort: Some(ApplicationSort::Stage),   grow: 1.2, min_px: 96.0 },
+    Column { title: "CV sent",      sort: None,                           grow: 2.4, min_px: 120.0 },
+    Column { title: "Applied",      sort: Some(ApplicationSort::Applied), grow: 1.0, min_px: 76.0 },
+    Column { title: "Next step",    sort: None,                           grow: 2.2, min_px: 120.0 },
+    Column { title: "Last touched", sort: Some(ApplicationSort::Stale),   grow: 1.2, min_px: 92.0 },
 ];
+
+/// Give a header or a cell its column's width.
+///
+/// Both `TableHead` and `TableCell` apply their own `flex_basis` first and
+/// `refine_style` last, so what is set here wins — and setting it in one
+/// function is what keeps the header from drifting out of step with the body
+/// it labels.
+fn sized<T: Styled>(el: T, col: &Column) -> T {
+    el.flex_basis(relative(col.grow))
+        .min_w(px(col.min_px))
+        // The defect this whole column table exists to fix: a cell shrinks,
+        // but its *contents* had no width to shrink to, so a long "CV sent"
+        // painted straight across "Applied" and the row became unreadable.
+        .overflow_hidden()
+}
 
 impl Shell {
     pub(super) fn render_applications_list(
@@ -85,13 +118,15 @@ impl Shell {
         }
 
         let active_sort = self.applications_sort;
-        let header = TableRow::new().children(COLUMNS.into_iter().map(|(title, sort)| {
-            let head = TableHead::new();
+        let header = TableRow::new().children(COLUMNS.iter().map(|col| {
+            let (title, sort) = (col.title, col.sort);
+            let head = sized(TableHead::new(), col);
             let is_active = sort == Some(active_sort);
 
             let mut label = div()
                 .flex()
                 .items_center()
+                .min_w_0()
                 .gap(px(4.0))
                 .text_style(TextStyle::label())
                 .text_color(if is_active { theme.text } else { theme.text_muted })
@@ -131,6 +166,10 @@ impl Shell {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
+            // Once every column is at its floor the table is as narrow as it
+            // can honestly be. A window narrower than that scrolls to the rest
+            // rather than clipping it out of existence.
+            .overflow_x_scroll()
             .px(px(34.0))
             .pb(px(28.0))
             .child(
@@ -157,8 +196,12 @@ impl Shell {
         let identity = div()
             .flex()
             .flex_col()
+            .w_full()
+            .min_w_0()
             .child(
                 div()
+                    .w_full()
+                    .truncate()
                     .text_style(TextStyle::control())
                     .text_color(theme.text)
                     .child(company),
@@ -166,6 +209,8 @@ impl Shell {
             .when(!app.role.trim().is_empty(), |el| {
                 el.child(
                     div()
+                        .w_full()
+                        .truncate()
                         .text_style(TextStyle::meta())
                         .text_color(theme.text_muted)
                         .child(app.role.clone()),
@@ -211,8 +256,12 @@ impl Shell {
             }
         };
 
+        // `w_full` so `truncate` has a width to cut against, and one ellipsis
+        // rather than a second column's worth of overpainted text.
         let muted = |text: SharedString| {
             div()
+                .w_full()
+                .truncate()
                 .text_style(TextStyle::meta())
                 .text_color(theme.text_muted)
                 .child(text)
@@ -223,13 +272,15 @@ impl Shell {
             // user who lives in the list is not sent back to the board to move
             // a card. Right-click rather than a per-row button: the list is
             // dense, and six columns plus a control is five columns of data.
-            .child(TableCell::new().child(
+            .child(sized(TableCell::new(), &COLUMNS[0]).child(
                 // The list gets the board card's whole menu, on right-click:
                 // a user who lives here should never be sent back to the board
                 // to move a card. A per-row `···` button would be a seventh
                 // column of chrome on a table that is already six of data.
                 div()
                     .id(SharedString::from(format!("apps-row-{index}")))
+                    .w_full()
+                    .min_w_0()
                     .context_menu(application_menu(MenuContext::of(
                         cx.weak_entity(),
                         index,
@@ -237,11 +288,11 @@ impl Shell {
                     )))
                     .child(identity),
             ))
-            .child(TableCell::new().child(stage))
-            .child(TableCell::new().child(muted(cv)))
-            .child(TableCell::new().child(muted(applied)))
-            .child(TableCell::new().child(muted(next)))
-            .child(TableCell::new().child(muted(touched)))
+            .child(sized(TableCell::new(), &COLUMNS[1]).child(stage))
+            .child(sized(TableCell::new(), &COLUMNS[2]).child(muted(cv)))
+            .child(sized(TableCell::new(), &COLUMNS[3]).child(muted(applied)))
+            .child(sized(TableCell::new(), &COLUMNS[4]).child(muted(next)))
+            .child(sized(TableCell::new(), &COLUMNS[5]).child(muted(touched)))
     }
 }
 
@@ -252,5 +303,36 @@ fn status_label(status: ApplicationStatus) -> &'static str {
         ApplicationStatus::Interviewing => "Interviewing",
         ApplicationStatus::Offer => "Offer",
         ApplicationStatus::Rejected => "Rejected",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::COLUMNS;
+
+    /// Every column has to be reachable in a window someone actually uses.
+    ///
+    /// The floors exist so a narrow window scrolls instead of squeezing six
+    /// columns into illegibility — but a table whose floor is wider than the
+    /// pane is one that *always* scrolls sideways, which is the same defect
+    /// wearing a different hat. This is the budget: adding a seventh column
+    /// means taking the room from somewhere, deliberately.
+    #[test]
+    fn the_table_fits_a_window_someone_would_open() {
+        let floor: f32 = COLUMNS.iter().map(|c| c.min_px).sum();
+        assert!(
+            floor <= 700.0,
+            "the list cannot be drawn under {floor}px without scrolling sideways"
+        );
+    }
+
+    /// Weights are shares of what is left over, so one that is zero or
+    /// negative would collapse its column the moment there is room to spare.
+    #[test]
+    fn every_column_asks_for_a_share_of_the_row() {
+        for col in COLUMNS.iter() {
+            assert!(col.grow > 0.0, "{} asks for no width", col.title);
+            assert!(col.min_px > 0.0, "{} has no floor", col.title);
+        }
     }
 }
