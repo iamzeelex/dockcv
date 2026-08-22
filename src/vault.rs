@@ -567,6 +567,20 @@ pub fn today_iso() -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// The date `days` ago, as `YYYY-MM-DD`.
+///
+/// Same clock and same algorithm as [`today_iso`], so a window counted back
+/// from today and the dates it is compared against cannot disagree about what
+/// day it is.
+pub fn iso_days_ago(days: i64) -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (y, m, d) = civil_from_days((secs / 86_400) as i64 - days);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
 pub(crate) fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -754,7 +768,7 @@ mod tests {
         // And a word we *do* understand is still written from the enum, so a
         // card moved on the board writes where it was moved to.
         let mut applications = super::load_applications(&dir);
-        applications.entries[0].advance_to(crate::resume::model::ApplicationStatus::Offer);
+        applications.entries[0].advance_to(crate::resume::model::ApplicationStatus::Offer, "2026-08-21");
         super::save_applications(&dir, &applications).expect("save");
         let text = std::fs::read_to_string(super::applications_path(&dir)).expect("read back");
         assert!(text.contains("status = \"offer\""), "got:\n{text}");
@@ -1214,6 +1228,45 @@ mod tests {
             !text.contains("section_overrides"),
             "an emptied table must not be written"
         );
+    }
+
+    /// Stage history has to survive the disk, and a board written before it
+    /// existed has to load without gaining an empty one in every card.
+    #[test]
+    fn stage_history_round_trips_and_old_boards_gain_no_key() {
+        use crate::resume::model::{Application, ApplicationStatus, Applications};
+
+        let mut board = Applications {
+            entries: vec![Application {
+                company: "Acme".into(),
+                created: "2026-06-01".into(),
+                ..Default::default()
+            }],
+        };
+        let text = toml::to_string_pretty(&board).expect("serializes");
+        assert!(
+            !text.contains("history"),
+            "a card that has never moved must carry no history table"
+        );
+
+        board.entries[0].advance_to(ApplicationStatus::Applied, "2026-06-10");
+        board.entries[0].advance_to(ApplicationStatus::Interviewing, "2026-07-02");
+        let text = toml::to_string_pretty(&board).expect("serializes");
+        let back: Applications = toml::from_str(&text).expect("round-trips");
+
+        let history = &back.entries[0].history;
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].at, "2026-06-10");
+        assert_eq!(history[0].to, "applied");
+        assert_eq!(history[1].to, "interviewing");
+        // The word is what round-trips, exactly as `status` does — so a stage
+        // this build does not know is not silently rewritten on the way back.
+        assert_eq!(
+            back.entries[0].stage_before(1),
+            ApplicationStatus::Applied,
+            "the stage before a move is the one the previous move landed on"
+        );
+        assert_eq!(back.entries[0].stage_before(0), ApplicationStatus::Wishlist);
     }
 
     /// Renaming is a file move, so the two failure modes that matter are

@@ -127,6 +127,9 @@ pub struct Shell {
     /// The order the board's columns and the list both use. One setting for
     /// both, so switching views never silently re-orders the same rows.
     pub(super) applications_sort: ApplicationSort,
+    /// How far back Insights counts. Not persisted: it is a way of looking,
+    /// not a property of the vault.
+    pub(super) applications_period: super::applications_funnel::Period,
     /// Which column's compose box is open, if any. `None` means the board
     /// shows no inline "new application" form.
     pub(super) applications_compose_target: Option<ApplicationStatus>,
@@ -202,6 +205,7 @@ impl Shell {
             applications_search: None,
             applications_view: ApplicationsView::default(),
             applications_sort: ApplicationSort::default(),
+            applications_period: Default::default(),
             applications_compose_target: None,
             applications_compose_company: None,
             applications_compose_role: None,

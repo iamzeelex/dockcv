@@ -376,3 +376,266 @@ mod tests {
         assert_eq!(funnel.interview_rate(), Some(50.0));
     }
 }
+
+/// What one stage did over a window of time.
+///
+/// A cohort, not a snapshot: `entered` counts the moves *into* this stage that
+/// happened inside the window, and `advanced` counts how many of exactly those
+/// later reached something deeper. The onward move is counted **whenever it
+/// happened**, inside the window or after it — a cohort judged only on what it
+/// did before an arbitrary cut-off would make the most recent month look like
+/// a disaster every time, which is an artefact of the question and not a fact
+/// about the search.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct StageFlow {
+    pub stage: ApplicationStatus,
+    pub entered: usize,
+    pub advanced: usize,
+}
+
+/// The stages a card passed through, oldest first, as (date, stage).
+///
+/// The wishlist is prepended from `created` rather than stored: a card starts
+/// there, so recording it would be one fact in two places (see
+/// `Application::history`).
+fn timeline(app: &Application) -> Vec<(&str, ApplicationStatus)> {
+    let mut steps: Vec<(&str, ApplicationStatus)> = Vec::with_capacity(app.history.len() + 1);
+    if !app.created.is_empty() {
+        steps.push((app.created.as_str(), ApplicationStatus::Wishlist));
+    }
+    for change in &app.history {
+        if let Some(stage) = ApplicationStatus::from_word(&change.to) {
+            steps.push((change.at.as_str(), stage));
+        }
+    }
+    steps
+}
+
+/// Applications whose stage history is provably incomplete.
+///
+/// A card that has moved but recorded nothing predates the history field — it
+/// is sitting somewhere past the wishlist with no account of how it got there.
+/// A card still *on* the wishlist with no history has simply never moved,
+/// which is not missing data. Distinguishing the two is what lets Insights
+/// report a real gap instead of implying every quiet card is one.
+pub(super) fn missing_history(applications: &Applications) -> usize {
+    applications
+        .entries
+        .iter()
+        .filter(|a| a.history.is_empty() && a.status() != ApplicationStatus::Wishlist)
+        .count()
+}
+
+/// Movement through every stage between `from` and `to`, inclusive.
+///
+/// ISO dates compare lexicographically, which is the whole reason the vault
+/// stores them that way.
+pub(super) fn stage_flow(applications: &Applications, from: &str, to: &str) -> Vec<StageFlow> {
+    const STAGES: [ApplicationStatus; 5] = [
+        ApplicationStatus::Wishlist,
+        ApplicationStatus::Applied,
+        ApplicationStatus::Interviewing,
+        ApplicationStatus::Offer,
+        ApplicationStatus::Rejected,
+    ];
+    let mut entered = [0usize; 5];
+    let mut advanced = [0usize; 5];
+
+    for app in &applications.entries {
+        let steps = timeline(app);
+        for (i, (at, stage)) in steps.iter().enumerate() {
+            if *at < from || *at > to {
+                continue;
+            }
+            let Some(slot) = STAGES.iter().position(|s| s == stage) else {
+                continue;
+            };
+            entered[slot] += 1;
+
+            // Deeper *later*, by the model's own ordering. `Rejected` has no
+            // depth, so an application cannot advance out of it and nothing
+            // advances into it — a rejection is an outcome, not a stage on
+            // the way somewhere.
+            let here = stage.depth();
+            let went_on = steps[i + 1..].iter().any(|(_, later)| {
+                matches!((later.depth(), here), (Some(l), Some(h)) if l > h)
+            });
+            if went_on {
+                advanced[slot] += 1;
+            }
+        }
+    }
+
+    STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, stage)| StageFlow {
+            stage: *stage,
+            entered: entered[i],
+            advanced: advanced[i],
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod stage_flow_tests {
+    use super::*;
+
+    fn app(created: &str, moves: &[(&str, ApplicationStatus)]) -> Application {
+        let mut a = Application {
+            created: created.into(),
+            ..Default::default()
+        };
+        for (at, stage) in moves {
+            a.advance_to(*stage, at);
+        }
+        a
+    }
+
+    fn apps(list: Vec<Application>) -> Applications {
+        Applications { entries: list }
+    }
+
+    /// The window selects the move, not the card. A card created in June and
+    /// interviewed in August contributes to June's wishlist and August's
+    /// interviews, and to neither the other way round.
+    #[test]
+    fn a_move_is_counted_in_the_month_it_happened() {
+        let board = apps(vec![app(
+            "2026-06-01",
+            &[
+                ("2026-06-10", ApplicationStatus::Applied),
+                ("2026-08-04", ApplicationStatus::Interviewing),
+            ],
+        )]);
+
+        let june = stage_flow(&board, "2026-06-01", "2026-06-30");
+        let by = |flows: &[StageFlow], s: ApplicationStatus| {
+            flows.iter().find(|f| f.stage == s).unwrap().entered
+        };
+        assert_eq!(by(&june, ApplicationStatus::Wishlist), 1);
+        assert_eq!(by(&june, ApplicationStatus::Applied), 1);
+        assert_eq!(by(&june, ApplicationStatus::Interviewing), 0);
+
+        let august = stage_flow(&board, "2026-08-01", "2026-08-31");
+        assert_eq!(by(&august, ApplicationStatus::Wishlist), 0);
+        assert_eq!(by(&august, ApplicationStatus::Applied), 0);
+        assert_eq!(by(&august, ApplicationStatus::Interviewing), 1);
+    }
+
+    /// A cohort is judged on what it eventually did, not on what it had done
+    /// by the edge of the window — otherwise the most recent month always
+    /// reads as a catastrophe, which says more about the question than about
+    /// the search.
+    #[test]
+    fn advancing_counts_even_when_it_happens_after_the_window() {
+        let board = apps(vec![app(
+            "2026-06-01",
+            &[
+                ("2026-06-10", ApplicationStatus::Applied),
+                ("2026-08-04", ApplicationStatus::Interviewing),
+            ],
+        )]);
+        let june = stage_flow(&board, "2026-06-01", "2026-06-30");
+        let applied = june
+            .iter()
+            .find(|f| f.stage == ApplicationStatus::Applied)
+            .unwrap();
+        assert_eq!(applied.entered, 1);
+        assert_eq!(
+            applied.advanced, 1,
+            "the August interview did not credit the June application"
+        );
+    }
+
+    /// A rejection is an outcome, not a deeper stage. Nothing advances out of
+    /// it, and reaching it is not advancing.
+    #[test]
+    fn a_rejection_is_not_progress() {
+        let board = apps(vec![app(
+            "2026-06-01",
+            &[
+                ("2026-06-10", ApplicationStatus::Applied),
+                ("2026-06-20", ApplicationStatus::Rejected),
+            ],
+        )]);
+        let flows = stage_flow(&board, "2026-06-01", "2026-06-30");
+        let get = |s| flows.iter().find(|f| f.stage == s).unwrap();
+        assert_eq!(get(ApplicationStatus::Applied).advanced, 0);
+        assert_eq!(get(ApplicationStatus::Rejected).entered, 1);
+        assert_eq!(get(ApplicationStatus::Rejected).advanced, 0);
+    }
+
+    /// Dropping a card back where it already was is not a move. Without this
+    /// the counts measure how often the board was fidgeted with.
+    #[test]
+    fn re_dropping_a_card_in_its_own_column_records_nothing() {
+        let mut a = app("2026-06-01", &[("2026-06-10", ApplicationStatus::Applied)]);
+        assert_eq!(a.history.len(), 1);
+        a.advance_to(ApplicationStatus::Applied, "2026-06-11");
+        assert_eq!(a.history.len(), 1, "a no-op move was recorded as a move");
+
+        // A real move back, however, happened and is recorded.
+        a.advance_to(ApplicationStatus::Wishlist, "2026-06-12");
+        assert_eq!(a.history.len(), 2);
+    }
+
+    /// Cards written before this field existed have to be *reported*, not
+    /// quietly counted as zero. A card past the wishlist with no history is
+    /// provably missing its account; a card still on the wishlist with none
+    /// has simply never moved, and that is not a gap.
+    #[test]
+    fn only_cards_that_moved_without_recording_it_count_as_missing() {
+        let board = apps(vec![
+            Application {
+                status_word: ApplicationStatus::Interviewing.word().into(),
+                ..Default::default()
+            },
+            Application::default(),
+            app("2026-06-01", &[("2026-06-10", ApplicationStatus::Applied)]),
+        ]);
+        assert_eq!(missing_history(&board), 1);
+    }
+}
+
+/// How far back Insights looks.
+///
+/// Fixed windows rather than a date picker: the question is "how is the search
+/// going", and nobody asks it about an arbitrary fortnight. Each one is
+/// counted from today, so the answer moves with the calendar rather than going
+/// stale the day after it was chosen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum Period {
+    #[default]
+    AllTime,
+    Days30,
+    Days90,
+    Days365,
+}
+
+impl Period {
+    pub(super) const ALL: [Period; 4] = [
+        Period::AllTime,
+        Period::Days30,
+        Period::Days90,
+        Period::Days365,
+    ];
+
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Period::AllTime => "All time",
+            Period::Days30 => "Last 30 days",
+            Period::Days90 => "Last 90 days",
+            Period::Days365 => "Last year",
+        }
+    }
+
+    pub(super) fn days(self) -> Option<i64> {
+        match self {
+            Period::AllTime => None,
+            Period::Days30 => Some(30),
+            Period::Days90 => Some(90),
+            Period::Days365 => Some(365),
+        }
+    }
+}

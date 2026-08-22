@@ -560,3 +560,18 @@ mod sort_tests {
         assert_eq!(r[0].0, 1);
     }
 }
+
+/// A stage's printed name.
+///
+/// One definition, because there were three: two board-order tables and a
+/// private helper in the list, each free to disagree with the others about
+/// what a column is called. `const` so the order tables can still be consts.
+pub(super) const fn status_title(status: ApplicationStatus) -> &'static str {
+    match status {
+        ApplicationStatus::Wishlist => "Wishlist",
+        ApplicationStatus::Applied => "Applied",
+        ApplicationStatus::Interviewing => "Interviewing",
+        ApplicationStatus::Offer => "Offer",
+        ApplicationStatus::Rejected => "Rejected",
+    }
+}

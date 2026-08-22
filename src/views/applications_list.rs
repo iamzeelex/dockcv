@@ -23,13 +23,13 @@ use dockcv_ui_components::{
     TableHeader, TableRow, Tag,
 };
 
-use crate::resume::model::{Application, ApplicationStatus, Applications};
+use crate::resume::model::{Application, Applications};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use super::applications_card::column_tint;
 use super::applications_menu::{application_menu, MenuContext};
 use super::applications_data::{
-    matches_query, next_step_caption, short_date, sort_rows, ApplicationSort,
+    matches_query, next_step_caption, short_date, sort_rows, status_title, ApplicationSort,
 };
 use super::shell::Shell;
 
@@ -225,7 +225,7 @@ impl Shell {
             .py(px(2.0))
             .rounded(px(5.0))
             .text_style(TextStyle::chip())
-            .child(status_label(app.status()));
+            .child(status_title(app.status()));
 
         let cv: SharedString = match (app.preset.trim(), app.source_doc.as_deref()) {
             ("", None) => "—".into(),
@@ -296,15 +296,6 @@ impl Shell {
     }
 }
 
-fn status_label(status: ApplicationStatus) -> &'static str {
-    match status {
-        ApplicationStatus::Wishlist => "Wishlist",
-        ApplicationStatus::Applied => "Applied",
-        ApplicationStatus::Interviewing => "Interviewing",
-        ApplicationStatus::Offer => "Offer",
-        ApplicationStatus::Rejected => "Rejected",
-    }
-}
 
 #[cfg(test)]
 mod tests {

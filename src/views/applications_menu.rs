@@ -16,6 +16,7 @@ use dockcv_ui_components::{PopupMenu, PopupMenuItem};
 
 use crate::resume::model::{Application, ApplicationStatus};
 
+use super::applications_data::status_title;
 use super::confirm;
 use super::shell::Shell;
 
@@ -52,11 +53,17 @@ impl MenuContext {
 
 /// The columns a card can be moved to, in board order.
 const COLUMNS: [(ApplicationStatus, &str); 5] = [
-    (ApplicationStatus::Wishlist, "Wishlist"),
-    (ApplicationStatus::Applied, "Applied"),
-    (ApplicationStatus::Interviewing, "Interviewing"),
-    (ApplicationStatus::Offer, "Offer"),
-    (ApplicationStatus::Rejected, "Rejected"),
+    (ApplicationStatus::Wishlist, status_title(ApplicationStatus::Wishlist)),
+    (ApplicationStatus::Applied, status_title(ApplicationStatus::Applied)),
+    (
+        ApplicationStatus::Interviewing,
+        status_title(ApplicationStatus::Interviewing),
+    ),
+    (ApplicationStatus::Offer, status_title(ApplicationStatus::Offer)),
+    (
+        ApplicationStatus::Rejected,
+        status_title(ApplicationStatus::Rejected),
+    ),
 ];
 
 /// Build the menu closure. Both `Button::dropdown_menu` and

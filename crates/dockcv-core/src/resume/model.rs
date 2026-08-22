@@ -340,7 +340,7 @@ impl ApplicationStatus {
     /// A private helper rather than `Ord` on the enum itself, because the
     /// enum's declaration order is already pinned by `#[serde(other)]`
     /// needing `Wishlist` last, which is not the order this depth uses.
-    fn depth(self) -> Option<u8> {
+    pub fn depth(self) -> Option<u8> {
         match self {
             ApplicationStatus::Wishlist => Some(0),
             ApplicationStatus::Applied => Some(1),
@@ -440,6 +440,38 @@ pub struct Application {
     pub rejection_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub snapshots: Vec<Snapshot>,
+    /// Every stage this card has moved into, oldest first.
+    ///
+    /// [`Self::furthest`] answers *how deep did this ever get*; this answers
+    /// *when*, which is the question a funnel over a date range cannot be
+    /// asked without. Append-only, and written in exactly one place
+    /// ([`Self::advance_to`]).
+    ///
+    /// The card's **first** stage is not in here. A card starts on the
+    /// wishlist at [`Self::created`], so recording that would be one fact in
+    /// two places; the first entry is the first time it *moved*. A card that
+    /// has never moved therefore carries no history at all, which is correct
+    /// and is not the same as a card written before this field existed —
+    /// those are indistinguishable, and Insights has to say so rather than
+    /// draw a month it cannot account for (US-14).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<StageChange>,
+}
+
+/// One recorded move between stages.
+///
+/// `to` only. Where a move came *from* is the previous entry's `to`, or the
+/// wishlist for the first one — storing it as well would be one fact in two
+/// places, free to disagree, which is the reason `status_word` has no second
+/// field beside it either.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StageChange {
+    /// ISO date the move was made. Supplied by the caller rather than read
+    /// from a clock here: a model that tells the time cannot be tested.
+    pub at: String,
+    /// The stage moved into, as the word — the form that round-trips, for the
+    /// same reason [`Application::status_word`] is stored that way.
+    pub to: String,
 }
 
 impl Application {
@@ -462,7 +494,13 @@ impl Application {
         ApplicationStatus::from_word(&self.status_word).is_some()
     }
 
-    pub fn advance_to(&mut self, status: ApplicationStatus) {
+    pub fn advance_to(&mut self, status: ApplicationStatus, on: &str) {
+        // Dropping a card back into the column it is already in is not a
+        // move. Recording it would invent a transition, and every count over
+        // a date range would be a tally of how often the board was fidgeted
+        // with rather than of what happened.
+        let moved = self.status_word != status.word();
+
         // Whatever the file used to say, the user has now said otherwise —
         // this is the one place an unrecognised word is allowed to be lost.
         self.status_word = status.word().to_string();
@@ -472,6 +510,25 @@ impl Application {
                 self.furthest = status;
             }
         }
+
+        if moved {
+            self.history.push(StageChange {
+                at: on.to_string(),
+                to: status.word().to_string(),
+            });
+        }
+    }
+
+    /// The stage this card was in immediately before `index` in its history —
+    /// the previous entry's destination, or the wishlist it started on.
+    pub fn stage_before(&self, index: usize) -> ApplicationStatus {
+        if index == 0 {
+            return ApplicationStatus::Wishlist;
+        }
+        self.history
+            .get(index - 1)
+            .and_then(|c| ApplicationStatus::from_word(&c.to))
+            .unwrap_or(ApplicationStatus::Wishlist)
     }
 }
 
@@ -2935,6 +2992,10 @@ mod applications_tests {
             role: "Staff Engineer".into(),
             status_word: ApplicationStatus::Interviewing.word().into(),
             furthest: ApplicationStatus::Interviewing,
+            history: vec![
+                StageChange { at: "2026-06-02".into(), to: "applied".into() },
+                StageChange { at: "2026-06-18".into(), to: "interviewing".into() },
+            ],
             created: "2026-06-01".into(),
             applied: Some("2026-06-02".into()),
             source_doc: Some("sofiia-senior-swe".into()),
@@ -3066,9 +3127,9 @@ mod applications_tests {
             preset: "FAANG · concise".into(),
             ..Default::default()
         };
-        rejected_after_onsite.advance_to(ApplicationStatus::Applied);
-        rejected_after_onsite.advance_to(ApplicationStatus::Interviewing);
-        rejected_after_onsite.advance_to(ApplicationStatus::Rejected);
+        rejected_after_onsite.advance_to(ApplicationStatus::Applied, "2026-06-02");
+        rejected_after_onsite.advance_to(ApplicationStatus::Interviewing, "2026-06-10");
+        rejected_after_onsite.advance_to(ApplicationStatus::Rejected, "2026-06-20");
         // Terminal, not deep: the card is out, but it did interview.
         assert_eq!(rejected_after_onsite.status(), ApplicationStatus::Rejected);
         assert_eq!(
@@ -3081,7 +3142,7 @@ mod applications_tests {
             preset: "FAANG · concise".into(),
             ..Default::default()
         };
-        offered.advance_to(ApplicationStatus::Offer);
+        offered.advance_to(ApplicationStatus::Offer, "2026-06-15");
 
         let apps = Applications {
             entries: vec![
@@ -3120,14 +3181,14 @@ mod applications_tests {
     #[test]
     fn advance_to_never_lowers_the_furthest_stage() {
         let mut app = Application::default();
-        app.advance_to(ApplicationStatus::Interviewing);
+        app.advance_to(ApplicationStatus::Interviewing, "2026-07-01");
         assert_eq!(app.furthest, ApplicationStatus::Interviewing);
 
-        app.advance_to(ApplicationStatus::Applied);
+        app.advance_to(ApplicationStatus::Applied, "2026-07-02");
         assert_eq!(app.status(), ApplicationStatus::Applied);
         assert_eq!(app.furthest, ApplicationStatus::Interviewing);
 
-        app.advance_to(ApplicationStatus::Wishlist);
+        app.advance_to(ApplicationStatus::Wishlist, "2026-07-03");
         assert_eq!(app.furthest, ApplicationStatus::Interviewing);
     }
 

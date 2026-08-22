@@ -20,14 +20,16 @@ use gpui::prelude::*;
 use gpui::{div, px, Context, Hsla, IntoElement, SharedString};
 
 use dockcv_ui_components::{
-    EmptyState, SankeyAlign, SankeyChart, SankeyLabel, SankeyLink, SankeyValueScale,
+    Button, ButtonVariants, DropdownMenu, EmptyState, IconName, PopupMenuItem, SankeyAlign,
+    SankeyChart, SankeyLabel, SankeyLink, SankeyValueScale, Sizable,
 };
 
 use crate::resume::model::{ApplicationStatus, Applications};
 use crate::theme::{ActiveTheme, StyledText, TextStyle, Theme};
 
 use super::applications_card::column_tint;
-use super::applications_data::plural;
+use super::applications_data::{plural, status_title};
+use super::applications_funnel::{missing_history, stage_flow, Period};
 use super::applications_funnel::{Funnel, Outcome};
 use super::shell::Shell;
 
@@ -72,7 +74,147 @@ impl Shell {
             .flex_col()
             .gap(px(18.0))
             .child(self.insight_tiles(cx, &funnel))
+            .child(self.stage_movement(cx, applications))
             .child(self.funnel_panel(&theme, &funnel))
+    }
+
+    /// Movement between stages over a window — what the Sankey cannot say.
+    ///
+    /// The Sankey is about *which CV*; this is about *when*, and the two are
+    /// different questions about the same board. A card that reached an
+    /// interview last March and one that reached one yesterday are the same
+    /// ribbon there and very different news here.
+    fn stage_movement(
+        &self,
+        cx: &mut Context<Self>,
+        applications: &Applications,
+    ) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let period = self.applications_period;
+        let from = period
+            .days()
+            .map(crate::vault::iso_days_ago)
+            // Before any vault existed, so "all time" is every date there is.
+            .unwrap_or_else(|| "0000-01-01".to_string());
+        let flows = stage_flow(applications, &from, &crate::vault::today_iso());
+        let unaccounted = missing_history(applications);
+        let root = cx.weak_entity();
+
+        let header = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(12.0))
+            .child(
+                div()
+                    .text_style(TextStyle::eyebrow())
+                    .text_color(theme.text_subtle)
+                    .child(TextStyle::eyebrow().apply_case("Movement between stages")),
+            )
+            .child(
+                Button::new("insights-period")
+                    .cursor_pointer()
+                    .ghost()
+                    .xsmall()
+                    .label(period.label())
+                    .icon(IconName::ChevronDown)
+                    .border_1()
+                    .border_color(theme.border)
+                    .dropdown_menu(move |mut menu, _window, _cx| {
+                        for option in Period::ALL {
+                            let root = root.clone();
+                            menu = menu.item(
+                                PopupMenuItem::new(option.label())
+                                    .checked(option == period)
+                                    .on_click(move |_ev, _window, cx| {
+                                        let _ = root.update(cx, |this, cx| {
+                                            this.applications_period = option;
+                                            cx.notify();
+                                        });
+                                    }),
+                            );
+                        }
+                        menu
+                    }),
+            );
+
+        let rows = flows.into_iter().map(|flow| {
+            let tint = column_tint(&theme, flow.stage);
+            // "Of the ones that got here, how many got further." Printed only
+            // where there is a denominator: a percentage over nothing is the
+            // invented metric US-14 exists to forbid.
+            let onward = if flow.entered == 0 {
+                "—".to_string()
+            } else if flow.stage.depth().is_none() {
+                // Nothing advances out of a rejection, so a rate would be a
+                // column of zeroes pretending to be a measurement.
+                "end of the line".to_string()
+            } else {
+                format!(
+                    "{} moved on · {:.0}%",
+                    flow.advanced,
+                    flow.advanced as f32 * 100.0 / flow.entered as f32
+                )
+            };
+
+            div()
+                .flex()
+                .items_center()
+                .gap(px(10.0))
+                .py(px(5.0))
+                .child(
+                    div()
+                        .w(px(108.0))
+                        .text_style(TextStyle::chip())
+                        .text_color(tint.fg)
+                        .child(status_title(flow.stage)),
+                )
+                .child(
+                    div()
+                        .w(px(52.0))
+                        .text_style(TextStyle::control())
+                        .text_color(theme.text)
+                        .child(flow.entered.to_string()),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_style(TextStyle::meta())
+                        .text_color(theme.text_muted)
+                        .child(onward),
+                )
+        });
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.0))
+            .p(px(16.0))
+            .rounded(px(12.0))
+            .bg(theme.elevated)
+            .border_1()
+            .border_color(theme.border)
+            .child(header)
+            .children(rows)
+            .when(unaccounted > 0, |el| {
+                // Said out loud rather than folded into the counts. These
+                // cards moved before the app recorded moves, so their history
+                // does not exist and never will — reporting them as zero
+                // would be a quiet lie about the period (US-14).
+                el.child(
+                    div()
+                        .pt(px(6.0))
+                        .text_style(TextStyle::meta())
+                        .text_color(theme.text_subtle)
+                        .child(format!(
+                            "{unaccounted} application{} moved before DockCV recorded \
+                             stage changes, so they are not in these counts.",
+                            plural(unaccounted)
+                        )),
+                )
+            })
     }
 
     /// Four numbers, stated plainly, above the diagram that shows how they

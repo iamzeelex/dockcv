@@ -37,7 +37,7 @@ use super::save_status;
 
 use super::applications_data::{
     card_chip_text, conversion_line, interviews_this_week, matches_query, plural, sort_rows,
-    ApplicationSort, ApplicationsView,
+    status_title, ApplicationSort, ApplicationsView,
 };
 use super::applications_card::{card_meta, column_tint};
 use super::applications_menu::{application_menu, MenuContext};
@@ -45,11 +45,17 @@ use super::shell::{remove_at, Shell};
 
 /// The five board columns, in display order.
 const COLUMNS: [(ApplicationStatus, &str); 5] = [
-    (ApplicationStatus::Wishlist, "Wishlist"),
-    (ApplicationStatus::Applied, "Applied"),
-    (ApplicationStatus::Interviewing, "Interviewing"),
-    (ApplicationStatus::Offer, "Offer"),
-    (ApplicationStatus::Rejected, "Rejected"),
+    (ApplicationStatus::Wishlist, status_title(ApplicationStatus::Wishlist)),
+    (ApplicationStatus::Applied, status_title(ApplicationStatus::Applied)),
+    (
+        ApplicationStatus::Interviewing,
+        status_title(ApplicationStatus::Interviewing),
+    ),
+    (ApplicationStatus::Offer, status_title(ApplicationStatus::Offer)),
+    (
+        ApplicationStatus::Rejected,
+        status_title(ApplicationStatus::Rejected),
+    ),
 ];
 
 impl Shell {
@@ -741,7 +747,7 @@ impl Shell {
         // Creation goes through `advance_to` too, not a direct field
         // assignment, so `furthest` starts consistent even for a card
         // created straight into a later column.
-        application.advance_to(target);
+        application.advance_to(target, &vault::today_iso());
         applications.entries.push(application);
         save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
 
@@ -770,7 +776,7 @@ impl Shell {
         let mut applications = vault::load_applications(&vault);
         let mut first_send = false;
         if let Some(application) = applications.entries.get_mut(index) {
-            application.advance_to(status);
+            application.advance_to(status, &vault::today_iso());
             // The actual send date, recorded once — never overwritten, so
             // moving a card back and forth doesn't rewrite when it was
             // really sent. This is what makes "applied N ago" real data.
