@@ -57,7 +57,7 @@ fn journey_color(theme: &Theme, node: JourneyNode) -> Hsla {
         JourneyNode::Live => theme.text_muted,
         JourneyNode::Closed(Closure::Accepted) => column_tint(theme, ApplicationStatus::Offer).dot,
         JourneyNode::Closed(Closure::Rejected | Closure::Ghosted) => {
-            column_tint(theme, ApplicationStatus::Rejected).dot
+            column_tint(theme, ApplicationStatus::Closed).dot
         }
         JourneyNode::Closed(Closure::Withdrew | Closure::Declined) => theme.text_subtle,
     }
@@ -69,7 +69,7 @@ fn outcome_color(theme: &Theme, outcome: Outcome) -> Hsla {
     let status = match outcome {
         Outcome::Offer => ApplicationStatus::Offer,
         Outcome::Interviewed => ApplicationStatus::Interviewing,
-        Outcome::Rejected => ApplicationStatus::Rejected,
+        Outcome::Rejected => ApplicationStatus::Closed,
         Outcome::Awaiting => ApplicationStatus::Applied,
     };
     column_tint(theme, status).dot

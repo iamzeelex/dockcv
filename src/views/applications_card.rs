@@ -28,7 +28,7 @@ pub(super) fn column_tint(theme: &Theme, status: ApplicationStatus) -> StatusTin
             StatusTint::of(theme.accent)
         }
         ApplicationStatus::Offer => StatusTint::of(theme.success),
-        ApplicationStatus::Rejected => StatusTint::of(theme.status_closed),
+        ApplicationStatus::Closed => StatusTint::of(theme.status_closed),
     }
 }
 
@@ -65,7 +65,7 @@ pub(super) fn card_meta(
                 meta.push(prose_line(theme, app.compensation.clone()));
             }
         }
-        ApplicationStatus::Rejected => {
+        ApplicationStatus::Closed => {
             // Lead with *which* ending. This column holds rejections,
             // ghostings and withdrawals alike, and "no reason given" under a
             // card you withdrew from reads as though someone turned you down.

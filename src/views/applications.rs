@@ -67,8 +67,8 @@ const COLUMNS: [(ApplicationStatus, &str); 5] = [
     ),
     (ApplicationStatus::Offer, status_title(ApplicationStatus::Offer)),
     (
-        ApplicationStatus::Rejected,
-        status_title(ApplicationStatus::Rejected),
+        ApplicationStatus::Closed,
+        status_title(ApplicationStatus::Closed),
     ),
 ];
 
@@ -179,7 +179,7 @@ impl Shell {
                             .icon(IconName::Plus)
                             .label("New application")
                             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                                this.open_applications_compose(
+                                this.start_application(
                                     ApplicationStatus::Wishlist,
                                     window,
                                     cx,
@@ -289,9 +289,9 @@ impl Shell {
             return;
         }
         self.applications_view = view;
-        // A compose box open in a column the user just navigated away from
-        // would reappear, half-typed, the next time they came back.
-        self.applications_compose_target = None;
+        // The detail panel belongs to the board it was opened from, and a
+        // half-written card left behind it should not survive the trip.
+        self.close_application_detail(cx);
         cx.notify();
     }
 
@@ -380,7 +380,7 @@ impl Shell {
         let tint = column_tint(&theme, status);
         // Rejected draws no "+": the design's own ruling (§3) is that you
         // don't add directly into it, you move a card there from elsewhere.
-        let show_add = status != ApplicationStatus::Rejected;
+        let show_add = status != ApplicationStatus::Closed;
 
         let mut header = div()
             .flex()
@@ -410,15 +410,11 @@ impl Shell {
                     .cursor_pointer()
                     .tooltip("Add")
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.open_applications_compose(status, window, cx);
+                        this.start_application(status, window, cx);
                     })),
             );
         }
 
-        let compose = self
-            .applications_compose_target
-            .filter(|t| *t == status)
-            .map(|_| self.compose_box(cx));
 
         // The whole column is the drop target, empty space included — a card
         // has to be droppable into a column that holds nothing yet.
@@ -455,7 +451,6 @@ impl Shell {
                     .flex()
                     .flex_col()
                     .gap(px(10.0))
-                    .children(compose)
                     .children(
                         cards
                             .into_iter()
@@ -464,84 +459,6 @@ impl Shell {
             );
 
         self.column_drop_target(cx, status, column)
-    }
-
-    /// The inline "company + role" compose box — the only two fields a new
-    /// card starts with; everything else is edited later (design doc §8/§10:
-    /// no compose surface is drawn in the mockup, so this is a minimal,
-    /// self-consistent one rather than an invented full form).
-    fn compose_box(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(6.0))
-            .p(px(10.0))
-            .rounded(px(10.0))
-            .bg(theme.elevated)
-            .border_1()
-            .border_color(theme.border_strong)
-            .child(div().children(
-                self.applications_compose_company
-                    .as_ref()
-                    .map(|s| TextField::new(s).placeholder("Company")),
-            ))
-            .child(div().children(
-                self.applications_compose_role
-                    .as_ref()
-                    .map(|s| TextField::new(s).placeholder("Role")),
-            ))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap_2()
-                    .child(
-                        Button::new("apps-compose-cancel")
-                            .cursor_pointer()
-                            .toolbar_secondary()
-                            .label("Cancel")
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.cancel_applications_compose(cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("apps-compose-add")
-                            .cursor_pointer()
-                            .toolbar_primary()
-                            .label("Add")
-                            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                                this.commit_applications_compose(window, cx);
-                            })),
-                    ),
-            )
-            // Its own row, full width. Three buttons across a board column is
-            // about 90px each: the third fell off the edge and could not be
-            // clicked at all. The two-button row is the path people take, so
-            // it keeps the shape muscle memory expects and this sits under it.
-            .child(
-                Button::new("apps-compose-add-pin")
-                    .cursor_pointer()
-                    .ghost()
-                    .w_full()
-                    .label("Add & pin CV")
-                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                        // The card has to exist before it can be pinned: the
-                        // pin sheet writes to a card by index, and there is no
-                        // index until now.
-                        if let Some(index) = this.commit_applications_compose(window, cx) {
-                            let company = this
-                                .cache
-                                .applications()
-                                .entries
-                                .get(index)
-                                .map(|a| a.company.clone())
-                                .unwrap_or_default();
-                            this.open_pin_pick(index, company, None, window, cx);
-                        }
-                    })),
-            )
     }
 
     /// The interview counter, on the card, while the card is interviewing.
@@ -632,7 +549,7 @@ impl Shell {
         } else {
             theme.border
         };
-        let bg = if status == ApplicationStatus::Rejected {
+        let bg = if status == ApplicationStatus::Closed {
             theme.elevated_muted
         } else {
             theme.elevated
@@ -667,7 +584,7 @@ impl Shell {
             .bg(bg)
             .border_1()
             .border_color(border)
-            .when(status == ApplicationStatus::Rejected, |el| el.opacity(0.72));
+            .when(status == ApplicationStatus::Closed, |el| el.opacity(0.72));
 
         // O-16: the whole card drags. The `···` menu stays as the path that
         // works without a mouse.
@@ -754,79 +671,46 @@ impl Shell {
             .unwrap_or_default()
     }
 
-    /// Open the compose box, scoped to `target`'s column, clearing any
-    /// previous draft.
-    pub(super) fn open_applications_compose(
+    /// Start a new application in `target`'s column.
+    ///
+    /// The card is created immediately and the detail panel opens on it. The
+    /// compose form this replaces lived *inside* a board column — about 230px
+    /// — which is not a form, it is a form's silhouette: two fields and three
+    /// buttons that did not fit and could not all be clicked.
+    ///
+    /// Creating first and editing after means one surface for a card's fields
+    /// instead of two that have to agree, and the panel already knows how to
+    /// write every one of them. The cost is a card that exists before it has
+    /// a name; `close_application_detail` throws it away again if it never
+    /// gets one.
+    pub(super) fn start_application(
         &mut self,
         target: ApplicationStatus,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.applications_compose_target = Some(target);
-        if let Some(field) = self.applications_compose_company.clone() {
-            field.update(cx, |state, cx| state.seed("", window, cx));
-        }
-        if let Some(field) = self.applications_compose_role.clone() {
-            field.update(cx, |state, cx| state.seed("", window, cx));
-        }
-        cx.notify();
-    }
-
-    pub(super) fn cancel_applications_compose(&mut self, cx: &mut Context<Self>) {
-        self.applications_compose_target = None;
-        cx.notify();
-    }
-
-    /// Commit the compose box: company and role are the only two fields a
-    /// new card starts with (design doc's "Build these" instruction) — both
-    /// required, since neither has a sane default.
-    /// Create the card, and say where it landed so a caller can carry on with
-    /// it — which is what "Add & pin CV" needs and nothing else does.
-    pub(super) fn commit_applications_compose(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<usize> {
-        let target = self.applications_compose_target?;
-        let vault = self.vault.clone()?;
-        let company = self
-            .applications_compose_company
-            .as_ref()
-            .map(|f| f.read(cx).value(cx).trim().to_string())
-            .unwrap_or_default();
-        let role = self
-            .applications_compose_role
-            .as_ref()
-            .map(|f| f.read(cx).value(cx).trim().to_string())
-            .unwrap_or_default();
-        if company.is_empty() || role.is_empty() {
-            return None;
-        }
-
+        let Some(vault) = self.vault.clone() else {
+            return;
+        };
         let mut applications = vault::load_applications(&vault);
         let mut application = Application {
-            company,
-            role,
             created: vault::today_iso(),
             ..Default::default()
         };
-        // Creation goes through `advance_to` too, not a direct field
-        // assignment, so `furthest` starts consistent even for a card
-        // created straight into a later column.
+        // Through `advance_to`, so a card started straight into a later column
+        // records how it got there like any other move.
         application.advance_to(target, &vault::today_iso());
         applications.entries.push(application);
         let index = applications.entries.len() - 1;
-        save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
+        save_status::record(
+            cx,
+            "applications board",
+            vault::save_applications(&vault, &applications),
+        );
 
-        self.applications_compose_target = None;
-        if let Some(field) = self.applications_compose_company.clone() {
-            field.update(cx, |state, cx| state.seed("", window, cx));
-        }
-        if let Some(field) = self.applications_compose_role.clone() {
-            field.update(cx, |state, cx| state.seed("", window, cx));
-        }
+        self.open_application_detail(index, window, cx);
+        self.focus_application_company(window, cx);
         cx.notify();
-        Some(index)
     }
 
     /// Move a card to a new column — always through `Application::advance_to`,

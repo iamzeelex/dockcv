@@ -61,8 +61,8 @@ const COLUMNS: [(ApplicationStatus, &str); 5] = [
     ),
     (ApplicationStatus::Offer, status_title(ApplicationStatus::Offer)),
     (
-        ApplicationStatus::Rejected,
-        status_title(ApplicationStatus::Rejected),
+        ApplicationStatus::Closed,
+        status_title(ApplicationStatus::Closed),
     ),
 ];
 

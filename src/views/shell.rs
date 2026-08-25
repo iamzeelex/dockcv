@@ -20,7 +20,7 @@ use dockcv_ui_components::{TextFieldEvent, TextFieldState};
 use crate::config;
 use crate::render::{self, Rendered};
 use crate::resume::model::{
-    ApplicationStatus, DiaryEntry, ResumeDoc, SectionKind,
+    DiaryEntry, ResumeDoc, SectionKind,
 };
 use crate::resume::template;
 use crate::theme::ActiveTheme;
@@ -135,11 +135,8 @@ pub struct Shell {
     pub(super) applications_detail: Option<super::applications_detail::ApplicationDetail>,
     /// Which column's compose box is open, if any. `None` means the board
     /// shows no inline "new application" form.
-    pub(super) applications_compose_target: Option<ApplicationStatus>,
     /// The compose box's two fields — company and role, the only two a new
     /// card starts with (design doc's "Build these" instruction).
-    pub(super) applications_compose_company: Option<Entity<TextFieldState>>,
-    pub(super) applications_compose_role: Option<Entity<TextFieldState>>,
     /// Kept alive so the boxes keep reporting changes.
     pub(super) input_subscriptions: Vec<Subscription>,
     /// Cached first-page thumbnails per document path.
@@ -210,9 +207,6 @@ impl Shell {
             applications_sort: ApplicationSort::default(),
             applications_period: Default::default(),
             applications_detail: None,
-            applications_compose_target: None,
-            applications_compose_company: None,
-            applications_compose_role: None,
             input_subscriptions: Vec::new(),
             thumbnails: HashMap::new(),
             thumb_engine: None,
@@ -309,39 +303,6 @@ impl Shell {
             self.applications_search = Some(search);
         }
 
-        if self.applications_compose_company.is_none() {
-            let company = cx.new(|cx| TextFieldState::single_line(window, cx));
-            // Enter in either compose field commits the new card, same as
-            // the diary's dual-field quick capture.
-            self.input_subscriptions.push(cx.subscribe_in(
-                &company,
-                window,
-                |this, _field, event: &TextFieldEvent, window, cx| match event {
-                    TextFieldEvent::Submitted => {
-                        this.commit_applications_compose(window, cx);
-                    }
-                    TextFieldEvent::Changed => cx.notify(),
-                    _ => {}
-                },
-            ));
-            self.applications_compose_company = Some(company);
-        }
-
-        if self.applications_compose_role.is_none() {
-            let role = cx.new(|cx| TextFieldState::single_line(window, cx));
-            self.input_subscriptions.push(cx.subscribe_in(
-                &role,
-                window,
-                |this, _field, event: &TextFieldEvent, window, cx| match event {
-                    TextFieldEvent::Submitted => {
-                        this.commit_applications_compose(window, cx);
-                    }
-                    TextFieldEvent::Changed => cx.notify(),
-                    _ => {}
-                },
-            ));
-            self.applications_compose_role = Some(role);
-        }
     }
 
     /// The gallery's current search query, lowercased and trimmed.

@@ -147,9 +147,40 @@ impl Shell {
         cx.notify();
     }
 
+    /// Put the cursor in Company, so a card started from the board opens
+    /// ready to be named rather than ready to be looked at.
+    pub(super) fn focus_application_company(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(detail) = self.applications_detail.as_ref() {
+            detail
+                .company
+                .update(cx, |state, cx| state.focus(window, cx));
+        }
+    }
+
     pub(super) fn close_application_detail(&mut self, cx: &mut Context<Self>) {
         self.commit_application_detail(cx);
-        self.applications_detail = None;
+        let Some(detail) = self.applications_detail.take() else {
+            return;
+        };
+        // A card is created the moment "New application" is pressed, so
+        // closing without naming it has to throw it away — otherwise every
+        // change of mind leaves a blank card on the board. Company *and* role
+        // both empty: one of them filled is a card someone meant to keep.
+        if let Some(vault) = self.vault.clone() {
+            let mut applications = vault::load_applications(&vault);
+            let blank = applications
+                .entries
+                .get(detail.index)
+                .is_some_and(is_unnamed);
+            if blank {
+                super::shell::remove_at(&mut applications.entries, detail.index);
+                save_status::record(
+                    cx,
+                    "applications board",
+                    vault::save_applications(&vault, &applications),
+                );
+            }
+        }
         cx.notify();
     }
 
@@ -682,6 +713,11 @@ fn ordinal(n: usize) -> String {
     format!("{n}{suffix}")
 }
 
+/// A card nobody has named. What "started and abandoned" looks like on disk.
+fn is_unnamed(app: &Application) -> bool {
+    app.company.trim().is_empty() && app.role.trim().is_empty()
+}
+
 fn none_if_empty(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
@@ -745,5 +781,33 @@ mod ordinal_tests {
         assert_eq!(ordinal(13), "13th");
         assert_eq!(ordinal(21), "21st");
         assert_eq!(ordinal(112), "112th");
+    }
+}
+
+#[cfg(test)]
+mod draft_tests {
+    use super::is_unnamed;
+    use crate::resume::model::Application;
+
+    /// A card is created the moment "New application" is pressed, so the rule
+    /// that throws an abandoned one away has to be exact: one filled field is
+    /// a card someone meant to keep, and only a card with neither is a change
+    /// of mind.
+    #[test]
+    fn only_a_card_with_neither_name_is_a_change_of_mind() {
+        assert!(is_unnamed(&Application::default()));
+        assert!(is_unnamed(&Application {
+            company: "   ".into(),
+            role: "\t".into(),
+            ..Default::default()
+        }));
+        assert!(!is_unnamed(&Application {
+            company: "Acme".into(),
+            ..Default::default()
+        }));
+        assert!(!is_unnamed(&Application {
+            role: "Staff Engineer".into(),
+            ..Default::default()
+        }));
     }
 }

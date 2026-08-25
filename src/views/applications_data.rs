@@ -36,7 +36,7 @@ pub(super) fn card_chip_text(app: &Application, status: ApplicationStatus) -> Op
         ApplicationStatus::Interviewing | ApplicationStatus::Offer => {
             app.next_step.as_ref().map(next_step_caption)
         }
-        ApplicationStatus::Wishlist | ApplicationStatus::Rejected => None,
+        ApplicationStatus::Wishlist | ApplicationStatus::Closed => None,
     }
 }
 
@@ -325,7 +325,7 @@ fn stage_rank(app: &Application) -> u8 {
         ApplicationStatus::Applied => 1,
         // Rejected has no pipeline depth (it is an outcome, not a stage), and
         // an entry still on the wishlist has not started one.
-        ApplicationStatus::Rejected | ApplicationStatus::Wishlist => 0,
+        ApplicationStatus::Closed | ApplicationStatus::Wishlist => 0,
     }
 }
 
@@ -576,6 +576,6 @@ pub(super) const fn status_title(status: ApplicationStatus) -> &'static str {
         ApplicationStatus::Applied => "Applied",
         ApplicationStatus::Interviewing => "Interviewing",
         ApplicationStatus::Offer => "Offer",
-        ApplicationStatus::Rejected => "Rejected",
+        ApplicationStatus::Closed => "Closed",
     }
 }

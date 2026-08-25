@@ -79,12 +79,12 @@ impl Outcome {
             ApplicationStatus::Wishlist => None,
             ApplicationStatus::Offer => Some(Outcome::Offer),
             _ if reached_interview => Some(Outcome::Interviewed),
-            _ if app.status() == ApplicationStatus::Rejected => Some(Outcome::Rejected),
+            _ if app.status() == ApplicationStatus::Closed => Some(Outcome::Rejected),
             ApplicationStatus::Applied => Some(Outcome::Awaiting),
             // `furthest` should never be Rejected — it has no pipeline depth,
             // so nothing in the model assigns it — but a hand-edited file can
             // say so. Treat it as what it plainly means.
-            ApplicationStatus::Rejected => Some(Outcome::Rejected),
+            ApplicationStatus::Closed => Some(Outcome::Rejected),
             ApplicationStatus::Interviewing => Some(Outcome::Interviewed),
         }
     }
@@ -250,7 +250,7 @@ mod tests {
     fn every_sent_application_contributes_exactly_one_unit() {
         let funnel = Funnel::of(&board(vec![
             app("FAANG", ApplicationStatus::Applied, ApplicationStatus::Applied),
-            app("FAANG", ApplicationStatus::Rejected, ApplicationStatus::Applied),
+            app("FAANG", ApplicationStatus::Closed, ApplicationStatus::Applied),
             app("FAANG", ApplicationStatus::Offer, ApplicationStatus::Offer),
             app("Infra", ApplicationStatus::Interviewing, ApplicationStatus::Interviewing),
             app("Infra", ApplicationStatus::Wishlist, ApplicationStatus::Wishlist),
@@ -271,9 +271,9 @@ mod tests {
     fn an_interview_counts_even_when_the_answer_was_later_no() {
         let funnel = Funnel::of(&board(vec![
             // Interviewed, then rejected.
-            app("FAANG", ApplicationStatus::Rejected, ApplicationStatus::Interviewing),
+            app("FAANG", ApplicationStatus::Closed, ApplicationStatus::Interviewing),
             // Rejected without ever interviewing.
-            app("FAANG", ApplicationStatus::Rejected, ApplicationStatus::Applied),
+            app("FAANG", ApplicationStatus::Closed, ApplicationStatus::Applied),
         ]));
 
         assert_eq!(funnel.total(Outcome::Interviewed), 1);
@@ -349,7 +349,7 @@ mod tests {
             vec![
                 app("A", ApplicationStatus::Offer, ApplicationStatus::Offer),
                 app("A", ApplicationStatus::Interviewing, ApplicationStatus::Interviewing),
-                app("A", ApplicationStatus::Rejected, ApplicationStatus::Applied),
+                app("A", ApplicationStatus::Closed, ApplicationStatus::Applied),
                 app("A", ApplicationStatus::Applied, ApplicationStatus::Applied),
             ],
             // Several presets landing on one outcome.
@@ -446,7 +446,7 @@ pub(super) fn stage_flow(applications: &Applications, from: &str, to: &str) -> V
         ApplicationStatus::Applied,
         ApplicationStatus::Interviewing,
         ApplicationStatus::Offer,
-        ApplicationStatus::Rejected,
+        ApplicationStatus::Closed,
     ];
     let mut entered = [0usize; 5];
     let mut advanced = [0usize; 5];
@@ -566,14 +566,14 @@ mod stage_flow_tests {
             "2026-06-01",
             &[
                 ("2026-06-10", ApplicationStatus::Applied),
-                ("2026-06-20", ApplicationStatus::Rejected),
+                ("2026-06-20", ApplicationStatus::Closed),
             ],
         )]);
         let flows = stage_flow(&board, "2026-06-01", "2026-06-30");
         let get = |s| flows.iter().find(|f| f.stage == s).unwrap();
         assert_eq!(get(ApplicationStatus::Applied).advanced, 0);
-        assert_eq!(get(ApplicationStatus::Rejected).entered, 1);
-        assert_eq!(get(ApplicationStatus::Rejected).advanced, 0);
+        assert_eq!(get(ApplicationStatus::Closed).entered, 1);
+        assert_eq!(get(ApplicationStatus::Closed).advanced, 0);
     }
 
     /// Dropping a card back where it already was is not a move. Without this
@@ -907,7 +907,7 @@ mod closure_invariant_tests {
         app.advance_to(ApplicationStatus::Applied, "2026-06-01");
         assert_eq!(app.closed_as, None, "a sent application is not finished");
 
-        app.advance_to(ApplicationStatus::Rejected, "2026-06-20");
+        app.advance_to(ApplicationStatus::Closed, "2026-06-20");
         assert_eq!(app.closed_as, Some(Closure::Rejected));
     }
 
@@ -915,10 +915,10 @@ mod closure_invariant_tests {
     #[test]
     fn refining_a_rejection_into_a_ghosting_leaves_it_where_it_is() {
         let mut app = Application::default();
-        app.advance_to(ApplicationStatus::Rejected, "2026-06-20");
+        app.advance_to(ApplicationStatus::Closed, "2026-06-20");
         app.close_as(Closure::Ghosted, "2026-06-21");
         assert_eq!(app.closed_as, Some(Closure::Ghosted));
-        assert_eq!(app.status(), ApplicationStatus::Rejected);
+        assert_eq!(app.status(), ApplicationStatus::Closed);
     }
 
     /// An ending that follows an offer files the card with the offers. A

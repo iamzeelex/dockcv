@@ -294,7 +294,12 @@ pub enum ApplicationStatus {
     Applied,
     Interviewing,
     Offer,
-    Rejected,
+    /// The column an application lands in once it is over and there was no
+    /// offer. Not "Rejected", which it used to be called: rejections,
+    /// ghostings and withdrawals all end up here, and naming the column after
+    /// one of the three made the other two look like something they are not.
+    /// Which of them it was is [`Application::closed_as`].
+    Closed,
     #[default]
     #[serde(other)]
     Wishlist,
@@ -314,7 +319,7 @@ impl ApplicationStatus {
             ApplicationStatus::Applied => "applied",
             ApplicationStatus::Interviewing => "interviewing",
             ApplicationStatus::Offer => "offer",
-            ApplicationStatus::Rejected => "rejected",
+            ApplicationStatus::Closed => "closed",
         }
     }
 
@@ -326,7 +331,7 @@ impl ApplicationStatus {
             "applied" => Some(ApplicationStatus::Applied),
             "interviewing" => Some(ApplicationStatus::Interviewing),
             "offer" => Some(ApplicationStatus::Offer),
-            "rejected" => Some(ApplicationStatus::Rejected),
+            "closed" => Some(ApplicationStatus::Closed),
             _ => None,
         }
     }
@@ -346,7 +351,7 @@ impl ApplicationStatus {
             ApplicationStatus::Applied => Some(1),
             ApplicationStatus::Interviewing => Some(2),
             ApplicationStatus::Offer => Some(3),
-            ApplicationStatus::Rejected => None,
+            ApplicationStatus::Closed => None,
         }
     }
 }
@@ -535,7 +540,7 @@ impl Closure {
             // a search that ended in a yes should not be filed under no.
             Closure::Accepted | Closure::Declined => ApplicationStatus::Offer,
             Closure::Rejected | Closure::Ghosted | Closure::Withdrew => {
-                ApplicationStatus::Rejected
+                ApplicationStatus::Closed
             }
         }
     }
@@ -651,8 +656,8 @@ impl Application {
             // Moved into the closed column with nothing said about why: the
             // plain reading, which the panel can refine to ghosted or
             // withdrawn.
-            (ApplicationStatus::Rejected, None) => Some(Closure::Rejected),
-            (ApplicationStatus::Rejected, some) => some,
+            (ApplicationStatus::Closed, None) => Some(Closure::Rejected),
+            (ApplicationStatus::Closed, some) => some,
             // An offer keeps only the endings that follow one.
             (ApplicationStatus::Offer, Some(c @ (Closure::Accepted | Closure::Declined))) => {
                 Some(c)
@@ -711,7 +716,7 @@ impl Applications {
     pub fn active(&self) -> usize {
         self.entries
             .iter()
-            .filter(|a| a.status() != ApplicationStatus::Rejected)
+            .filter(|a| a.status() != ApplicationStatus::Closed)
             .count()
     }
 
@@ -3177,13 +3182,13 @@ mod applications_tests {
                     ..Default::default()
                 },
                 Application {
-                    status_word: ApplicationStatus::Rejected.word().into(),
+                    status_word: ApplicationStatus::Closed.word().into(),
                     ..Default::default()
                 },
             ],
         };
         assert_eq!(apps.count(ApplicationStatus::Applied), 2);
-        assert_eq!(apps.count(ApplicationStatus::Rejected), 1);
+        assert_eq!(apps.count(ApplicationStatus::Closed), 1);
         assert_eq!(apps.active(), 3); // everything but the one Rejected
     }
 
@@ -3202,7 +3207,7 @@ mod applications_tests {
         assert_eq!(app.furthest(), ApplicationStatus::Interviewing);
 
         // A rejection is where it *is*, not how deep it got.
-        app.advance_to(ApplicationStatus::Rejected, "2026-06-20");
+        app.advance_to(ApplicationStatus::Closed, "2026-06-20");
         assert_eq!(app.furthest(), ApplicationStatus::Interviewing);
 
         // And neither does dragging it back by hand: the interview happened
