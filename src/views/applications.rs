@@ -29,7 +29,7 @@ use dockcv_ui_components::{
     StatusTint, Tag, TextField,
 };
 
-use crate::resume::model::{Application, ApplicationStatus, Applications};
+use crate::resume::model::{Application, ApplicationStatus, Applications, Closure};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
@@ -461,6 +461,72 @@ impl Shell {
         self.column_drop_target(cx, status, column)
     }
 
+    /// Ask what actually happened, on a card that has ended without saying.
+    ///
+    /// Dragging a card into `Closed` says it is over and nothing more, because
+    /// guessing would put words in the user's mouth — and the guess it used to
+    /// make, "rejected", is the one ending people most want distinguished from
+    /// the others. So the card asks, in place, with the answers one click
+    /// away: this is the only screen where the question has an obvious moment,
+    /// which is the moment the card lands.
+    ///
+    /// It is a prompt rather than a blocking dialog. An unanswered card is a
+    /// real state — the diagram counts it as "ended, not said how" rather than
+    /// pretending — so nothing breaks if it is left alone.
+    fn outcome_prompt(
+        &self,
+        cx: &mut Context<Self>,
+        index: usize,
+        app: &Application,
+        status: ApplicationStatus,
+    ) -> Option<AnyElement> {
+        if status != ApplicationStatus::Closed || app.closed_as.is_some() {
+            return None;
+        }
+        let theme = cx.theme().clone();
+        let shell = cx.weak_entity();
+
+        Some(
+            div()
+                .mt(px(7.0))
+                // The card is a drag source and all of it is the handle, so
+                // the trigger has to stop the press reaching it.
+                .occlude()
+                .child(
+                    Button::new(SharedString::from(format!("apps-outcome-{index}")))
+                        .cursor_pointer()
+                        .ghost()
+                        .xsmall()
+                        .w_full()
+                        .justify_between()
+                        .label("How did this end?")
+                        .icon(IconName::ChevronDown)
+                        .border_1()
+                        // Accented, because it is the one thing on this card
+                        // still asking for something.
+                        .border_color(theme.accent)
+                        .dropdown_menu(move |mut menu, _window, _cx| {
+                            for closure in Closure::ALL {
+                                let shell = shell.clone();
+                                menu = menu.item(PopupMenuItem::new(closure.label()).on_click(
+                                    move |_ev, _window, cx| {
+                                        let _ = shell.update(cx, |this, cx| {
+                                            this.set_application_closure(
+                                                index,
+                                                Some(closure),
+                                                cx,
+                                            );
+                                        });
+                                    },
+                                ));
+                            }
+                            menu
+                        }),
+                )
+                .into_any_element(),
+        )
+    }
+
     /// The interview counter, on the card, while the card is interviewing.
     ///
     /// This is the answer to "track the rounds without breeding columns": the
@@ -640,6 +706,7 @@ impl Shell {
             .children(chip.map(|c| div().mb(px(9.0)).child(c)))
             .children(meta)
             .children(self.round_counter(cx, index, app, status))
+            .children(self.outcome_prompt(cx, index, app, status))
             .child(
                 // Occluded, and for the same reason the gallery card's menu
                 // is: the whole card is a drag source, so without this the

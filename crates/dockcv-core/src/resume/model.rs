@@ -653,10 +653,12 @@ impl Application {
         // application is over, and it must mean the same thing as saying so
         // in the panel.
         self.closed_as = match (status, self.closed_as) {
-            // Moved into the closed column with nothing said about why: the
-            // plain reading, which the panel can refine to ghosted or
-            // withdrawn.
-            (ApplicationStatus::Closed, None) => Some(Closure::Rejected),
+            // Moved into the closed column and nothing said about why: it
+            // stays unsaid. Guessing "rejected" put words in the user's mouth
+            // — a job they withdrew from would have been filed as a company
+            // turning them down, and the diagram would have counted it that
+            // way. Unsaid is a state the board can ask about; a wrong answer
+            // is not.
             (ApplicationStatus::Closed, some) => some,
             // An offer keeps only the endings that follow one.
             (ApplicationStatus::Offer, Some(c @ (Closure::Accepted | Closure::Declined))) => {

@@ -55,6 +55,8 @@ fn journey_color(theme: &Theme, node: JourneyNode) -> Hsla {
         JourneyNode::Round(_) => column_tint(theme, ApplicationStatus::Interviewing).dot,
         JourneyNode::Offer => column_tint(theme, ApplicationStatus::Offer).dot,
         JourneyNode::Live => theme.text_muted,
+        // Not a loss colour: it is a question, and the answer might be good.
+        JourneyNode::Unsaid => theme.text_subtle,
         JourneyNode::Closed(Closure::Accepted) => column_tint(theme, ApplicationStatus::Offer).dot,
         JourneyNode::Closed(Closure::Rejected | Closure::Ghosted) => {
             column_tint(theme, ApplicationStatus::Closed).dot
@@ -341,6 +343,7 @@ impl Shell {
             order.extend((1..=deepest).map(JourneyNode::Round));
             order.push(JourneyNode::Offer);
             order.push(JourneyNode::Live);
+            order.push(JourneyNode::Unsaid);
             order.extend(Closure::ALL.map(JourneyNode::Closed));
             // Only what the diagram actually reaches: an unused node would
             // draw a labelled zero, which reads as a fact rather than as an

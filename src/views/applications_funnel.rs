@@ -668,6 +668,12 @@ pub(super) enum JourneyNode {
     /// not a ghosting, and a diagram that pretends otherwise reads worse than
     /// the truth on a bad week.
     Live,
+    /// Over, but nobody has said how. Dragging a card into the closed column
+    /// ends it without explaining it, and this is where those sit until the
+    /// board is asked and answers. Its own node so the pile is *visible* —
+    /// folded into rejections it would quietly overstate them, and hidden it
+    /// would make the diagram's total disagree with the board's.
+    Unsaid,
     Closed(Closure),
 }
 
@@ -681,6 +687,7 @@ impl JourneyNode {
             JourneyNode::Round(n) => format!("{n}th interview"),
             JourneyNode::Offer => "Offer".to_string(),
             JourneyNode::Live => "In progress".to_string(),
+            JourneyNode::Unsaid => "Ended — not said how".to_string(),
             JourneyNode::Closed(c) => c.label().to_string(),
         }
     }
@@ -758,9 +765,10 @@ pub(super) fn journey(applications: &Applications) -> Journey {
         }
         step(
             at,
-            match app.closed_as {
-                Some(closure) => JourneyNode::Closed(closure),
-                None => JourneyNode::Live,
+            match (app.closed_as, app.status()) {
+                (Some(closure), _) => JourneyNode::Closed(closure),
+                (None, ApplicationStatus::Closed) => JourneyNode::Unsaid,
+                (None, _) => JourneyNode::Live,
             },
         );
     }
@@ -895,20 +903,21 @@ mod journey_tests {
 mod closure_invariant_tests {
     use crate::resume::model::{Application, ApplicationStatus, Closure};
 
-    /// The board and the diagram must not be able to disagree.
+    /// Dragging a card into the closed column ends it and says nothing more.
     ///
-    /// They did: dragging a card to Rejected wrote the column and nothing
-    /// else, so the board called it rejected while the journey diagram — which
-    /// reads `closed_as` — still called it in progress. Both surfaces were
-    /// confident and one of them was wrong.
+    /// It used to guess "rejected" — the one ending people most want kept
+    /// apart from the others, so the guess was worse than the gap. The card
+    /// asks instead, and until it is answered the application is neither in
+    /// progress nor turned down.
     #[test]
-    fn dragging_a_card_to_the_closed_column_is_an_ending() {
+    fn dragging_a_card_to_the_closed_column_does_not_invent_a_reason() {
         let mut app = Application::default();
         app.advance_to(ApplicationStatus::Applied, "2026-06-01");
         assert_eq!(app.closed_as, None, "a sent application is not finished");
 
         app.advance_to(ApplicationStatus::Closed, "2026-06-20");
-        assert_eq!(app.closed_as, Some(Closure::Rejected));
+        assert_eq!(app.closed_as, None, "the board answered a question nobody asked");
+        assert_eq!(app.status(), ApplicationStatus::Closed);
     }
 
     /// …and refining *why* must not move the card somewhere else.
@@ -947,5 +956,39 @@ mod closure_invariant_tests {
         // And the history kept every one of those moves, so the reopening is
         // itself part of the record.
         assert_eq!(app.history.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod unsaid_tests {
+    use super::*;
+
+    /// A card that has ended without saying how is neither in progress nor a
+    /// rejection. It gets its own node, so the pile is visible and countable
+    /// — which is the whole reason the board bothers to ask.
+    #[test]
+    fn an_unexplained_ending_is_its_own_node() {
+        let mut app = Application {
+            applied: Some("2026-06-01".into()),
+            ..Default::default()
+        };
+        app.advance_to(ApplicationStatus::Applied, "2026-06-01");
+        app.advance_to(ApplicationStatus::Closed, "2026-06-20");
+
+        let j = journey(&Applications { entries: vec![app] });
+        let link = |to: JourneyNode| {
+            j.links
+                .iter()
+                .find(|(_, b, _)| *b == to)
+                .map(|(_, _, n)| *n)
+                .unwrap_or(0)
+        };
+        assert_eq!(link(JourneyNode::Unsaid), 1);
+        assert_eq!(link(JourneyNode::Live), 0, "an ended card is not in progress");
+        assert_eq!(
+            link(JourneyNode::Closed(Closure::Rejected)),
+            0,
+            "the diagram guessed a rejection the user never gave"
+        );
     }
 }
