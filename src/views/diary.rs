@@ -15,8 +15,8 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement, SharedString};
 
-use dockcv_ui_components::{
-    Button, ButtonExt, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, Tag, TextField,
+use dockcv_ui_components::{ScrollableElement, 
+    Button, ButtonExt, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, Tag, TextField,
 };
 
 use crate::resume::model::{Diary, DiaryEntry};
@@ -109,7 +109,7 @@ impl Shell {
                     .id("diary-scroll")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .px(px(34.0))
                     .pb(px(30.0))
                     .flex()
@@ -160,7 +160,7 @@ impl Shell {
     /// findable. The role facet in the rail narrows by *who you were*; this
     /// narrows by *what happened*.
     fn diary_search_box(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         div()
             .w(px(230.0))
             .h(px(34.0))
@@ -168,13 +168,13 @@ impl Shell {
             .items_center()
             .gap_2()
             .px_3()
-            .rounded(px(9.0))
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
             .child(
                 Icon::new(IconName::Search)
-                    .with_size(px(13.0))
+                    .with_size(cx.theme().icon_md())
                     .text_color(theme.text_subtle),
             )
             .child(
@@ -198,7 +198,7 @@ impl Shell {
     /// to, its tags, and a button. `⏎` in either text box commits, so the
     /// keyboard path the persona actually uses never needs the mouse.
     fn quick_capture(&self, cx: &mut Context<Self>, diary: &Diary) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let roles = self.known_roles(diary);
         let shell = cx.weak_entity();
         let role_label = if self.diary_role.is_empty() {
@@ -212,7 +212,7 @@ impl Shell {
             .flex_col()
             .gap_3()
             .p_4()
-            .rounded(px(11.0))
+            .rounded(theme.radius_lg())
             .bg(theme.surface)
             .border_1()
             .border_color(theme.border)
@@ -227,11 +227,8 @@ impl Shell {
                     .gap_2()
                     .child(
                         Button::new("diary-role")
-                            .cursor_pointer()
-                            .ghost()
-                            .small()
+                            .selector_inline()
                             .label(role_label)
-                            .icon(IconName::ChevronDown)
                             .tooltip("Which role this win belongs to")
                             .dropdown_menu(move |mut menu, _window, _cx| {
                                 let clear = shell.clone();
@@ -266,7 +263,7 @@ impl Shell {
                             .flex()
                             .items_center()
                             .px_2()
-                            .rounded(px(7.0))
+                            .rounded(theme.radius_sm())
                             .bg(theme.elevated)
                             .border_1()
                             .border_color(theme.border)
@@ -284,8 +281,7 @@ impl Shell {
                         // menu, because for that person it is the *more*
                         // likely of the two.
                         Button::new("diary-paste")
-                            .cursor_pointer()
-                            .toolbar_secondary()
+                            .toolbar()
                             .label("Paste a status…")
                             .tooltip("Find wins in something you already wrote")
                             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
@@ -294,7 +290,6 @@ impl Shell {
                     )
                     .child(
                         Button::new("diary-log-win")
-                            .cursor_pointer()
                             .toolbar_primary()
                             .label("Log win")
                             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
@@ -310,7 +305,7 @@ impl Shell {
         cx: &mut Context<Self>,
         entries: Vec<(usize, DiaryEntry)>,
     ) -> Vec<AnyElement> {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let mut months: Vec<AnyElement> = Vec::new();
         let mut current: Option<(i32, u32)> = None;
         let mut bucket: Vec<AnyElement> = Vec::new();
@@ -362,7 +357,7 @@ impl Shell {
         index: usize,
         entry: DiaryEntry,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let shell = cx.weak_entity();
         let is_confidential = entry.confidential;
         let (day, month) = match parse_iso(&entry.date) {
@@ -377,7 +372,7 @@ impl Shell {
             .relative()
             .px_4()
             .py_3()
-            .rounded(px(11.0))
+            .rounded(theme.radius_lg())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
@@ -443,7 +438,7 @@ impl Shell {
                             .text_color(theme.text_subtle)
                             .child(
                                 Icon::new(IconName::File)
-                                    .with_size(px(11.0))
+                                    .with_size(cx.theme().icon_sm())
                                     .text_color(theme.text_subtle),
                             )
                             .child(format!("captured from {doc}"))
@@ -461,7 +456,7 @@ impl Shell {
                             Tag::custom(theme.warning.opacity(0.16), theme.warning, theme.warning)
                                 .px(px(7.0))
                                 .py(px(2.0))
-                                .rounded(px(5.0))
+                                .rounded(theme.radius_sm())
                                 .text_style(TextStyle::chip())
                                 .child("confidential"),
                         )
@@ -477,9 +472,7 @@ impl Shell {
                             .gap(px(10.0))
                             .child(
                                 Button::new(SharedString::from(format!("diary-use-{index}")))
-                                    .cursor_pointer()
-                                    .ghost()
-                                    .xsmall()
+                                    .quiet()
                                     .label("Use in a CV →")
                                     .tooltip("Add this win as a bullet of a CV")
                                     .on_click(cx.listener(
@@ -505,10 +498,8 @@ impl Shell {
             .child(
                 div().absolute().top(px(10.0)).right(px(8.0)).child(
                     Button::new(SharedString::from(format!("diary-menu-{index}")))
+                        .icon_only()
                         .icon(IconName::Ellipsis)
-                        .ghost()
-                        .xsmall()
-                        .cursor_pointer()
                         .tooltip("More")
                         .dropdown_menu(move |menu, _window, _cx| {
                             let shell = shell.clone();
@@ -552,7 +543,7 @@ impl Shell {
     }
 
     fn render_diary_empty(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         div()
             .flex()
             .flex_col()

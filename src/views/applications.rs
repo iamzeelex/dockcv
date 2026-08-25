@@ -24,8 +24,8 @@ use gpui::{AnyElement,
     div, px, App, ClickEvent, Context, FontWeight, IntoElement, SharedString, Window,
 };
 
-use dockcv_ui_components::{
-    Button, ButtonExt, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable,
+use dockcv_ui_components::{ScrollableElement, 
+    Button, ButtonExt, ButtonGroup, Selectable, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable,
     StatusTint, Tag, TextField,
 };
 
@@ -52,7 +52,7 @@ fn count_chip(theme: &crate::theme::Theme, text: String) -> impl IntoElement {
     Tag::custom(theme.chip_bg, theme.chip_fg, theme.chip_bg)
         .px(px(7.0))
         .py(px(2.0))
-        .rounded(px(5.0))
+        .rounded(theme.radius_sm())
         .text_style(TextStyle::chip())
         .child(text)
 }
@@ -125,7 +125,7 @@ impl Shell {
         applications: &Applications,
         today: &str,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let active = applications.active();
         let interviews = interviews_this_week(applications, today);
 
@@ -174,8 +174,7 @@ impl Shell {
                     .child(self.view_toggle(cx))
                     .child(
                         Button::new("new-application")
-                            .cursor_pointer()
-                            .header_primary()
+                            .action_primary()
                             .icon(IconName::Plus)
                             .label("New application")
                             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
@@ -215,42 +214,23 @@ impl Shell {
     /// because these are three views of one set of applications and not three
     /// destinations.
     fn view_toggle(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
         let active = self.applications_view;
 
-        div()
-            .flex()
-            .items_center()
-            .gap(px(2.0))
-            .h(px(34.0))
-            .p(px(3.0))
-            .rounded(px(8.0))
-            .bg(theme.elevated)
-            .border_1()
-            .border_color(theme.border)
+        // `ButtonGroup` rather than three pills in a hand-rolled track: it joins
+        // the segments' borders itself and reports the click as an index, so
+        // "which one is on" lives in `selected` instead of in three `when`s.
+        ButtonGroup::new("apps-view")
+            .outline()
             .children(ApplicationsView::ALL.map(|view| {
-                let is_active = view == active;
-                div()
-                    .id(SharedString::from(format!("apps-view-{view:?}")))
-                    .px(px(11.0))
-                    .py(px(5.0))
-                    .rounded(px(6.0))
-                    .when(is_active, |el| el.bg(theme.text))
-                    .text_style(TextStyle::control())
-                    .when(!is_active, |el| el.font_weight(FontWeight::NORMAL))
-                    .text_color(if is_active {
-                        theme.on_accent
-                    } else {
-                        theme.text_subtle
-                    })
-                    .cursor_pointer()
-                    .when(!is_active, |el| {
-                        el.hover(|s| s.text_color(theme.text))
-                    })
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.set_applications_view(view, cx);
-                    }))
-                    .child(view.label())
+                Button::new(SharedString::from(format!("apps-view-{view:?}")))
+                    .toolbar()
+                    .selected(view == active)
+                    .label(view.label())
+            }))
+            .on_click(cx.listener(move |this, clicked: &Vec<usize>, _window, cx| {
+                if let Some(view) = clicked.first().and_then(|i| ApplicationsView::ALL.get(*i)) {
+                    this.set_applications_view(*view, cx);
+                }
             }))
     }
 
@@ -262,8 +242,7 @@ impl Shell {
         let shell = cx.weak_entity();
 
         Button::new("apps-sort")
-            .cursor_pointer()
-            .toolbar_secondary()
+            .selector()
             .icon(IconName::SortAscending)
             .label(active.short_label())
             .tooltip("Sort applications")
@@ -301,7 +280,7 @@ impl Shell {
     }
 
     fn applications_search_box(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         div()
             .w(px(230.0))
             .h(px(34.0))
@@ -309,13 +288,13 @@ impl Shell {
             .items_center()
             .gap_2()
             .px_3()
-            .rounded(px(9.0))
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
             .child(
                 Icon::new(IconName::Search)
-                    .with_size(px(13.0))
+                    .with_size(cx.theme().icon_md())
                     .text_color(theme.text_subtle),
             )
             .child(
@@ -346,7 +325,7 @@ impl Shell {
             .id("applications-board")
             .flex_1()
             .min_h_0()
-            .overflow_x_scroll()
+            .overflow_x_scrollbar()
             .flex()
             .gap(px(10.0))
             .px(px(34.0))
@@ -376,7 +355,7 @@ impl Shell {
         cards: Vec<(usize, &Application)>,
         now_secs: u64,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let tint = column_tint(&theme, status);
         // Rejected draws no "+": the design's own ruling (§3) is that you
         // don't add directly into it, you move a card there from elsewhere.
@@ -404,10 +383,8 @@ impl Shell {
         if show_add {
             header = header.child(div().flex_1()).child(
                 Button::new(SharedString::from(format!("apps-add-{status:?}")))
+                    .icon_only()
                     .icon(IconName::Plus)
-                    .ghost()
-                    .xsmall()
-                    .cursor_pointer()
                     .tooltip("Add")
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.start_application(status, window, cx);
@@ -438,7 +415,7 @@ impl Shell {
             .h_full()
             .flex()
             .flex_col()
-            .rounded(px(10.0))
+            .rounded(theme.radius_md())
             .border_1()
             .border_color(gpui::transparent_black())
             .child(header)
@@ -447,7 +424,7 @@ impl Shell {
                     .id(SharedString::from(format!("apps-col-scroll-{status:?}")))
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .flex()
                     .flex_col()
                     .gap(px(10.0))
@@ -483,7 +460,7 @@ impl Shell {
         if status != ApplicationStatus::Closed || app.closed_as.is_some() {
             return None;
         }
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let shell = cx.weak_entity();
 
         Some(
@@ -494,14 +471,9 @@ impl Shell {
                 .occlude()
                 .child(
                     Button::new(SharedString::from(format!("apps-outcome-{index}")))
-                        .cursor_pointer()
-                        .ghost()
-                        .xsmall()
+                        .selector_inline()
                         .w_full()
-                        .justify_between()
                         .label("How did this end?")
-                        .icon(IconName::ChevronDown)
-                        .border_1()
                         // Accented, because it is the one thing on this card
                         // still asking for something.
                         .border_color(theme.accent)
@@ -547,7 +519,7 @@ impl Shell {
         if status != ApplicationStatus::Interviewing {
             return None;
         }
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         // The board already asserted one interview by being in this column,
         // so an unrecorded card reads as 1 rather than as 0 — the same floor
         // the journey diagram counts from.
@@ -574,10 +546,8 @@ impl Shell {
                     // — otherwise every attempt to add a round starts a drag.
                     div().occlude().child(
                         Button::new(SharedString::from(format!("apps-round-{index}")))
+                            .icon_only()
                             .icon(IconName::Plus)
-                            .ghost()
-                            .xsmall()
-                            .cursor_pointer()
                             .tooltip("Another interview happened")
                             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                                 this.log_interview_round(index, window, cx);
@@ -597,7 +567,7 @@ impl Shell {
         tint: &StatusTint,
         now_secs: u64,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let shell = cx.weak_entity();
         // Built out here, from the cache, and moved into the menu closure.
         // It used to be built *inside* the closure with a full vault parse, on
@@ -632,7 +602,7 @@ impl Shell {
             Tag::custom(tint.chip_bg, tint.fg, tint.chip_bg)
                 .px(px(7.0))
                 .py(px(2.0))
-                .rounded(px(5.0))
+                .rounded(theme.radius_sm())
                 .text_style(TextStyle::chip())
                 .child(text)
         });
@@ -646,7 +616,7 @@ impl Shell {
             .flex_col()
             .px(px(13.0))
             .py(px(12.0))
-            .rounded(px(10.0))
+            .rounded(theme.radius_md())
             .bg(bg)
             .border_1()
             .border_color(border)
@@ -666,7 +636,7 @@ impl Shell {
                         div()
                             .flex_none()
                             .size(px(24.0))
-                            .rounded(px(6.0))
+                            .rounded(theme.radius_sm())
                             .flex()
                             .items_center()
                             .justify_center()
@@ -720,10 +690,8 @@ impl Shell {
                     .occlude()
                     .child(
                 Button::new(SharedString::from(format!("apps-menu-{index}")))
+                    .icon_only()
                     .icon(IconName::Ellipsis)
-                    .ghost()
-                    .xsmall()
-                    .cursor_pointer()
                     .tooltip("More")
                     .dropdown_menu(application_menu(menu_context)),
                     ),

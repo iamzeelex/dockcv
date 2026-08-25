@@ -14,7 +14,7 @@ use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, IntoElement, SharedString};
 
 use dockcv_ui_components::{
-    Button, ButtonVariants, DropdownMenu, IconName, PopupMenuItem, Sizable, Slider,
+    Button, ButtonExt, ButtonGroup, Selectable, DropdownMenu, IconName, PopupMenuItem, Slider,
 };
 
 use crate::resume::model::{
@@ -26,6 +26,10 @@ use crate::resume::model::{
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use super::root::Root;
+
+/// The page sizes, in the order the segmented control draws them — which is
+/// also the order `ButtonGroup` reports a click by index.
+const PAGE_SIZES: [PageSize; 2] = [PageSize::Letter, PageSize::A4];
 
 impl Root {
     /// How the Skills section is set — five decisions, because it is the
@@ -101,7 +105,7 @@ impl Root {
     /// `Separator`, `Category` — and nothing said they were about Skills.
     /// `Bubbles` is an obvious answer to a question the panel never asked.
     pub(super) fn rail_subsection(&self, cx: &mut Context<Self>, title: &'static str) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         div()
             .flex()
             .items_center()
@@ -306,7 +310,7 @@ impl Root {
         options: Vec<(&'static str, bool, T)>,
         apply: fn(&mut ResumeDoc, T),
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let _theme = *cx.theme();
         let root = cx.weak_entity();
         let current = SharedString::from(current.to_string());
         div()
@@ -316,14 +320,9 @@ impl Root {
             .child(self.rail_label(cx, label))
             .child(
                 Button::new(id)
-                    .cursor_pointer()
-                    .ghost()
+                    .selector_inline()
                     .w_full()
-                    .justify_between()
                     .label(current)
-                    .icon(IconName::ChevronDown)
-                    .border_1()
-                    .border_color(theme.border)
                     .dropdown_menu(move |mut menu, _window, _cx| {
                         for (text, checked, value) in options.clone() {
                             let root = root.clone();
@@ -351,7 +350,7 @@ impl Root {
     /// not expressible. Font *is* the first real difference between templates,
     /// so this is the honest version of that row.
     pub(super) fn font_row(&self, cx: &mut Context<Self>, active: DocumentFont) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let _theme = *cx.theme();
         let root = cx.weak_entity();
         div()
             .flex()
@@ -360,14 +359,9 @@ impl Root {
             .child(self.rail_label(cx, "Font"))
             .child(
                 Button::new("layout-font")
-                    .cursor_pointer()
-                    .ghost()
+                    .selector_inline()
                     .w_full()
-                    .justify_between()
                     .label(active.label())
-                    .icon(IconName::ChevronDown)
-                    .border_1()
-                    .border_color(theme.border)
                     .dropdown_menu(move |mut menu, _window, _cx| {
                         for font in DocumentFont::ALL {
                             let root = root.clone();
@@ -391,7 +385,7 @@ impl Root {
     /// way FlowCV's does — `DD MMM YYYY` tells you the shape only if you
     /// already know the notation, while `08 Aug 2026` just shows it.
     pub(super) fn date_format_row(&self, cx: &mut Context<Self>, active: DateFormat) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let _theme = *cx.theme();
         let root = cx.weak_entity();
         div()
             .flex()
@@ -400,14 +394,9 @@ impl Root {
             .child(self.rail_label(cx, "Date format"))
             .child(
                 Button::new("layout-date-format")
-                    .cursor_pointer()
-                    .ghost()
+                    .selector_inline()
                     .w_full()
-                    .justify_between()
                     .label(active.example())
-                    .icon(IconName::ChevronDown)
-                    .border_1()
-                    .border_color(theme.border)
                     .tooltip("How dates print. What you type stays as you typed it.")
                     .dropdown_menu(move |mut menu, _window, _cx| {
                         for format in DateFormat::ALL {
@@ -432,47 +421,33 @@ impl Root {
     }
 
     pub(super) fn page_size_row(&self, cx: &mut Context<Self>, active: PageSize) -> impl IntoElement {
-        let theme = cx.theme().clone();
         div()
             .flex()
             .flex_col()
             .gap(px(7.0))
             .child(self.rail_label(cx, "Page size"))
             .child(
-                div()
-                    .flex()
-                    .gap(px(2.0))
-                    .p(px(3.0))
-                    .rounded(px(7.0))
-                    .bg(theme.chip_bg_neutral)
-                    .children([PageSize::Letter, PageSize::A4].map(|size| {
-                        let selected = size == active;
-                        div()
-                            .id(match size {
-                                PageSize::Letter => "page-size-letter",
-                                PageSize::A4 => "page-size-a4",
-                            })
-                            .flex_1()
-                            .py(px(6.0))
-                            .rounded(px(5.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_pointer()
-                            .text_style(TextStyle::control())
-                            .when(selected, |el| el.bg(theme.selected).text_color(theme.text))
-                            .when(!selected, |el| {
-                                el.text_color(theme.text_muted)
-                                    .hover(|s| s.text_color(theme.text))
-                            })
-                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                                this.doc.layout.page_size = size;
-                                this.after_layout_change(window, cx);
-                            }))
-                            .child(match size {
-                                PageSize::Letter => "Letter",
-                                PageSize::A4 => "A4",
-                            })
+                ButtonGroup::new("page-size")
+                    .outline()
+                    .w_full()
+                    .children(PAGE_SIZES.map(|size| {
+                        Button::new(match size {
+                            PageSize::Letter => "page-size-letter",
+                            PageSize::A4 => "page-size-a4",
+                        })
+                        .toolbar()
+                        .flex_1()
+                        .selected(size == active)
+                        .label(match size {
+                            PageSize::Letter => "Letter",
+                            PageSize::A4 => "A4",
+                        })
+                    }))
+                    .on_click(cx.listener(move |this, clicked: &Vec<usize>, window, cx| {
+                        if let Some(size) = clicked.first().and_then(|i| PAGE_SIZES.get(*i)) {
+                            this.doc.layout.page_size = *size;
+                            this.after_layout_change(window, cx);
+                        }
                     })),
             )
     }
@@ -571,10 +546,8 @@ impl Root {
             "size-{label}-{}",
             if up { "up" } else { "down" }
         )))
+        .icon_only()
         .icon(if up { IconName::Plus } else { IconName::Minus })
-        .ghost()
-        .xsmall()
-        .cursor_pointer()
         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
             let (lo, hi) = TypeSizes::DELTA_RANGE;
             let next = (read(&this.doc.layout.sizes) + step).clamp(lo, hi);

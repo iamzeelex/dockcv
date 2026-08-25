@@ -9,8 +9,8 @@ use gpui::{div, img, px, AnyElement, ClickEvent, Context, FontWeight, IntoElemen
 use crate::resume::model::{Resume, ResumeDoc};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use super::import_flow::{self, ImportStep};
-use dockcv_ui_components::{
-    Button, ButtonExt, ButtonVariants, DropdownMenu, EmptyState, Icon, IconName, PopupMenuItem, Sizable, Tag,
+use dockcv_ui_components::{ScrollableElement, 
+    Button, ButtonExt, Card, DropdownMenu, EmptyState, Icon, IconName, PopupMenuItem, Sizable, Tag,
     TextField, SANS,
 };
 
@@ -25,12 +25,9 @@ impl Shell {
         // Unfiltered — the header's aggregate always describes the whole
         // vault, independent of what the search box narrows the grid to.
         let all_metas = self.cache.metadata();
-        let doc_count = all_metas.len();
-        let variant_count = vault::aggregate_variants(all_metas);
-        let preset_count: usize = all_metas.iter().map(|m| m.presets).sum();
         let vault_is_empty = all_metas.is_empty();
 
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let top = div()
             .flex()
             .items_end()
@@ -39,28 +36,15 @@ impl Shell {
             .px(px(34.0))
             .pt(px(30.0))
             .pb(px(24.0))
+            // No counts under the title. The document total is the number of
+            // cards directly beneath it and the preset total is the sum of the
+            // named chips on those cards — neither changes what the user does
+            // next. See the number rule in `docs/design/component-audit.md`.
             .child(
                 div()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .text_style(TextStyle::title())
-                            .text_color(theme.text)
-                            .child("Your CVs"),
-                    )
-                    // Counts as separate chips rather than one dim mono line.
-                    // The single line read as filler; each number is a different
-                    // fact about the vault, and presets — the axis the review
-                    // says users cannot see (P-01) — were missing from it.
-                    .child(
-                        div()
-                            .mt(px(7.0))
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .children(count_chips(doc_count, variant_count, preset_count)),
-                    ),
+                    .text_style(TextStyle::title())
+                    .text_color(theme.text)
+                    .child("Your CVs"),
             )
             .child(
                 div()
@@ -70,8 +54,7 @@ impl Shell {
                     .child(self.search_box(cx))
                     .child(
                         Button::new("new-cv")
-                            .cursor_pointer()
-                            .header_primary()
+                            .action_primary()
                             .icon(IconName::Plus)
                             .label("New CV")
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
@@ -104,7 +87,7 @@ impl Shell {
                     .id("gallery-scroll")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .px(px(34.0))
                     .pb(px(30.0))
                     .child(body),
@@ -117,8 +100,7 @@ impl Shell {
             .body("Start a new CV, or bring in one you already have.")
             .action(
                 Button::new("empty-new-cv")
-                    .cursor_pointer()
-                    .header_primary()
+                    .action_primary()
                     .icon(IconName::Plus)
                     .label("New CV")
                     // TODO(US-01): once a dedicated first-run import screen
@@ -133,7 +115,7 @@ impl Shell {
     }
 
     pub(super) fn search_box(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         div()
             .w(px(230.0))
             .h(px(38.0))
@@ -141,13 +123,13 @@ impl Shell {
             .items_center()
             .gap_2()
             .px_3()
-            .rounded(px(9.0))
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
             .child(
                 Icon::new(IconName::Search)
-                    .with_size(px(13.0))
+                    .with_size(cx.theme().icon_md())
                     .text_color(theme.text_subtle),
             )
             .child(
@@ -177,11 +159,26 @@ impl Shell {
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
+        // Whether the card should print the person's name at all. In a vault
+        // of one person's documents it is the same string on every card, and a
+        // headline that never varies is a headline that tells you nothing.
+        let mixed_names = metas
+            .iter()
+            .filter(|m| !m.unreadable)
+            .map(|m| m.name.as_str())
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            > 1;
+
         div()
             .flex()
             .flex_wrap()
             .gap(px(18.0))
-            .children(metas.into_iter().map(|meta| self.doc_card(cx, meta, now)))
+            .children(
+                metas
+                    .into_iter()
+                    .map(|meta| self.doc_card(cx, meta, now, mixed_names)),
+            )
     }
 
     /// One document card.
@@ -210,8 +207,9 @@ impl Shell {
         cx: &mut Context<Self>,
         meta: vault::DocMeta,
         now: u64,
+        mixed_names: bool,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let path = meta.path.clone();
         let open_path = path.clone();
         let renaming = self.renaming_doc.as_deref() == Some(path.as_path());
@@ -240,27 +238,32 @@ impl Shell {
                 .into_any_element(),
         };
 
-        div()
-            .id(SharedString::from(format!(
-                "card-{}",
-                meta.path.to_string_lossy()
-            )))
+        let card_id = SharedString::from(format!("card-{}", meta.path.to_string_lossy()));
+        Card::new()
+            .elevated()
+            // Full-bleed: the thumbnail runs to the card's own edge, so the
+            // padding lives on the body rows rather than on the shell.
+            .p_0()
             .w(px(248.0))
             .flex()
             .flex_col()
-            .rounded(px(11.0))
-            .bg(theme.elevated)
-            .border_1()
-            .border_color(theme.border)
             // Deliberately *not* `overflow_hidden`: GPUI clips to the bounds
             // rectangle rather than the rounded path, so it never rounded the
             // thumbnail anyway — and it silently clipped the `···` popup.
-            .hover(|s| s.border_color(theme.accent))
-            .when(!renaming, |el| {
-                el.cursor_pointer()
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.open_doc(open_path.clone(), cx);
-                    }))
+            //
+            // Interactive only while it is not being renamed: during a rename
+            // the card holds a live text field, and a card-wide click target
+            // over it would open the document on every caret placement.
+            .map(|card| {
+                if renaming {
+                    card.id(card_id)
+                } else {
+                    card.interactive(card_id).on_click(cx.listener(
+                        move |this: &mut Self, _: &ClickEvent, _window, cx| {
+                            this.open_doc(open_path.clone(), cx);
+                        },
+                    ))
+                }
             })
             .child(
                 div()
@@ -274,8 +277,11 @@ impl Shell {
                     .bg(theme.paper)
                     .border_b_1()
                     .border_color(theme.paper_border)
-                    // 10 = the card's 11px radius less its 1px border.
-                    .rounded_t(px(10.0))
+                    // Derived, not chosen: the thumbnail sits *inside* the
+                    // card's 1px border, so its corner is the card's radius
+                    // less that border. Written as the token minus the border
+                    // so it follows the ladder if the ladder moves.
+                    .rounded_t(theme.radius_lg() - px(1.0))
                     .overflow_hidden()
                     .child(thumb),
             )
@@ -289,25 +295,40 @@ impl Shell {
                     .pb(px(14.0))
                     .child(self.card_menu(cx, &meta))
                     .child(self.card_title(cx, &meta, renaming))
-                    .child(
-                        div()
-                            .mt(px(2.0))
-                            .mb(px(11.0))
-                            .text_style(TextStyle::body())
-                            .text_color(theme.text_muted)
-                            .child(if meta.unreadable {
-                                "unreadable file".to_string()
-                            } else {
-                                meta.label.clone()
-                            }),
+                    // The person, and only when the gallery is looking at more
+                    // than one of them. Otherwise this line is the same string
+                    // on every card in the grid.
+                    .children(
+                        (mixed_names && !meta.unreadable && !meta.name.trim().is_empty()).then(
+                            || {
+                                div()
+                                    .mt(px(2.0))
+                                    .text_style(TextStyle::body())
+                                    .text_color(theme.text_muted)
+                                    .truncate()
+                                    .child(meta.name.clone())
+                            },
+                        ),
                     )
-                    .child(self.card_presets(cx, &meta))
+                    .child(div().mt(px(11.0)).child(self.card_presets(cx, &meta)))
+                    // File name and age are different kinds of fact and were
+                    // being joined with middots into the least readable line on
+                    // the card. Two columns under a hairline: the name scans
+                    // down the left edge of the grid, the age down the right.
                     .child(
                         div()
-                            .mt(px(10.0))
+                            .mt(px(12.0))
+                            .pt(px(10.0))
+                            .border_t_1()
+                            .border_color(theme.border)
+                            .flex()
+                            .items_baseline()
+                            .justify_between()
+                            .gap(px(10.0))
                             .text_style(TextStyle::meta())
                             .text_color(theme.text_subtle)
-                            .child(card_meta_line(&meta, &updated)),
+                            .child(div().flex_1().min_w_0().truncate().child(meta.stem.clone()))
+                            .child(div().flex_none().child(updated.clone())),
                     ),
             )
     }
@@ -319,7 +340,7 @@ impl Shell {
         meta: &vault::DocMeta,
         renaming: bool,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         if renaming {
             // Renaming edits the **file name**, which is what a document is
             // called under File-over-App — so the box is seeded with the stem,
@@ -342,10 +363,8 @@ impl Shell {
                 // exits are committing or restarting the app.
                 .child(
                     Button::new("rename-cancel")
+                        .icon_only()
                         .icon(IconName::Close)
-                        .ghost()
-                        .xsmall()
-                        .cursor_pointer()
                         .tooltip("Cancel")
                         .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                             this.cancel_rename(cx);
@@ -355,6 +374,20 @@ impl Shell {
         }
 
         let is_copy = meta.stem.contains("-copy");
+        // The **role**, not the person. In a vault of one person's documents
+        // the name is the same string on every card, so heading each card with
+        // it means six cards that read alike until you get to the second line.
+        // The role is what tells them apart, so it takes the headline.
+        let headline = if meta.unreadable {
+            "unreadable file".to_string()
+        } else if meta.label.trim().is_empty() {
+            // Nothing to lead with: fall back to the document's own name on
+            // disk rather than printing an empty headline.
+            meta.stem.clone()
+        } else {
+            meta.label.clone()
+        };
+
         div()
             .flex()
             .items_center()
@@ -362,7 +395,7 @@ impl Shell {
             .pr(px(26.0)) // clears the "···" trigger
             .child(
                 // `flex_1` alongside the `min_w_0`: without it the title box
-                // shrinks to its own minimum and ellipsises a name that had
+                // shrinks to its own minimum and ellipsises a title that had
                 // the whole card to sit in — "Leo Vaicer" came out
                 // "Leo Vai…" with 200px to spare.
                 div()
@@ -372,8 +405,12 @@ impl Shell {
                     .font_family(SANS)
                     .text_size(px(16.0))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.text)
-                    .child(meta.name.clone()),
+                    .text_color(if meta.unreadable {
+                        theme.text_muted
+                    } else {
+                        theme.text
+                    })
+                    .child(headline),
             )
             .when(is_copy, |row| {
                 row.child(
@@ -396,7 +433,7 @@ impl Shell {
     /// organised into a preset yet is not ready to send, and that is worth
     /// saying in a word rather than as "0 presets".
     fn card_presets(&self, cx: &mut Context<Self>, meta: &vault::DocMeta) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         // Two names fit the card's width; the rest become a count, so a
         // document with six presets still reads at a glance.
         const SHOWN: usize = 2;
@@ -413,7 +450,7 @@ impl Shell {
                     Tag::custom(theme.chip_bg_neutral, theme.text_muted, theme.chip_bg_neutral)
                         .px(px(8.0))
                         .py(px(3.0))
-                        .rounded(px(6.0))
+                        .rounded(theme.radius_sm())
                         .text_style(TextStyle::chip())
                         .child("draft"),
                 )
@@ -422,7 +459,7 @@ impl Shell {
                 Tag::custom(theme.chip_bg, theme.chip_fg, theme.chip_bg)
                     .px(px(8.0))
                     .py(px(3.0))
-                    .rounded(px(6.0))
+                    .rounded(theme.radius_sm())
                     .text_style(TextStyle::chip())
                     .child(name)
             }))
@@ -463,10 +500,8 @@ impl Shell {
             "card-menu-{}",
             meta.path.to_string_lossy()
         )))
+        .icon_only()
         .icon(IconName::Ellipsis)
-        .ghost()
-        .xsmall()
-        .cursor_pointer()
         .tooltip("More")
         .dropdown_menu(move |menu, _window, _cx| {
             let (rename, matrix, dup, del, reveal) = (
@@ -511,8 +546,6 @@ impl Shell {
     }
 
     pub(super) fn render_template_chooser(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
-
         match &self.import_step {
             ImportStep::Step1Drop => {
                 div()
@@ -535,13 +568,9 @@ impl Shell {
                         },
                     ))
                     .child(
-                        div()
-                            .id("tpl-cancel")
+                        Button::new("tpl-cancel")
+                            .quiet()
                             .mt(px(16.0))
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .cursor_pointer()
-                            .hover(|s| s.text_color(theme.text))
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.gallery_creating = false;
                                 this.import_step = ImportStep::Step1Drop;
@@ -558,6 +587,28 @@ impl Shell {
                 .w_full()
                 .py(px(20.0))
                 .child(import_flow::render_parsing_step(cx, filename)),
+            ImportStep::CouldNotRead { filename, error } => div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .w_full()
+                .py(px(20.0))
+                .child(import_flow::render_could_not_read(
+                    cx,
+                    filename,
+                    error,
+                    |this, cx| {
+                        this.import_step = ImportStep::Step1Drop;
+                        cx.notify();
+                    },
+                    |this, cx| {
+                        let doc = ResumeDoc::from_resume(Resume::default(), "Base");
+                        this.create_doc(doc, "cv", cx);
+                        this.gallery_creating = false;
+                        this.import_step = ImportStep::Step1Drop;
+                    },
+                )),
             ImportStep::Step2Review { imported } => div()
                 .flex()
                 .flex_col()
@@ -593,21 +644,14 @@ impl Shell {
         description: &'static str,
         action: Box<dyn Fn(&mut Self, &mut Context<Self>) + 'static>,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
-        div()
-            .id(id)
-            .w_full()
+        let theme = *cx.theme();
+        Card::new()
+            .surface()
+            .small()
+            .interactive(id)
             .flex()
             .flex_col()
             .gap_1()
-            .px_4()
-            .py_3()
-            .rounded_lg()
-            .bg(theme.surface)
-            .border_1()
-            .border_color(theme.border)
-            .cursor_pointer()
-            .hover(|s| s.border_color(theme.accent))
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                 action(this, cx);
             }))
@@ -621,56 +665,4 @@ impl Shell {
     }
 }
 
-/// The vault's headline numbers, one chip each.
-///
-/// Each is a different fact — how many documents, how much tailoring across
-/// them, how many presets are defined — and the preset count is the one the
-/// review says users currently have no way to see (P-01). A chip with zero
-/// behind it is dropped rather than shown as "0".
-fn count_chips(documents: usize, variants: usize, presets: usize) -> Vec<AnyElement> {
-    let plural = |n: usize, word: &str| {
-        if n == 1 {
-            format!("{n} {word}")
-        } else {
-            format!("{n} {word}s")
-        }
-    };
 
-    [
-        (documents, "document", true),
-        (variants, "variant", variants > 0),
-        (presets, "preset", presets > 0),
-    ]
-    .into_iter()
-    .filter(|(_, _, show)| *show)
-    .map(|(n, word, _)| {
-        Tag::secondary()
-            .small()
-            .child(plural(n, word))
-            .into_any_element()
-    })
-    .collect()
-}
-
-/// The card's bottom line: the document's own file name, then how stale it is,
-/// then where the tailoring lives.
-///
-/// The file name leads because it is the one fact that distinguishes two CVs
-/// belonging to the same person — and it quietly answers "where are my files"
-/// (review P-11) on the screen the user is on most.
-///
-/// `N variants` on its own says nothing; the same number with the count of
-/// sections it is spread across says whether this document is one tailored
-/// section or four.
-fn card_meta_line(meta: &vault::DocMeta, updated: &str) -> String {
-    let mut parts = vec![meta.stem.clone(), format!("updated {updated}")];
-    if meta.varied_sections > 0 {
-        parts.push(format!(
-            "{} variants in {} section{}",
-            meta.variants,
-            meta.varied_sections,
-            if meta.varied_sections == 1 { "" } else { "s" }
-        ));
-    }
-    parts.join(" · ")
-}

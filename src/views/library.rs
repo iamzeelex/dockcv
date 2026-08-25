@@ -21,9 +21,7 @@ use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
 use super::save_status;
-use dockcv_ui_components::{
-    Button, ButtonExt, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, Tag, TextField,
-};
+use dockcv_ui_components::{ScrollableElement, Button, ButtonExt, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, Tag, TextField};
 
 use super::confirm;
 use super::applications_data::plural;
@@ -320,7 +318,7 @@ impl Shell {
                     .id("library-scroll")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .px(px(34.0))
                     .pb(px(30.0))
                     .flex()
@@ -391,8 +389,7 @@ impl Shell {
                     .child(self.library_search_box(cx))
                     .child(
                         Button::new("new-block")
-                            .cursor_pointer()
-                            .header_primary()
+                            .action_primary()
                             .icon(IconName::Plus)
                             .label("New block")
                             .dropdown_menu(move |mut menu, _window, _cx| {
@@ -418,9 +415,7 @@ impl Shell {
         let active = self.library_sort;
         let shell = cx.weak_entity();
         Button::new("library-sort")
-            .cursor_pointer()
-            .ghost()
-            .small()
+            .selector()
             .icon(IconName::SortAscending)
             .label(active.short_label())
             .tooltip("Order blocks")
@@ -443,7 +438,7 @@ impl Shell {
     }
 
     fn library_search_box(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         div()
             .w(px(230.0))
             .h(px(38.0))
@@ -451,13 +446,13 @@ impl Shell {
             .items_center()
             .gap_2()
             .px_3()
-            .rounded(px(9.0))
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
             .child(
                 Icon::new(IconName::Search)
-                    .with_size(px(13.0))
+                    .with_size(cx.theme().icon_md())
                     .text_color(theme.text_subtle),
             )
             .child(
@@ -477,7 +472,7 @@ impl Shell {
         if total == 0 || self.library_helper_dismissed {
             return None;
         }
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         Some(
             div()
                 .flex()
@@ -485,13 +480,13 @@ impl Shell {
                 .gap_3()
                 .px_4()
                 .py_3()
-                .rounded_lg()
+                .rounded(theme.radius_md())
                 .bg(theme.surface)
                 .border_1()
                 .border_color(theme.border)
                 .child(
                     Icon::new(IconName::Star)
-                        .with_size(px(14.0))
+                        .with_size(cx.theme().icon_md())
                         .text_color(theme.accent),
                 )
                 .child(
@@ -510,10 +505,8 @@ impl Shell {
                 )
                 .child(
                     Button::new("library-helper-dismiss")
+                        .icon_only()
                         .icon(IconName::Close)
-                        .ghost()
-                        .xsmall()
-                        .cursor_pointer()
                         .tooltip("Dismiss")
                         .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                             this.library_helper_dismissed = true;
@@ -560,29 +553,10 @@ impl Shell {
         active: bool,
         section: Option<SectionKind>,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
-        div()
-            .id(id.into())
-            .flex()
-            .items_center()
+        let theme = *cx.theme();
+        Button::new(id.into())
+            .chip(active, &theme)
             .gap(px(6.0))
-            .px(px(10.0))
-            .py(px(5.0))
-            .rounded(px(7.0))
-            .border_1()
-            .cursor_pointer()
-            .when(active, |el| {
-                el.bg(theme.chip_bg)
-                    .border_color(theme.chip_bg)
-                    .text_color(theme.chip_fg)
-            })
-            .when(!active, |el| {
-                el.bg(theme.chip_bg_neutral)
-                    .border_color(theme.chip_bg_neutral)
-                    .text_color(theme.text_muted)
-                    .hover(|s| s.text_color(theme.text))
-            })
-            .text_style(TextStyle::control())
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                 this.library_filter = section;
                 cx.notify();
@@ -609,7 +583,7 @@ impl Shell {
         cards: Vec<BlockCard>,
         usage: &UsageIndex,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let count = cards.len();
 
         let header = div()
@@ -637,9 +611,7 @@ impl Shell {
             )
             .child(
                 Button::new(SharedString::from(format!("libadd-{section:?}")))
-                    .cursor_pointer()
-                    .ghost()
-                    .xsmall()
+                    .quiet()
                     .icon(IconName::Plus)
                     .label("Add")
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
@@ -671,7 +643,7 @@ impl Shell {
         card: BlockCard,
         usage: &UsageIndex,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let index = card.index;
         let shell = cx.weak_entity();
         let used_in = usage.documents_for(self.cache.library(), section, index).to_vec();
@@ -699,7 +671,7 @@ impl Shell {
             .relative()
             .px_4()
             .py_3()
-            .rounded(px(11.0))
+            .rounded(theme.radius_lg())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
@@ -716,10 +688,8 @@ impl Shell {
             .child(
                 div().absolute().top(px(10.0)).right(px(8.0)).child(
                     Button::new(SharedString::from(format!("libmenu-{section:?}-{index}")))
+                        .icon_only()
                         .icon(IconName::Ellipsis)
-                        .ghost()
-                        .xsmall()
-                        .cursor_pointer()
                         .tooltip("More")
                         .dropdown_menu(move |menu, _window, _cx| {
                             let shell = shell.clone();
@@ -801,11 +771,8 @@ impl Shell {
                     .children((!destinations.is_empty()).then(|| {
                         let shell = cx.weak_entity();
                         Button::new(SharedString::from(format!("libuse-{section:?}-{index}")))
-                            .cursor_pointer()
-                            .ghost()
-                            .xsmall()
+                            .selector_inline()
                             .label("Reuse")
-                            .icon(IconName::ChevronDown)
                             .tooltip("Add a copy of this block to a CV")
                             .dropdown_menu(move |mut menu, _window, _cx| {
                                 for (label, path) in &destinations {
@@ -842,7 +809,7 @@ impl Shell {
         cx: &mut Context<Self>,
         used_in: Vec<super::library_usage::DocumentRef>,
     ) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         if used_in.is_empty() {
             return div()
                 .text_style(TextStyle::meta())
@@ -861,9 +828,7 @@ impl Shell {
                 .collect::<Vec<_>>()
                 .join("-")
         )))
-        .cursor_pointer()
-        .ghost()
-        .xsmall()
+        .selector_inline()
         .label(format!("used in {count} CV{}", plural(count)))
         .tooltip("Show which CVs")
         .dropdown_menu(move |mut menu, _window, _cx| {
@@ -886,7 +851,7 @@ impl Shell {
 
     /// First-run explanation of what the library is and how to fill it.
     pub(super) fn render_library_onboarding(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let shell = cx.weak_entity();
         let step = |n: &'static str, title: &'static str, body: &'static str| {
             div()
@@ -938,7 +903,7 @@ impl Shell {
             .flex_col()
             .gap_5()
             .p_8()
-            .rounded_xl()
+            .rounded(theme.radius_lg())
             .bg(theme.surface)
             .border_1()
             .border_color(theme.border)
@@ -992,8 +957,7 @@ impl Shell {
                     .gap_2()
                     .child(
                         Button::new("library-onboarding-new")
-                            .cursor_pointer()
-                            .primary()
+                            .action_primary()
                             .icon(IconName::Plus)
                             .label("New block")
                             .dropdown_menu(move |mut menu, _window, _cx| {
@@ -1012,8 +976,7 @@ impl Shell {
                     )
                     .child(
                         Button::new("library-onboarding-cta")
-                            .cursor_pointer()
-                            .ghost()
+                            .action_secondary()
                             .label("Browse CVs")
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.screen = Screen::Gallery;

@@ -148,7 +148,7 @@ fn snapshot_line(theme: &Theme, snapshot: &Snapshot) -> AnyElement {
         .gap(px(5.0))
         .child(
             Icon::new(IconName::File)
-                .with_size(px(10.0))
+                .with_size(theme.icon_sm())
                 .text_color(theme.text_subtle),
         )
         .child(

@@ -1380,7 +1380,7 @@ impl Render for Root {
         self.sync_fields(window, cx);
         self.ensure_layout_sliders(window, cx);
 
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         div()
             .id("root")

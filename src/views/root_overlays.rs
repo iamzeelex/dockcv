@@ -7,9 +7,7 @@ use gpui::{
 };
 
 use super::root_preview_chrome::{MAX_ZOOM_PCT, MIN_ZOOM_PCT};
-use dockcv_ui_components::{CHROME_HEIGHT, 
-    Button, ButtonExt, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, TextField, SANS,
-};
+use dockcv_ui_components::{ScrollableElement, CHROME_HEIGHT, Button, ListItem, ListItemExt, ButtonExt, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, TextField, SANS};
 
 use crate::resume::model::SectionKind;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
@@ -24,7 +22,7 @@ impl Root {
     /// plus a separate wrapping row of every preset as a chip (design doc §3,
     /// "Layout notes against the current build").
     pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let identity = self.document_identity();
 
         div()
@@ -52,9 +50,7 @@ impl Root {
                 // with a `‹` glued to it, it read as decoration rather than
                 // something to press.
                 Button::new("back-to-gallery")
-                    .cursor_pointer()
-                    .ghost()
-                    .xsmall()
+                    .quiet()
                     .icon(IconName::ChevronLeft)
                     .label("Vault")
                     .tooltip("Back to your CVs")
@@ -103,8 +99,7 @@ impl Root {
             // is a last-forty-minutes activity, so it earns space while in use.
             .child(
                 Button::new("layout-rail")
-                    .cursor_pointer()
-                    .toolbar_secondary()
+                    .toolbar()
                     .gap(px(6.0))
                     .label("Layout")
                     .tooltip("Page size, margins and text scale")
@@ -114,8 +109,7 @@ impl Root {
             )
             .child(
                 Button::new("capture")
-                    .cursor_pointer()
-                    .toolbar_secondary()
+                    .toolbar()
                     .gap(px(6.0))
                     .label("Capture")
                     // P-17 discoverability: the chord is resolved live from
@@ -132,7 +126,6 @@ impl Root {
             )
             .child(
                 Button::new("export-pdf")
-                    .cursor_pointer()
                     .toolbar_primary()
                     .label("Export PDF")
                     .tooltip_with_action(
@@ -154,7 +147,7 @@ impl Root {
     /// "＋ Save as preset", and is a door into the Preset Matrix screen
     /// (`EditorEvent::OpenPresetMatrix`, handled by `Shell`).
     fn render_preset_control(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let value = self
             .active_preset
             .and_then(|i| self.doc.preset_name(i))
@@ -165,16 +158,7 @@ impl Root {
         let root = cx.weak_entity();
 
         Button::new("preset-control")
-            .cursor_pointer()
-            .ghost()
-            .h(px(32.0))
-            .pl(px(13.0))
-            .pr(px(11.0))
-            .gap(px(8.0))
-            .rounded(px(8.0))
-            .bg(theme.chip_bg_neutral)
-            .border_1()
-            .border_color(theme.border)
+            .selector()
             // P-17: cycling presets from the keyboard has no other visible
             // control to hang a hint on but this one; `PrevPreset`'s chord
             // (Alt+Shift+Up) is the mirror of the one shown here and is named
@@ -198,11 +182,6 @@ impl Root {
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.text)
                     .child(value),
-            )
-            .child(
-                Icon::new(IconName::ChevronDown)
-                    .with_size(px(12.0))
-                    .text_color(theme.text_subtle),
             )
             .dropdown_menu(move |menu, _window, _cx| {
                 let mut menu = menu;
@@ -260,7 +239,7 @@ impl Root {
         cx: &mut Context<Self>,
         work_index: usize,
     ) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         let list: AnyElement = if self.diary.entries.is_empty() {
             div()
@@ -277,25 +256,26 @@ impl Root {
                 .gap_1()
                 .p_2()
                 .max_h(px(340.0))
-                .overflow_y_scroll()
+                .overflow_y_scrollbar()
                 .children(self.diary.entries.iter().enumerate().map(|(i, entry)| {
                     let date = entry.date.clone();
                     let text = entry.text.clone();
-                    div()
-                        .id(SharedString::from(format!("diaryitem-{i}")))
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .px_3()
+                    ListItem::new(SharedString::from(format!("diaryitem-{i}")))
+                        .row()
                         .py_2()
-                        .rounded_md()
-                        .cursor_pointer()
-                        .hover(|s| s.bg(theme.surface))
                         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                             this.insert_diary_highlight(work_index, i, window, cx);
                         }))
-                        .child(div().text_xs().text_color(theme.accent).child(date))
-                        .child(div().text_sm().text_color(theme.text).child(text))
+                        // A date over the win itself — one flex column, since
+                        // `ListItem` hands its children to a block div.
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .child(div().text_xs().text_color(theme.accent).child(date))
+                                .child(div().text_sm().text_color(theme.text).child(text)),
+                        )
                 }))
                 .into_any_element()
         };
@@ -308,7 +288,7 @@ impl Root {
             .w(px(560.0))
             .flex()
             .flex_col()
-            .rounded_lg()
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
@@ -328,18 +308,15 @@ impl Root {
                             .child("Add from diary"),
                     )
                     .child(
-                        div()
-                            .id("diary-close")
-                            .px_1()
-                            .rounded_md()
-                            .text_color(theme.text_muted)
-                            .cursor_pointer()
-                            .hover(|s| s.text_color(theme.text))
+                        Button::new("diary-close")
+                            .icon_only()
+                            .icon(IconName::Close)
+                            .tooltip("Close")
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.diary_picker = None;
                                 cx.notify();
                             }))
-                            .child(Icon::new(IconName::Close).with_size(px(11.0))),
+                            .child(Icon::new(IconName::Close).with_size(cx.theme().icon_sm())),
                     ),
             )
             .child(list);
@@ -361,7 +338,7 @@ impl Root {
         cx: &mut Context<Self>,
         section: SectionKind,
     ) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let labels = self.library_labels(section);
 
         let list: AnyElement = if labels.is_empty() {
@@ -379,16 +356,11 @@ impl Root {
                 .gap_1()
                 .p_2()
                 .max_h(px(340.0))
-                .overflow_y_scroll()
+                .overflow_y_scrollbar()
                 .children(labels.into_iter().enumerate().map(|(i, label)| {
-                    div()
-                        .id(SharedString::from(format!("libitem-{i}")))
-                        .px_3()
-                        .py_2()
-                        .rounded_md()
-                        .text_sm()
+                    ListItem::new(SharedString::from(format!("libitem-{i}")))
+                        .row()
                         .text_color(theme.text)
-                        .cursor_pointer()
                         .hover(|s| s.bg(theme.surface))
                         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                             this.insert_library_block(section, i, window, cx);
@@ -402,7 +374,7 @@ impl Root {
             .w(px(460.0))
             .flex()
             .flex_col()
-            .rounded_lg()
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
@@ -422,18 +394,15 @@ impl Root {
                             .child(format!("Add from library ({section:?})")),
                     )
                     .child(
-                        div()
-                            .id("library-close")
-                            .px_1()
-                            .rounded_md()
-                            .text_color(theme.text_muted)
-                            .cursor_pointer()
-                            .hover(|s| s.text_color(theme.text))
+                        Button::new("library-close")
+                            .icon_only()
+                            .icon(IconName::Close)
+                            .tooltip("Close")
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.library_picker = None;
                                 cx.notify();
                             }))
-                            .child(Icon::new(IconName::Close).with_size(px(11.0))),
+                            .child(Icon::new(IconName::Close).with_size(cx.theme().icon_sm())),
                     ),
             )
             .child(list);
@@ -455,7 +424,7 @@ impl Root {
     /// (design doc §10 leaves its exact shape open); this is the minimal
     /// reading that satisfies "Cancel and Save, plus a visible link".
     pub(super) fn render_capture_sheet(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let Some(sheet) = &self.capture_sheet else {
             return div().into_any_element();
         };
@@ -471,8 +440,8 @@ impl Root {
         let chosen = sheet.role.clone();
         let roles = self.capture_roles();
         let chip = |label: SharedString, value: String, selected: bool, cx: &mut Context<Self>| {
-            div()
-                .id(SharedString::from(format!("capture-role-{value}")))
+            Button::new(SharedString::from(format!("capture-role-{value}")))
+                .chip(selected, &theme)
                 // A role is `employer · position` and a job title can run to a
                 // sentence; without a ceiling the longest one pushes the chip
                 // straight out of the panel. `flex_wrap` wraps between chips,
@@ -489,16 +458,10 @@ impl Root {
                 // line would otherwise split it between them.
                 .flex_none()
                 .max_w(px(496.0))
-                .px_2()
-                .py(px(3.0))
                 .rounded_full()
                 .border_1()
                 .border_color(if selected { theme.accent } else { theme.border })
-                .bg(if selected { theme.selected } else { theme.surface })
-                .text_style(TextStyle::label())
                 .text_color(if selected { theme.text } else { theme.text_muted })
-                .cursor_pointer()
-                .hover(|s| s.border_color(theme.accent))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                     if let Some(sheet) = this.capture_sheet.as_mut() {
                         sheet.role = value.clone();
@@ -534,7 +497,7 @@ impl Root {
             .w(px(460.0))
             .flex()
             .flex_col()
-            .rounded_lg()
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
@@ -554,17 +517,13 @@ impl Root {
                             .child("Capture to Diary"),
                     )
                     .child(
-                        div()
-                            .id("capture-close")
-                            .px_1()
-                            .rounded_md()
-                            .text_color(theme.text_muted)
-                            .cursor_pointer()
-                            .hover(|s| s.text_color(theme.text))
+                        Button::new("capture-close")
+                            .icon_only()
+                            .icon(IconName::Close)
+                            .tooltip("Close")
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.close_capture_sheet(cx);
-                            }))
-                            .child(Icon::new(IconName::Close).with_size(px(11.0))),
+                            })),
                     ),
             )
             .child(
@@ -615,8 +574,7 @@ impl Root {
                             .gap(px(8.0))
                             .child(
                                 Button::new("capture-cancel")
-                                    .cursor_pointer()
-                                    .toolbar_secondary()
+                                    .toolbar()
                                     .label("Cancel")
                                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                         this.close_capture_sheet(cx);
@@ -624,7 +582,6 @@ impl Root {
                             )
                             .child(
                                 Button::new("capture-save")
-                                    .cursor_pointer()
                                     .toolbar_primary()
                                     .label("Save")
                                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
@@ -650,13 +607,13 @@ impl Root {
     /// `canvas` — deliberately deeper than `background` — so the sheet reads
     /// as sitting apart from the chrome around it.
     pub(super) fn render_preview(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         let content: AnyElement = if let Some(err) = self.compile_error_text() {
             div()
                 .max_w(px(520.0))
                 .p_4()
-                .rounded_lg()
+                .rounded(theme.radius_md())
                 .bg(theme.elevated)
                 .border_1()
                 .border_color(theme.danger)
@@ -733,7 +690,7 @@ impl Root {
                     // the middle of it.
                     .items_start()
                     .justify_center()
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .pt(px(34.0))
                     .pb(px(34.0))
                     .child(content),

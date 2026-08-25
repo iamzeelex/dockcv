@@ -272,10 +272,8 @@ mod tests {
             stem: stem.into(),
             name: name.into(),
             label: String::new(),
-            variants: 0,
             presets: 0,
             preset_names: Vec::new(),
-            varied_sections: 0,
             unreadable: false,
             modified_secs: None,
         }

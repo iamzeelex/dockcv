@@ -15,18 +15,15 @@
 
 use gpui::prelude::*;
 use gpui::{
-    div, px, AnyElement, ClickEvent, Context, Entity, FontWeight, IntoElement, SharedString,
-    Subscription, Window,
+    div, px, AnyElement, ClickEvent, Context, Entity, IntoElement, SharedString, Subscription,
+    Window,
 };
 
-use dockcv_ui_components::{
-    DockIcon, Field, Icon, IconName, Sizable, TextField, TextFieldEvent, TextFieldState, Tooltip,
-    SANS,
-};
+use dockcv_ui_components::{Button, ButtonExt, DockIcon, Field, Icon, IconName, Sizable, TextField, TextFieldEvent, TextFieldState, SANS};
 
 use crate::resume::edit::FieldId;
 use crate::resume::model::SectionKind;
-use crate::theme::{ActiveTheme, StyledText, TextStyle};
+use crate::theme::ActiveTheme;
 
 use super::confirm;
 use super::Root;
@@ -49,7 +46,7 @@ impl Root {
     /// to duplicate it. Lives inside the section's own card (L-06) — a
     /// variant is a property of its section, not a global toolbar control.
     pub(super) fn variant_bar(&self, cx: &mut Context<Self>, section: SectionKind) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let names = self.doc.variant_names(section);
         let active = self.doc.active_variant(section);
         let count = names.len();
@@ -97,40 +94,22 @@ impl Root {
                 }
             }
 
-            let mut pill = div()
-                .id(SharedString::from(format!("var-{section:?}-{i}")))
-                .flex()
-                .items_center()
+            // The active variant wears the full accent rather than `selected`'s
+            // wash: this is not one option highlighted among several, it is the
+            // variant the document is currently made of.
+            let mut pill = Button::new(SharedString::from(format!("var-{section:?}-{i}")))
+                .chip(is_active, &theme)
                 .gap(px(6.0))
-                .px(px(11.0))
-                .py(px(6.0))
-                .rounded(px(7.0))
-                .font_family(SANS)
-                .text_size(px(12.5))
-                .font_weight(if is_active {
-                    FontWeight::MEDIUM
-                } else {
-                    FontWeight::NORMAL
+                // The active variant wears the *full* accent, not the chip's
+                // wash: see the note above.
+                .when(is_active, |el| {
+                    el.bg(theme.accent).text_color(theme.on_accent)
                 })
-                .bg(if is_active {
-                    theme.accent
-                } else {
-                    theme.chip_bg_neutral
-                })
-                .text_color(if is_active {
-                    theme.on_accent
-                } else {
-                    theme.text_muted
-                })
-                .cursor_pointer()
-                .tooltip(move |window, cx| {
-                    Tooltip::new(format!(
-                        "Switch to this variant  ·  {} / {}",
-                        super::root::keys::PREV_VARIANT,
-                        super::root::keys::NEXT_VARIANT
-                    ))
-                    .build(window, cx)
-                })
+                .tooltip(format!(
+                    "Switch to this variant  ·  {} / {}",
+                    super::root::keys::PREV_VARIANT,
+                    super::root::keys::NEXT_VARIANT
+                ))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.flush_variant_rename(section, window, cx);
                     this.checkpoint();
@@ -148,21 +127,22 @@ impl Root {
             // not the one the user meant.
             if is_active {
                 pill = pill.child(
-                    div()
-                        .id(SharedString::from(format!("var-rename-btn-{section:?}")))
-                        .cursor_pointer()
-                        .opacity(0.75)
-                        .hover(|s| s.opacity(1.0))
+                    // `occlude`, the same guard every nested trigger in this
+                    // codebase uses: the pen sits inside the pill's own click
+                    // region, and without it the press reaches the pill too.
+                    div().occlude().child(
+                        Button::new(SharedString::from(format!(
+                            "var-rename-btn-{section:?}"
+                        )))
+                        .icon_only()
+                        .icon(DockIcon::Pen)
                         .text_color(theme.on_accent)
-                        .tooltip(|window, cx| Tooltip::new("Rename this variant").build(window, cx))
+                        .tooltip("Rename this variant")
                         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                            // Nested inside the pill's own clickable area —
-                            // without this, the pill's "switch to self" click
-                            // also fires on every rename click.
                             cx.stop_propagation();
                             this.start_variant_rename(section, window, cx);
-                        }))
-                        .child(Icon::new(DockIcon::Pen).with_size(px(11.0))),
+                        })),
+                    ),
                 );
             }
 
@@ -182,14 +162,10 @@ impl Root {
         // variant management largely open).
         if count > 1 {
             pill_row = pill_row.child(
-                div()
-                    .id(SharedString::from(format!("var-del-{section:?}")))
-                    .px_1()
-                    .rounded_md()
-                    .text_style(TextStyle::meta())
-                    .text_color(theme.text_muted)
-                    .cursor_pointer()
-                    .hover(|s| s.text_color(theme.danger))
+                Button::new(SharedString::from(format!("var-del-{section:?}")))
+                    .icon_only()
+                    .icon(IconName::Close)
+                    .tooltip("Delete the active variant")
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                         // Committed first: the name in the dialog has to be the
                         // one on screen, including an edit still in the box.
@@ -225,25 +201,15 @@ impl Root {
                             },
                         );
                     }))
-                    .child(Icon::new(IconName::Close).with_size(px(11.0))),
+                    .child(Icon::new(IconName::Close).with_size(cx.theme().icon_sm())),
             );
         }
 
         // Duplicate the active variant into a new one.
         pill_row = pill_row.child(
-            div()
-                .id(SharedString::from(format!("var-add-{section:?}")))
-                .px(px(9.0))
-                .py(px(6.0))
-                .rounded(px(7.0))
-                .border_1()
-                .border_dashed()
-                .border_color(theme.border)
-                .font_family(SANS)
-                .text_size(px(12.5))
-                .text_color(theme.text_subtle)
-                .cursor_pointer()
-                .hover(|s| s.text_color(theme.accent))
+            Button::new(SharedString::from(format!("var-add-{section:?}")))
+                .chip_dashed(&theme)
+                .tooltip("Copy the active variant into a new one")
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.flush_variant_rename(section, window, cx);
                     this.checkpoint();
@@ -253,7 +219,8 @@ impl Root {
                     cx.notify();
                     this.schedule_recompile(window, cx);
                 }))
-                .child("+ new"),
+                .icon(IconName::Plus)
+                .child("new"),
         );
 
         div()

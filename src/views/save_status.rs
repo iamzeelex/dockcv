@@ -26,7 +26,7 @@ use std::path::Path;
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, App, ClickEvent, Global, SharedString, Window};
 
-use dockcv_ui_components::{StyledText, TextStyle};
+use dockcv_ui_components::{Button, ButtonExt, StyledText, TextStyle};
 
 use crate::theme::ActiveTheme;
 
@@ -165,7 +165,7 @@ pub fn clear_open_failure(cx: &mut App) {
 /// small betrayal.
 pub fn banner(cx: &mut App) -> Option<AnyElement> {
     let notice = cx.try_global::<SaveStatus>()?.notice.as_ref()?;
-    let theme = cx.theme().clone();
+    let theme = *cx.theme();
     let title: SharedString = notice.title.clone().into();
     let detail: SharedString = notice.detail.clone().into();
     let hint = notice.hint;
@@ -189,7 +189,7 @@ pub fn banner(cx: &mut App) -> Option<AnyElement> {
                     .gap_3()
                     .px_4()
                     .py_3()
-                    .rounded_lg()
+                    .rounded(theme.radius_md())
                     .bg(theme.elevated)
                     .border_1()
                     .border_color(theme.danger)
@@ -221,16 +221,9 @@ pub fn banner(cx: &mut App) -> Option<AnyElement> {
                             ),
                     )
                     .child(
-                        div()
-                            .id("vault-notice-dismiss")
+                        Button::new("vault-notice-dismiss")
+                            .quiet()
                             .flex_none()
-                            .px_2()
-                            .py(px(1.0))
-                            .rounded_md()
-                            .text_style(TextStyle::control())
-                            .text_color(theme.text_muted)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.hover).text_color(theme.text))
                             .on_click(|_: &ClickEvent, window: &mut Window, cx: &mut App| {
                                 // Clearing rather than a `dismissed` flag: if
                                 // the condition persists, the next debounced

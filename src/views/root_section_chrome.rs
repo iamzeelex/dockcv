@@ -5,12 +5,12 @@
 //! they are not in `root_layout_rail.rs` where they were first written.
 
 use gpui::prelude::*;
-use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement, SharedString};
+use gpui::{div, AnyElement, ClickEvent, Context, IntoElement, SharedString};
 
-use dockcv_ui_components::{Button, ButtonVariants, IconName, Sizable, Tooltip};
+use dockcv_ui_components::{Button, ButtonExt, IconName};
 
 use crate::resume::model::{SectionKind, TrimCandidate};
-use crate::theme::{ActiveTheme, StyledText, TextStyle};
+use crate::theme::ActiveTheme;
 
 use super::root::Root;
 
@@ -35,14 +35,12 @@ impl Root {
         }
         let hidden = self.doc.is_hidden(section);
         Button::new(SharedString::from(format!("visibility-{section:?}")))
+            .icon_only()
             .icon(if hidden {
                 IconName::EyeOff
             } else {
                 IconName::Eye
             })
-            .ghost()
-            .xsmall()
-            .cursor_pointer()
             .tooltip(if hidden {
                 "Hidden from this CV — click to show"
             } else {
@@ -95,29 +93,19 @@ impl Root {
         section: SectionKind,
     ) -> Option<AnyElement> {
         let candidate = self.trim_candidate_for(section)?;
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let variant = candidate.variant.clone();
 
         Some(
-            div()
-                .id(SharedString::from(format!("trim-{section:?}")))
-                .flex()
-                .items_center()
-                .gap(px(4.0))
-                .px(px(7.0))
-                .py(px(2.0))
-                .rounded(px(5.0))
+            Button::new(SharedString::from(format!("trim-{section:?}")))
+                .chip(false, &theme)
+                // Amber, because this is the one chip that is a *suggestion*
+                // about the page rather than a state of the document.
                 .bg(theme.warning.opacity(0.18))
-                .cursor_pointer()
-                .text_style(TextStyle::chip())
                 .text_color(theme.warning)
-                .tooltip({
-                    let variant = variant.clone();
-                    move |window, cx| {
-                        Tooltip::new(format!("Switch to “{variant}”, a shorter cut you already wrote"))
-                            .build(window, cx)
-                    }
-                })
+                .tooltip(format!(
+                    "Switch to “{variant}”, a shorter cut you already wrote"
+                ))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.doc.set_active_variant_by_name(section, &variant);
                     this.after_layout_change(window, cx);

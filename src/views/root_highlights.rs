@@ -45,7 +45,7 @@ impl Root {
         if fields.is_empty() {
             return None;
         }
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let label: SharedString = label.into();
 
         let mut rows = div().flex().flex_col().gap(px(6.0));

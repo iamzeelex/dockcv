@@ -18,7 +18,7 @@ use gpui::prelude::*;
 use gpui::{div, px, Context, IntoElement, SharedString, Window};
 
 use dockcv_ui_components::{
-    Button, ButtonVariants, DropdownMenu, Field, IconName, PopupMenuItem, Sizable,
+    Button, ButtonExt, DropdownMenu, Field, PopupMenuItem,
 };
 
 use crate::resume::edit::FieldId;
@@ -101,7 +101,7 @@ impl Root {
         label: &'static str,
         floor: Option<(i32, u32)>,
     ) -> Field {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let text = field.get(&self.doc).cloned().unwrap_or_default();
         let value = current(&text);
         let label: SharedString = label.into();
@@ -158,23 +158,15 @@ impl Root {
         let first = first_month_in(year, floor);
 
         Button::new(SharedString::from(format!("month-{field:?}")))
-            .cursor_pointer()
-            .ghost()
-            .small()
+            .selector()
             .w_full()
-            .justify_between()
-            // A selector is a field, so it wears a field's box: the same fill,
-            // border and radius a `TextField` gets, at the same `small` height.
-            // As an `xsmall` ghost button it read as a link sitting in a row of
-            // inputs.
-            .bg(cx.theme().elevated)
-            .border_1()
-            .border_color(cx.theme().border)
-            .rounded(px(6.0))
+            // Full width because a date selector is a field, and a field
+            // fills its column. Everything else about the box — fill, hairline,
+            // radius, height — comes from `selector()`, which is what makes it
+            // agree with the `TextField` sitting beside it in the same row.
             .label(value.map_or("Month".to_string(), |(_, m)| {
                 MONTHS[(m - 1) as usize].to_string()
             }))
-            .icon(IconName::ChevronDown)
             .dropdown_menu(move |mut menu, _window, _cx| {
                 for (idx, name) in MONTHS.iter().enumerate() {
                     let month = idx as u32 + 1;
@@ -205,17 +197,9 @@ impl Root {
         let first_year = floor.map_or(FIRST_YEAR, |(y, _)| y);
 
         Button::new(SharedString::from(format!("year-{field:?}")))
-            .cursor_pointer()
-            .ghost()
-            .small()
+            .selector()
             .w_full()
-            .justify_between()
-            .bg(cx.theme().elevated)
-            .border_1()
-            .border_color(cx.theme().border)
-            .rounded(px(6.0))
             .label(value.map_or("Year".to_string(), |(y, _)| y.to_string()))
-            .icon(IconName::ChevronDown)
             .dropdown_menu(move |mut menu, _window, _cx| {
                 // Newest first: a CV is written from the present backwards.
                 for year in (first_year..=last_year()).rev() {

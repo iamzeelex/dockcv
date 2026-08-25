@@ -38,7 +38,7 @@
 use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, Entity, IntoElement, SharedString, Window};
 
-use dockcv_ui_components::{Button, ButtonExt, Disableable, TextField, TextFieldState};
+use dockcv_ui_components::{ScrollableElement, Button, ListItem, ListItemExt, ButtonExt, Disableable, TextField, TextFieldState};
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
@@ -221,7 +221,7 @@ impl Shell {
     /// The sheet, or nothing when it is closed.
     pub(super) fn render_diary_use_sheet(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let sheet = self.diary_use.as_ref()?;
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         // Every readable document is a destination. An unreadable one is not
         // offered rather than offered and then refused.
@@ -254,24 +254,21 @@ impl Shell {
         let doc_list = div()
             .id("diary-use-docs")
             .max_h(px(112.0))
-            .overflow_y_scroll()
+            .overflow_y_scrollbar()
             .flex()
             .flex_col()
             .gap(px(2.0))
             .children(destinations.into_iter().map(|(label, path)| {
                 let selected = chosen_path.as_deref() == Some(path.as_path());
                 let for_click = path.clone();
-                div()
-                    .id(SharedString::from(format!("diary-use-doc-{}", path.display())))
-                    .px_2()
-                    .py(px(5.0))
-                    .rounded_md()
-                    .text_style(TextStyle::body())
-                    .when(selected, |el| el.bg(theme.selected))
-                    .text_color(if selected { theme.text } else { theme.text_muted })
-                    .cursor_pointer()
-                    .hover(|s| s.bg(theme.hover))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                ListItem::new(SharedString::from(format!(
+                    "diary-use-doc-{}",
+                    path.display()
+                )))
+                .row()
+                .selected(selected)
+                .text_color(if selected { theme.text } else { theme.text_muted })
+                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                         this.choose_diary_use_doc(for_click.clone(), cx);
                     }))
                     .child(label)
@@ -293,22 +290,16 @@ impl Shell {
             div()
                 .id("diary-use-jobs")
                 .max_h(px(112.0))
-                .overflow_y_scroll()
+                .overflow_y_scrollbar()
                 .flex()
                 .flex_col()
                 .gap(px(2.0))
                 .children(jobs.into_iter().enumerate().map(|(index, job)| {
                     let selected = chosen_job == Some(index);
-                    div()
-                        .id(SharedString::from(format!("diary-use-job-{index}")))
-                        .px_2()
-                        .py(px(5.0))
-                        .rounded_md()
-                        .text_style(TextStyle::body())
-                        .when(selected, |el| el.bg(theme.selected))
+                    ListItem::new(SharedString::from(format!("diary-use-job-{index}")))
+                        .row()
+                        .selected(selected)
                         .text_color(if selected { theme.text } else { theme.text_muted })
-                        .cursor_pointer()
-                        .hover(|s| s.bg(theme.hover))
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             if let Some(sheet) = this.diary_use.as_mut() {
                                 sheet.work = Some(index);
@@ -338,7 +329,7 @@ impl Shell {
             .w(px(520.0))
             .flex()
             .flex_col()
-            .rounded_lg()
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
@@ -376,7 +367,7 @@ impl Shell {
                     .children(sheet.confidential.then(|| {
                         div()
                             .p_3()
-                            .rounded_lg()
+                            .rounded(theme.radius_md())
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.warning)
@@ -434,8 +425,7 @@ impl Shell {
                             .gap(px(8.0))
                             .child(
                                 Button::new("diary-use-cancel")
-                                    .cursor_pointer()
-                                    .toolbar_secondary()
+                                    .toolbar()
                                     .label("Cancel")
                                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                         this.close_diary_use(cx);
@@ -443,7 +433,6 @@ impl Shell {
                             )
                             .child(
                                 Button::new("diary-use-add")
-                                    .cursor_pointer()
                                     .toolbar_primary()
                                     .label("Add bullet")
                                     .disabled(!ready)

@@ -25,7 +25,7 @@ use gpui::{
     Window,
 };
 
-use dockcv_ui_components::{Button, ButtonExt, TextField, TextFieldEvent, TextFieldState};
+use dockcv_ui_components::{ScrollableElement, Button, ListItem, ListItemExt, ButtonExt, TextField, TextFieldEvent, TextFieldState};
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -84,7 +84,7 @@ impl Shell {
 
     pub(super) fn render_pin_pick_sheet(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let pick = self.pin_pick.as_ref()?;
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let query = pick.filter.read(cx).value(cx).trim().to_lowercase();
 
         // A document matches on its own name, or on any preset's — typing
@@ -118,40 +118,39 @@ impl Shell {
             let pinned = current.as_ref().is_some_and(|(s, p)| *s == stem && *p == preset);
             let click_stem = stem.clone();
             let click_preset = preset.clone();
-            div()
-                .id(SharedString::from(format!("pin-row-{stem}-{preset}")))
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap_2()
-                .px_2()
+            ListItem::new(SharedString::from(format!("pin-row-{stem}-{preset}")))
+                .row()
+                .selected(pinned)
                 .when(indented, |el| el.ml(px(10.0)))
-                .py(px(6.0))
-                .rounded_md()
-                .cursor_pointer()
-                .when(pinned, |el| el.bg(theme.selected))
-                .hover(|s| s.bg(theme.hover))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                     this.commit_pin_pick(click_stem.clone(), click_preset.clone(), cx);
                 }))
                 .child(
-                    // `flex_1` with the `min_w_0`: without it the box shrinks
-                    // to its own minimum and truncates a name that had room.
                     div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_style(TextStyle::body())
-                        .text_color(if pinned { theme.text } else { theme.text_muted })
-                        .child(label),
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_2()
+                        .child(
+                            // `flex_1` with the `min_w_0`: without it the box
+                            // shrinks to its own minimum and truncates a name
+                            // that had room.
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_style(TextStyle::body())
+                                .text_color(if pinned { theme.text } else { theme.text_muted })
+                                .child(label),
+                        )
+                        .children(pinned.then(|| {
+                            div()
+                                .flex_none()
+                                .text_style(TextStyle::chip())
+                                .text_color(theme.accent)
+                                .child("pinned")
+                        })),
                 )
-                .children(pinned.then(|| {
-                    div()
-                        .flex_none()
-                        .text_style(TextStyle::chip())
-                        .text_color(theme.accent)
-                        .child("pinned")
-                }))
                 .into_any_element()
         };
 
@@ -170,7 +169,7 @@ impl Shell {
             div()
                 .id("pin-pick-list")
                 .max_h(px(300.0))
-                .overflow_y_scroll()
+                .overflow_y_scrollbar()
                 .flex()
                 .flex_col()
                 .gap(px(10.0))
@@ -247,7 +246,7 @@ impl Shell {
             .w(px(460.0))
             .flex()
             .flex_col()
-            .rounded_lg()
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
@@ -291,8 +290,7 @@ impl Shell {
                     .gap(px(8.0))
                     .child(div().flex().children(has_pin.then(|| {
                         Button::new("pin-pick-unpin")
-                            .cursor_pointer()
-                            .toolbar_secondary()
+                            .toolbar()
                             .label("Unpin")
                             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                                 this.pin_pick = None;
@@ -301,8 +299,7 @@ impl Shell {
                     })))
                     .child(
                         Button::new("pin-pick-cancel")
-                            .cursor_pointer()
-                            .toolbar_secondary()
+                            .toolbar()
                             .label("Cancel")
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.close_pin_pick(cx);

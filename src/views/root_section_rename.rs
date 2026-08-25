@@ -24,7 +24,7 @@ use gpui::{
 };
 
 use dockcv_ui_components::{
-    Button, ButtonVariants, DockIcon, Sizable, TextField, TextFieldEvent, TextFieldState, SANS,
+    Button, ButtonExt, DockIcon, TextField, TextFieldEvent, TextFieldState, SANS,
 };
 
 use crate::resume::model::SectionKind;
@@ -126,7 +126,7 @@ impl Root {
         section: SectionKind,
         title: SharedString,
     ) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         if let Some(rename) = &self.renaming_section {
             if rename.section == section {
@@ -172,10 +172,8 @@ impl Root {
             return div().into_any_element();
         }
         Button::new(SharedString::from(format!("rename-btn-{section:?}")))
+            .icon_only()
             .icon(DockIcon::Pen)
-            .ghost()
-            .xsmall()
-            .cursor_pointer()
             .tooltip("Rename section")
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.start_rename(section, window, cx);

@@ -3,13 +3,15 @@
 use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, IntoElement, Window};
 
+use dockcv_ui_components::{Button, ButtonExt, Card, Sizable};
+
 use crate::theme::ActiveTheme;
 
 use super::shell::{Screen, Shell};
 
 impl Shell {
     pub(super) fn render_setup(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         let content = div()
             .flex()
@@ -66,11 +68,8 @@ impl Shell {
                     }),
             )
             .child(
-                div()
-                    .id("setup-back")
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .cursor_pointer()
+                Button::new("setup-back")
+                    .quiet()
                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                         this.screen = Screen::Welcome;
                         cx.notify();
@@ -93,21 +92,14 @@ impl Shell {
         // confirmation in front of itself.
         action: Box<dyn Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static>,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
-        div()
-            .id(id)
-            .w_full()
+        let theme = *cx.theme();
+        Card::new()
+            .surface()
+            .small()
+            .interactive(id)
             .flex()
             .flex_col()
             .gap_1()
-            .px_4()
-            .py_3()
-            .rounded_lg()
-            .bg(theme.surface)
-            .border_1()
-            .border_color(theme.border)
-            .cursor_pointer()
-            .hover(|s| s.border_color(theme.accent))
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 action(this, window, cx);
             }))

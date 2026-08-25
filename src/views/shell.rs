@@ -43,6 +43,19 @@ use super::{EditorEvent, Root};
 /// Pixels-per-point for gallery thumbnails (small + cheap).
 const THUMB_SCALE: f32 = 0.5;
 
+/// The rail's four destinations, as a type `app.rs` can name.
+///
+/// [`Screen`] itself stays crate-private — it carries entities and half its
+/// variants are not places you can navigate *to*. This is the subset the
+/// keyboard and the rail actually address.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VaultScreen {
+    Cvs,
+    Library,
+    Diary,
+    Applications,
+}
+
 pub(super) enum Screen {
     /// Before the vault has been looked at.
     ///
@@ -625,6 +638,34 @@ impl Shell {
         cx.notify();
     }
 
+    /// Switch to one of the rail's destinations, from anywhere.
+    ///
+    /// Routed through here rather than by assigning `self.screen` because
+    /// leaving the editor has to flush first: writes are debounced on a task
+    /// the editor entity owns, and dropping that entity cancels it. ⌘1–⌘4 must
+    /// not be the one exit that loses the last keystrokes.
+    pub fn go_to(&mut self, screen: VaultScreen, cx: &mut Context<Self>) {
+        // Not from Welcome or Setup: there is no vault yet, and the rail those
+        // chords belong to is not on screen.
+        if matches!(self.screen, Screen::Opening | Screen::Welcome | Screen::Setup) {
+            return;
+        }
+        if let Screen::Editor(editor) = &self.screen {
+            let editor = editor.clone();
+            self.flush_editor(&editor, cx);
+            if let Some(path) = self.editing_path.take() {
+                self.thumbnails.remove(&path);
+            }
+        }
+        self.screen = match screen {
+            VaultScreen::Cvs => Screen::Gallery,
+            VaultScreen::Library => Screen::Library,
+            VaultScreen::Diary => Screen::Diary,
+            VaultScreen::Applications => Screen::Applications,
+        };
+        cx.notify();
+    }
+
     /// Write the editor's document out now, cancelling nothing and waiting for
     /// nothing. Every exit from the editor goes through here.
     ///
@@ -940,6 +981,7 @@ impl Shell {
                 .file_name()
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| "resume".to_string());
+            let failed_name = filename.clone();
             let _ = this.update(cx, |this, cx| {
                 this.import_step = ImportStep::Parsing { filename };
                 cx.notify();
@@ -954,9 +996,14 @@ impl Shell {
                     };
                     cx.notify();
                 }
-                Err(message) => {
-                    this.setup_error = Some(message);
-                    this.import_step = ImportStep::Step1Drop;
+                // A step, not a string dropped on the drop zone: the drop zone
+                // never rendered `setup_error`, so a failed import bounced back
+                // to the start with nothing said at all.
+                Err(error) => {
+                    this.import_step = ImportStep::CouldNotRead {
+                        filename: failed_name,
+                        error: Box::new(error),
+                    };
                     cx.notify();
                 }
             });
@@ -1155,19 +1202,19 @@ impl Render for Shell {
             }
             Screen::Gallery => {
                 let main = self.render_gallery_main(cx).into_any_element();
-                self.with_rail(main, cx)
+                self.with_rail(main, window, cx)
             }
             Screen::Library => {
                 let main = slide_in("enter-library", self.render_library_screen(cx));
-                self.with_rail(main, cx)
+                self.with_rail(main, window, cx)
             }
             Screen::Diary => {
                 let main = slide_in("enter-diary", self.render_diary_screen(cx));
-                self.with_rail(main, cx)
+                self.with_rail(main, window, cx)
             }
             Screen::Applications => {
                 let main = slide_in("enter-applications", self.render_applications_screen(cx));
-                self.with_rail(main, cx)
+                self.with_rail(main, window, cx)
             }
         };
 

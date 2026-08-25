@@ -11,11 +11,10 @@
 //! the lighter-weight ✕ this screen uses for removing a single entry or
 //! highlight.
 
-use gpui::prelude::*;
 use gpui::{div, AnyElement, Context, IntoElement, SharedString};
 
 use dockcv_ui_components::{
-    Button, ButtonVariants, DropdownMenu, IconName, PopupMenuItem, Sizable,
+    Button, ButtonExt, DropdownMenu, IconName, PopupMenuItem,
 };
 
 use crate::resume::edit::{FieldId, ListId};
@@ -103,10 +102,8 @@ impl Root {
     ) -> AnyElement {
         let root = cx.weak_entity();
         Button::new(SharedString::from(format!("section-menu-{id:?}")))
+            .icon_only()
             .icon(IconName::Ellipsis)
-            .ghost()
-            .xsmall()
-            .cursor_pointer()
             .tooltip("More")
             .dropdown_menu(move |menu, _window, _cx| {
                 let root = root.clone();

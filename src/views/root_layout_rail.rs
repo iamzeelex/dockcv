@@ -43,7 +43,7 @@
 use gpui::prelude::*;
 use gpui::{div, px, Context, IntoElement, Window};
 
-use dockcv_ui_components::{Accordion, SliderEvent, SliderState};
+use dockcv_ui_components::{ScrollableElement, Accordion, SliderEvent, SliderState};
 
 use crate::resume::model::LayoutSettings;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
@@ -122,7 +122,7 @@ impl Root {
     /// The rail itself. Positioned absolutely by the caller's `relative()`
     /// preview pane, so it floats over the canvas rather than taking a column.
     pub(super) fn render_layout_rail(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let layout = self.doc.layout;
 
         let open = self.layout_group;
@@ -162,7 +162,7 @@ impl Root {
                     .id("layout-rail-scroll")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .px(px(12.0))
                     .pb(px(20.0))
                     // One heading open at a time. Four groups stacked open is
@@ -268,11 +268,17 @@ impl Root {
     /// A group's heading. `GroupBox` accepts any element, so the title keeps
     /// the eyebrow treatment the rail already used for "Layout" rather than
     /// upstream's default label size.
+    /// An accordion heading, which is a control you click — so it sits at the
+    /// top of the rail's own hierarchy rather than below everything in it.
+    ///
+    /// It used to be an 11px mono eyebrow: smaller than the 12px labels inside
+    /// the group it opens, and smaller than the 11.5px readouts beside them. A
+    /// heading that is the smallest text on the panel is not a heading.
     fn rail_group_title(&self, cx: &mut Context<Self>, text: &'static str) -> impl IntoElement {
         div()
-            .text_style(TextStyle::eyebrow())
-            .text_color(cx.theme().text_subtle)
-            .child(TextStyle::eyebrow().apply_case(text))
+            .text_style(TextStyle::control())
+            .text_color(cx.theme().text)
+            .child(text)
     }
 }
 

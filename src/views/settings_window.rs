@@ -21,7 +21,7 @@
 use gpui::prelude::*;
 use gpui::{div, px, App, ClickEvent, Context, IntoElement, SharedString, WeakEntity, Window};
 
-use dockcv_ui_components::{SettingField, SettingGroup, SettingItem, SettingPage, Settings};
+use dockcv_ui_components::{Button, ButtonExt, ButtonVariants, SettingField, SettingGroup, SettingItem, SettingPage, Settings};
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle, Theme, ThemeMode};
 use crate::vault;
@@ -42,26 +42,18 @@ impl SettingsWindow {
 /// dropdown — the user compares rather than reads, which is the whole reason
 /// this is not a `SettingField::dropdown`.
 fn theme_chip(shell: &WeakEntity<Shell>, mode: ThemeMode, cx: &mut App) -> impl IntoElement {
-    let theme = cx.theme().clone();
+    let theme = *cx.theme();
     let preview = Theme::of(mode);
     let active = theme.mode == mode;
     let shell = shell.clone();
 
-    div()
-        .id(SharedString::from(format!("theme-{mode:?}")))
-        .flex()
-        .items_center()
+    Button::new(SharedString::from(format!("theme-{mode:?}")))
+        .chip(active, &theme)
+        .h(theme.control_md())
         .gap_2()
-        .px_3()
-        .py_2()
-        .rounded_lg()
-        .bg(if active { theme.selected } else { theme.elevated })
-        .border_1()
-        .border_color(if active { theme.accent } else { theme.border })
-        .text_style(TextStyle::control())
-        .text_color(if active { theme.text } else { theme.text_muted })
-        .cursor_pointer()
-        .hover(|s| s.bg(theme.hover))
+        // The chosen palette gets the accent edge as well as the wash: this is
+        // a setting in force, not a highlight in a list.
+        .when(active, |el| el.border_1().border_color(theme.accent))
         .on_click(move |_: &ClickEvent, _window, cx| {
             let _ = shell.update(cx, |shell, cx| shell.set_theme(mode, cx));
         })
@@ -85,22 +77,13 @@ fn action_button(
     // Takes the `Window` too, because a destructive action has to be able to
     // put an alert in front of itself, and an alert belongs to a window.
     action: fn(&mut Shell, &mut Window, &mut Context<Shell>),
-    cx: &mut App,
 ) -> impl IntoElement {
-    let theme = cx.theme().clone();
     let shell = shell.clone();
-    div()
-        .id(id)
-        .px_3()
-        .py_2()
-        .rounded_lg()
-        .bg(theme.elevated)
-        .border_1()
-        .border_color(theme.border)
-        .text_style(TextStyle::control())
-        .text_color(if danger { theme.danger } else { theme.text })
-        .cursor_pointer()
-        .hover(|s| s.bg(theme.hover))
+    Button::new(id)
+        .toolbar()
+        // Destructive actions wear the danger variant rather than only a red
+        // label: the border and the pressed state move with it.
+        .when(danger, |el| el.danger())
         .on_click(move |_: &ClickEvent, window, cx| {
             let _ = shell.update(cx, |shell, cx| action(shell, window, cx));
         })
@@ -121,7 +104,7 @@ fn readout(text: String, mono: bool, cx: &App) -> impl IntoElement {
 
 impl Render for SettingsWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         div()
             .size_full()
@@ -210,7 +193,6 @@ fn storage_page(shell: &WeakEntity<Shell>) -> SettingPage {
                                 format!("Empty trash ({count})"),
                                 true,
                                 Shell::empty_trash,
-                                cx,
                             ))
                             .child(action_button(
                                 &for_buttons,
@@ -218,7 +200,6 @@ fn storage_page(shell: &WeakEntity<Shell>) -> SettingPage {
                                 "Rebuild thumbnails".to_string(),
                                 false,
                                 Shell::rebuild_thumbnails,
-                                cx,
                             ))
                             .into_any_element()
                     }),

@@ -6,7 +6,9 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement, Pixels, SharedString};
 
-use dockcv_ui_components::{DockIcon, Field, Form, Icon, IconName, Sizable, Tag, TextField, SANS};
+use dockcv_ui_components::{ScrollableElement, 
+    Button, ButtonExt, DockIcon, Field, Form, Icon, IconName, Sizable, Tag, TextField, SANS,
+};
 
 use crate::resume::edit::{FieldId, ListId};
 use crate::resume::model::SectionKind;
@@ -23,7 +25,7 @@ pub(super) const FIELD_LABEL_LINE_HEIGHT: Pixels = px(14.0);
 
 impl Root {
     pub(super) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         // The document's own order, built-ins and custom sections alike
         // (`ResumeDoc::sections()`) — not a hard-coded six-block list, so a
@@ -79,7 +81,7 @@ impl Root {
                     .flex_col()
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .px(px(16.0))
                     .pb(px(16.0))
                     .children(cards),
@@ -300,14 +302,10 @@ impl Root {
     /// pass (`Root::fields_stale`), so there is no live `TextFieldState` to
     /// focus synchronously from this click handler anyway.
     pub(super) fn add_section_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = cx.theme().clone();
-        div()
-            .id("add-section")
-            .cursor_pointer()
-            .font_family(SANS)
-            .text_size(px(12.5))
+        let theme = *cx.theme();
+        Button::new("add-section")
+            .quiet()
             .text_color(theme.chip_fg)
-            .hover(|s| s.text_color(theme.accent))
             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                 this.checkpoint();
                 let id = this.doc.add_custom_section("New Section");
@@ -317,7 +315,8 @@ impl Root {
                 cx.notify();
                 this.schedule_recompile(window, cx);
             }))
-            .child("+ Add")
+            .icon(IconName::Plus)
+            .child("Add")
             .into_any_element()
     }
 
@@ -328,15 +327,10 @@ impl Root {
         list: ListId,
         index: usize,
     ) -> AnyElement {
-        let theme = cx.theme().clone();
-        div()
-            .id(SharedString::from(format!("rm-{list:?}-{index}")))
-            .px_1()
-            .rounded_md()
-            .text_style(TextStyle::meta())
-            .text_color(theme.text_muted)
-            .cursor_pointer()
-            .hover(|s| s.text_color(theme.danger))
+        Button::new(SharedString::from(format!("rm-{list:?}-{index}")))
+            .icon_only()
+            .icon(IconName::Close)
+            .tooltip("Remove this entry")
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.checkpoint();
                 list.remove(&mut this.doc, index);
@@ -345,7 +339,7 @@ impl Root {
                 cx.notify();
                 this.schedule_recompile(window, cx);
             }))
-            .child(Icon::new(IconName::Close).with_size(px(11.0)))
+            .child(Icon::new(IconName::Close).with_size(cx.theme().icon_sm()))
             .into_any_element()
     }
 
@@ -356,23 +350,18 @@ impl Root {
         label: impl Into<SharedString>,
         list: ListId,
     ) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let label = label.into();
-        div()
-            .id(SharedString::from(format!("add-{list:?}")))
+        Button::new(SharedString::from(format!("add-{list:?}")))
+            .chip_dashed(&theme)
+            .w_full()
             .mt_1()
             .mb_2()
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .border_1()
-            .border_dashed()
-            .border_color(theme.border)
-            .text_style(TextStyle::control())
+            // The one dashed affordance that is an accent action rather than a
+            // quiet one: adding a row is the field column's primary gesture.
             .text_color(theme.accent)
-            .cursor_pointer()
-            .hover(|s| s.bg(theme.hover))
-            .child(format!("＋ {label}"))
+            .icon(IconName::Plus)
+            .child(label)
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.checkpoint();
                 list.add(&mut this.doc);
@@ -398,18 +387,12 @@ impl Root {
     /// section's "···" delete menu (`root_custom_sections.rs`); no built-in
     /// section passes one.
     ///
-    /// `Card` (`dockcv-ui-components`) was the natural container for this,
-    /// but its `RenderOnce` currently replaces its own base style
-    /// (background/border/radius/padding) with the caller's via a raw
-    /// `*el.style() = self.style` assignment instead of a merge — see
-    /// `crates/ui-components/src/components/card.rs`, `impl RenderOnce for
-    /// Card`. Any `Styled` call a caller makes (or the mere presence of an
-    /// empty, un-touched `StyleRefinement`) wipes the variant's bg/border/
-    /// radius, so a `Card::new().elevated()` currently paints nothing. That
-    /// needs a `crates/ui-components` fix (call `.refine()`, matching
-    /// `StyledExt::refine_style` used correctly elsewhere in the same
-    /// crate family) before this screen can safely depend on it — flagged
-    /// rather than silently worked around by editing that crate.
+    /// Still hand-rolled rather than built on `Card`. The reason it was
+    /// originally flagged — `Card::render` replacing its own base style with
+    /// the caller's instead of merging — has since been fixed and is covered by
+    /// `caller_style_refines_the_card_defaults_rather_than_replacing_them`, so
+    /// what is left is ordinary conversion work rather than a blocker. It is
+    /// tracked with the rest of it in `docs/design/component-audit.md` (C-1).
     pub(super) fn card(
         &self,
         cx: &mut Context<Self>,
@@ -419,7 +402,7 @@ impl Root {
         fields: Vec<Field>,
         extra: Option<AnyElement>,
     ) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let expanded = self.expanded.contains(&section);
         let title: SharedString = title.into();
         // Keyboard navigation cursor (`FocusNextSection`/`FocusPrevSection`,
@@ -450,7 +433,7 @@ impl Root {
         } else {
             IconName::ChevronDown
         })
-        .with_size(px(12.0))
+        .with_size(cx.theme().icon_sm())
         .text_color(theme.text_subtle);
 
         if expanded {
@@ -478,12 +461,17 @@ impl Root {
             }
             header = header.child(chevron);
 
+            // Not a `Card`, and for a concrete reason: `section_drop_target`
+            // needs an `InteractiveElement` to hang `can_drop`/`on_drop` on,
+            // and `Card` is a `RenderOnce` struct rather than an element. A
+            // wrapper would take the drag-over styling and the card would show
+            // none of it. It wears the card tokens instead.
             let card = div()
                 .id(SharedString::from(format!("card-{section:?}")))
                 .flex()
                 .flex_col()
                 .mb(px(9.0))
-                .rounded(px(11.0))
+                .rounded(theme.radius_lg())
                 .bg(theme.elevated)
                 .border_1()
                 .border_color(card_border)
@@ -497,13 +485,14 @@ impl Root {
             self.section_drop_target(cx, section, card)
                 .into_any_element()
         } else {
+            // See the expanded branch: a drop target has to be an element.
             let mut row = div()
                 .id(SharedString::from(format!("card-{section:?}")))
                 .flex()
                 .items_center()
                 .gap(px(10.0))
                 .mb(px(9.0))
-                .rounded(px(11.0))
+                .rounded(theme.radius_lg())
                 .border_1()
                 .border_color(card_border)
                 .px(px(15.0))
@@ -525,7 +514,7 @@ impl Root {
                     Tag::custom(theme.chip_bg, theme.chip_fg, theme.chip_bg)
                         .px(px(8.0))
                         .py(px(3.0))
-                        .rounded(px(6.0))
+                        .rounded(theme.radius_sm())
                         .text_style(TextStyle::chip())
                         .child(name),
                 );
@@ -614,7 +603,7 @@ impl Root {
         icon: DockIcon,
         style: TextStyle,
     ) -> Field {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let label: SharedString = label.into();
         Field::new()
             .col_span(1)
@@ -629,7 +618,7 @@ impl Root {
                     .text_style(TextStyle::label())
                     .line_height(FIELD_LABEL_LINE_HEIGHT)
                     .text_color(theme.text_muted)
-                    .child(Icon::new(icon).with_size(px(12.0)))
+                    .child(Icon::new(icon).with_size(theme.icon_sm()))
                     .child(label.clone())
             })
             .child(div().text_style(style).child(self.field_box(field)))
@@ -642,7 +631,7 @@ impl Root {
         label: impl Into<SharedString>,
         style: TextStyle,
     ) -> Field {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let label: SharedString = label.into();
         Field::new()
             // Prose takes the full width; a short value shares its line with
@@ -676,23 +665,18 @@ impl Root {
         index: usize,
         library_section: Option<SectionKind>,
     ) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         let mut controls = div().flex().items_center().gap_1();
         if let Some(section) = library_section {
             controls = controls.child(
-                div()
-                    .id(SharedString::from(format!("star-{section:?}-{index}")))
-                    .px_1()
-                    .rounded_md()
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .cursor_pointer()
-                    .hover(|s| s.text_color(theme.accent))
+                Button::new(SharedString::from(format!("star-{section:?}-{index}")))
+                    .icon_only()
+                    .icon(IconName::Star)
+                    .tooltip("Keep this block in the library")
                     .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                         this.save_block_to_library(section, index, cx);
-                    }))
-                    .child(Icon::new(IconName::Star).with_size(px(11.0))),
+                    })),
             );
         }
         controls = controls.child(self.remove_button(cx, list, index));
@@ -714,26 +698,18 @@ impl Root {
         cx: &mut Context<Self>,
         section: SectionKind,
     ) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let count = self.library_count(section);
-        div()
-            .id(SharedString::from(format!("fromlib-{section:?}")))
+        Button::new(SharedString::from(format!("fromlib-{section:?}")))
+            .chip_dashed(&theme)
+            .w_full()
             .mt_1()
             .mb_2()
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .border_1()
-            .border_dashed()
-            .border_color(theme.border)
-            .text_xs()
-            .text_color(theme.text_muted)
-            .cursor_pointer()
-            .hover(|s| s.text_color(theme.accent))
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                 this.open_library_picker(section, cx);
             }))
-            .child(format!("★ From library ({count})"))
+            .icon(IconName::Star)
+            .child(format!("From library ({count})"))
             .into_any_element()
     }
 
@@ -743,26 +719,18 @@ impl Root {
         cx: &mut Context<Self>,
         work_index: usize,
     ) -> AnyElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let count = self.diary.entries.len();
-        div()
-            .id(SharedString::from(format!("fromdiary-{work_index}")))
+        Button::new(SharedString::from(format!("fromdiary-{work_index}")))
+            .chip_dashed(&theme)
+            .w_full()
             .mt_1()
             .mb_2()
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .border_1()
-            .border_dashed()
-            .border_color(theme.border)
-            .text_xs()
-            .text_color(theme.text_muted)
-            .cursor_pointer()
-            .hover(|s| s.text_color(theme.accent))
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                 this.open_diary_picker(work_index, cx);
             }))
-            .child(format!("✎ From diary ({count})"))
+            .icon(DockIcon::Pen)
+            .child(format!("From diary ({count})"))
             .into_any_element()
     }
 }

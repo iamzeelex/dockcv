@@ -14,12 +14,13 @@ use gpui::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use dockcv_ui_components::{CHROME_HEIGHT, 
-    DockIcon, Icon, IconName, Sizable, TextField, TextFieldState, MONO, SANS,
+use dockcv_ui_components::{ScrollableElement, 
+    Button, ButtonExt, ButtonVariants, DockIcon, Icon, IconName, Sizable, TextField,
+    TextFieldState, CHROME_HEIGHT, MONO, SANS,
 };
 
 use crate::resume::model::{ResumeDoc, SectionKind};
-use crate::theme::ActiveTheme;
+use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use super::shell::Shell;
 
@@ -69,7 +70,6 @@ impl PresetMatrix {
         cx: &mut Context<Shell>,
         name: String,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
         let renaming = self
             .renaming_preset
             .as_ref()
@@ -84,16 +84,10 @@ impl PresetMatrix {
                     .w(px(150.0))
                     .child(TextField::new(&rename.field).small())
                     .into_any_element(),
-                None => div()
-                    .id("preset-a-pill")
-                    .cursor_pointer()
-                    .px(px(13.0))
-                    .py(px(6.0))
-                    .rounded(px(7.0))
-                    .bg(theme.accent)
-                    .text_color(theme.on_accent)
-                    .text_size(px(13.0))
-                    .font_weight(FontWeight::SEMIBOLD)
+                None => Button::new("preset-a-pill")
+                    .chip(false, cx.theme())
+                    .primary()
+                    .tooltip("Cycle to the next preset")
                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                         this.cycle_matrix_preset_a(cx);
                     }))
@@ -101,17 +95,13 @@ impl PresetMatrix {
                     .into_any_element(),
             })
             .child(
-                div()
-                    .id("preset-a-rename")
-                    .cursor_pointer()
-                    .p(px(3.0))
-                    .rounded(px(5.0))
-                    .text_color(theme.text_subtle)
-                    .hover(|s| s.text_color(theme.text).bg(theme.hover))
+                Button::new("preset-a-rename")
+                    .icon_only()
+                    .icon(DockIcon::Pen)
+                    .tooltip("Rename this preset")
                     .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                         this.start_preset_rename(window, cx);
-                    }))
-                    .child(Icon::new(DockIcon::Pen).with_size(px(12.0))),
+                    })),
             )
     }
 
@@ -252,7 +242,7 @@ impl PresetMatrix {
     }
 
     pub fn render_matrix(&self, cx: &mut Context<Shell>) -> Div {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let diff_map = self.compute_diff();
 
         let preset_a_name = self
@@ -285,25 +275,15 @@ impl PresetMatrix {
                     .items_center()
                     .gap(px(9.0))
                     .child(
-                        div()
-                            .id("matrix-back")
-                            .font_family(SANS)
-                            .text_size(px(13.5))
-                            .text_color(theme.text_muted)
-                            .cursor_pointer()
-                            .hover(|s| s.text_color(theme.text))
+                        Button::new("matrix-back")
+                            .quiet()
+                            .gap(px(4.0))
+                            .icon(IconName::ChevronLeft)
+                            .tooltip("Back to the document")
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.leave_preset_matrix(cx);
                             }))
-                            .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .child(
-                        Icon::new(IconName::ChevronLeft)
-                            .with_size(px(13.0))
-                            .text_color(theme.text_muted),
-                    )
-                    .child(self.identity()),
+                            .child(self.identity()),
                     )
                     .child(
                         div()
@@ -322,18 +302,14 @@ impl PresetMatrix {
                     ),
             )
             .child(
-                div()
-                    .id("save-new-preset-btn")
-                    .font_family(SANS)
-                    .text_size(px(13.0))
-                    .font_weight(FontWeight::MEDIUM)
+                Button::new("save-new-preset-btn")
+                    .quiet()
                     .text_color(theme.accent)
-                    .cursor_pointer()
-                    .hover(|s| s.text_color(theme.text))
                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                         this.save_matrix_as_preset(cx);
                     }))
-                    .child("+ Save current as new preset"),
+                    .icon(IconName::Plus)
+                    .child("Save current as new preset"),
             );
 
         // Comparing Bar matching mockup lines 1394-1402
@@ -359,18 +335,10 @@ impl PresetMatrix {
                     .child("vs"),
             )
             .child(
-                div()
-                    .id("preset-b-pill")
-                    .cursor_pointer()
-                    .px(px(13.0))
-                    .py(px(6.0))
-                    .rounded(px(7.0))
-                    .bg(theme.hover)
-                    .border_1()
-                    .border_color(theme.border)
-                    .text_color(theme.text)
-                    .text_size(px(13.0))
-                    .font_weight(FontWeight::SEMIBOLD)
+                Button::new("preset-b-pill")
+                    .chip(false, cx.theme())
+                    .outline()
+                    .tooltip("Compare against a different preset")
                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                         this.cycle_matrix_preset_b(cx);
                     }))
@@ -378,16 +346,19 @@ impl PresetMatrix {
             )
             .child(
                 div()
-                    .font_family(SANS)
-                    .text_size(px(12.5))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .text_style(TextStyle::label())
                     .text_color(theme.text_subtle)
-                    .px(px(12.0))
+                    .px(px(10.0))
                     .py(px(6.0))
-                    .rounded(px(7.0))
+                    .rounded(cx.theme().radius_sm())
                     .border_1()
                     .border_dashed()
                     .border_color(theme.border)
-                    .child("+ compare a third"),
+                    .child(Icon::new(IconName::Plus).with_size(theme.icon_sm()))
+                    .child("compare a third"),
             )
             .child(div().flex_1())
             .child(
@@ -519,6 +490,11 @@ impl PresetMatrix {
                     div()
                         .id(SharedString::from(format!("cell-a-{section:?}")))
                         .cursor_pointer()
+                        // Clicking a cell cycles that section's variant, and
+                        // nothing but the cursor used to say so.
+                        .hover(|s| s.border_color(theme.accent))
+                        .border_1()
+                        .border_color(gpui::Hsla::transparent_black())
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             this.cycle_matrix_cell(0, section, cx);
                         }))
@@ -526,8 +502,7 @@ impl PresetMatrix {
                         .min_w_0()
                         .px(px(16.0))
                         .py(px(15.0))
-                        .font_family(SANS)
-                        .text_size(px(13.0))
+                        .text_style(TextStyle::body())
                         .when(is_diff, |s| {
                             s.bg(theme.hover)
                                 .border_l_2()
@@ -563,6 +538,11 @@ impl PresetMatrix {
                     div()
                         .id(SharedString::from(format!("cell-b-{section:?}")))
                         .cursor_pointer()
+                        // Clicking a cell cycles that section's variant, and
+                        // nothing but the cursor used to say so.
+                        .hover(|s| s.border_color(theme.accent))
+                        .border_1()
+                        .border_color(gpui::Hsla::transparent_black())
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             this.cycle_matrix_cell(1, section, cx);
                         }))
@@ -570,8 +550,7 @@ impl PresetMatrix {
                         .min_w_0()
                         .px(px(16.0))
                         .py(px(15.0))
-                        .font_family(SANS)
-                        .text_size(px(13.0))
+                        .text_style(TextStyle::body())
                         .when(is_diff, |s| {
                             s.bg(theme.hover)
                                 .border_l_2()
@@ -615,7 +594,7 @@ impl PresetMatrix {
             .bg(theme.border)
             .border_1()
             .border_color(theme.border)
-            .rounded(px(10.0))
+            .rounded(theme.radius_md())
             .overflow_hidden()
             .children(table_rows);
 
@@ -623,7 +602,7 @@ impl PresetMatrix {
             .id("preset-matrix-grid")
             .flex_1()
             .p(px(26.0))
-            .overflow_y_scroll()
+            .overflow_y_scrollbar()
             .flex()
             .flex_col()
             .child(comparing_bar)

@@ -19,9 +19,9 @@
 use gpui::prelude::*;
 use gpui::{div, px, Context, Hsla, IntoElement, SharedString};
 
-use dockcv_ui_components::{
-    Button, ButtonVariants, DropdownMenu, EmptyState, IconName, PopupMenuItem, SankeyAlign,
-    SankeyChart, SankeyLabel, SankeyLink, SankeyValueScale, Sizable,
+use dockcv_ui_components::{ScrollableElement, 
+    Button, ButtonExt, DropdownMenu, EmptyState, PopupMenuItem, SankeyAlign,
+    SankeyChart, SankeyLabel, SankeyLink, SankeyValueScale,
 };
 
 use crate::resume::model::{ApplicationStatus, Applications, Closure};
@@ -83,14 +83,14 @@ impl Shell {
         cx: &mut Context<Self>,
         applications: &Applications,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let funnel = Funnel::of(applications);
 
         div()
             .id("applications-insights")
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
+            .overflow_y_scrollbar()
             .px(px(34.0))
             .pb(px(28.0))
             .flex()
@@ -116,7 +116,7 @@ impl Shell {
         cx: &mut Context<Self>,
         applications: &Applications,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let period = self.applications_period;
         let from = period
             .days()
@@ -140,13 +140,8 @@ impl Shell {
             )
             .child(
                 Button::new("insights-period")
-                    .cursor_pointer()
-                    .ghost()
-                    .xsmall()
+                    .selector_inline()
                     .label(period.label())
-                    .icon(IconName::ChevronDown)
-                    .border_1()
-                    .border_color(theme.border)
                     .dropdown_menu(move |mut menu, _window, _cx| {
                         for option in Period::ALL {
                             let root = root.clone();
@@ -215,7 +210,7 @@ impl Shell {
             .flex_col()
             .gap(px(6.0))
             .p(px(16.0))
-            .rounded(px(12.0))
+            .rounded(theme.radius_lg())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
@@ -244,7 +239,7 @@ impl Shell {
     /// relate. The tiles are not decoration: a Sankey is read by comparing
     /// widths, and a width is not a number you can quote in a cover letter.
     fn insight_tiles(&self, cx: &mut Context<Self>, funnel: &Funnel) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         let rate = match funnel.interview_rate() {
             // No denominator: unknown, not zero. Printing 0% over nothing sent
@@ -284,7 +279,7 @@ impl Shell {
                     .min_w_0()
                     .px(px(14.0))
                     .py(px(12.0))
-                    .rounded(px(10.0))
+                    .rounded(theme.radius_md())
                     .bg(theme.elevated)
                     .border_1()
                     .border_color(theme.border)
@@ -312,7 +307,7 @@ impl Shell {
     /// The Sankey itself, in a titled panel that says what it is counting.
     /// The journey: every sent application, from sent to however it ended.
     fn journey_panel(&self, cx: &mut Context<Self>, applications: &Applications) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let journey = journey(applications);
 
         let body = if journey.is_empty() {
@@ -413,7 +408,7 @@ impl Shell {
             .flex_col()
             .gap(px(4.0))
             .p(px(18.0))
-            .rounded(px(12.0))
+            .rounded(theme.radius_lg())
             .bg(theme.surface)
             .border_1()
             .border_color(theme.border)
@@ -471,7 +466,7 @@ impl Shell {
             .flex_col()
             .gap(px(4.0))
             .p(px(18.0))
-            .rounded(px(12.0))
+            .rounded(theme.radius_lg())
             .bg(theme.surface)
             .border_1()
             .border_color(theme.border)

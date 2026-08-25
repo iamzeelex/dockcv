@@ -45,7 +45,7 @@ mod vault_cache;
 mod welcome;
 
 pub use root::{init_keybindings, EditorEvent, ExportPdf, Root};
-pub use shell::Shell;
+pub use shell::{Shell, VaultScreen};
 
 #[cfg(test)]
 mod field_coverage {

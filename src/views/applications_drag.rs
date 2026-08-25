@@ -49,11 +49,11 @@ pub(super) struct CardDragPreview {
 
 impl Render for CardDragPreview {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         div()
             .px(px(10.0))
             .py(px(6.0))
-            .rounded(px(8.0))
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.accent)
@@ -98,7 +98,7 @@ impl Shell {
     where
         E: InteractiveElement,
     {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         el.can_drop(move |dragged, _window, _cx| {
             dragged
                 .downcast_ref::<DraggedCard>()

@@ -197,7 +197,7 @@ pub(super) fn candidates(pasted: &str) -> Vec<Candidate> {
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, Entity, IntoElement, SharedString, Window};
 
-use dockcv_ui_components::{Button, ButtonExt, TextField, TextFieldState};
+use dockcv_ui_components::{ScrollableElement, Button, ButtonExt, TextField, TextFieldState};
 
 use crate::resume::model::DiaryEntry;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
@@ -322,7 +322,7 @@ impl Shell {
 
     pub(super) fn render_diary_paste_sheet(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let sheet = self.diary_paste.as_ref()?;
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         let body: AnyElement = if !sheet.parsed {
             div()
@@ -377,14 +377,14 @@ impl Shell {
             div()
                 .id("diary-paste-queue")
                 .max_h(px(360.0))
-                .overflow_y_scroll()
+                .overflow_y_scrollbar()
                 .flex()
                 .flex_col()
                 .gap(px(10.0))
                 .children(sheet.queue.iter().enumerate().map(|(index, candidate)| {
                     div()
                         .p_3()
-                        .rounded_lg()
+                        .rounded(theme.radius_md())
                         .bg(theme.surface)
                         .border_1()
                         .border_color(theme.border)
@@ -408,8 +408,7 @@ impl Shell {
                                 .gap(px(8.0))
                                 .child(
                                     Button::new(SharedString::from(format!("cand-skip-{index}")))
-                                        .cursor_pointer()
-                                        .toolbar_secondary()
+                                        .toolbar()
                                         .label("Skip")
                                         .on_click(cx.listener(
                                             move |this, _: &ClickEvent, _window, cx| {
@@ -419,7 +418,6 @@ impl Shell {
                                 )
                                 .child(
                                     Button::new(SharedString::from(format!("cand-add-{index}")))
-                                        .cursor_pointer()
                                         .toolbar_primary()
                                         .label("Keep")
                                         .on_click(cx.listener(
@@ -449,7 +447,7 @@ impl Shell {
             .w(px(600.0))
             .flex()
             .flex_col()
-            .rounded_lg()
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
@@ -482,8 +480,7 @@ impl Shell {
                     .gap(px(8.0))
                     .child(
                         Button::new("diary-paste-close")
-                            .cursor_pointer()
-                            .toolbar_secondary()
+                            .toolbar()
                             .label(if sheet.queue.is_empty() && sheet.parsed {
                                 "Done"
                             } else {
@@ -495,7 +492,6 @@ impl Shell {
                     )
                     .children(sheet.queue.is_empty().then(|| {
                         Button::new("diary-paste-find")
-                            .cursor_pointer()
                             .toolbar_primary()
                             .label("Find wins")
                             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {

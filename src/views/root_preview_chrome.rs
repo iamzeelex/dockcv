@@ -7,7 +7,7 @@
 use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, IntoElement};
 
-use dockcv_ui_components::{Button, ButtonVariants, IconName, Sizable};
+use dockcv_ui_components::{Button, ButtonExt, IconName};
 use crate::theme::StyledText;
 
 use crate::theme::{ActiveTheme, TextStyle};
@@ -34,7 +34,7 @@ impl Root {
     /// page counter are always there, the overflow affordance appears only
     /// when there is overflow.
     pub(super) fn render_preview_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let pages = self.geometry.as_ref().map(|g| g.page_count).unwrap_or(1);
 
         div()
@@ -52,7 +52,7 @@ impl Root {
                     .items_center()
                     .gap(px(3.0))
                     .px(px(6.0))
-                    .rounded(px(10.0))
+                    .rounded(theme.radius_md())
                     .bg(theme.chrome.opacity(0.92))
                     .border_1()
                     .border_color(theme.border)
@@ -89,10 +89,8 @@ impl Root {
         direction: i32,
     ) -> impl IntoElement {
         Button::new(id)
+            .icon_only()
             .icon(icon)
-            .ghost()
-            .xsmall()
-            .cursor_pointer()
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 // From wherever a pinch left the zoom, `+`/`-` moves to the
                 // next step in that direction rather than to the step nearest
@@ -125,7 +123,7 @@ impl Root {
     /// "compiling / ready / error" at all times, and neither mockup draws the
     /// in-flight case at all.
     fn compile_status(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         // A word only when there is something to say. "ready" is the state
         // the preview is in almost always, and naming it every second told
         // the user nothing they could not see by looking at the page; the dot

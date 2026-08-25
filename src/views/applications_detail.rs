@@ -19,8 +19,8 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, Entity, SharedString, Subscription, Window};
 
-use dockcv_ui_components::{
-    Button, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, TextField,
+use dockcv_ui_components::{ScrollableElement, 
+    Button, ButtonExt, Disableable, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, TextField,
     TextFieldEvent, TextFieldState,
 };
 
@@ -54,6 +54,19 @@ pub(super) struct ApplicationDetail {
     next_date: Entity<TextFieldState>,
     next_time: Entity<TextFieldState>,
     _subs: Vec<Subscription>,
+}
+
+impl ApplicationDetail {
+    /// What is in the two naming fields *right now*, before any blur has
+    /// written it back. The footer's primary action turns on the first letter
+    /// typed, so it cannot read the saved card.
+    fn typed_name(&self, cx: &gpui::App) -> String {
+        format!(
+            "{}{}",
+            self.company.read(cx).value(cx).trim(),
+            self.role.read(cx).value(cx).trim()
+        )
+    }
 }
 
 impl Shell {
@@ -155,6 +168,28 @@ impl Shell {
                 .company
                 .update(cx, |state, cx| state.focus(window, cx));
         }
+    }
+
+    /// Throw away a card that was opened and never named.
+    ///
+    /// The same thing closing a blank panel already did, but reachable on
+    /// purpose rather than only as a side effect of pressing ✕.
+    pub(super) fn discard_application_detail(&mut self, cx: &mut Context<Self>) {
+        let Some(detail) = self.applications_detail.take() else {
+            return;
+        };
+        if let Some(vault) = self.vault.clone() {
+            let mut applications = vault::load_applications(&vault);
+            if applications.entries.get(detail.index).is_some() {
+                super::shell::remove_at(&mut applications.entries, detail.index);
+                save_status::record(
+                    cx,
+                    "applications board",
+                    vault::save_applications(&vault, &applications),
+                );
+            }
+        }
+        cx.notify();
     }
 
     pub(super) fn close_application_detail(&mut self, cx: &mut Context<Self>) {
@@ -334,7 +369,7 @@ impl Shell {
         let detail = self.applications_detail.as_ref()?;
         let applications = self.cache.applications();
         let app = applications.entries.get(detail.index)?;
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let tint = column_tint(&theme, app.status());
 
         let label = |text: &'static str| {
@@ -370,10 +405,8 @@ impl Shell {
             )
             .child(
                 Button::new("apps-detail-close")
+                    .icon_only()
                     .icon(IconName::Close)
-                    .ghost()
-                    .xsmall()
-                    .cursor_pointer()
                     .tooltip("Close")
                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                         this.close_application_detail(cx);
@@ -397,7 +430,7 @@ impl Shell {
                         div()
                             .px(px(7.0))
                             .py(px(2.0))
-                            .rounded(px(5.0))
+                            .rounded(theme.radius_sm())
                             .bg(tint.chip_bg)
                             .text_style(TextStyle::chip())
                             .text_color(tint.fg)
@@ -442,7 +475,7 @@ impl Shell {
                         .text_style(TextStyle::meta())
                         .text_color(theme.text_subtle)
                         .child(SharedString::from(short_date(&change.at)))
-                        .child(Icon::new(IconName::ArrowRight).with_size(px(10.0)))
+                        .child(Icon::new(IconName::ArrowRight).with_size(cx.theme().icon_sm()))
                         .child(SharedString::from(match to {
                             Some(stage) => status_title(stage).to_string(),
                             // A word this build does not know: shown as the
@@ -483,7 +516,7 @@ impl Shell {
                         .id("apps-detail-scroll")
                         .flex_1()
                         .min_h_0()
-                        .overflow_y_scroll()
+                        .overflow_y_scrollbar()
                         .px(px(18.0))
                         .pb(px(24.0))
                         .flex()
@@ -534,8 +567,63 @@ impl Shell {
                         })
                         .children(history),
                 )
+                .child(self.detail_footer(cx, app))
                 .into_any_element(),
         )
+    }
+
+    /// The panel's way out, said out loud.
+    ///
+    /// Every field here already writes on blur, so a button labelled *Save*
+    /// would be describing something that has happened four keystrokes ago.
+    /// What was missing is different: the only exit was a ✕ in the corner,
+    /// which reads as *discard* — and on a card that has been opened but not
+    /// named, discard is exactly what it does. So the footer names both
+    /// outcomes instead of leaving the user to guess which one the ✕ is.
+    fn detail_footer(&self, cx: &mut Context<Self>, app: &Application) -> impl IntoElement {
+        let theme = *cx.theme();
+        // Live, not from the saved card: the button has to react as the user
+        // types the first letter of a company, before any blur has committed.
+        let named = self
+            .applications_detail
+            .as_ref()
+            .is_some_and(|d| !d.typed_name(cx).is_empty());
+        // A card the user has never named is one this panel created a moment
+        // ago; anything else is an application that already exists.
+        let is_new = is_unnamed(app);
+
+        div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(px(8.0))
+            .px(px(18.0))
+            .py(px(14.0))
+            .border_t_1()
+            .border_color(theme.border)
+            .bg(theme.chrome)
+            .children(is_new.then(|| {
+                Button::new("apps-detail-discard")
+                    .quiet()
+                    .label("Discard")
+                    .tooltip("Close without keeping this application")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.discard_application_detail(cx);
+                    }))
+            }))
+            .child(
+                Button::new("apps-detail-done")
+                    .action_primary()
+                    .label(if is_new { "Add application" } else { "Done" })
+                    // Nothing to add until it has a name — and closing a blank
+                    // card throws it away, so the primary action must not look
+                    // like it would keep one.
+                    .disabled(is_new && !named)
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.close_application_detail(cx);
+                    })),
+            )
     }
 }
 
@@ -566,7 +654,7 @@ impl Shell {
         index: usize,
         app: &Application,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let scheduled = app.next_step.as_ref().map(|s| s.label.clone());
 
         div()
@@ -590,9 +678,7 @@ impl Shell {
                     )
                     .child(
                         Button::new("apps-detail-log-round")
-                            .ghost()
-                            .xsmall()
-                            .cursor_pointer()
+                            .quiet()
                             // Named after what it consumes when there is
                             // something to consume, so the button says what
                             // will happen rather than what it is called.
@@ -634,7 +720,7 @@ impl Shell {
         index: usize,
         app: &Application,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let current = app.closed_as;
         let root = cx.weak_entity();
 
@@ -650,17 +736,12 @@ impl Shell {
             )
             .child(
                 Button::new("apps-detail-closure")
-                    .cursor_pointer()
-                    .ghost()
+                    .selector()
                     .w_full()
-                    .justify_between()
                     .label(match current {
                         None => "Still going".to_string(),
                         Some(c) => c.label().to_string(),
                     })
-                    .icon(IconName::ChevronDown)
-                    .border_1()
-                    .border_color(theme.border)
                     .dropdown_menu(move |mut menu, _window, _cx| {
                         // "Still going" is the absence of an ending, and it
                         // has to be reachable: an application marked ghosted

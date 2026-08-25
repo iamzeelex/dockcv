@@ -304,7 +304,7 @@ use gpui::{
     Window,
 };
 
-use dockcv_ui_components::{
+use dockcv_ui_components::{ScrollableElement, 
     Button, ButtonExt, Disableable, TextField, TextFieldEvent, TextFieldState,
 };
 
@@ -416,7 +416,7 @@ impl Shell {
 
     pub(super) fn render_library_edit_sheet(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let form = self.library_edit.as_ref()?;
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let specs = fields_for(form.section);
         // An empty form has nothing to save, and saying so on the button beats
         // accepting the click and writing nothing.
@@ -457,7 +457,7 @@ impl Shell {
             .w(px(520.0))
             .flex()
             .flex_col()
-            .rounded_lg()
+            .rounded(theme.radius_md())
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
@@ -487,7 +487,7 @@ impl Shell {
                 div()
                     .id("library-edit-fields")
                     .max_h(px(420.0))
-                    .overflow_y_scroll()
+                    .overflow_y_scrollbar()
                     .p_4()
                     .flex()
                     .flex_col()
@@ -503,8 +503,7 @@ impl Shell {
                     .gap(px(8.0))
                     .child(
                         Button::new("library-edit-cancel")
-                            .cursor_pointer()
-                            .toolbar_secondary()
+                            .toolbar()
                             .label("Cancel")
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.close_library_edit(cx);
@@ -512,7 +511,6 @@ impl Shell {
                     )
                     .child(
                         Button::new("library-edit-save")
-                            .cursor_pointer()
                             .toolbar_primary()
                             .disabled(blank)
                             .label("Save block")

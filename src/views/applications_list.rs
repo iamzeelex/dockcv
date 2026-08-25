@@ -18,9 +18,9 @@
 use gpui::prelude::*;
 use gpui::{div, px, relative, ClickEvent, Context, IntoElement, SharedString};
 
-use dockcv_ui_components::{
-    ContextMenuExt, EmptyState, Icon, IconName, Sizable, Table, TableBody, TableCell, TableHead,
-    TableHeader, TableRow, Tag,
+use dockcv_ui_components::{ScrollableElement, 
+    Button, ButtonExt, ContextMenuExt, EmptyState, Icon, IconName, Sizable, Table, TableBody,
+    TableCell, TableHead, TableHeader, TableRow, Tag,
 };
 
 use crate::resume::model::{Application, Applications};
@@ -88,7 +88,7 @@ impl Shell {
         applications: &Applications,
         query: &str,
     ) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         // Borrowed: a table row reads its application and never keeps it.
         let mut rows: Vec<(usize, &Application)> = applications
@@ -137,17 +137,17 @@ impl Shell {
                 // on every sortable column would be an invitation, not a state.
                 label = label.child(
                     Icon::new(IconName::ChevronDown)
-                        .with_size(px(11.0))
+                        .with_size(cx.theme().icon_sm())
                         .text_color(theme.accent),
                 );
             }
 
             match sort {
                 Some(sort) => head.child(
-                    div()
-                        .id(SharedString::from(format!("apps-sort-{title}")))
-                        .cursor_pointer()
-                        .hover(|s| s.text_color(theme.text))
+                    Button::new(SharedString::from(format!("apps-sort-{title}")))
+                        .quiet()
+                        .px_0()
+                        .tooltip("Sort by this column")
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             this.set_applications_sort(sort, cx);
                         }))
@@ -166,11 +166,10 @@ impl Shell {
             .id("applications-list")
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
-            // Once every column is at its floor the table is as narrow as it
-            // can honestly be. A window narrower than that scrolls to the rest
-            // rather than clipping it out of existence.
-            .overflow_x_scroll()
+            // Both axes: once every column is at its floor the table is as
+            // narrow as it can honestly be, and a window narrower than that
+            // scrolls to the rest rather than clipping it out of existence.
+            .overflow_scrollbar()
             .px(px(34.0))
             .pb(px(28.0))
             .child(
@@ -183,7 +182,7 @@ impl Shell {
     }
 
     fn list_row(&self, cx: &mut Context<Self>, index: usize, app: &Application) -> TableRow {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
         let tint = column_tint(&theme, app.status());
 
         let company = if app.company.trim().is_empty() {
@@ -224,7 +223,7 @@ impl Shell {
         let stage = Tag::custom(tint.chip_bg, tint.fg, tint.chip_bg)
             .px(px(7.0))
             .py(px(2.0))
-            .rounded(px(5.0))
+            .rounded(theme.radius_sm())
             .text_style(TextStyle::chip())
             .child(status_title(app.status()));
 

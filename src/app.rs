@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use crate::views::settings_window::SettingsWindow;
-use crate::views::Shell;
+use crate::views::{Shell, VaultScreen};
 
 /// Human-readable application name, surfaced in the title bar and menus.
 pub const APP_NAME: &str = "DockCV";
@@ -30,6 +30,13 @@ actions!(
         MinimizeWindow,
         ShowNotices,
         RevealLog,
+        // The rail's four destinations. The rail shows each chord on hover, and
+        // a hint for a chord that does nothing is worse than no hint — so they
+        // are bound here rather than drawn and left inert.
+        GoToCvs,
+        GoToLibrary,
+        GoToDiary,
+        GoToApplications,
     ]
 );
 
@@ -100,6 +107,10 @@ fn init(cx: &mut App) {
         KeyBinding::new("cmd-s", SaveNow, None),
         KeyBinding::new("cmd-w", CloseWindow, None),
         KeyBinding::new("cmd-m", MinimizeWindow, None),
+        KeyBinding::new("cmd-1", GoToCvs, None),
+        KeyBinding::new("cmd-2", GoToLibrary, None),
+        KeyBinding::new("cmd-3", GoToDiary, None),
+        KeyBinding::new("cmd-4", GoToApplications, None),
     ]);
     crate::views::init_keybindings(cx);
 
@@ -120,6 +131,21 @@ fn init(cx: &mut App) {
     });
     cx.on_action(|_: &RevealVault, cx: &mut App| {
         with_shell(cx, |shell, cx| shell.reveal_vault(cx));
+    });
+    // Deliberately global rather than scoped to the vault screens: the chord
+    // has to work from the editor too, and `go_to` routes through the same
+    // flush-then-leave path the rail's own click does.
+    cx.on_action(|_: &GoToCvs, cx: &mut App| {
+        with_shell(cx, |shell, cx| shell.go_to(VaultScreen::Cvs, cx));
+    });
+    cx.on_action(|_: &GoToLibrary, cx: &mut App| {
+        with_shell(cx, |shell, cx| shell.go_to(VaultScreen::Library, cx));
+    });
+    cx.on_action(|_: &GoToDiary, cx: &mut App| {
+        with_shell(cx, |shell, cx| shell.go_to(VaultScreen::Diary, cx));
+    });
+    cx.on_action(|_: &GoToApplications, cx: &mut App| {
+        with_shell(cx, |shell, cx| shell.go_to(VaultScreen::Applications, cx));
     });
     cx.on_action(|_: &CloseWindow, cx: &mut App| {
         // Whichever window is in front — Settings closing must not take the

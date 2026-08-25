@@ -18,7 +18,7 @@ use gpui::prelude::*;
 use gpui::{div, AnyElement, App, Context, Entity, SharedString, WeakEntity, Window};
 
 use dockcv_ui_components::{
-    Button, ButtonVariants, DropdownMenu, IconName, PopupMenu, PopupMenuItem, Sizable,
+    Button, ButtonExt, DropdownMenu, IconName, PopupMenu, PopupMenuItem,
 };
 
 use crate::resume::model::{
@@ -55,10 +55,8 @@ impl Root {
             .occlude()
             .child(
                 Button::new(SharedString::from(format!("section-layout-{section:?}")))
+                    .icon_only()
                     .icon(IconName::Settings2)
-                    .ghost()
-                    .xsmall()
-                    .cursor_pointer()
                     .tooltip(if departs {
                         "Layout for this section — set apart from the document"
                     } else {

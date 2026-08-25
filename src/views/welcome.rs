@@ -3,13 +3,15 @@
 use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, IntoElement};
 
+use dockcv_ui_components::{Button, ButtonExt};
+
 use crate::theme::ActiveTheme;
 
 use super::shell::{Screen, Shell};
 
 impl Shell {
     pub(super) fn render_welcome(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme().clone();
+        let theme = *cx.theme();
 
         let content = div()
             .flex()
@@ -52,18 +54,13 @@ impl Shell {
                     ),
             )
             .child(
-                div()
-                    .id("get-started")
+                Button::new("get-started")
+                    .action_primary()
                     .mt_4()
-                    .px_6()
-                    .py_3()
+                    // The one control on the first screen of the product: it
+                    // keeps the pill shape the welcome art is built around.
                     .rounded_full()
-                    .bg(theme.accent)
-                    .text_color(theme.on_accent)
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_sm()
-                    .cursor_pointer()
-                    .hover(|s| s.bg(theme.accent_hover))
+                    .px_6()
                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                         this.screen = Screen::Setup;
                         cx.notify();

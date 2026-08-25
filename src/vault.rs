@@ -146,16 +146,11 @@ pub struct DocMeta {
     /// Person name, or the file stem if the document can't be read.
     pub name: String,
     pub label: String,
-    pub variants: usize,
     pub presets: usize,
     /// Preset names, in document order. A count answers "how many"; the names
     /// answer "which", which is the question a returning user actually has —
     /// and P-01's complaint is precisely that presets are invisible.
     pub preset_names: Vec<String>,
-    /// How many sections carry more than one variant. `12 variants` says
-    /// nothing on its own; `12 variants across 4 sections` says where the
-    /// tailoring actually is.
-    pub varied_sections: usize,
     /// True when the file couldn't be parsed as a document.
     pub unreadable: bool,
     /// File's last-modified time, seconds since the UNIX epoch. `None` if the
@@ -175,12 +170,6 @@ impl DocMeta {
     }
 }
 
-/// Sum of `variants` across every document — the gallery header's
-/// "N documents · M variants" aggregate.
-pub fn aggregate_variants(metas: &[DocMeta]) -> usize {
-    metas.iter().map(|m| m.variants).sum()
-}
-
 /// Derive a document's card summary from an already-parsed document, or from
 /// nothing when it failed to parse. Split out so `load_all` can hand over the
 /// document it just read instead of provoking a second read.
@@ -196,11 +185,6 @@ fn meta_from(path: &Path, doc: Option<&ResumeDoc>) -> DocMeta {
     match doc {
         Some(doc) => {
             let basics = doc.profile.active();
-            let varied_sections = doc
-                .sections()
-                .into_iter()
-                .filter(|s| doc.variant_names(*s).len() > 1)
-                .count();
             DocMeta {
                 name: if basics.name.trim().is_empty() {
                     stem.clone()
@@ -208,10 +192,8 @@ fn meta_from(path: &Path, doc: Option<&ResumeDoc>) -> DocMeta {
                     basics.name.clone()
                 },
                 label: basics.label.clone(),
-                variants: doc.total_variants(),
                 presets: doc.presets.len(),
                 preset_names: doc.presets.iter().map(|p| p.name.clone()).collect(),
-                varied_sections,
                 unreadable: false,
                 path: path.to_path_buf(),
                 stem,
@@ -221,10 +203,8 @@ fn meta_from(path: &Path, doc: Option<&ResumeDoc>) -> DocMeta {
         None => DocMeta {
             name: stem.clone(),
             label: String::new(),
-            variants: 0,
             presets: 0,
             preset_names: Vec::new(),
-            varied_sections: 0,
             unreadable: true,
             path: path.to_path_buf(),
             stem,
@@ -995,10 +975,8 @@ mod tests {
             path: std::path::PathBuf::new(),
             stem: "cv".into(),
             preset_names: Vec::new(),
-            varied_sections: 0,
             name: "A".into(),
             label: String::new(),
-            variants: 3,
             presets: 1,
             unreadable: false,
             modified_secs: None,
@@ -1011,23 +989,6 @@ mod tests {
         assert!(no_presets.is_draft());
     }
 
-    #[test]
-    fn aggregate_variants_sums_across_docs() {
-        let make = |variants| super::DocMeta {
-            path: std::path::PathBuf::new(),
-            stem: "cv".into(),
-            preset_names: Vec::new(),
-            varied_sections: 0,
-            name: "A".into(),
-            label: String::new(),
-            variants,
-            presets: 0,
-            unreadable: false,
-            modified_secs: None,
-        };
-        let metas = vec![make(6), make(3), make(2)];
-        assert_eq!(super::aggregate_variants(&metas), 11);
-    }
 
     #[test]
     fn read_meta_populates_modified_secs() {
@@ -1357,8 +1318,6 @@ mod tests {
             vec!["FAANG · concise".to_string(), "Infra-heavy".to_string()],
             "the card shows preset names, not a count (P-01)"
         );
-        // Two sections gained a second variant; the rest still have one.
-        assert_eq!(meta.varied_sections, 2);
         assert!(!meta.is_draft());
 
         let _ = std::fs::remove_dir_all(&dir);
