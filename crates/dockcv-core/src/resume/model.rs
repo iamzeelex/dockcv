@@ -456,6 +456,89 @@ pub struct Application {
     /// draw a month it cannot account for (US-14).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<StageChange>,
+    /// The conversations that have happened, oldest first.
+    ///
+    /// Kept apart from [`Self::history`] on purpose: history is where the card
+    /// *moved*, and three rounds of interview are three events inside one
+    /// move. Folding them together would make "entered Interviewing" mean two
+    /// different things depending on which entry you were reading.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rounds: Vec<InterviewRound>,
+    /// How it ended, once it has. `None` while it is still live — which is
+    /// not the same as `Ghosted`, and the difference is the user's to draw.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closed_as: Option<Closure>,
+}
+
+/// A conversation that actually happened — a screen, an onsite, a panel.
+///
+/// **Not a stage.** The board has one `Interviewing` column and keeps it: a
+/// second and a third round are the same stage happening again, and a column
+/// per round is a board that grows sideways for every person who gets deep
+/// into one process. What varies between applications is *how many times*,
+/// which is a count, and a count belongs in a list rather than in the shape
+/// of the UI.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InterviewRound {
+    /// ISO date it happened.
+    pub at: String,
+    /// What it was: "Technical screen", "Onsite", "Final panel". Free text
+    /// for the same reason `compensation` is — a process names its own steps,
+    /// and an enum here would be this app telling companies how to hire.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
+}
+
+/// How an application ended.
+///
+/// Orthogonal to the column it sits in. The board answers *where is this now*;
+/// this answers *how did it finish*, and the two are different questions — an
+/// offer you turned down is not a rejection, and silence is not a no even
+/// though it ends the same way.
+///
+/// `Ghosted` is set by the user, never inferred. The app can notice that
+/// nothing has moved in eight weeks and say so; deciding that silence is final
+/// is a judgement about a company, and inventing it would be inventing the
+/// number people quote most (US-14).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Closure {
+    /// They said no.
+    Rejected,
+    /// No reply, ever.
+    Ghosted,
+    /// You pulled out before there was anything to turn down.
+    Withdrew,
+    /// You turned down an offer.
+    Declined,
+    /// You took it.
+    Accepted,
+}
+
+impl Closure {
+    pub const ALL: [Closure; 5] = [
+        Closure::Rejected,
+        Closure::Ghosted,
+        Closure::Withdrew,
+        Closure::Declined,
+        Closure::Accepted,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Closure::Rejected => "Rejected",
+            Closure::Ghosted => "Ghosted",
+            Closure::Withdrew => "Withdrew",
+            Closure::Declined => "Declined",
+            Closure::Accepted => "Accepted",
+        }
+    }
+
+    /// Whether this is an ending the applicant chose. The distinction the
+    /// diagram is for: three of these happened *to* you and two were yours.
+    pub fn is_own_choice(self) -> bool {
+        matches!(self, Closure::Withdrew | Closure::Declined | Closure::Accepted)
+    }
 }
 
 /// One recorded move between stages.
@@ -2996,6 +3079,11 @@ mod applications_tests {
                 StageChange { at: "2026-06-02".into(), to: "applied".into() },
                 StageChange { at: "2026-06-18".into(), to: "interviewing".into() },
             ],
+            rounds: vec![InterviewRound {
+                at: "2026-06-18".into(),
+                label: "Technical screen".into(),
+            }],
+            closed_as: Some(Closure::Ghosted),
             created: "2026-06-01".into(),
             applied: Some("2026-06-02".into()),
             source_doc: Some("sofiia-senior-swe".into()),

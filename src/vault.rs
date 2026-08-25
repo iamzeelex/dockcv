@@ -1269,6 +1269,41 @@ mod tests {
         assert_eq!(back.entries[0].stage_before(0), ApplicationStatus::Wishlist);
     }
 
+    /// Rounds and the closure have to survive the disk, and a board written
+    /// before either existed must gain no keys.
+    #[test]
+    fn rounds_and_closure_round_trip_and_old_boards_gain_no_keys() {
+        use crate::resume::model::{Application, Applications, Closure, InterviewRound};
+
+        let mut board = Applications {
+            entries: vec![Application {
+                company: "Acme".into(),
+                ..Default::default()
+            }],
+        };
+        let text = toml::to_string_pretty(&board).expect("serializes");
+        assert!(!text.contains("rounds"), "{text}");
+        assert!(!text.contains("closed_as"), "{text}");
+
+        board.entries[0].rounds.push(InterviewRound {
+            at: "2026-07-02".into(),
+            label: "Technical screen".into(),
+        });
+        board.entries[0].rounds.push(InterviewRound {
+            at: "2026-07-16".into(),
+            // A round nobody named is still a round that happened.
+            label: String::new(),
+        });
+        board.entries[0].closed_as = Some(Closure::Ghosted);
+
+        let text = toml::to_string_pretty(&board).expect("serializes");
+        let back: Applications = toml::from_str(&text).expect("round-trips");
+        assert_eq!(back.entries[0].rounds.len(), 2);
+        assert_eq!(back.entries[0].rounds[0].label, "Technical screen");
+        assert!(back.entries[0].rounds[1].label.is_empty());
+        assert_eq!(back.entries[0].closed_as, Some(Closure::Ghosted));
+    }
+
     /// Renaming is a file move, so the two failure modes that matter are
     /// clobbering an existing document and accepting a name the filesystem
     /// cannot hold.

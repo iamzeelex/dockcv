@@ -24,12 +24,12 @@ use dockcv_ui_components::{
     SankeyChart, SankeyLabel, SankeyLink, SankeyValueScale, Sizable,
 };
 
-use crate::resume::model::{ApplicationStatus, Applications};
+use crate::resume::model::{ApplicationStatus, Applications, Closure};
 use crate::theme::{ActiveTheme, StyledText, TextStyle, Theme};
 
 use super::applications_card::column_tint;
 use super::applications_data::{plural, status_title};
-use super::applications_funnel::{missing_history, stage_flow, Period};
+use super::applications_funnel::{journey, missing_history, stage_flow, JourneyNode, Period};
 use super::applications_funnel::{Funnel, Outcome};
 use super::shell::Shell;
 
@@ -40,6 +40,27 @@ use super::shell::Shell;
 struct FunnelNode {
     label: SharedString,
     color: Hsla,
+}
+
+/// The colour a journey node takes.
+///
+/// Endings borrow the board's own colours where the board has one, so an
+/// "Offer" node is the green the Offer column already is. The three endings
+/// the board has no column for are placed by what they *are*: a ghosting is
+/// the same silence as a rejection, a withdrawal and a decline are the
+/// applicant's own decision and read as neutral rather than as a loss.
+fn journey_color(theme: &Theme, node: JourneyNode) -> Hsla {
+    match node {
+        JourneyNode::Sent => column_tint(theme, ApplicationStatus::Applied).dot,
+        JourneyNode::Round(_) => column_tint(theme, ApplicationStatus::Interviewing).dot,
+        JourneyNode::Offer => column_tint(theme, ApplicationStatus::Offer).dot,
+        JourneyNode::Live => theme.text_muted,
+        JourneyNode::Closed(Closure::Accepted) => column_tint(theme, ApplicationStatus::Offer).dot,
+        JourneyNode::Closed(Closure::Rejected | Closure::Ghosted) => {
+            column_tint(theme, ApplicationStatus::Rejected).dot
+        }
+        JourneyNode::Closed(Closure::Withdrew | Closure::Declined) => theme.text_subtle,
+    }
 }
 
 /// The colour an outcome's node and its incoming ribbons take — the board's
@@ -74,6 +95,10 @@ impl Shell {
             .flex_col()
             .gap(px(18.0))
             .child(self.insight_tiles(cx, &funnel))
+            // The journey first. It is the chart a person screenshots — the
+            // shape of their search, ending by ending — and the preset funnel
+            // below answers the narrower question of which CV did it.
+            .child(self.journey_panel(cx, applications))
             .child(self.stage_movement(cx, applications))
             .child(self.funnel_panel(&theme, &funnel))
     }
@@ -287,6 +312,127 @@ impl Shell {
     }
 
     /// The Sankey itself, in a titled panel that says what it is counting.
+    /// The journey: every sent application, from sent to however it ended.
+    fn journey_panel(&self, cx: &mut Context<Self>, applications: &Applications) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let journey = journey(applications);
+
+        let body = if journey.is_empty() {
+            div()
+                .h(px(220.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(EmptyState::new("Nothing sent yet").body(
+                    "Move an application to Applied and this will show the shape of \
+                     your search — interviews, offers, and every way one can end.",
+                ))
+                .into_any_element()
+        } else {
+            // Nodes in the order the diagram reads: sent, then each round,
+            // then the offer, then the endings. Their index is what the links
+            // are written against, so this order is the diagram's spine.
+            let mut order: Vec<JourneyNode> = vec![JourneyNode::Sent];
+            let deepest = journey
+                .links
+                .iter()
+                .filter_map(|(_, to, _)| match to {
+                    JourneyNode::Round(n) => Some(*n),
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(0);
+            order.extend((1..=deepest).map(JourneyNode::Round));
+            order.push(JourneyNode::Offer);
+            order.push(JourneyNode::Live);
+            order.extend(Closure::ALL.map(JourneyNode::Closed));
+            // Only what the diagram actually reaches: an unused node would
+            // draw a labelled zero, which reads as a fact rather than as an
+            // absence.
+            order.retain(|node| {
+                journey
+                    .links
+                    .iter()
+                    .any(|(from, to, _)| from == node || to == node)
+            });
+
+            let nodes: Vec<FunnelNode> = order
+                .iter()
+                .map(|node| FunnelNode {
+                    label: node.label().into(),
+                    color: journey_color(&theme, *node),
+                })
+                .collect();
+            let links: Vec<SankeyLink> = journey
+                .links
+                .iter()
+                .filter_map(|(from, to, count)| {
+                    let source = order.iter().position(|n| n == from)?;
+                    let target = order.iter().position(|n| n == to)?;
+                    Some(SankeyLink::new(source, target, *count as f64))
+                })
+                .collect();
+
+            let height = (200.0 + deepest as f32 * 40.0).min(460.0);
+            let muted = theme.text_muted;
+            div()
+                .h(px(height))
+                .w_full()
+                .child(
+                    SankeyChart::new(nodes, links)
+                        .node_align(SankeyAlign::Justify)
+                        .node_width(12.0)
+                        .node_padding(18.0)
+                        .node_corner_radius(px(3.0))
+                        .value_scale(SankeyValueScale::Linear)
+                        .node_color(|node: &FunnelNode| node.color)
+                        .labels(move |node: &FunnelNode, value: f64| {
+                            let n = value.round() as usize;
+                            vec![
+                                SankeyLabel::new(format!("{n}")),
+                                SankeyLabel::new(node.label.clone()).color(muted),
+                            ]
+                        }),
+                )
+                .into_any_element()
+        };
+
+        let mut caption = format!("{} sent", journey.sent);
+        if journey.not_sent > 0 {
+            caption.push_str(&format!(
+                "; {} still on the wishlist and not in the diagram",
+                journey.not_sent
+            ));
+        }
+        caption.push_str(
+            ". An application nobody has answered is \"In progress\" until you say \
+             it was ghosted — silence is not a no until you decide it is.",
+        );
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(4.0))
+            .p(px(18.0))
+            .rounded(px(12.0))
+            .bg(theme.surface)
+            .border_1()
+            .border_color(theme.border)
+            .child(
+                div()
+                    .text_style(TextStyle::heading())
+                    .text_color(theme.text)
+                    .child("How the search is going"),
+            )
+            .child(
+                div()
+                    .text_style(TextStyle::meta())
+                    .text_color(theme.text_subtle)
+                    .child(caption),
+            )
+            .child(body)
+    }
+
     fn funnel_panel(&self, theme: &Theme, funnel: &Funnel) -> impl IntoElement {
         let body = if funnel.is_empty() {
             div()

@@ -20,10 +20,11 @@ use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, Entity, SharedString, Subscription, Window};
 
 use dockcv_ui_components::{
-    Button, ButtonVariants, Icon, IconName, Sizable, TextField, TextFieldEvent, TextFieldState,
+    Button, ButtonVariants, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, TextField,
+    TextFieldEvent, TextFieldState,
 };
 
-use crate::resume::model::{Application, ApplicationStatus, NextStep};
+use crate::resume::model::{Application, ApplicationStatus, Closure, InterviewRound, NextStep};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 use super::save_status;
@@ -195,6 +196,88 @@ impl Shell {
             vault::save_applications(&vault, &applications),
         );
         cx.notify();
+    }
+
+    /// Load, change, save. The panel's own edits go through
+    /// `commit_application_detail`; this is for the buttons, which change the
+    /// card rather than a field of it.
+    fn update_application(
+        &mut self,
+        index: usize,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut Application),
+    ) {
+        let Some(vault) = self.vault.clone() else {
+            return;
+        };
+        let mut applications = vault::load_applications(&vault);
+        let Some(app) = applications.entries.get_mut(index) else {
+            return;
+        };
+        change(app);
+        save_status::record(
+            cx,
+            "applications board",
+            vault::save_applications(&vault, &applications),
+        );
+        cx.notify();
+    }
+
+    /// Record that an interview happened.
+    ///
+    /// Takes its name from the scheduled next step when there is one, and
+    /// clears it: a step you have had is not a step you are waiting for, and
+    /// leaving it behind is how a board ends up advertising last Tuesday.
+    pub(super) fn log_interview_round(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let today = vault::today_iso();
+        self.update_application(index, cx, |app| {
+            let label = app
+                .next_step
+                .take()
+                .map(|step| step.label)
+                .unwrap_or_default();
+            app.rounds.push(InterviewRound { at: today, label });
+        });
+        // The panel's own fields still hold the step that has just been
+        // consumed, and the next blur would write it straight back.
+        self.reseed_application_detail(window, cx);
+    }
+
+    pub(super) fn set_application_closure(
+        &mut self,
+        index: usize,
+        closure: Option<Closure>,
+        cx: &mut Context<Self>,
+    ) {
+        self.update_application(index, cx, |app| app.closed_as = closure);
+    }
+
+    /// Re-read the open panel's fields from the card, after something other
+    /// than typing has changed it.
+    fn reseed_application_detail(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(detail) = self.applications_detail.as_ref() else {
+            return;
+        };
+        let Some(vault) = self.vault.clone() else {
+            return;
+        };
+        let applications = vault::load_applications(&vault);
+        let Some(app) = applications.entries.get(detail.index) else {
+            return;
+        };
+        let step = app.next_step.clone().unwrap_or_default();
+        for (field, value) in [
+            (&detail.next_label, step.label),
+            (&detail.next_date, step.date),
+            (&detail.next_time, step.time),
+        ] {
+            field.update(cx, |state, cx| state.seed(value, window, cx));
+        }
     }
 
     pub(super) fn render_application_detail(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -386,6 +469,8 @@ impl Shell {
                                         ),
                                 ),
                         )
+                        .child(self.rounds_block(cx, detail.index, app))
+                        .child(self.closure_row(cx, detail.index, app))
                         .child(field("Notes", &detail.notes, "What you want to remember"))
                         // Only where it means anything. A "why were you
                         // rejected" box on an open application is a question
@@ -417,6 +502,165 @@ pub(super) fn index_after_removal(open: usize, removed: usize) -> Option<usize> 
         Ordering::Less => Some(open),
         Ordering::Greater => Some(open - 1),
     }
+}
+
+impl Shell {
+    /// The interviews that have happened, and the button that records one.
+    ///
+    /// A list rather than a stage per round: the board keeps one
+    /// `Interviewing` column, and how many times you have been through it is
+    /// a count. See `InterviewRound`.
+    fn rounds_block(
+        &self,
+        cx: &mut Context<Self>,
+        index: usize,
+        app: &Application,
+    ) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let scheduled = app.next_step.as_ref().map(|s| s.label.clone());
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(5.0))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .text_style(TextStyle::label())
+                            .text_color(theme.text_muted)
+                            .child(match app.rounds.len() {
+                                0 => "Interviews".to_string(),
+                                n => format!("Interviews · {n}"),
+                            }),
+                    )
+                    .child(
+                        Button::new("apps-detail-log-round")
+                            .ghost()
+                            .xsmall()
+                            .cursor_pointer()
+                            // Named after what it consumes when there is
+                            // something to consume, so the button says what
+                            // will happen rather than what it is called.
+                            .label(match scheduled.as_deref() {
+                                Some(label) if !label.is_empty() => format!("{label} happened"),
+                                _ => "Log an interview".to_string(),
+                            })
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                this.log_interview_round(index, window, cx);
+                            })),
+                    ),
+            )
+            .children(app.rounds.iter().enumerate().map(|(i, round)| {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .text_style(TextStyle::meta())
+                    .text_color(theme.text_subtle)
+                    .child(SharedString::from(ordinal(i + 1)))
+                    .child(SharedString::from(short_date(&round.at)))
+                    .when(!round.label.is_empty(), |el| {
+                        el.child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_color(theme.text_muted)
+                                .child(round.label.clone()),
+                        )
+                    })
+            }))
+    }
+
+    /// How it ended — or that it has not.
+    fn closure_row(
+        &self,
+        cx: &mut Context<Self>,
+        index: usize,
+        app: &Application,
+    ) -> impl IntoElement {
+        let theme = cx.theme().clone();
+        let current = app.closed_as;
+        let root = cx.weak_entity();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(5.0))
+            .child(
+                div()
+                    .text_style(TextStyle::label())
+                    .text_color(theme.text_muted)
+                    .child("Outcome"),
+            )
+            .child(
+                Button::new("apps-detail-closure")
+                    .cursor_pointer()
+                    .ghost()
+                    .w_full()
+                    .justify_between()
+                    .label(match current {
+                        None => "Still going".to_string(),
+                        Some(c) => c.label().to_string(),
+                    })
+                    .icon(IconName::ChevronDown)
+                    .border_1()
+                    .border_color(theme.border)
+                    .dropdown_menu(move |mut menu, _window, _cx| {
+                        // "Still going" is the absence of an ending, and it
+                        // has to be reachable: an application marked ghosted
+                        // that then replies is the best possible reason to
+                        // need this control to go backwards.
+                        let clear = root.clone();
+                        menu = menu
+                            .item(
+                                PopupMenuItem::new("Still going")
+                                    .checked(current.is_none())
+                                    .on_click(move |_ev, _window, cx| {
+                                        let _ = clear.update(cx, |this, cx| {
+                                            this.set_application_closure(index, None, cx);
+                                        });
+                                    }),
+                            )
+                            .separator();
+                        for closure in Closure::ALL {
+                            let root = root.clone();
+                            menu = menu.item(
+                                PopupMenuItem::new(closure.label())
+                                    .checked(current == Some(closure))
+                                    .on_click(move |_ev, _window, cx| {
+                                        let _ = root.update(cx, |this, cx| {
+                                            this.set_application_closure(
+                                                index,
+                                                Some(closure),
+                                                cx,
+                                            );
+                                        });
+                                    }),
+                            );
+                        }
+                        menu
+                    }),
+            )
+    }
+}
+
+/// `1st`, `2nd`, `3rd`, `4th` — the teens are the exception every naive
+/// implementation gets wrong.
+fn ordinal(n: usize) -> String {
+    let suffix = match (n % 10, n % 100) {
+        (_, 11..=13) => "th",
+        (1, _) => "st",
+        (2, _) => "nd",
+        (3, _) => "rd",
+        _ => "th",
+    };
+    format!("{n}{suffix}")
 }
 
 fn none_if_empty(value: String) -> Option<String> {
@@ -464,5 +708,23 @@ mod tests {
     fn an_empty_rejection_reason_is_absent_rather_than_blank() {
         assert_eq!(none_if_empty(String::new()), None);
         assert_eq!(none_if_empty("role filled".into()), Some("role filled".into()));
+    }
+}
+
+#[cfg(test)]
+mod ordinal_tests {
+    use super::ordinal;
+
+    #[test]
+    fn the_teens_are_not_first_second_third() {
+        assert_eq!(ordinal(1), "1st");
+        assert_eq!(ordinal(2), "2nd");
+        assert_eq!(ordinal(3), "3rd");
+        assert_eq!(ordinal(4), "4th");
+        assert_eq!(ordinal(11), "11th");
+        assert_eq!(ordinal(12), "12th");
+        assert_eq!(ordinal(13), "13th");
+        assert_eq!(ordinal(21), "21st");
+        assert_eq!(ordinal(112), "112th");
     }
 }

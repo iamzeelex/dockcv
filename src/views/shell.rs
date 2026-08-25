@@ -317,7 +317,9 @@ impl Shell {
                 &company,
                 window,
                 |this, _field, event: &TextFieldEvent, window, cx| match event {
-                    TextFieldEvent::Submitted => this.commit_applications_compose(window, cx),
+                    TextFieldEvent::Submitted => {
+                        this.commit_applications_compose(window, cx);
+                    }
                     TextFieldEvent::Changed => cx.notify(),
                     _ => {}
                 },
@@ -331,7 +333,9 @@ impl Shell {
                 &role,
                 window,
                 |this, _field, event: &TextFieldEvent, window, cx| match event {
-                    TextFieldEvent::Submitted => this.commit_applications_compose(window, cx),
+                    TextFieldEvent::Submitted => {
+                        this.commit_applications_compose(window, cx);
+                    }
                     TextFieldEvent::Changed => cx.notify(),
                     _ => {}
                 },

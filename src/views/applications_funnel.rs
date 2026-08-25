@@ -26,7 +26,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::resume::model::{Application, ApplicationStatus, Applications};
+use crate::resume::model::{Application, ApplicationStatus, Applications, Closure};
 
 /// What became of an application that was actually sent.
 ///
@@ -637,5 +637,244 @@ impl Period {
             Period::Days90 => Some(90),
             Period::Days365 => Some(365),
         }
+    }
+}
+
+/// A node in the journey diagram — the chart people actually share.
+///
+/// The preset funnel above answers *which CV works*, which is DockCV's own
+/// question. This one answers *how is it going*, which is the one a person
+/// screenshots and sends to a friend. Both are true about the same board and
+/// neither replaces the other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum JourneyNode {
+    /// The left edge: everything actually sent.
+    Sent,
+    /// An interview, 1-based. Not a stage — see `InterviewRound`.
+    Round(usize),
+    Offer,
+    /// Still live. Deliberately its own node rather than folded into an
+    /// ending: an application nobody has answered yet is not a rejection and
+    /// not a ghosting, and a diagram that pretends otherwise reads worse than
+    /// the truth on a bad week.
+    Live,
+    Closed(Closure),
+}
+
+impl JourneyNode {
+    pub(super) fn label(self) -> String {
+        match self {
+            JourneyNode::Sent => "Applications".to_string(),
+            JourneyNode::Round(1) => "1st interview".to_string(),
+            JourneyNode::Round(2) => "2nd interview".to_string(),
+            JourneyNode::Round(3) => "3rd interview".to_string(),
+            JourneyNode::Round(n) => format!("{n}th interview"),
+            JourneyNode::Offer => "Offer".to_string(),
+            JourneyNode::Live => "In progress".to_string(),
+            JourneyNode::Closed(c) => c.label().to_string(),
+        }
+    }
+}
+
+/// The whole diagram: one path per sent application, summed into links.
+pub(super) struct Journey {
+    pub sent: usize,
+    pub not_sent: usize,
+    pub links: Vec<(JourneyNode, JourneyNode, usize)>,
+}
+
+impl Journey {
+    pub(super) fn is_empty(&self) -> bool {
+        self.links.is_empty()
+    }
+}
+
+/// How many interviews an application has been through.
+///
+/// The recorded rounds, or one if the board says it reached `Interviewing`
+/// without any being written down. That floor is not an invention: `furthest`
+/// reaching Interviewing *means* an interview happened — the user said so by
+/// moving the card. The list only refines a count the board already asserted,
+/// which is what keeps this chart useful on a vault that predates rounds.
+fn rounds_of(app: &Application) -> usize {
+    let asserted = matches!(
+        app.furthest,
+        ApplicationStatus::Interviewing | ApplicationStatus::Offer
+    );
+    app.rounds.len().max(usize::from(asserted))
+}
+
+fn reached_offer(app: &Application) -> bool {
+    app.furthest == ApplicationStatus::Offer
+        || matches!(
+            app.closed_as,
+            // Only the two endings that can *only* follow an offer. A
+            // withdrawal or a ghosting says nothing about whether one was
+            // ever made.
+            Some(Closure::Declined | Closure::Accepted)
+        )
+}
+
+/// Every sent application, as one path from `Sent` to how it ended.
+///
+/// One unit of flow per application, exactly as the preset funnel counts —
+/// so the widths add up to the number of applications and the diagram can be
+/// read without a legend explaining what it is not saying.
+pub(super) fn journey(applications: &Applications) -> Journey {
+    let mut counts: BTreeMap<(JourneyNode, JourneyNode), usize> = BTreeMap::new();
+    let mut sent = 0usize;
+    let mut not_sent = 0usize;
+
+    for app in &applications.entries {
+        if Outcome::of(app).is_none() {
+            not_sent += 1;
+            continue;
+        }
+        sent += 1;
+
+        let mut at = JourneyNode::Sent;
+        let mut step = |from: JourneyNode, to: JourneyNode| {
+            *counts.entry((from, to)).or_insert(0) += 1;
+        };
+
+        for n in 1..=rounds_of(app) {
+            let next = JourneyNode::Round(n);
+            step(at, next);
+            at = next;
+        }
+        if reached_offer(app) {
+            step(at, JourneyNode::Offer);
+            at = JourneyNode::Offer;
+        }
+        step(
+            at,
+            match app.closed_as {
+                Some(closure) => JourneyNode::Closed(closure),
+                None => JourneyNode::Live,
+            },
+        );
+    }
+
+    Journey {
+        sent,
+        not_sent,
+        links: counts.into_iter().map(|((a, b), n)| (a, b, n)).collect(),
+    }
+}
+
+#[cfg(test)]
+mod journey_tests {
+    use super::*;
+    use crate::resume::model::InterviewRound;
+
+    fn sent(rounds: usize, furthest: ApplicationStatus, closed: Option<Closure>) -> Application {
+        Application {
+            status_word: furthest.word().into(),
+            furthest,
+            applied: Some("2026-06-01".into()),
+            rounds: (0..rounds)
+                .map(|i| InterviewRound {
+                    at: format!("2026-06-{:02}", i + 2),
+                    ..Default::default()
+                })
+                .collect(),
+            closed_as: closed,
+            ..Default::default()
+        }
+    }
+
+    fn board(entries: Vec<Application>) -> Applications {
+        Applications { entries }
+    }
+
+    fn link(j: &Journey, from: JourneyNode, to: JourneyNode) -> usize {
+        j.links
+            .iter()
+            .find(|(a, b, _)| *a == from && *b == to)
+            .map(|(_, _, n)| *n)
+            .unwrap_or(0)
+    }
+
+    /// One application is one unit of flow the whole way across. If a path
+    /// ever split or doubled, the widths would stop adding up to the number
+    /// of applications and the diagram would need a paragraph explaining what
+    /// it is not saying.
+    #[test]
+    fn every_application_walks_exactly_one_path() {
+        let j = journey(&board(vec![sent(
+            2,
+            ApplicationStatus::Offer,
+            Some(Closure::Accepted),
+        )]));
+        assert_eq!(j.sent, 1);
+        assert_eq!(link(&j, JourneyNode::Sent, JourneyNode::Round(1)), 1);
+        assert_eq!(link(&j, JourneyNode::Round(1), JourneyNode::Round(2)), 1);
+        assert_eq!(link(&j, JourneyNode::Round(2), JourneyNode::Offer), 1);
+        assert_eq!(
+            link(&j, JourneyNode::Offer, JourneyNode::Closed(Closure::Accepted)),
+            1
+        );
+        assert_eq!(j.links.len(), 4, "the path branched: {:?}", j.links);
+    }
+
+    /// Silence is its own ending, and an unanswered application is neither
+    /// silence-forever nor a rejection until someone says so.
+    #[test]
+    fn an_unanswered_application_is_in_progress_not_ghosted() {
+        let j = journey(&board(vec![sent(0, ApplicationStatus::Applied, None)]));
+        assert_eq!(link(&j, JourneyNode::Sent, JourneyNode::Live), 1);
+        assert_eq!(
+            link(&j, JourneyNode::Sent, JourneyNode::Closed(Closure::Ghosted)),
+            0
+        );
+
+        let j = journey(&board(vec![sent(
+            0,
+            ApplicationStatus::Applied,
+            Some(Closure::Ghosted),
+        )]));
+        assert_eq!(
+            link(&j, JourneyNode::Sent, JourneyNode::Closed(Closure::Ghosted)),
+            1
+        );
+    }
+
+    /// A board that predates recorded rounds still draws a first interview,
+    /// because moving a card to Interviewing already asserted one happened.
+    #[test]
+    fn the_board_still_accounts_for_an_interview_it_never_wrote_down() {
+        let j = journey(&board(vec![sent(0, ApplicationStatus::Interviewing, None)]));
+        assert_eq!(link(&j, JourneyNode::Sent, JourneyNode::Round(1)), 1);
+        assert_eq!(link(&j, JourneyNode::Round(1), JourneyNode::Live), 1);
+        // …and it does not invent a second one.
+        assert_eq!(link(&j, JourneyNode::Round(1), JourneyNode::Round(2)), 0);
+    }
+
+    /// The wishlist is not in the diagram — nothing was sent, so there is no
+    /// path — but it is counted so the total can be said out loud.
+    #[test]
+    fn the_wishlist_is_excluded_and_reported() {
+        let j = journey(&board(vec![
+            Application::default(),
+            sent(0, ApplicationStatus::Applied, Some(Closure::Rejected)),
+        ]));
+        assert_eq!(j.sent, 1);
+        assert_eq!(j.not_sent, 1);
+    }
+
+    /// Turning an offer down is not a rejection, and the diagram has to route
+    /// it through the offer that was actually made.
+    #[test]
+    fn declining_an_offer_still_goes_through_the_offer() {
+        let j = journey(&board(vec![sent(
+            1,
+            ApplicationStatus::Interviewing,
+            Some(Closure::Declined),
+        )]));
+        assert_eq!(link(&j, JourneyNode::Round(1), JourneyNode::Offer), 1);
+        assert_eq!(
+            link(&j, JourneyNode::Offer, JourneyNode::Closed(Closure::Declined)),
+            1
+        );
     }
 }

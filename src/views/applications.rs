@@ -530,6 +530,32 @@ impl Shell {
                                 this.cancel_applications_compose(cx);
                             })),
                     )
+                    // Two ways out, because a card and the CV you sent for it
+                    // are made at different moments: sometimes you are
+                    // capturing a posting to look at later, sometimes you have
+                    // just sent something and want it attributed while you
+                    // still remember which cut it was.
+                    .child(
+                        Button::new("apps-compose-add-pin")
+                            .cursor_pointer()
+                            .toolbar_secondary()
+                            .label("Add & pin CV")
+                            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                                // The card has to exist before it can be
+                                // pinned — the pin sheet writes to a card by
+                                // index, and there is no index until now.
+                                if let Some(index) = this.commit_applications_compose(window, cx) {
+                                    let company = this
+                                        .cache
+                                        .applications()
+                                        .entries
+                                        .get(index)
+                                        .map(|a| a.company.clone())
+                                        .unwrap_or_default();
+                                    this.open_pin_pick(index, company, None, window, cx);
+                                }
+                            })),
+                    )
                     .child(
                         Button::new("apps-compose-add")
                             .cursor_pointer()
@@ -716,17 +742,15 @@ impl Shell {
     /// Commit the compose box: company and role are the only two fields a
     /// new card starts with (design doc's "Build these" instruction) — both
     /// required, since neither has a sane default.
+    /// Create the card, and say where it landed so a caller can carry on with
+    /// it — which is what "Add & pin CV" needs and nothing else does.
     pub(super) fn commit_applications_compose(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
-        let Some(target) = self.applications_compose_target else {
-            return;
-        };
-        let Some(vault) = self.vault.clone() else {
-            return;
-        };
+    ) -> Option<usize> {
+        let target = self.applications_compose_target?;
+        let vault = self.vault.clone()?;
         let company = self
             .applications_compose_company
             .as_ref()
@@ -738,7 +762,7 @@ impl Shell {
             .map(|f| f.read(cx).value(cx).trim().to_string())
             .unwrap_or_default();
         if company.is_empty() || role.is_empty() {
-            return;
+            return None;
         }
 
         let mut applications = vault::load_applications(&vault);
@@ -753,6 +777,7 @@ impl Shell {
         // created straight into a later column.
         application.advance_to(target, &vault::today_iso());
         applications.entries.push(application);
+        let index = applications.entries.len() - 1;
         save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
 
         self.applications_compose_target = None;
@@ -763,6 +788,7 @@ impl Shell {
             field.update(cx, |state, cx| state.seed("", window, cx));
         }
         cx.notify();
+        Some(index)
     }
 
     /// Move a card to a new column — always through `Application::advance_to`,
