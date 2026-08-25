@@ -21,6 +21,15 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
+  version-check:
+    name: Version & Changelog Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify Version & CHANGELOG Consistency
+        run: bash scripts/release.sh --check
+
   clippy:
     name: Clippy Linting
     runs-on: macos-latest
