@@ -3,6 +3,8 @@
 //! that file under the house line limit — none of this needs `gpui` or
 //! `Theme`, so it lives separately rather than crowding the render code.
 
+use std::cmp::Ordering;
+
 use crate::resume::model::{Application, ApplicationStatus, Applications, NextStep, PresetConversion};
 use crate::vault;
 
@@ -43,7 +45,11 @@ pub(super) fn conversion_line(conv: &PresetConversion) -> String {
 /// table (§3). Wishlist and Rejected carry neither.
 pub(super) fn card_chip_text(app: &Application, status: ApplicationStatus) -> Option<String> {
     match status {
-        ApplicationStatus::Applied => (!app.preset.is_empty()).then(|| app.preset.clone()),
+        ApplicationStatus::Applied => app
+            .sent_as
+            .as_ref()
+            .map(|cv| cv.preset.clone())
+            .filter(|p| !p.is_empty()),
         ApplicationStatus::Interviewing | ApplicationStatus::Offer => {
             app.next_step.as_ref().map(next_step_caption)
         }
@@ -361,27 +367,30 @@ fn stage_rank(app: &Application) -> u8 {
     }
 }
 
-/// The last date anything is known to have happened to an entry: the next
-/// step if one is scheduled, else the last snapshot, else the send date, else
-/// the day it was created. `""` sorts first, which is what "nothing is known
-/// about this one" should do under *Least recently touched*.
-fn last_touched(app: &Application) -> &str {
-    if let Some(step) = app.next_step.as_ref() {
-        if !step.date.is_empty() {
-            return &step.date;
+/// The last date something is known to have **happened** to an entry — the
+/// latest of its stage moves, interviews, snapshots, send date and creation.
+///
+/// A scheduled next step is deliberately not in here, though it used to be.
+/// It is in the future: counting it made a card with an onsite booked for
+/// next month read as freshly touched, and the column that prints this is
+/// called "Last touched". A card nobody has moved since March is stale
+/// whatever is written in its diary.
+///
+/// `""` sorts first, which is what "nothing is known about this one" should
+/// do under *Least recently touched*.
+pub(super) fn last_touched(app: &Application) -> &str {
+    let mut latest = app.created.as_str();
+    for candidate in [
+        app.applied.as_deref().unwrap_or_default(),
+        app.snapshots.last().map(|s| s.date.as_str()).unwrap_or_default(),
+        app.history.last().map(|h| h.at.as_str()).unwrap_or_default(),
+        app.rounds.last().map(|r| r.at.as_str()).unwrap_or_default(),
+    ] {
+        if candidate > latest {
+            latest = candidate;
         }
     }
-    if let Some(snapshot) = app.snapshots.last() {
-        if !snapshot.date.is_empty() {
-            return &snapshot.date;
-        }
-    }
-    if let Some(applied) = app.applied.as_deref() {
-        if !applied.is_empty() {
-            return applied;
-        }
-    }
-    &app.created
+    latest
 }
 
 /// Order `rows` in place. Rows are `(index, application)` pairs, where the
@@ -392,37 +401,50 @@ fn last_touched(app: &Application) -> &str {
 /// **total**: two entries that tie on the chosen key keep a stable, defined
 /// order rather than one the sort algorithm happens to produce. Without it a
 /// re-render could shuffle equal rows under the cursor.
-pub(super) fn sort_rows(rows: &mut [(usize, Application)], sort: ApplicationSort) {
+/// Put rows in order.
+///
+/// Generic over what holds the application so the board and the list can sort
+/// **borrowed** rows: they used to sort owned ones, which meant cloning every
+/// application into every column on every frame purely to put it in order.
+pub(super) fn sort_rows<A: std::borrow::Borrow<Application>>(
+    rows: &mut [(usize, A)],
+    sort: ApplicationSort,
+) {
+    rows.sort_by(|x, y| compare(x.0, x.1.borrow(), y.0, y.1.borrow(), sort));
+}
+
+/// The comparison itself, as one pure function of two applications.
+///
+/// Separate from the sort so it is directly testable and so the borrow
+/// happens once, at the boundary, rather than in six closures.
+fn compare(
+    ai: usize,
+    a: &Application,
+    bi: usize,
+    b: &Application,
+    sort: ApplicationSort,
+) -> Ordering {
     match sort {
         // ISO dates sort correctly as strings, which is half of why the vault
         // writes them. Reversed for Newest so a missing date lands last
         // rather than first.
-        ApplicationSort::Newest => {
-            rows.sort_by(|(ai, a), (bi, b)| b.created.cmp(&a.created).then(bi.cmp(ai)))
-        }
-        ApplicationSort::Oldest => {
-            rows.sort_by(|(ai, a), (bi, b)| a.created.cmp(&b.created).then(ai.cmp(bi)))
-        }
-        ApplicationSort::Company => rows.sort_by(|(ai, a), (bi, b)| {
-            a.company
-                .to_lowercase()
-                .cmp(&b.company.to_lowercase())
-                .then_with(|| a.role.to_lowercase().cmp(&b.role.to_lowercase()))
-                .then(ai.cmp(bi))
-        }),
-        ApplicationSort::Stage => rows.sort_by(|(ai, a), (bi, b)| {
-            stage_rank(b)
-                .cmp(&stage_rank(a))
-                .then_with(|| b.created.cmp(&a.created))
-                .then(bi.cmp(ai))
-        }),
-        ApplicationSort::Stale => rows.sort_by(|(ai, a), (bi, b)| {
-            last_touched(a).cmp(last_touched(b)).then(ai.cmp(bi))
-        }),
+        ApplicationSort::Newest => b.created.cmp(&a.created).then(bi.cmp(&ai)),
+        ApplicationSort::Oldest => a.created.cmp(&b.created).then(ai.cmp(&bi)),
+        ApplicationSort::Company => a
+            .company
+            .to_lowercase()
+            .cmp(&b.company.to_lowercase())
+            .then_with(|| a.role.to_lowercase().cmp(&b.role.to_lowercase()))
+            .then(ai.cmp(&bi)),
+        ApplicationSort::Stage => stage_rank(b)
+            .cmp(&stage_rank(a))
+            .then_with(|| b.created.cmp(&a.created))
+            .then(bi.cmp(&ai)),
+        ApplicationSort::Stale => last_touched(a).cmp(last_touched(b)).then(ai.cmp(&bi)),
         // An unsent entry has no send date. Sorting it as `""` would put it
         // first under a descending sort, which reads as "sent longest ago" —
         // the opposite of the truth — so absence is pushed to the end.
-        ApplicationSort::Applied => rows.sort_by(|(ai, a), (bi, b)| {
+        ApplicationSort::Applied => {
             let sent = |app: &Application| {
                 app.applied
                     .as_deref()
@@ -431,12 +453,12 @@ pub(super) fn sort_rows(rows: &mut [(usize, Application)], sort: ApplicationSort
             };
             match (sent(a), sent(b)) {
                 (Some(a), Some(b)) => b.cmp(&a),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => std::cmp::Ordering::Equal,
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
             }
-            .then(bi.cmp(ai))
-        }),
+            .then(bi.cmp(&ai))
+        }
     }
 }
 
@@ -536,26 +558,45 @@ mod sort_tests {
         }
     }
 
-    /// `last_touched` walks a specific ladder — a scheduled next step beats a
-    /// snapshot beats the send date beats the creation date — because those
-    /// are in order of how recently a human looked at the card.
+    /// `last_touched` is the latest thing that has **happened**, across every
+    /// list that records a date.
     #[test]
-    fn least_recently_touched_prefers_the_most_specific_date_it_has() {
-        let mut bare = app("A", "2026-01-01", ApplicationStatus::Applied);
-        assert_eq!(last_touched(&bare), "2026-01-01");
+    fn last_touched_is_the_most_recent_thing_that_actually_happened() {
+        use crate::resume::model::{InterviewRound, StageChange};
 
-        bare.applied = Some("2026-02-02".into());
-        assert_eq!(last_touched(&bare), "2026-02-02");
+        let mut app_a = app("A", "2026-01-01", ApplicationStatus::Applied);
+        assert_eq!(last_touched(&app_a), "2026-01-01");
 
-        bare.next_step = Some(NextStep {
+        app_a.applied = Some("2026-02-02".into());
+        assert_eq!(last_touched(&app_a), "2026-02-02");
+
+        app_a.history.push(StageChange {
+            at: "2026-03-03".into(),
+            to: "interviewing".into(),
+        });
+        assert_eq!(last_touched(&app_a), "2026-03-03");
+
+        app_a.rounds.push(InterviewRound {
+            at: "2026-04-04".into(),
+            label: String::new(),
+        });
+        assert_eq!(last_touched(&app_a), "2026-04-04");
+
+        // A step booked for June is not something that has happened. Counting
+        // it made a card nobody had moved since April read as fresh, under a
+        // column whose header says "Last touched".
+        app_a.next_step = Some(NextStep {
             label: "Onsite".into(),
             date: "2026-06-06".into(),
             time: String::new(),
         });
-        assert_eq!(last_touched(&bare), "2026-06-06");
+        assert_eq!(last_touched(&app_a), "2026-04-04");
 
-        // Stale sorts the untouched one first.
-        let mut r = vec![(0, bare), (1, app("B", "2020-01-01", ApplicationStatus::Wishlist))];
+        // Stale still sorts the untouched one first.
+        let mut r = vec![
+            (0, app_a),
+            (1, app("B", "2020-01-01", ApplicationStatus::Wishlist)),
+        ];
         sort_rows(&mut r, ApplicationSort::Stale);
         assert_eq!(r[0].0, 1);
     }

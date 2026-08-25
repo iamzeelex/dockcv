@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use gpui::Context;
 
-use crate::resume::model::{ApplicationStatus, Snapshot};
+use crate::resume::model::{ApplicationStatus, Snapshot, SentCv};
 use crate::resume::template;
 use crate::typst_engine::TypstEngine;
 use crate::vault;
@@ -87,8 +87,10 @@ impl Shell {
         let Some(application) = applications.entries.get_mut(index) else {
             return;
         };
-        application.source_doc = Some(stem);
-        application.preset = preset;
+        application.sent_as = Some(SentCv {
+            document: stem,
+            preset,
+        });
         let already_sent = application.status() != ApplicationStatus::Wishlist;
         save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
         cx.notify();
@@ -114,8 +116,7 @@ impl Shell {
         let Some(application) = applications.entries.get_mut(index) else {
             return;
         };
-        application.source_doc = None;
-        application.preset = String::new();
+        application.sent_as = None;
         save_status::record(
             cx,
             "applications board",
@@ -137,11 +138,11 @@ impl Shell {
         let Some(application) = applications.entries.get(index) else {
             return;
         };
-        let Some(stem) = application.source_doc.clone() else {
+        let Some(sent) = application.sent_as.clone() else {
             return;
         };
         let company = application.company.clone();
-        let preset = application.preset.clone();
+        let (stem, preset) = (sent.document, sent.preset);
         let version = application.snapshots.len() as u32 + 1;
         let doc_path = vault.join(format!("{stem}.toml"));
 

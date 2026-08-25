@@ -414,22 +414,11 @@ pub struct Application {
     /// ISO date it was actually sent. `None` while it is still a wishlist entry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub applied: Option<String>,
-    /// The document it was sent from, as its file stem — a label, not a live
-    /// reference; a document can be renamed or deleted and the card must
-    /// still tell the truth about what was sent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_doc: Option<String>,
-    /// The preset name at the time of sending. Empty when nothing was
-    /// attributed (e.g. a wishlist entry with no CV picked yet).
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub preset: String,
     /// The posting.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub url: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub notes: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next_step: Option<NextStep>,
     /// Free text: "$168k base · negotiating". Deliberately not a number —
     /// compensation is a negotiation state, not a figure to do arithmetic on.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -437,16 +426,18 @@ pub struct Application {
     /// Free text about how it ended — `Some("role filled")` vs `None`, which
     /// the card renders as "no reason given".
     ///
-    /// Read alongside [`Self::closed_as`], which is the typed half. It was
-    /// `rejection_reason` when a rejection was the only ending the model knew;
-    /// a withdrawal has a reason too. The old name is still accepted so no
-    /// vault has to be rewritten.
-    #[serde(
-        default,
-        alias = "rejection_reason",
-        skip_serializing_if = "Option::is_none"
-    )]
+    /// Read alongside [`Self::closed_as`], which is the typed half.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub closure_note: Option<String>,
+    /// How it ended, once it has. `None` while it is still live — which is
+    /// not the same as `Ghosted`, and the difference is the user's to draw.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closed_as: Option<Closure>,
+    /// The CV this was sent with, if one has been attributed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sent_as: Option<SentCv>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_step: Option<NextStep>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub snapshots: Vec<Snapshot>,
     /// Every stage this card has moved into, oldest first.
@@ -473,10 +464,6 @@ pub struct Application {
     /// different things depending on which entry you were reading.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rounds: Vec<InterviewRound>,
-    /// How it ended, once it has. `None` while it is still live — which is
-    /// not the same as `Ghosted`, and the difference is the user's to draw.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub closed_as: Option<Closure>,
 }
 
 /// A conversation that actually happened — a screen, an onsite, a panel.
@@ -543,11 +530,6 @@ impl Closure {
         }
     }
 
-    /// Whether this is an ending the applicant chose. The distinction the
-    /// diagram is for: three of these happened *to* you and two were yours.
-    pub fn is_own_choice(self) -> bool {
-        matches!(self, Closure::Withdrew | Closure::Declined | Closure::Accepted)
-    }
 
     /// The column a finished application belongs in.
     ///
@@ -564,6 +546,35 @@ impl Closure {
             Closure::Rejected | Closure::Ghosted | Closure::Withdrew => {
                 ApplicationStatus::Rejected
             }
+        }
+    }
+}
+
+/// The CV an application was sent with.
+///
+/// One field rather than the two it was — a `source_doc: Option<String>` and a
+/// `preset: String` — because it is one fact and the split made its absence
+/// spellable four ways. Three of those four were unreachable, and every reader
+/// had to decide for itself what a preset with no document meant.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SentCv {
+    /// The document's file stem — a label, not a live reference. A document
+    /// can be renamed or deleted and the card must still tell the truth about
+    /// what was sent (US-04).
+    pub document: String,
+    /// The preset within it. Empty when the document has none, which is a
+    /// document sent whole rather than a missing value.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub preset: String,
+}
+
+impl SentCv {
+    /// How it reads on a card: `resume · Fintech Staff`, or just the document.
+    pub fn label(&self) -> String {
+        if self.preset.is_empty() {
+            self.document.clone()
+        } else {
+            format!("{} · {}", self.document, self.preset)
         }
     }
 }
@@ -732,15 +743,20 @@ impl Applications {
         let mut totals: Vec<PresetConversion> = Vec::new();
 
         for entry in &self.entries {
-            if entry.preset.is_empty() || entry.furthest == ApplicationStatus::Wishlist {
+            let preset = entry
+                .sent_as
+                .as_ref()
+                .map(|cv| cv.preset.as_str())
+                .unwrap_or_default();
+            if preset.is_empty() || entry.furthest == ApplicationStatus::Wishlist {
                 continue;
             }
-            let idx = match order.iter().position(|p| p == &entry.preset) {
+            let idx = match order.iter().position(|p| p == preset) {
                 Some(i) => i,
                 None => {
-                    order.push(entry.preset.clone());
+                    order.push(preset.to_string());
                     totals.push(PresetConversion {
-                        preset: entry.preset.clone(),
+                        preset: preset.to_string(),
                         sent: 0,
                         interviews: 0,
                         offers: 0,
@@ -3149,8 +3165,10 @@ mod applications_tests {
             closed_as: Some(Closure::Ghosted),
             created: "2026-06-01".into(),
             applied: Some("2026-06-02".into()),
-            source_doc: Some("sofiia-senior-swe".into()),
-            preset: "FAANG · concise".into(),
+            sent_as: Some(SentCv {
+                document: "sofiia-senior-swe".into(),
+                preset: "FAANG · concise".into(),
+            }),
             url: "https://brambletech.example/careers/123".into(),
             notes: "Referred by Dana".into(),
             next_step: Some(NextStep {
@@ -3196,8 +3214,7 @@ mod applications_tests {
         assert_eq!(entry.status(), ApplicationStatus::Applied);
         assert_eq!(entry.created, "");
         assert!(entry.applied.is_none());
-        assert!(entry.source_doc.is_none());
-        assert_eq!(entry.preset, "");
+        assert!(entry.sent_as.is_none());
         assert!(entry.next_step.is_none());
         assert!(entry.closure_note.is_none());
         assert!(entry.snapshots.is_empty());
@@ -3275,7 +3292,13 @@ mod applications_tests {
     fn a_rejection_still_credits_the_interview_it_reached() {
         let mut rejected_after_onsite = Application {
             company: "Rejected Co".into(),
-            preset: "FAANG · concise".into(),
+            sent_as: Some(SentCv {
+
+                document: "sofiia-senior-swe".into(),
+
+                preset: "FAANG · concise".into(),
+
+            }),
             ..Default::default()
         };
         rejected_after_onsite.advance_to(ApplicationStatus::Applied, "2026-06-02");
@@ -3290,7 +3313,13 @@ mod applications_tests {
 
         let mut offered = Application {
             company: "Offer Co".into(),
-            preset: "FAANG · concise".into(),
+            sent_as: Some(SentCv {
+
+                document: "sofiia-senior-swe".into(),
+
+                preset: "FAANG · concise".into(),
+
+            }),
             ..Default::default()
         };
         offered.advance_to(ApplicationStatus::Offer, "2026-06-15");
@@ -3302,7 +3331,13 @@ mod applications_tests {
                 // Wishlist card on the same preset: never sent, excluded.
                 Application {
                     company: "Someday Co".into(),
-                    preset: "FAANG · concise".into(),
+                    sent_as: Some(SentCv {
+
+                        document: "sofiia-senior-swe".into(),
+
+                        preset: "FAANG · concise".into(),
+
+                    }),
                     ..Default::default()
                 },
                 // No preset attributed: nothing to credit it to.
@@ -3350,7 +3385,8 @@ mod applications_tests {
     #[test]
     fn a_file_written_without_furthest_still_counts_its_offer() {
         let hand_written = "[[entries]]\ncompany = \"Meridian\"\nrole = \"Senior SWE\"\n\
-                            status = \"offer\"\npreset = \"FAANG · concise\"\n";
+                            status = \"offer\"\n\n[entries.sent_as]\n\
+                            document = \"resume\"\npreset = \"FAANG · concise\"\n";
         let mut apps: Applications = toml::from_str(hand_written).expect("loads");
         assert_eq!(apps.entries[0].furthest, ApplicationStatus::Wishlist);
 

@@ -44,9 +44,9 @@ impl MenuContext {
             company: app.company.clone(),
             has_snapshot: !app.snapshots.is_empty(),
             pinned: app
-                .source_doc
-                .clone()
-                .map(|stem| (stem, app.preset.clone())),
+                .sent_as
+                .as_ref()
+                .map(|cv| (cv.document.clone(), cv.preset.clone())),
         }
     }
 }

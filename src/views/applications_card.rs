@@ -66,9 +66,16 @@ pub(super) fn card_meta(
             }
         }
         ApplicationStatus::Rejected => {
+            // Lead with *which* ending. This column holds rejections,
+            // ghostings and withdrawals alike, and "no reason given" under a
+            // card you withdrew from reads as though someone turned you down.
+            let ending = app
+                .closed_as
+                .map(|c| c.label().to_lowercase())
+                .unwrap_or_else(|| "closed".to_string());
             let text = match &app.closure_note {
-                Some(reason) if !reason.trim().is_empty() => format!("reason: {reason}"),
-                _ => "no reason given".to_string(),
+                Some(note) if !note.trim().is_empty() => format!("{ending}: {note}"),
+                _ => ending,
             };
             meta.push(prose_line(theme, text));
         }
@@ -87,7 +94,7 @@ pub(super) fn card_meta(
             // surface is that it knows what the company received (US-04); when
             // it does not, the honest move is to show the hole and name the
             // reason, not to leave a blank where evidence should be.
-            None if app.source_doc.is_none() => {
+            None if app.sent_as.is_none() => {
                 meta.push(meta_line(theme, "no CV pinned".to_string()))
             }
             // O-19: "yet" was the whole problem. A capture is attempted the

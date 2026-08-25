@@ -138,10 +138,15 @@ impl Funnel {
                 continue;
             };
             sent += 1;
-            let preset = if app.preset.trim().is_empty() {
+            let named = app
+                .sent_as
+                .as_ref()
+                .map(|cv| cv.preset.trim())
+                .unwrap_or_default();
+            let preset = if named.is_empty() {
                 NO_PRESET.to_string()
             } else {
-                app.preset.trim().to_string()
+                named.to_string()
             };
             *per_preset.entry(preset.clone()).or_default() += 1;
             *counts.entry((preset, outcome)).or_default() += 1;
@@ -216,13 +221,17 @@ impl Funnel {
 
 #[cfg(test)]
 mod tests {
+    use crate::resume::model::SentCv;
     use super::*;
     use crate::resume::model::Application;
 
     fn app(preset: &str, status: ApplicationStatus, furthest: ApplicationStatus) -> Application {
         Application {
             company: "Acme".into(),
-            preset: preset.into(),
+            sent_as: Some(SentCv {
+                document: "resume".into(),
+                preset: preset.into(),
+            }),
             status_word: status.word().into(),
             furthest,
             ..Default::default()

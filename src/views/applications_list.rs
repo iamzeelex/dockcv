@@ -29,7 +29,8 @@ use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use super::applications_card::column_tint;
 use super::applications_menu::{application_menu, MenuContext};
 use super::applications_data::{
-    matches_query, next_step_caption, short_date, sort_rows, status_title, ApplicationSort,
+    last_touched, matches_query, next_step_caption, short_date, sort_rows, status_title,
+    ApplicationSort,
 };
 use super::shell::Shell;
 
@@ -89,10 +90,10 @@ impl Shell {
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
 
-        let mut rows: Vec<(usize, Application)> = applications
+        // Borrowed: a table row reads its application and never keeps it.
+        let mut rows: Vec<(usize, &Application)> = applications
             .entries
             .iter()
-            .cloned()
             .enumerate()
             .filter(|(_, a)| matches_query(a, query))
             .collect();
@@ -181,7 +182,7 @@ impl Shell {
             .into_any_element()
     }
 
-    fn list_row(&self, cx: &mut Context<Self>, index: usize, app: Application) -> TableRow {
+    fn list_row(&self, cx: &mut Context<Self>, index: usize, app: &Application) -> TableRow {
         let theme = cx.theme().clone();
         let tint = column_tint(&theme, app.status());
 
@@ -227,11 +228,10 @@ impl Shell {
             .text_style(TextStyle::chip())
             .child(status_title(app.status()));
 
-        let cv: SharedString = match (app.preset.trim(), app.source_doc.as_deref()) {
-            ("", None) => "—".into(),
-            ("", Some(doc)) => doc.to_string().into(),
-            (preset, None) => preset.to_string().into(),
-            (preset, Some(doc)) => format!("{doc} · {preset}").into(),
+        // Two cases now, not four: a CV was attributed or it was not.
+        let cv: SharedString = match &app.sent_as {
+            None => "—".into(),
+            Some(sent) => sent.label().into(),
         };
 
         let applied: SharedString = app
@@ -247,14 +247,11 @@ impl Shell {
             .map(|s| next_step_caption(s).into())
             .unwrap_or_else(|| "—".into());
 
-        let touched: SharedString = {
-            let snapshots = app.snapshots.len();
-            if snapshots > 0 {
-                format!("{snapshots} snapshot{}", if snapshots == 1 { "" } else { "s" }).into()
-            } else {
-                short_date(&app.created).into()
-            }
-        };
+        // The column says "Last touched", so it prints when something last
+        // happened. It used to print a snapshot *count* — not a date, not a
+        // touch, and out of step with the sort the header offers, which has
+        // always ordered by `last_touched`.
+        let touched: SharedString = short_date(last_touched(app)).into();
 
         // `w_full` so `truncate` has a width to cut against, and one ellipsis
         // rather than a second column's worth of overpainted text.
@@ -284,7 +281,7 @@ impl Shell {
                     .context_menu(application_menu(MenuContext::of(
                         cx.weak_entity(),
                         index,
-                        &app,
+                        app,
                     )))
                     .child(identity),
             ))

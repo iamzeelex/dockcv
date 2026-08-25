@@ -1475,7 +1475,10 @@ mod tests {
             company: "Bramble Tech".into(),
             role: "Staff Engineer".into(),
             status_word: ApplicationStatus::Interviewing.word().into(),
-            preset: "FAANG · concise".into(),
+            sent_as: Some(crate::resume::model::SentCv {
+                document: "sofiia-senior-swe".into(),
+                preset: "FAANG · concise".into(),
+            }),
             ..Default::default()
         });
         super::save_applications(&dir, &applications).expect("save applications");

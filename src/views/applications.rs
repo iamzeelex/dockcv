@@ -364,7 +364,11 @@ impl Shell {
         query: &str,
         now_secs: u64,
     ) -> impl IntoElement {
-        let all: Vec<(usize, Application)> = applications.entries.iter().cloned().enumerate().collect();
+        // Borrowed, not cloned. Five columns each filtering a cloned copy of
+        // every application, every frame, was five deep copies of the whole
+        // board per redraw — and a card only ever reads what it draws.
+        let all: Vec<(usize, &Application)> =
+            applications.entries.iter().enumerate().collect();
 
         div()
             .id("applications-board")
@@ -376,10 +380,10 @@ impl Shell {
             .px(px(34.0))
             .pb(px(24.0))
             .children(COLUMNS.into_iter().map(|(status, title)| {
-                let mut cards: Vec<(usize, Application)> = all
+                let mut cards: Vec<(usize, &Application)> = all
                     .iter()
+                    .copied()
                     .filter(|(_, a)| a.status() == status && matches_query(a, query))
-                    .cloned()
                     .collect();
                 // Same order the list is in. A column sorted differently from
                 // the table showing the same cards would be two answers to one
@@ -397,7 +401,7 @@ impl Shell {
         status: ApplicationStatus,
         title: &'static str,
         total: usize,
-        cards: Vec<(usize, Application)>,
+        cards: Vec<(usize, &Application)>,
         now_secs: u64,
     ) -> impl IntoElement {
         let theme = cx.theme().clone();
@@ -633,7 +637,7 @@ impl Shell {
         &self,
         cx: &mut Context<Self>,
         index: usize,
-        app: Application,
+        app: &Application,
         status: ApplicationStatus,
         tint: &StatusTint,
         now_secs: u64,
@@ -644,7 +648,7 @@ impl Shell {
         // It used to be built *inside* the closure with a full vault parse, on
         // the grounds that a menu opens rarely — but the closure borrows
         // `self`, and `DocMeta` already carries the preset names it needed.
-        let menu_context = MenuContext::of(shell, index, &app);
+        let menu_context = MenuContext::of(shell, index, app);
 
         // Only Interviewing and Offer draw the tinted border — Applied keeps
         // the neutral hairline per the design doc's own table (§4).
@@ -669,7 +673,7 @@ impl Shell {
             .map(|c| c.to_uppercase().collect::<String>())
             .unwrap_or_default();
 
-        let chip = card_chip_text(&app, status).map(|text| {
+        let chip = card_chip_text(app, status).map(|text| {
             Tag::custom(tint.chip_bg, tint.fg, tint.chip_bg)
                 .px(px(7.0))
                 .py(px(2.0))
@@ -678,7 +682,7 @@ impl Shell {
                 .child(text)
         });
 
-        let meta = card_meta(&theme, &app, status, now_secs);
+        let meta = card_meta(&theme, app, status, now_secs);
 
         let card = div()
             .id(SharedString::from(format!("apps-card-{index}")))
@@ -746,7 +750,7 @@ impl Shell {
             )
             .children(chip.map(|c| div().mb(px(9.0)).child(c)))
             .children(meta)
-            .children(self.round_counter(cx, index, &app, status))
+            .children(self.round_counter(cx, index, app, status))
             .child(
                 // Occluded, and for the same reason the gallery card's menu
                 // is: the whole card is a drag source, so without this the
