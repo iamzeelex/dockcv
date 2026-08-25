@@ -1,0 +1,68 @@
+name: Release Build & Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-release:
+    name: Build Release Binary
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact_name: dockcv-macos.tar.gz
+            binary_name: dockcv
+          - os: ubuntu-latest
+            artifact_name: dockcv-linux.tar.gz
+            binary_name: dockcv
+          - os: windows-latest
+            artifact_name: dockcv-windows.zip
+            binary_name: dockcv.exe
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libfontconfig1-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libwayland-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+
+      - name: Build Release
+        run: cargo build --release --workspace
+
+      - name: Package Artifact (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/release
+          tar -czvf "../../${{ matrix.artifact_name }}" ${{ matrix.binary_name }}
+
+      - name: Package Artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/release/${{ matrix.binary_name }}" -DestinationPath "${{ matrix.artifact_name }}"
+
+      - name: Upload Release Artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact_name }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
