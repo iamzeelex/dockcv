@@ -95,7 +95,7 @@ impl Shell {
             (&url, app.url.clone()),
             (&compensation, app.compensation.clone()),
             (&notes, app.notes.clone()),
-            (&rejection, app.rejection_reason.clone().unwrap_or_default()),
+            (&rejection, app.closure_note.clone().unwrap_or_default()),
             (&next_label, step.label),
             (&next_date, step.date),
             (&next_time, step.time),
@@ -177,7 +177,7 @@ impl Shell {
             // Notes are prose: leading indentation is the author's, and
             // trimming the ends is all that is safe to do to them.
             notes: detail.notes.read(cx).value(cx).trim_end().to_string(),
-            rejection_reason: none_if_empty(read(&detail.rejection)),
+            closure_note: none_if_empty(read(&detail.rejection)),
             next_step: next_step_from(
                 read(&detail.next_label),
                 read(&detail.next_date),
@@ -248,13 +248,32 @@ impl Shell {
         self.reseed_application_detail(window, cx);
     }
 
+    /// Say how an application ended — or that it has not after all.
+    ///
+    /// Through `close_as`/`reopen` rather than by assigning the field, so the
+    /// column follows the ending and the move is recorded in the history. A
+    /// closure written straight into the struct would put the card's own board
+    /// column at odds with the diagram that reads it.
     pub(super) fn set_application_closure(
         &mut self,
         index: usize,
         closure: Option<Closure>,
         cx: &mut Context<Self>,
     ) {
-        self.update_application(index, cx, |app| app.closed_as = closure);
+        let today = vault::today_iso();
+        self.update_application(index, cx, |app| match closure {
+            Some(closure) => app.close_as(closure, &today),
+            // Reopening lands where the work actually stopped: back in the
+            // interviews if there were any, otherwise back to sent.
+            None => {
+                let to = if app.rounds.is_empty() {
+                    ApplicationStatus::Applied
+                } else {
+                    ApplicationStatus::Interviewing
+                };
+                app.reopen(to, &today);
+            }
+        });
     }
 
     /// Re-read the open panel's fields from the card, after something other
@@ -472,12 +491,12 @@ impl Shell {
                         .child(self.rounds_block(cx, detail.index, app))
                         .child(self.closure_row(cx, detail.index, app))
                         .child(field("Notes", &detail.notes, "What you want to remember"))
-                        // Only where it means anything. A "why were you
-                        // rejected" box on an open application is a question
-                        // about something that has not happened.
-                        .when(app.status() == ApplicationStatus::Rejected, |el| {
+                        // Only once there is an ending to explain. Asking why
+                        // on a live application is a question about something
+                        // that has not happened.
+                        .when(app.closed_as.is_some(), |el| {
                             el.child(field(
-                                "Rejection reason",
+                                "What happened",
                                 &detail.rejection,
                                 "No reply in six weeks",
                             ))
@@ -705,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_rejection_reason_is_absent_rather_than_blank() {
+    fn an_empty_closure_note_is_absent_rather_than_blank() {
         assert_eq!(none_if_empty(String::new()), None);
         assert_eq!(none_if_empty("role filled".into()), Some("role filled".into()));
     }

@@ -20,7 +20,7 @@
 //! hover — rather than an invented layout.
 
 use gpui::prelude::*;
-use gpui::{
+use gpui::{AnyElement, 
     div, px, App, ClickEvent, Context, FontWeight, IntoElement, SharedString, Window,
 };
 
@@ -530,32 +530,6 @@ impl Shell {
                                 this.cancel_applications_compose(cx);
                             })),
                     )
-                    // Two ways out, because a card and the CV you sent for it
-                    // are made at different moments: sometimes you are
-                    // capturing a posting to look at later, sometimes you have
-                    // just sent something and want it attributed while you
-                    // still remember which cut it was.
-                    .child(
-                        Button::new("apps-compose-add-pin")
-                            .cursor_pointer()
-                            .toolbar_secondary()
-                            .label("Add & pin CV")
-                            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                                // The card has to exist before it can be
-                                // pinned — the pin sheet writes to a card by
-                                // index, and there is no index until now.
-                                if let Some(index) = this.commit_applications_compose(window, cx) {
-                                    let company = this
-                                        .cache
-                                        .applications()
-                                        .entries
-                                        .get(index)
-                                        .map(|a| a.company.clone())
-                                        .unwrap_or_default();
-                                    this.open_pin_pick(index, company, None, window, cx);
-                                }
-                            })),
-                    )
                     .child(
                         Button::new("apps-compose-add")
                             .cursor_pointer()
@@ -566,6 +540,93 @@ impl Shell {
                             })),
                     ),
             )
+            // Its own row, full width. Three buttons across a board column is
+            // about 90px each: the third fell off the edge and could not be
+            // clicked at all. The two-button row is the path people take, so
+            // it keeps the shape muscle memory expects and this sits under it.
+            .child(
+                Button::new("apps-compose-add-pin")
+                    .cursor_pointer()
+                    .ghost()
+                    .w_full()
+                    .label("Add & pin CV")
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        // The card has to exist before it can be pinned: the
+                        // pin sheet writes to a card by index, and there is no
+                        // index until now.
+                        if let Some(index) = this.commit_applications_compose(window, cx) {
+                            let company = this
+                                .cache
+                                .applications()
+                                .entries
+                                .get(index)
+                                .map(|a| a.company.clone())
+                                .unwrap_or_default();
+                            this.open_pin_pick(index, company, None, window, cx);
+                        }
+                    })),
+            )
+    }
+
+    /// The interview counter, on the card, while the card is interviewing.
+    ///
+    /// This is the answer to "track the rounds without breeding columns": the
+    /// column stays one, and how many times you have been through it is a
+    /// number on the card with a way to add to it. A board column per round
+    /// would make the whole board wider for one application that went deep.
+    ///
+    /// Only in `Interviewing`. In every other column the number is either
+    /// zero or finished, and a control to add to it would be an invitation to
+    /// record an interview for a job that is over.
+    fn round_counter(
+        &self,
+        cx: &mut Context<Self>,
+        index: usize,
+        app: &Application,
+        status: ApplicationStatus,
+    ) -> Option<AnyElement> {
+        if status != ApplicationStatus::Interviewing {
+            return None;
+        }
+        let theme = cx.theme().clone();
+        // The board already asserted one interview by being in this column,
+        // so an unrecorded card reads as 1 rather than as 0 — the same floor
+        // the journey diagram counts from.
+        let rounds = app.rounds.len().max(1);
+
+        Some(
+            div()
+                .mt(px(7.0))
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .child(
+                    div()
+                        .text_style(TextStyle::meta())
+                        .text_color(theme.text_subtle)
+                        .child(format!(
+                            "{rounds} round{}",
+                            if rounds == 1 { "" } else { "s" }
+                        )),
+                )
+                .child(
+                    // The card is a drag source and the whole of it is the
+                    // handle, so the button has to stop the press reaching it
+                    // — otherwise every attempt to add a round starts a drag.
+                    div().occlude().child(
+                        Button::new(SharedString::from(format!("apps-round-{index}")))
+                            .icon(IconName::Plus)
+                            .ghost()
+                            .xsmall()
+                            .cursor_pointer()
+                            .tooltip("Another interview happened")
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                this.log_interview_round(index, window, cx);
+                            })),
+                    ),
+                )
+                .into_any_element(),
+        )
     }
 
     fn card(
@@ -685,6 +746,7 @@ impl Shell {
             )
             .children(chip.map(|c| div().mb(px(9.0)).child(c)))
             .children(meta)
+            .children(self.round_counter(cx, index, &app, status))
             .child(
                 // Occluded, and for the same reason the gallery card's menu
                 // is: the whole card is a drag source, so without this the

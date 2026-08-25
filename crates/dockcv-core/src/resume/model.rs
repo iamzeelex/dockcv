@@ -434,10 +434,19 @@ pub struct Application {
     /// compensation is a negotiation state, not a figure to do arithmetic on.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub compensation: String,
-    /// `Some("role filled")` vs `None`, which the card renders "no reason
-    /// given". Only meaningful with status `Rejected`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rejection_reason: Option<String>,
+    /// Free text about how it ended — `Some("role filled")` vs `None`, which
+    /// the card renders as "no reason given".
+    ///
+    /// Read alongside [`Self::closed_as`], which is the typed half. It was
+    /// `rejection_reason` when a rejection was the only ending the model knew;
+    /// a withdrawal has a reason too. The old name is still accepted so no
+    /// vault has to be rewritten.
+    #[serde(
+        default,
+        alias = "rejection_reason",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub closure_note: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub snapshots: Vec<Snapshot>,
     /// Every stage this card has moved into, oldest first.
@@ -539,6 +548,24 @@ impl Closure {
     pub fn is_own_choice(self) -> bool {
         matches!(self, Closure::Withdrew | Closure::Declined | Closure::Accepted)
     }
+
+    /// The column a finished application belongs in.
+    ///
+    /// The board says *where*, the closure says *how it ended*, and those are
+    /// two spellings of one fact — so one of them has to derive the other or
+    /// they will disagree. They did: a card dragged to Rejected read as
+    /// rejected on the board and as still in progress in the journey diagram,
+    /// because the board wrote the column and the diagram read the closure.
+    pub fn column(self) -> ApplicationStatus {
+        match self {
+            // There was an offer, so the card belongs where offers live —
+            // a search that ended in a yes should not be filed under no.
+            Closure::Accepted | Closure::Declined => ApplicationStatus::Offer,
+            Closure::Rejected | Closure::Ghosted | Closure::Withdrew => {
+                ApplicationStatus::Rejected
+            }
+        }
+    }
 }
 
 /// One recorded move between stages.
@@ -600,6 +627,42 @@ impl Application {
                 to: status.word().to_string(),
             });
         }
+
+        // Keep the closure in step with the column, in the one place the
+        // column is written. Dragging a card is the commonest way to say an
+        // application is over, and it must mean the same thing as saying so
+        // in the panel.
+        self.closed_as = match (status, self.closed_as) {
+            // Moved into the closed column with nothing said about why: the
+            // plain reading, which the panel can refine to ghosted or
+            // withdrawn.
+            (ApplicationStatus::Rejected, None) => Some(Closure::Rejected),
+            (ApplicationStatus::Rejected, some) => some,
+            // An offer keeps only the endings that follow one.
+            (ApplicationStatus::Offer, Some(c @ (Closure::Accepted | Closure::Declined))) => {
+                Some(c)
+            }
+            // Anywhere else the application is live again — which is exactly
+            // what dragging a ghosted card back to Applied is for.
+            _ => None,
+        };
+    }
+
+    /// Say how this ended, and file it where that ending belongs.
+    ///
+    /// The counterpart to [`Self::advance_to`]: that one is told a column and
+    /// derives the closure, this one is told a closure and derives the column.
+    /// Both go through `advance_to` so the move is recorded in the history
+    /// either way.
+    pub fn close_as(&mut self, closure: Closure, on: &str) {
+        self.advance_to(closure.column(), on);
+        self.closed_as = Some(closure);
+    }
+
+    /// Reopen — it replied after all.
+    pub fn reopen(&mut self, to: ApplicationStatus, on: &str) {
+        self.advance_to(to, on);
+        self.closed_as = None;
     }
 
     /// The stage this card was in immediately before `index` in its history —
@@ -3096,7 +3159,7 @@ mod applications_tests {
                 time: "14:00".into(),
             }),
             compensation: "$168k base · negotiating".into(),
-            rejection_reason: None,
+            closure_note: None,
             snapshots: vec![Snapshot {
                 version: 1,
                 date: "2026-06-02".into(),
@@ -3136,7 +3199,7 @@ mod applications_tests {
         assert!(entry.source_doc.is_none());
         assert_eq!(entry.preset, "");
         assert!(entry.next_step.is_none());
-        assert!(entry.rejection_reason.is_none());
+        assert!(entry.closure_note.is_none());
         assert!(entry.snapshots.is_empty());
     }
 

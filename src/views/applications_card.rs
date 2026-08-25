@@ -66,7 +66,7 @@ pub(super) fn card_meta(
             }
         }
         ApplicationStatus::Rejected => {
-            let text = match &app.rejection_reason {
+            let text = match &app.closure_note {
                 Some(reason) if !reason.trim().is_empty() => format!("reason: {reason}"),
                 _ => "no reason given".to_string(),
             };

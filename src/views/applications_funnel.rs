@@ -878,3 +878,62 @@ mod journey_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod closure_invariant_tests {
+    use crate::resume::model::{Application, ApplicationStatus, Closure};
+
+    /// The board and the diagram must not be able to disagree.
+    ///
+    /// They did: dragging a card to Rejected wrote the column and nothing
+    /// else, so the board called it rejected while the journey diagram — which
+    /// reads `closed_as` — still called it in progress. Both surfaces were
+    /// confident and one of them was wrong.
+    #[test]
+    fn dragging_a_card_to_the_closed_column_is_an_ending() {
+        let mut app = Application::default();
+        app.advance_to(ApplicationStatus::Applied, "2026-06-01");
+        assert_eq!(app.closed_as, None, "a sent application is not finished");
+
+        app.advance_to(ApplicationStatus::Rejected, "2026-06-20");
+        assert_eq!(app.closed_as, Some(Closure::Rejected));
+    }
+
+    /// …and refining *why* must not move the card somewhere else.
+    #[test]
+    fn refining_a_rejection_into_a_ghosting_leaves_it_where_it_is() {
+        let mut app = Application::default();
+        app.advance_to(ApplicationStatus::Rejected, "2026-06-20");
+        app.close_as(Closure::Ghosted, "2026-06-21");
+        assert_eq!(app.closed_as, Some(Closure::Ghosted));
+        assert_eq!(app.status(), ApplicationStatus::Rejected);
+    }
+
+    /// An ending that follows an offer files the card with the offers. A
+    /// search that ended in a yes should not sit under "rejected".
+    #[test]
+    fn accepting_and_declining_are_filed_with_the_offer() {
+        for closure in [Closure::Accepted, Closure::Declined] {
+            let mut app = Application::default();
+            app.advance_to(ApplicationStatus::Interviewing, "2026-06-10");
+            app.close_as(closure, "2026-07-01");
+            assert_eq!(app.status(), ApplicationStatus::Offer, "{closure:?}");
+            assert_eq!(app.closed_as, Some(closure));
+        }
+    }
+
+    /// Dragging a finished card back into the pipeline reopens it, which is
+    /// what happens when a company that ghosted you finally writes back.
+    #[test]
+    fn moving_a_closed_card_back_into_the_pipeline_reopens_it() {
+        let mut app = Application::default();
+        app.close_as(Closure::Ghosted, "2026-06-20");
+        assert!(app.closed_as.is_some());
+
+        app.advance_to(ApplicationStatus::Interviewing, "2026-08-01");
+        assert_eq!(app.closed_as, None, "the card is live again");
+        // And the history kept every one of those moves, so the reopening is
+        // itself part of the record.
+        assert_eq!(app.history.len(), 2);
+    }
+}
