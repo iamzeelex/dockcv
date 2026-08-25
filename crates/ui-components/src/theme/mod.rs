@@ -37,6 +37,41 @@
 pub mod bridge;
 pub mod tint;
 
+/// The geometry ladder, as constants.
+///
+/// [`Theme`] exposes each of these as a method so a view reads it the way it
+/// reads a colour (`cx.theme().radius_lg()`). They are also public here because
+/// [`crate::styles`] builds the button vocabulary in `const` position, where a
+/// `&Theme` is not available.
+pub mod metrics {
+    use gpui::{px, Pixels};
+
+    /// Chips, tags, inline badges, the smallest hit targets.
+    pub const RADIUS_SM: Pixels = px(6.0);
+    /// Buttons, inputs, selectors, menu items — the default control radius.
+    pub const RADIUS_MD: Pixels = px(8.0);
+    /// Cards, panels and popovers.
+    pub const RADIUS_LG: Pixels = px(11.0);
+    /// Sheets, modals, anything that covers the window.
+    pub const RADIUS_XL: Pixels = px(14.0);
+
+    /// A control tucked inside a dense row: the `···` menu, a variant tab.
+    pub const CONTROL_XS: Pixels = px(24.0);
+    /// A compact control in a sidebar or a card footer.
+    pub const CONTROL_SM: Pixels = px(28.0);
+    /// The default: toolbar buttons, selectors, single-line inputs.
+    pub const CONTROL_MD: Pixels = px(32.0);
+    /// A screen's one primary action, and the field it sits beside.
+    pub const CONTROL_LG: Pixels = px(38.0);
+
+    /// A glyph beside `TextStyle::meta()` or `chip()` text.
+    pub const ICON_SM: Pixels = px(12.0);
+    /// A glyph beside `TextStyle::control()` or `body()` text — the default.
+    pub const ICON_MD: Pixels = px(14.0);
+    /// A glyph that carries a row on its own, with no label beside it.
+    pub const ICON_LG: Pixels = px(18.0);
+}
+
 use gpui::{rgb, rgba, App, Global, Hsla};
 
 /// Which palette to show. Persisted in app config; switched from Settings.
@@ -60,7 +95,11 @@ impl ThemeMode {
     pub const ALL: [ThemeMode; 2] = [ThemeMode::SlateDark, ThemeMode::SlateLight];
 }
 
-#[derive(Clone, Debug)]
+/// `Copy`, deliberately: every field is an `Hsla` or a `ThemeMode`, so a theme
+/// is ~450 bytes of plain data. Views read it in render loops and used to
+/// `.clone()` it to escape the borrow on `cx`; copying makes that free and lets
+/// a view take the tokens it needs without the destructure-into-a-tuple dance.
+#[derive(Clone, Copy, Debug)]
 pub struct Theme {
     /// Which palette this is, so the Settings switcher can show the active one.
     pub mode: ThemeMode,
@@ -236,6 +275,77 @@ impl Theme {
         }
     }
 
+    // --- geometry ---
+    //
+    // Methods, not fields, and on purpose: geometry is identical in every
+    // palette — a second temperature (the warm *Clay* set) changes colour, never
+    // the size of a control. As fields these would be twenty-two lines of
+    // verbatim duplication across the two constructors. As methods the call site
+    // still reads as a token (`cx.theme().radius_lg()`) and a palette that one
+    // day *does* want its own metric can override one without touching a single
+    // call site.
+    //
+    // Before this existed the codebase carried **ten** corner radii (2, 5, 6, 7,
+    // 8, 9, 10, 11, 12, 9999) for what are conceptually four shapes, because
+    // every screen picked its own number. See `docs/design/component-audit.md`.
+
+    /// Chips, tags, inline badges, the smallest hit targets.
+    pub const fn radius_sm(&self) -> gpui::Pixels {
+        metrics::RADIUS_SM
+    }
+
+    /// Buttons, inputs, selectors, menu items — the default control radius, and
+    /// what `radius` is set to on upstream's theme so its widgets agree.
+    pub const fn radius_md(&self) -> gpui::Pixels {
+        metrics::RADIUS_MD
+    }
+
+    /// Cards, panels and popovers. The gallery, library, diary and applications
+    /// cards all converged on 11px independently; this is that number, named.
+    pub const fn radius_lg(&self) -> gpui::Pixels {
+        metrics::RADIUS_LG
+    }
+
+    /// Sheets, modals, the import wizard — anything that covers the window.
+    pub const fn radius_xl(&self) -> gpui::Pixels {
+        metrics::RADIUS_XL
+    }
+
+    /// A control tucked inside a dense row: the `···` menu, a variant tab.
+    pub const fn control_xs(&self) -> gpui::Pixels {
+        metrics::CONTROL_XS
+    }
+
+    /// A compact control in a sidebar or a card footer.
+    pub const fn control_sm(&self) -> gpui::Pixels {
+        metrics::CONTROL_SM
+    }
+
+    /// The default: toolbar buttons, selectors, single-line inputs.
+    pub const fn control_md(&self) -> gpui::Pixels {
+        metrics::CONTROL_MD
+    }
+
+    /// A screen's one primary action (`+ New CV`), and the field it sits beside.
+    pub const fn control_lg(&self) -> gpui::Pixels {
+        metrics::CONTROL_LG
+    }
+
+    /// A glyph beside `TextStyle::meta()` or `chip()` text.
+    pub const fn icon_sm(&self) -> gpui::Pixels {
+        metrics::ICON_SM
+    }
+
+    /// A glyph beside `TextStyle::control()` or `body()` text — the default.
+    pub const fn icon_md(&self) -> gpui::Pixels {
+        metrics::ICON_MD
+    }
+
+    /// A glyph that carries a row on its own, without a label beside it.
+    pub const fn icon_lg(&self) -> gpui::Pixels {
+        metrics::ICON_LG
+    }
+
     pub fn of(mode: ThemeMode) -> Self {
         match mode {
             ThemeMode::SlateDark => Self::slate_dark(),
@@ -288,6 +398,34 @@ pub fn set_theme_mode(cx: &mut App, mode: ThemeMode) {
 mod tests {
     use super::*;
     use gpui::Rgba;
+
+    /// The geometry ladders must actually be ladders. A radius or a height that
+    /// lands out of order is how a "small" control ends up taller than a
+    /// "medium" one, which is the failure the ten ad-hoc radii were made of.
+    #[test]
+    fn the_geometry_ladders_ascend() {
+        let t = Theme::slate_dark();
+        assert!(t.radius_sm() < t.radius_md());
+        assert!(t.radius_md() < t.radius_lg());
+        assert!(t.radius_lg() < t.radius_xl());
+
+        assert!(t.control_xs() < t.control_sm());
+        assert!(t.control_sm() < t.control_md());
+        assert!(t.control_md() < t.control_lg());
+
+        assert!(t.icon_sm() < t.icon_md());
+        assert!(t.icon_md() < t.icon_lg());
+    }
+
+    /// Geometry is palette-independent by contract — Clay may change colour, not
+    /// the size of a button. If that ever stops being true these become fields.
+    #[test]
+    fn geometry_does_not_vary_by_palette() {
+        let (dark, light) = (Theme::slate_dark(), Theme::slate_light());
+        assert_eq!(dark.radius_md(), light.radius_md());
+        assert_eq!(dark.control_md(), light.control_md());
+        assert_eq!(dark.icon_md(), light.icon_md());
+    }
 
     /// WCAG 2.1 relative luminance.
     fn luminance(color: Hsla) -> f32 {

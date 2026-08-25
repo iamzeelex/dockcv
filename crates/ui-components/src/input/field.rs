@@ -11,6 +11,8 @@
 //! Stateful, so the parent owns an [`Entity<TextFieldState>`]-shaped handle and
 //! passes a reference in render — the pattern described in `CLAUDE.md`.
 
+use std::cell::RefCell;
+
 use gpui::{
     div, prelude::*, px, App, Context, Entity, EventEmitter, FocusHandle, Focusable, IntoElement,
     RenderOnce, SharedString, Styled, Window,
@@ -35,6 +37,16 @@ pub enum TextFieldEvent {
 /// Holds one field's text, caret and selection.
 pub struct TextFieldState {
     inner: Entity<InputState>,
+    /// The placeholder last pushed down to the engine.
+    ///
+    /// Upstream keeps the placeholder on the *state* while [`TextField`] takes
+    /// it as an element prop, so render is the only place that can push it
+    /// across. `InputState::set_placeholder` ends in `cx.notify()`, so pushing
+    /// it unconditionally wrote to — and dirtied — another entity on every
+    /// frame of every field that has a placeholder. That was harmless only
+    /// because GPUI drops a notify raised during the draw phase; remembering
+    /// what was already pushed makes the write happen once, on change.
+    placeholder: RefCell<SharedString>,
     /// Kept alive for as long as the state exists; dropping it stops the
     /// upstream → DockCV event translation.
     _translate: gpui::Subscription,
@@ -78,6 +90,7 @@ impl TextFieldState {
         });
         Self {
             inner,
+            placeholder: RefCell::default(),
             _translate: translate,
         }
     }
@@ -167,27 +180,30 @@ impl Sizable for TextField {
 
 impl RenderOnce for TextField {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        // Tokens are `Copy`, so take them before anything borrows `cx` mutably.
-        let (bg, border, accent, fg, fg_disabled) = {
-            let theme = cx.theme();
-            (
-                theme.elevated,
-                theme.border,
-                theme.accent,
-                theme.text,
-                theme.text_subtle,
-            )
-        };
+        let theme = *cx.theme();
+        // The same radius a `Button` gets. A selector and a field sit in the
+        // same row all over the editor, and they used to round differently.
+        let radius = theme.radius_md();
 
         let inner = self.state.read(cx).inner.clone();
         let focused = inner.read(cx).focus_handle(cx).is_focused(window);
 
         // Upstream carries the placeholder on the state, not the element, so a
-        // presentational prop has to be pushed down here.
+        // presentational prop has to be pushed down here — but only when it has
+        // actually changed. See `TextFieldState::placeholder`.
         if let Some(placeholder) = self.placeholder {
-            inner.update(cx, |state, cx| {
-                state.set_placeholder(placeholder, window, cx)
-            });
+            let changed = {
+                let mut cached = self.state.read(cx).placeholder.borrow_mut();
+                *cached != placeholder && {
+                    *cached = placeholder.clone();
+                    true
+                }
+            };
+            if changed {
+                inner.update(cx, |state, cx| {
+                    state.set_placeholder(placeholder, window, cx)
+                });
+            }
         }
         let input = Input::new(&inner).appearance(false).disabled(self.disabled);
 
@@ -202,12 +218,12 @@ impl RenderOnce for TextField {
             .when(!self.seamless, |this| {
                 this.px(pad_x)
                     .py(pad_y)
-                    .rounded_md()
-                    .bg(bg)
+                    .rounded(radius)
+                    .bg(theme.elevated)
                     .border_1()
-                    .border_color(if focused { accent } else { border })
+                    .border_color(if focused { theme.accent } else { theme.border })
             })
-            .text_color(if self.disabled { fg_disabled } else { fg })
+            .text_color(if self.disabled { theme.text_subtle } else { theme.text })
             .child(input)
     }
 }

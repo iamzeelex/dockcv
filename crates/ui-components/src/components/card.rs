@@ -13,7 +13,7 @@
 
 use gpui::prelude::*;
 use gpui::{
-    div, AnyElement, App, ClickEvent, ElementId, Hsla, IntoElement, ParentElement, RenderOnce,
+    div, px, AnyElement, App, ClickEvent, ElementId, Hsla, IntoElement, ParentElement, RenderOnce,
     StyleRefinement, Styled, Window,
 };
 
@@ -92,8 +92,14 @@ impl Card {
         self
     }
 
-    /// Make the whole card a hover-and-click target. Required before
-    /// [`Card::on_click`] does anything — GPUI needs an id to track the state.
+    /// Make the whole card a hover-and-click target, reachable by keyboard.
+    /// Required before [`Card::on_click`] does anything — GPUI needs an id to
+    /// track the state.
+    ///
+    /// An interactive card is a tab stop with a focus ring, and GPUI turns
+    /// Enter or Space on a focused element into a `ClickEvent::Keyboard`, so the
+    /// same handler serves mouse and keyboard. The hand-rolled card shells this
+    /// replaces were mouse-only.
     pub fn interactive(mut self, id: impl Into<ElementId>) -> Self {
         self.id = Some(id.into());
         self.interactive = true;
@@ -141,16 +147,31 @@ impl ParentElement for Card {
     }
 }
 
+/// How much air a card puts around its contents, per step of the size ladder.
+///
+/// A free function rather than a `match` inside `render`, so
+/// `padding_follows_the_size_ladder` asserts against the ladder the card
+/// actually uses. It used to re-declare the match in the test body and check
+/// its own copy, which would have kept passing through any change here.
+fn padding_for(size: Size) -> gpui::Pixels {
+    match size {
+        Size::XSmall => px(8.0),
+        Size::Small => px(12.0),
+        Size::Large => px(20.0),
+        Size::Size(v) => v,
+        _ => px(16.0),
+    }
+}
+
+/// Width of the focus ring, and how far it sits outside the card's own border.
+/// Matches what upstream draws around a focused Button, so a focused card and a
+/// focused button read as the same state.
+const RING: gpui::Pixels = px(1.5);
+
 impl RenderOnce for Card {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
-        let pad = match self.padding {
-            Size::XSmall => gpui::px(8.0),
-            Size::Small => gpui::px(12.0),
-            Size::Large => gpui::px(20.0),
-            Size::Size(v) => v,
-            _ => gpui::px(16.0),
-        };
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = *cx.theme();
+        let pad = padding_for(self.padding);
 
         let (bg, border_color): (Hsla, Option<Hsla>) = match self.variant {
             CardVariant::Surface => (
@@ -167,10 +188,13 @@ impl RenderOnce for Card {
             ),
         };
 
-        let hover_bg = theme.hover;
         let mut el = div()
             .p(pad)
-            .rounded_lg()
+            // The focus ring is an absolutely-positioned child sitting just
+            // outside the border; without this it would anchor to whatever
+            // ancestor happens to be positioned.
+            .relative()
+            .rounded(theme.radius_lg())
             .bg(bg)
             .when(self.full_width, |el| el.w_full())
             .when_some(border_color, |el, color| {
@@ -187,12 +211,47 @@ impl RenderOnce for Card {
             return el.children(self.children).into_any_element();
         };
 
+        if !self.interactive {
+            return el
+                .id(id)
+                .when_some(self.on_click, |el, handler| el.on_click(handler))
+                .children(self.children)
+                .into_any_element();
+        }
+
+        let focus = window
+            .use_keyed_state(id.clone(), cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let focused = focus.is_focused(window);
+
         el.id(id)
-            .when(self.interactive, |el| {
-                el.cursor_pointer().hover(|s| s.bg(hover_bg))
+            .track_focus(&focus.tab_index(0).tab_stop(true))
+            .cursor_pointer()
+            // Hover moves the *border*, not the fill. Every screen that
+            // hand-rolled a card did it this way — the card is already the
+            // brightest surface in its column, so lifting the fill further
+            // barely registers, while the edge lighting up does.
+            .map(|el| match border_color {
+                Some(_) => el.hover(|s| s.border_color(theme.accent)),
+                None => el.hover(|s| s.bg(theme.hover)),
             })
             .when_some(self.on_click, |el, handler| el.on_click(handler))
             .children(self.children)
+            .when(focused, |el| {
+                el.child(
+                    div()
+                        .flex_none()
+                        .absolute()
+                        .top(-RING * 2.0)
+                        .left(-RING * 2.0)
+                        .right(-RING * 2.0)
+                        .bottom(-RING * 2.0)
+                        .border(RING)
+                        .border_color(theme.focus_ring.alpha(0.2))
+                        .rounded(theme.radius_lg() + RING),
+                )
+            })
             .into_any_element()
     }
 }
@@ -242,17 +301,9 @@ mod tests {
 
     #[test]
     fn padding_follows_the_size_ladder() {
-        use gpui::px;
-        let pad = |size: Size| match size {
-            Size::XSmall => px(8.0),
-            Size::Small => px(12.0),
-            Size::Large => px(20.0),
-            Size::Size(v) => v,
-            _ => px(16.0),
-        };
-        assert!(pad(Size::XSmall) < pad(Size::Small));
-        assert!(pad(Size::Small) < pad(Size::Medium));
-        assert!(pad(Size::Medium) < pad(Size::Large));
-        assert_eq!(pad(Size::Size(px(3.0))), px(3.0));
+        assert!(padding_for(Size::XSmall) < padding_for(Size::Small));
+        assert!(padding_for(Size::Small) < padding_for(Size::Medium));
+        assert!(padding_for(Size::Medium) < padding_for(Size::Large));
+        assert_eq!(padding_for(Size::Size(px(3.0))), px(3.0));
     }
 }

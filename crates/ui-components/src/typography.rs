@@ -118,9 +118,15 @@ impl TextStyle {
         Self::new(TextRole::Ui, 13.5, FontWeight::NORMAL).leading(1.55)
     }
 
-    /// Buttons, tabs, anything the user clicks.
+    /// Buttons, tabs, rows — anything the user clicks.
+    ///
+    /// 14, not 13, and the reason is a constraint rather than a taste: a
+    /// `Button` renders its label at whatever `button_text_size` maps its `Size`
+    /// to, which is 12, 14 or 16 and nothing in between (see
+    /// `crate::styles`). A scale that named 13 here would have been describing a
+    /// size no button in the application could actually be.
     pub const fn control() -> Self {
-        Self::new(TextRole::Ui, 13.0, FontWeight::MEDIUM)
+        Self::new(TextRole::Ui, 14.0, FontWeight::MEDIUM)
     }
 
     /// A field label above its input.

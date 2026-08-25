@@ -33,6 +33,11 @@ pub fn apply(cx: &mut App, theme: &Theme) {
     UpstreamTheme::global_mut(cx).apply_config(&config);
 }
 
+/// Upstream types its radii as whole pixels, so the ladder has to arrive as one.
+fn px_int(value: gpui::Pixels) -> u64 {
+    f32::from(value).round().max(0.0) as u64
+}
+
 /// `#rrggbb`, or `#rrggbbaa` when the token is translucent.
 fn hex(color: Hsla) -> String {
     let rgba: Rgba = color.into();
@@ -63,7 +68,10 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("foreground", theme.text),
         ("border", theme.border),
         ("input.border", theme.border),
-        ("ring", theme.accent),
+        // The focus ring is its own token, not the accent. It shipped wired to
+        // `accent` and so `Theme::focus_ring` — defined, documented and given a
+        // value in both palettes — painted nowhere in the application.
+        ("ring", theme.focus_ring),
         ("caret", theme.accent),
         ("selection.background", theme.selected),
         ("overlay", theme.scrim),
@@ -77,7 +85,12 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("muted.foreground", theme.text_subtle),
         ("secondary.background", theme.elevated),
         ("secondary.active.background", theme.selected),
-        ("secondary.foreground", theme.text),
+        // `text`, not `text_muted`, would be wrong here: this is the foreground
+        // of upstream's **Ghost** variant, which is what `quiet()` and
+        // `icon_only()` are made of — the `···` menus, the ✕ closes, the inline
+        // text actions. Every one of them was overriding it back to muted at the
+        // call site. Routed once instead.
+        ("secondary.foreground", theme.text_muted),
         ("secondary.hover.background", theme.hover),
         ("accent.background", theme.selected),
         ("accent.foreground", theme.text),
@@ -238,6 +251,13 @@ fn config_for(theme: &Theme) -> ThemeConfig {
     json.insert("font.family".into(), SANS.into());
     json.insert("mono_font.family".into(), MONO.into());
 
+    // Geometry. Without these upstream keeps its own defaults — `radius` 6 and
+    // `radius.lg` 8 — so every upstream Button rounded at 6px while the pill
+    // beside it rounded at 7 and the card behind it at 11. `ThemeConfig` types
+    // both as whole pixels, which is why the ladder is integral.
+    json.insert("radius".into(), px_int(theme.radius_md()).into());
+    json.insert("radius.lg".into(), px_int(theme.radius_lg()).into());
+
     // The colours are a **nested** object on `ThemeConfig`, not top-level keys.
     // Flattening them here parses without error and silently drops every one.
     let mut colors = serde_json::Map::new();
@@ -277,6 +297,10 @@ mod tests {
             assert_eq!(map["title_bar.background"], theme.chrome);
             assert_eq!(map["sidebar.background"], theme.surface);
             assert_eq!(map["muted.foreground"], theme.text_subtle);
+            // The Ghost variant's foreground; see the note beside it.
+            assert_eq!(map["secondary.foreground"], theme.text_muted);
+            // Wired to `accent` once, which is how the focus ring went missing.
+            assert_eq!(map["ring"], theme.focus_ring);
         }
     }
 
@@ -316,6 +340,18 @@ mod tests {
         for theme in [Theme::slate_dark(), Theme::slate_light()] {
             let config = config_for(&theme);
             assert_eq!(config.name.as_ref(), theme.mode.label());
+        }
+    }
+
+    /// Geometry is `Option` on `ThemeConfig`: leaving it `None` is not an error,
+    /// it silently keeps upstream's 6/8 and puts every Button on a different
+    /// radius from everything drawn beside it. That is what shipped.
+    #[test]
+    fn the_radius_ladder_reaches_upstream() {
+        for theme in [Theme::slate_dark(), Theme::slate_light()] {
+            let config = config_for(&theme);
+            assert_eq!(config.radius, Some(px_int(theme.radius_md()) as usize));
+            assert_eq!(config.radius_lg, Some(px_int(theme.radius_lg()) as usize));
         }
     }
 

@@ -27,6 +27,6 @@ use gpui::App;
 /// with the palette the user last chose.
 pub fn init(cx: &mut App, mode: ThemeMode) {
     let theme = Theme::of(mode);
-    init_theme(cx, theme.clone());
+    init_theme(cx, theme);
     input::init(cx, &theme);
 }

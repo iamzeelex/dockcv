@@ -74,6 +74,8 @@ impl RenderOnce for EmptyState {
 
         let icon = self
             .icon
+            // Off the icon ladder on purpose: this glyph is not labelling a
+            // control, it is the illustration at the top of an empty screen.
             .map(|name| div().mb_3().child(Icon::new(name)
                 .with_size(px(30.0))
                 .text_color(theme.text_subtle)));

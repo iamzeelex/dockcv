@@ -23,7 +23,12 @@ pub use gpui_component::{
     accordion::{Accordion, AccordionItem},
     avatar::Avatar,
     badge::Badge,
-    button::{Button, ButtonVariant, ButtonVariants},
+    // `ButtonGroup` is the segmented control: it joins its children's borders
+    // and reports a click as an index into them, so "which segment is on" is
+    // `Selectable::selected` on one child rather than three `when(active, ..)`
+    // branches in the view. Applications' Board/List/Insights and the layout
+    // rail's Letter/A4 were both hand-rolled tracks before.
+    button::{Button, ButtonGroup, ButtonVariant, ButtonVariants},
     checkbox::Checkbox,
     // The résumé editor's section cards. `Form::columns(2)` is what turns a
     // stack of full-width rows into a grid: `Start`/`End` are a pair and take
@@ -31,14 +36,13 @@ pub use gpui_component::{
     // label-over-input at full width, so one job filled a screen and six of
     // them were an unreadable column.
     form::{Field, Form},
-    // The titled container the Settings screen and the layout rail both group
-    // their controls with. `SettingGroup`/`SettingItem` — the obvious choice —
-    // are unreachable: `SettingGroup::render` is `pub(crate)`, so a group only
-    // renders inside the `Settings` page component, which brings its own
-    // 250px nav sidebar. Our Settings screen already sits inside the vault
-    // rail, and a second sidebar is the "two navigations for one move" the
-    // design rules forbid; the layout rail is 220px wide and has no room for a
-    // page at all. `GroupBox` is what `SettingGroup` wraps, and it fits both.
+    // A titled container for a run of related controls. Written for a Settings
+    // screen that lived inside the vault rail and so could not use upstream's
+    // `Settings` page; O-21 moved Settings into a window of its own, where the
+    // page component fits, and `settings_window.rs` uses `SettingPage` /
+    // `SettingGroup` / `SettingItem` directly. Kept because the facade is meant
+    // to be complete — the moment a surface needs a titled group it should not
+    // have to reach past this crate for one — but nothing renders it today.
     group_box::{GroupBox, GroupBoxVariant},
     // The editor's two panes. A fixed 392px column was one guess at how much
     // room a CV's fields need, and it was wrong for every document that has a
@@ -49,12 +53,28 @@ pub use gpui_component::{
     // a pane inside the vault rail could not have had.
     setting::{SettingField, SettingGroup, SettingItem, SettingPage, Settings},
     kbd::Kbd,
+    // The row. Left-aligned, hoverable, selectable — the three things a nav
+    // entry and a list row need and a `Button` cannot give, because its label
+    // sits in an inner `justify_center` flex no caller can reach.
+    list::ListItem,
     label::Label,
     // Menus. `PopupMenu` is what the gallery card's `···` opens; `ContextMenu`
     // is the right-click variant. Both need `gpui_component::init`, which
     // `crate::init` already calls.
     menu::{ContextMenu, ContextMenuExt, ContextMenuState, DropdownMenu, PopupMenu, PopupMenuItem},
+    // Scrollbars. `ScrollableElement::overflow_y_scrollbar` is a drop-in for
+    // GPUI's `overflow_y_scroll` that keeps the same element as the scroll
+    // container and overlays a scrollbar, owning the `ScrollHandle` itself —
+    // which is what makes it usable from this app's twenty render helpers,
+    // none of which takes a `&mut Window` to hang one on. Before this the app
+    // had twenty-two scrollable regions and no scrollbar anywhere.
+    scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow, ScrollableElement},
     separator::Separator,
+    // The one animated element in the product: the import wizard's parsing
+    // step, which is the only place a user waits on work. It used to draw a
+    // `⟳` character that never turned — a spinner that does not spin says the
+    // application has hung.
+    spinner::Spinner,
     // The layout rail's Margins and Text-scale controls (C2). `SliderState`
     // is an `Entity` the owning view holds, and it reports movement as
     // `SliderEvent` — the view subscribes and writes the value into the
