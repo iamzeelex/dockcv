@@ -29,19 +29,33 @@ use dockcv_ui_components::{
     StatusTint, Tag, TextField,
 };
 
-use crate::resume::model::{Application, ApplicationStatus, Applications, PresetConversion};
+use crate::resume::model::{Application, ApplicationStatus, Applications};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
 use super::save_status;
 
 use super::applications_data::{
-    card_chip_text, conversion_line, interviews_this_week, matches_query, plural, sort_rows,
+    card_chip_text, interviews_this_week, matches_query, plural, sort_rows,
     status_title, ApplicationSort, ApplicationsView,
 };
 use super::applications_card::{card_meta, column_tint};
 use super::applications_menu::{application_menu, MenuContext};
 use super::shell::{remove_at, Shell};
+
+/// A small count, as a chip.
+///
+/// Counts used to be joined into a sentence with middots, which reads fine
+/// when every part has something to say and badly when one of them is a zero.
+/// A chip can simply be absent.
+fn count_chip(theme: &crate::theme::Theme, text: String) -> impl IntoElement {
+    Tag::custom(theme.chip_bg, theme.chip_fg, theme.chip_bg)
+        .px(px(7.0))
+        .py(px(2.0))
+        .rounded(px(5.0))
+        .text_style(TextStyle::chip())
+        .child(text)
+}
 
 /// The five board columns, in display order.
 const COLUMNS: [(ApplicationStatus, &str); 5] = [
@@ -67,7 +81,6 @@ impl Shell {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let conversions = applications.conversion();
 
         div()
             .flex_1()
@@ -77,14 +90,6 @@ impl Shell {
             .flex()
             .flex_col()
             .child(self.applications_header(cx, applications, &today))
-            // The conversion strip is the board's and the list's running
-            // total. Insights draws the same facts as a chart, so a duplicate
-            // strip above it would be the same numbers twice.
-            .children(
-                (self.applications_view != ApplicationsView::Insights)
-                    .then(|| self.conversion_strip(cx, &conversions))
-                    .flatten(),
-            )
             .child(match self.applications_view {
                 ApplicationsView::Board => {
                     self.board(cx, applications, &query, now_secs).into_any_element()
@@ -139,15 +144,26 @@ impl Shell {
                             .text_color(theme.text)
                             .child("Applications"),
                     )
+                    // Chips, and only the ones with something in them. This
+                    // was one string joined by a middot, so most weeks it read
+                    // "7 active · 0 interviews this week" — half a line spent
+                    // saying that nothing happened.
                     .child(
                         div()
-                            .mt(px(3.0))
-                            .text_style(TextStyle::meta())
-                            .text_color(theme.text_subtle)
-                            .child(format!(
-                                "{active} active · {interviews} interview{} this week",
-                                plural(interviews)
-                            )),
+                            .mt(px(5.0))
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .child(count_chip(&theme, format!("{active} active")))
+                            .children((interviews > 0).then(|| {
+                                count_chip(
+                                    &theme,
+                                    format!(
+                                        "{interviews} interview{} this week",
+                                        plural(interviews)
+                                    ),
+                                )
+                            })),
                     ),
             )
             .child(
@@ -311,50 +327,6 @@ impl Shell {
             )
     }
 
-    /// `Conversion by preset` — `FAANG · concise — 4 sent → 1 interview → 1
-    /// offer`. Absent (not drawn empty) until at least one application is
-    /// attributed to a preset, since a kicker with nothing after it explains
-    /// nothing.
-    fn conversion_strip(
-        &self,
-        cx: &mut Context<Self>,
-        conversions: &[PresetConversion],
-    ) -> Option<impl IntoElement> {
-        if conversions.is_empty() {
-            return None;
-        }
-        let theme = cx.theme().clone();
-        let mut row = div()
-            .flex()
-            .items_center()
-            .flex_wrap()
-            .gap(px(14.0))
-            .px(px(34.0))
-            .mb(px(14.0))
-            .child(
-                div()
-                    .text_style(TextStyle::eyebrow())
-                    .text_color(theme.text_subtle)
-                    .child(TextStyle::eyebrow().apply_case("Conversion by preset")),
-            );
-        for (index, conv) in conversions.iter().enumerate() {
-            if index > 0 {
-                row = row.child(
-                    div()
-                        .text_style(TextStyle::meta())
-                        .text_color(theme.text_subtle)
-                        .child("·"),
-                );
-            }
-            row = row.child(
-                div()
-                    .text_style(TextStyle::meta())
-                    .text_color(theme.text_muted)
-                    .child(conversion_line(conv)),
-            );
-        }
-        Some(row)
-    }
 
     /// The five columns.
     fn board(

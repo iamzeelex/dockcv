@@ -156,7 +156,7 @@ fn snapshot_line(theme: &Theme, snapshot: &Snapshot) -> AnyElement {
                 .text_style(TextStyle::meta())
                 .text_color(theme.text_subtle)
                 .child(format!(
-                    "snapshot v{} · {} · sent PDF",
+                    "snapshot v{} · {}",
                     snapshot.version,
                     short_date(&snapshot.date)
                 )),

@@ -399,15 +399,6 @@ pub struct Application {
     /// drift out of step with it.
     #[serde(rename = "status", default = "wishlist_word")]
     pub status_word: String,
-    /// The deepest stage this application ever reached, which is not the
-    /// same as where it sits now: most interviews end in a rejection, and a
-    /// funnel counted from `status` alone would erase every one of them
-    /// (review P-04). Never moves backwards — a card dragged back to
-    /// `Applied` by mistake has still been interviewed, and that happened
-    /// whether or not the board still says so. Set only through
-    /// `Application::advance_to`, never assigned directly.
-    #[serde(default)]
-    pub furthest: ApplicationStatus,
     /// ISO date the card was created — the mockup's "saved 4d ago".
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub created: String,
@@ -615,6 +606,25 @@ impl Application {
         ApplicationStatus::from_word(&self.status_word).is_some()
     }
 
+    /// The deepest stage this application ever reached, which is not where it
+    /// sits now: most interviews end in a rejection, and a funnel counted from
+    /// the current column alone would erase every one of them (review P-04).
+    ///
+    /// Read from [`Self::history`] rather than stored beside it. It was a
+    /// field, kept in step by `advance_to` — one fact in two places, and the
+    /// stored copy could only ever be a slower, staler way of asking the list
+    /// that already knows. `Rejected` has no depth, so a rejection never
+    /// counts as deeper than the stage it interrupted.
+    pub fn furthest(&self) -> ApplicationStatus {
+        self.history
+            .iter()
+            .filter_map(|change| ApplicationStatus::from_word(&change.to))
+            .chain(std::iter::once(self.status()))
+            .filter(|stage| stage.depth().is_some())
+            .max_by_key(|stage| stage.depth().unwrap_or(0))
+            .unwrap_or(ApplicationStatus::Wishlist)
+    }
+
     pub fn advance_to(&mut self, status: ApplicationStatus, on: &str) {
         // Dropping a card back into the column it is already in is not a
         // move. Recording it would invent a transition, and every count over
@@ -625,12 +635,6 @@ impl Application {
         // Whatever the file used to say, the user has now said otherwise —
         // this is the one place an unrecognised word is allowed to be lost.
         self.status_word = status.word().to_string();
-        if let Some(new_depth) = status.depth() {
-            let furthest_depth = self.furthest.depth().unwrap_or(0);
-            if new_depth > furthest_depth {
-                self.furthest = status;
-            }
-        }
 
         if moved {
             self.history.push(StageChange {
@@ -689,20 +693,6 @@ impl Application {
     }
 }
 
-/// A conversion funnel for one preset — the Library screen's
-/// `FAANG · concise — 4 sent → 1 interview → 1 offer` line.
-///
-/// The three counts are cumulative funnel stages, not disjoint buckets: an
-/// application that reached `Offer` was necessarily sent and interviewed, so
-/// it counts in `sent`, `interviews` and `offers` alike. `Applications::conversion`
-/// is what computes this — see its doc comment for the exact rule.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct PresetConversion {
-    pub preset: String,
-    pub sent: usize,
-    pub interviews: usize,
-    pub offers: usize,
-}
 
 /// The application board: every company/role the user is tracking. Stored at
 /// `<vault>/applications.toml`, mirroring Diary and Library.
@@ -725,90 +715,6 @@ impl Applications {
             .count()
     }
 
-    /// Per-preset conversion funnels, one entry per distinct non-empty preset
-    /// name that appears on at least one application.
-    ///
-    /// Counting rule (decided, not a UI choice): `sent`, `interviews` and
-    /// `offers` are cumulative funnel stages read off the card's *deepest
-    /// stage ever reached* (`furthest`), not disjoint buckets and — this is
-    /// the point — not the card's *current* status either. Most interviews
-    /// end in a rejection (review P-04); counting from `status` would erase
-    /// every one of them and understate `interviews` by exactly the cases
-    /// that matter most. `Applied` → `sent`; `Interviewing` → `sent` +
-    /// `interviews`; `Offer` → `sent` + `interviews` + `offers`. `Wishlist`
-    /// cards, and any card with an empty preset (nothing to attribute), are
-    /// excluded entirely.
-    pub fn conversion(&self) -> Vec<PresetConversion> {
-        let mut order: Vec<String> = Vec::new();
-        let mut totals: Vec<PresetConversion> = Vec::new();
-
-        for entry in &self.entries {
-            let preset = entry
-                .sent_as
-                .as_ref()
-                .map(|cv| cv.preset.as_str())
-                .unwrap_or_default();
-            if preset.is_empty() || entry.furthest == ApplicationStatus::Wishlist {
-                continue;
-            }
-            let idx = match order.iter().position(|p| p == preset) {
-                Some(i) => i,
-                None => {
-                    order.push(preset.to_string());
-                    totals.push(PresetConversion {
-                        preset: preset.to_string(),
-                        sent: 0,
-                        interviews: 0,
-                        offers: 0,
-                    });
-                    totals.len() - 1
-                }
-            };
-            let conv = &mut totals[idx];
-            match entry.furthest {
-                ApplicationStatus::Applied => conv.sent += 1,
-                ApplicationStatus::Interviewing => {
-                    conv.sent += 1;
-                    conv.interviews += 1;
-                }
-                ApplicationStatus::Offer => {
-                    conv.sent += 1;
-                    conv.interviews += 1;
-                    conv.offers += 1;
-                }
-                ApplicationStatus::Wishlist => unreachable!("excluded above"),
-                // `furthest` should never actually be `Rejected` — it has no
-                // `depth()`, so nothing in this module ever assigns it —
-                // but a hand-edited file could set it directly. Treat that
-                // the same as no progress rather than invent a stage this
-                // entry has no honest record of reaching (US-14).
-                ApplicationStatus::Rejected => {}
-            }
-        }
-
-        totals
-    }
-
-    /// Repairs `furthest` for every entry so it is at least as deep as the
-    /// entry's current `status`.
-    ///
-    /// This is the migration for `applications.toml` files written before
-    /// `furthest` existed: it deserializes to `Wishlist` (its `#[default]`),
-    /// which would otherwise zero out `conversion()`'s funnel for every
-    /// pre-existing row. `Rejected` is excepted for the same reason
-    /// `Application::advance_to` excepts it — it has no `depth()` to raise
-    /// `furthest` to. Called by `vault::load_applications` after
-    /// deserializing; safe to call again on an already-normalized board.
-    pub fn normalize(&mut self) {
-        for entry in &mut self.entries {
-            if let Some(status_depth) = entry.status().depth() {
-                let furthest_depth = entry.furthest.depth().unwrap_or(0);
-                if status_depth > furthest_depth {
-                    entry.furthest = entry.status();
-                }
-            }
-        }
-    }
 }
 
 /// The user's reusable block library — their "me", shared across every résumé
@@ -3153,7 +3059,6 @@ mod applications_tests {
             company: "Bramble Tech".into(),
             role: "Staff Engineer".into(),
             status_word: ApplicationStatus::Interviewing.word().into(),
-            furthest: ApplicationStatus::Interviewing,
             history: vec![
                 StageChange { at: "2026-06-02".into(), to: "applied".into() },
                 StageChange { at: "2026-06-18".into(), to: "interviewing".into() },
@@ -3282,122 +3187,40 @@ mod applications_tests {
         assert_eq!(apps.active(), 3); // everything but the one Rejected
     }
 
-    /// The funnel is cumulative over the **deepest stage ever reached**, not
-    /// the column a card sits in now. This is the whole reason `furthest`
-    /// exists: most interviews end in a rejection, so counting from `status`
-    /// would erase every interview that did not end in an offer — and the
-    /// review's headline metric (P-04, "4 interviews out of 11") is exactly a
-    /// count of applications that *reached* interview.
+    /// A card dragged back to an earlier column has still been through what
+    /// it has been through, and `furthest()` reads that off the history —
+    /// which does not un-happen because a board was tidied up.
+    ///
+    /// This is the whole reason the deepest stage is asked for at all: most
+    /// interviews end in a rejection, so counting from the current column
+    /// would erase every interview that did not end in an offer (P-04).
     #[test]
-    fn a_rejection_still_credits_the_interview_it_reached() {
-        let mut rejected_after_onsite = Application {
-            company: "Rejected Co".into(),
-            sent_as: Some(SentCv {
-
-                document: "sofiia-senior-swe".into(),
-
-                preset: "FAANG · concise".into(),
-
-            }),
-            ..Default::default()
-        };
-        rejected_after_onsite.advance_to(ApplicationStatus::Applied, "2026-06-02");
-        rejected_after_onsite.advance_to(ApplicationStatus::Interviewing, "2026-06-10");
-        rejected_after_onsite.advance_to(ApplicationStatus::Rejected, "2026-06-20");
-        // Terminal, not deep: the card is out, but it did interview.
-        assert_eq!(rejected_after_onsite.status(), ApplicationStatus::Rejected);
-        assert_eq!(
-            rejected_after_onsite.furthest,
-            ApplicationStatus::Interviewing
-        );
-
-        let mut offered = Application {
-            company: "Offer Co".into(),
-            sent_as: Some(SentCv {
-
-                document: "sofiia-senior-swe".into(),
-
-                preset: "FAANG · concise".into(),
-
-            }),
-            ..Default::default()
-        };
-        offered.advance_to(ApplicationStatus::Offer, "2026-06-15");
-
-        let apps = Applications {
-            entries: vec![
-                offered,
-                rejected_after_onsite,
-                // Wishlist card on the same preset: never sent, excluded.
-                Application {
-                    company: "Someday Co".into(),
-                    sent_as: Some(SentCv {
-
-                        document: "sofiia-senior-swe".into(),
-
-                        preset: "FAANG · concise".into(),
-
-                    }),
-                    ..Default::default()
-                },
-                // No preset attributed: nothing to credit it to.
-                Application {
-                    company: "Cold Email Co".into(),
-                    status_word: ApplicationStatus::Applied.word().into(),
-                    furthest: ApplicationStatus::Applied,
-                    ..Default::default()
-                },
-            ],
-        };
-
-        let conversion = apps.conversion();
-        assert_eq!(conversion.len(), 1);
-        let faang = &conversion[0];
-        assert_eq!(faang.preset, "FAANG · concise");
-        assert_eq!(faang.sent, 2);
-        // Both reached interview — this is the assertion that would have been
-        // wrong when the funnel counted from `status`.
-        assert_eq!(faang.interviews, 2);
-        assert_eq!(faang.offers, 1);
-    }
-
-    /// A card dragged back to an earlier column has still been through what it
-    /// has been through. `furthest` records history, and history does not
-    /// un-happen because a board was tidied up.
-    #[test]
-    fn advance_to_never_lowers_the_furthest_stage() {
+    fn a_rejection_does_not_erase_the_interview_that_came_before_it() {
         let mut app = Application::default();
-        app.advance_to(ApplicationStatus::Interviewing, "2026-07-01");
-        assert_eq!(app.furthest, ApplicationStatus::Interviewing);
+        app.advance_to(ApplicationStatus::Applied, "2026-06-01");
+        app.advance_to(ApplicationStatus::Interviewing, "2026-06-10");
+        assert_eq!(app.furthest(), ApplicationStatus::Interviewing);
 
-        app.advance_to(ApplicationStatus::Applied, "2026-07-02");
-        assert_eq!(app.status(), ApplicationStatus::Applied);
-        assert_eq!(app.furthest, ApplicationStatus::Interviewing);
+        // A rejection is where it *is*, not how deep it got.
+        app.advance_to(ApplicationStatus::Rejected, "2026-06-20");
+        assert_eq!(app.furthest(), ApplicationStatus::Interviewing);
 
-        app.advance_to(ApplicationStatus::Wishlist, "2026-07-03");
-        assert_eq!(app.furthest, ApplicationStatus::Interviewing);
+        // And neither does dragging it back by hand: the interview happened
+        // whether or not the board still says so.
+        app.advance_to(ApplicationStatus::Wishlist, "2026-06-21");
+        assert_eq!(app.furthest(), ApplicationStatus::Interviewing);
     }
 
-    /// `furthest` arrived after the first `applications.toml` files existed,
-    /// and after hand-editing is invited. An entry that says `status = "offer"`
-    /// and nothing about `furthest` must not report a zeroed funnel — the
-    /// load-time repair is what makes the file format forgiving.
+    /// A hand-written entry that only says `status = "offer"` still counts as
+    /// an offer. `furthest` is read from the history and the current column,
+    /// so a file with no history is not a file with no funnel.
     #[test]
-    fn a_file_written_without_furthest_still_counts_its_offer() {
+    fn a_hand_written_entry_still_counts_its_offer() {
         let hand_written = "[[entries]]\ncompany = \"Meridian\"\nrole = \"Senior SWE\"\n\
                             status = \"offer\"\n\n[entries.sent_as]\n\
                             document = \"resume\"\npreset = \"FAANG · concise\"\n";
-        let mut apps: Applications = toml::from_str(hand_written).expect("loads");
-        assert_eq!(apps.entries[0].furthest, ApplicationStatus::Wishlist);
-
-        // What `vault::load_applications` does on the user's behalf.
-        apps.normalize();
-        assert_eq!(apps.entries[0].furthest, ApplicationStatus::Offer);
-
-        let conversion = apps.conversion();
-        assert_eq!(conversion[0].offers, 1);
-        assert_eq!(conversion[0].interviews, 1);
-        assert_eq!(conversion[0].sent, 1);
+        let apps: Applications = toml::from_str(hand_written).expect("loads");
+        assert_eq!(apps.entries[0].furthest(), ApplicationStatus::Offer);
     }
 }
 

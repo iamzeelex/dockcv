@@ -553,8 +553,8 @@ impl Shell {
                             .text_style(TextStyle::label())
                             .text_color(theme.text_muted)
                             .child(match app.rounds.len() {
-                                0 => "Interviews".to_string(),
-                                n => format!("Interviews · {n}"),
+                                1 => "1 interview".to_string(),
+                                n => format!("{n} interviews"),
                             }),
                     )
                     .child(

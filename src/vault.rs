@@ -476,11 +476,10 @@ pub fn applications_path(vault_dir: &Path) -> PathBuf {
 /// old row's conversion funnel isn't silently zeroed just because the field
 /// wasn't there to deserialize.
 pub fn load_applications(vault_dir: &Path) -> Applications {
-    let mut applications: Applications = fs::read_to_string(applications_path(vault_dir))
+    let applications: Applications = fs::read_to_string(applications_path(vault_dir))
         .ok()
         .and_then(|text| toml::from_str(&text).ok())
         .unwrap_or_default();
-    applications.normalize();
     for entry in &applications.entries {
         if !entry.status_is_recognised() {
             log::warn!(

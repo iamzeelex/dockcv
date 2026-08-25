@@ -5,7 +5,7 @@
 
 use std::cmp::Ordering;
 
-use crate::resume::model::{Application, ApplicationStatus, Applications, NextStep, PresetConversion};
+use crate::resume::model::{Application, ApplicationStatus, Applications, NextStep};
 use crate::vault;
 
 pub(super) fn matches_query(app: &Application, query: &str) -> bool {
@@ -22,23 +22,6 @@ pub(super) fn plural(n: usize) -> &'static str {
     }
 }
 
-/// `FAANG · concise — 4 sent → 1 interview → 1 offer`. Cumulative funnel
-/// stages — see `Applications::conversion`'s doc comment for the counting
-/// rule — so a later stage is only appended once it has anything in it.
-pub(super) fn conversion_line(conv: &PresetConversion) -> String {
-    let mut line = format!("{} sent", conv.sent);
-    if conv.interviews > 0 {
-        line.push_str(&format!(
-            " → {} interview{}",
-            conv.interviews,
-            plural(conv.interviews)
-        ));
-    }
-    if conv.offers > 0 {
-        line.push_str(&format!(" → {} offer{}", conv.offers, plural(conv.offers)));
-    }
-    format!("{} — {line}", conv.preset)
-}
 
 /// The preset chip (Applied) or the status chip (Interviewing/Offer) —
 /// mutually exclusive per column, per the design doc's per-column content
@@ -200,27 +183,6 @@ mod tests {
         assert_eq!(short_date("garbage"), "garbage");
     }
 
-    #[test]
-    fn conversion_line_only_appends_stages_that_are_reached() {
-        assert_eq!(
-            conversion_line(&PresetConversion {
-                preset: "Infra-heavy".into(),
-                sent: 1,
-                interviews: 1,
-                offers: 0,
-            }),
-            "Infra-heavy — 1 sent → 1 interview"
-        );
-        assert_eq!(
-            conversion_line(&PresetConversion {
-                preset: "FAANG · concise".into(),
-                sent: 4,
-                interviews: 1,
-                offers: 1,
-            }),
-            "FAANG · concise — 4 sent → 1 interview → 1 offer"
-        );
-    }
 
     #[test]
     fn next_step_caption_formats_with_and_without_a_time() {
@@ -357,7 +319,7 @@ impl ApplicationSort {
 /// model, deliberately, because the enum's declaration order is pinned by
 /// serde and is not this order.
 fn stage_rank(app: &Application) -> u8 {
-    match app.furthest {
+    match app.furthest() {
         ApplicationStatus::Offer => 3,
         ApplicationStatus::Interviewing => 2,
         ApplicationStatus::Applied => 1,
@@ -468,12 +430,13 @@ mod sort_tests {
     use crate::resume::model::{Application, ApplicationStatus, NextStep};
 
     fn app(company: &str, created: &str, furthest: ApplicationStatus) -> Application {
-        Application {
+        let mut app = Application {
             company: company.into(),
             created: created.into(),
-            furthest,
             ..Default::default()
-        }
+        };
+        app.advance_to(furthest, created);
+        app
     }
 
     fn rows() -> Vec<(usize, Application)> {

@@ -71,10 +71,10 @@ impl Outcome {
     /// for every entry, including hand-edited files.
     pub(super) fn of(app: &Application) -> Option<Self> {
         let reached_interview = matches!(
-            app.furthest,
+            app.furthest(),
             ApplicationStatus::Interviewing | ApplicationStatus::Offer
         );
-        match app.furthest {
+        match app.furthest() {
             // Never sent: on the wishlist, and `furthest` agrees.
             ApplicationStatus::Wishlist => None,
             ApplicationStatus::Offer => Some(Outcome::Offer),
@@ -225,23 +225,24 @@ mod tests {
     use super::*;
     use crate::resume::model::Application;
 
+    /// Walked to `furthest` and then dropped in `status`, which is how a card
+    /// that interviewed and was then rejected actually comes about.
     fn app(preset: &str, status: ApplicationStatus, furthest: ApplicationStatus) -> Application {
-        Application {
+        let mut app = Application {
             company: "Acme".into(),
             sent_as: Some(SentCv {
                 document: "resume".into(),
                 preset: preset.into(),
             }),
-            status_word: status.word().into(),
-            furthest,
             ..Default::default()
-        }
+        };
+        app.advance_to(furthest, "2026-06-01");
+        app.advance_to(status, "2026-06-02");
+        app
     }
 
     fn board(entries: Vec<Application>) -> Applications {
-        let mut applications = Applications { entries };
-        applications.normalize();
-        applications
+        Applications { entries }
     }
 
     /// The rule the whole diagram rests on: one application, one unit of flow.
@@ -707,14 +708,14 @@ impl Journey {
 /// which is what keeps this chart useful on a vault that predates rounds.
 fn rounds_of(app: &Application) -> usize {
     let asserted = matches!(
-        app.furthest,
+        app.furthest(),
         ApplicationStatus::Interviewing | ApplicationStatus::Offer
     );
     app.rounds.len().max(usize::from(asserted))
 }
 
 fn reached_offer(app: &Application) -> bool {
-    app.furthest == ApplicationStatus::Offer
+    app.furthest() == ApplicationStatus::Offer
         || matches!(
             app.closed_as,
             // Only the two endings that can *only* follow an offer. A
@@ -777,9 +778,7 @@ mod journey_tests {
     use crate::resume::model::InterviewRound;
 
     fn sent(rounds: usize, furthest: ApplicationStatus, closed: Option<Closure>) -> Application {
-        Application {
-            status_word: furthest.word().into(),
-            furthest,
+        let mut app = Application {
             applied: Some("2026-06-01".into()),
             rounds: (0..rounds)
                 .map(|i| InterviewRound {
@@ -787,9 +786,13 @@ mod journey_tests {
                     ..Default::default()
                 })
                 .collect(),
-            closed_as: closed,
             ..Default::default()
-        }
+        };
+        app.advance_to(furthest, "2026-06-01");
+        // Set last: `advance_to` derives the closure from the column, and this
+        // fixture is stating one outright.
+        app.closed_as = closed;
+        app
     }
 
     fn board(entries: Vec<Application>) -> Applications {

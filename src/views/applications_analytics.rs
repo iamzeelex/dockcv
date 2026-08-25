@@ -175,11 +175,7 @@ impl Shell {
                 // column of zeroes pretending to be a measurement.
                 "end of the line".to_string()
             } else {
-                format!(
-                    "{} moved on · {:.0}%",
-                    flow.advanced,
-                    flow.advanced as f32 * 100.0 / flow.entered as f32
-                )
+                format!("{} of {} moved on", flow.advanced, flow.entered)
             };
 
             div()
