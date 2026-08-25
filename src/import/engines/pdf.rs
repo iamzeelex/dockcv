@@ -19,10 +19,32 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
 use crate::import::classifier::classify_raw_text;
+use crate::import::error::ImportError;
 use crate::import::model::ImportedDoc;
 
-pub fn import_pdf(path: &Path) -> Result<ImportedDoc, String> {
-    let text = extract_text(path)?;
+pub fn import_pdf(path: &Path) -> Result<ImportedDoc, ImportError> {
+    let text = extract_text(path).map_err(ImportError::from)?;
+
+    // A scanned or photographed CV *has* a text layer — it is simply empty.
+    // Without this the classifier built a default document, `import_pdf`
+    // returned `Ok`, and the wizard showed a review screen with nothing on it
+    // and a green button underneath. That is the most common PDF that will not
+    // import, and it was indistinguishable from success.
+    if text.trim().is_empty() {
+        return Err(ImportError::new("There is no text in this PDF to read")
+            .detail(
+                "Nothing is wrong with your file. It is a picture of a document — a scan or an \
+                 export that flattened the page — and DockCV reads text, so there is nothing in \
+                 here for it to find.",
+            )
+            .remedy(
+                "Open the CV in the app you wrote it in and export to PDF again, choosing a \
+                 setting that keeps the text rather than flattening the page",
+            )
+            .remedy("If you still have the original, import the .docx instead")
+            .remedy("Run the scan through OCR first, then import the result"));
+    }
+
     Ok(classify_raw_text("PDF", &text))
 }
 
@@ -85,11 +107,55 @@ mod tests {
         let _ = std::fs::remove_file(&file);
     }
 
+    /// The regression I-02: a scanned CV has a text layer and it is empty.
+    /// Before this guard `import_pdf` returned `Ok`, the classifier built a
+    /// default document, and the wizard showed a review screen with nothing on
+    /// it and a green button underneath.
+    #[test]
+    fn a_pdf_with_no_text_says_so_and_says_it_is_not_the_users_fault() {
+        let dir = std::env::temp_dir().join(format!("dockcv-pdf-blank-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let blank = dir.join("scan.pdf");
+        // Same fixture, no text operators — a page that draws nothing, which is
+        // what a flattened scan's text layer amounts to.
+        std::fs::write(&blank, one_page_pdf_with_content(b"")).expect("write");
+
+        let Err(error) = import_pdf(&blank) else {
+            panic!("a textless PDF must not import as an empty CV");
+        };
+        assert!(
+            error.headline.to_lowercase().contains("no text"),
+            "the headline has to name the cause, got: {}",
+            error.headline
+        );
+        assert!(
+            error.detail.contains("Nothing is wrong with your file"),
+            "the user must be told the file is not at fault, got: {}",
+            error.detail
+        );
+        assert!(
+            error.remedies.len() >= 2,
+            "a dead end needs somewhere to go, got {:?}",
+            error.remedies
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Build a one-page PDF whose only unusual property is the `/Encoding`
     /// named on its font. Everything else — xref, catalog, page tree, content
     /// stream — is valid, which is the point: this is not corrupt input, it is
     /// ordinary input carrying a construct `pdf-extract` refuses.
     fn one_page_pdf(encoding: &str) -> Vec<u8> {
+        one_page_pdf_inner(encoding, b"BT /F1 24 Tf 72 720 Td (Sofiia Medvedenko) Tj ET")
+    }
+
+    /// The same page with a content stream of the caller's choosing.
+    fn one_page_pdf_with_content(content: &[u8]) -> Vec<u8> {
+        one_page_pdf_inner("WinAnsiEncoding", content)
+    }
+
+    fn one_page_pdf_inner(encoding: &str, content: &[u8]) -> Vec<u8> {
         use lopdf::{dictionary, Document, Object, Stream};
 
         let mut doc = Document::with_version("1.5");
@@ -103,10 +169,7 @@ mod tests {
         let resources_id = doc.add_object(dictionary! {
             "Font" => dictionary! { "F1" => font_id },
         });
-        let content_id = doc.add_object(Stream::new(
-            dictionary! {},
-            b"BT /F1 24 Tf 72 720 Td (Sofiia Medvedenko) Tj ET".to_vec(),
-        ));
+        let content_id = doc.add_object(Stream::new(dictionary! {}, content.to_vec()));
         let page_id = doc.add_object(dictionary! {
             "Type" => "Page",
             "Parent" => pages_id,

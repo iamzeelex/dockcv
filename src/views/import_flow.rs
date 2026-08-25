@@ -17,10 +17,14 @@
 use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, FontWeight, IntoElement, SharedString};
 
-use dockcv_ui_components::{lucide, Button, ButtonExt, SANS, SERIF};
+use dockcv_ui_components::{
+    lucide, Button, ButtonExt, Card, DockIcon, Icon, IconName, ScrollableElement, Sizable,
+    Spinner,
+};
 
-use crate::import::model::{Confidence, ImportedDoc};
-use crate::theme::ActiveTheme;
+use crate::import::model::ImportedDoc;
+use crate::import::notes::Part;
+use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 /// The formats the importer reads, named for the drop zone.
 ///
@@ -42,6 +46,17 @@ pub enum ImportStep {
     Parsing { filename: String },
     /// Step 2: Review extracted sections and confidence flags.
     Step2Review { imported: Box<ImportedDoc> },
+    /// The file would not come in.
+    ///
+    /// A step of its own rather than an error string dropped on the drop zone —
+    /// which is what it was, and the drop zone never rendered it, so a failed
+    /// import bounced back to the start with no explanation at all. This is the
+    /// first thing a new user can hit (US-01), and it has to answer two
+    /// questions: whether the file is at fault, and where to go instead.
+    CouldNotRead {
+        filename: String,
+        error: Box<crate::import::ImportError>,
+    },
 }
 
 /// How many extracted entries a flagged section shows before it summarises the
@@ -54,7 +69,12 @@ struct SectionReviewItem {
     name: String,
     detail: String,
     needs_review: bool,
-    review_reason: Option<&'static str>,
+    /// What the parser noticed about this section, one sentence each.
+    ///
+    /// Was a single `Option<&'static str>` carrying `"Partly guessed — worth a
+    /// look"`, which is a phrase and not a finding. A note names what was seen
+    /// and the numbers behind it, and there can be more than one.
+    notes: Vec<String>,
     /// What the parser actually produced, one line per entry.
     ///
     /// A flag with no evidence is not reviewable — "Partly guessed" tells the
@@ -83,14 +103,10 @@ impl SectionReviewItem {
         let skills = imported.doc.skills.active();
         let certs = imported.doc.certificates.active();
 
-        // The classifier's own vocabulary, kept vague on purpose: it knows how
-        // sure it was, not *what* went wrong, and a specific-sounding reason it
-        // cannot back up is worse than an honest general one.
-        let reason = |key: &str| match imported.confidence.get(key) {
-            Some(Confidence::Low) => Some("Couldn't read this reliably — check it"),
-            Some(Confidence::Medium) => Some("Partly guessed — worth a look"),
-            _ => None,
-        };
+        // What the parser actually noticed, in its own words. Empty for a
+        // section it had nothing to say about — which is most of them on a
+        // clean import, and is the whole reason a flag now means something.
+        let notes = |part: Part| imported.notes_for(part).collect::<Vec<_>>();
 
         let work_highlights: usize = work.iter().map(|w| w.highlights.len()).sum();
 
@@ -109,7 +125,7 @@ impl SectionReviewItem {
             (
                 "Profile",
                 format!("{}, {}, {}", profile.name, profile.label, profile.email),
-                reason("profile.name"),
+                notes(Part::Profile),
                 vec![
                     line([&profile.name, &profile.label]),
                     line([&profile.email, &profile.location]),
@@ -118,13 +134,13 @@ impl SectionReviewItem {
             (
                 "Work Experience",
                 format!("{} roles, {work_highlights} highlights", work.len()),
-                reason("work"),
+                notes(Part::Work),
                 work.iter().map(|w| line([&w.position, &w.name])).collect(),
             ),
             (
                 "Education",
                 format!("{} entries", edu.len()),
-                reason("education"),
+                notes(Part::Education),
                 edu.iter()
                     .map(|e| line([&e.study_type, &e.institution]))
                     .collect(),
@@ -132,22 +148,22 @@ impl SectionReviewItem {
             (
                 "Skills",
                 format!("{} category groups", skills.len()),
-                reason("skills"),
+                notes(Part::Skills),
                 skills.iter().map(|s| s.name.clone()).collect(),
             ),
             (
                 "Certificates",
                 format!("{} entries", certs.len()),
-                reason("certificates"),
+                notes(Part::Certificates),
                 certs.iter().map(|c| line([&c.name, &c.issuer])).collect(),
             ),
         ]
         .into_iter()
-        .map(|(name, detail, review_reason, preview)| Self {
+        .map(|(name, detail, notes, preview)| Self {
             name: name.to_string(),
             detail,
-            needs_review: review_reason.is_some(),
-            review_reason,
+            needs_review: !notes.is_empty(),
+            notes,
             preview: preview.into_iter().filter(|l| !l.is_empty()).collect(),
         })
         // Sections the document had and the model has no built-in shape for —
@@ -164,7 +180,7 @@ impl SectionReviewItem {
                     if entries.len() == 1 { "entry" } else { "entries" }
                 ),
                 needs_review: false,
-                review_reason: None,
+                notes: Vec::new(),
                 preview: entries
                     .iter()
                     .map(|e| line([&e.title, &e.subtitle]))
@@ -181,12 +197,12 @@ pub fn render_step1_bring_document<V: 'static>(
     on_browse: impl Fn(&mut V, &mut Context<V>) + 'static + Copy,
     on_skip_blank: impl Fn(&mut V, &mut Context<V>) + 'static + Copy,
 ) -> impl IntoElement {
-    let theme = cx.theme().clone();
+    let theme = *cx.theme();
 
     div()
         .w(px(560.0))
         .h(px(600.0))
-        .rounded(px(11.0))
+        .rounded(theme.radius_lg())
         .overflow_hidden()
         .border_1()
         .border_color(theme.border)
@@ -203,17 +219,20 @@ pub fn render_step1_bring_document<V: 'static>(
                 .flex()
                 .items_baseline()
                 .mb(px(8.0))
+                // Matched to the rail's wordmark, which is the same mark on
+                // the same product; 21/700 was the loudest thing on a screen
+                // whose job is to get out of the way.
                 .child(
                     div()
-                        .text_size(px(21.0))
-                        .font_weight(FontWeight::BOLD)
+                        .text_size(px(17.0))
+                        .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text)
                         .child("Dock"),
                 )
                 .child(
                     div()
-                        .text_size(px(21.0))
-                        .font_weight(FontWeight::BOLD)
+                        .text_size(px(17.0))
+                        .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.accent)
                         .child("CV"),
                 ),
@@ -221,9 +240,8 @@ pub fn render_step1_bring_document<V: 'static>(
         // Title
         .child(
             div()
-                .font_family(SERIF)
-                .text_size(px(24.0))
-                .font_weight(FontWeight::MEDIUM)
+                .text_style(TextStyle::hero())
+                .text_size(px(28.0))
                 .text_color(theme.text)
                 .text_center()
                 .mb(px(8.0))
@@ -232,8 +250,7 @@ pub fn render_step1_bring_document<V: 'static>(
         // Subtitle
         .child(
             div()
-                .font_family(SANS)
-                .text_size(px(13.5))
+                .text_style(TextStyle::body())
                 .text_color(theme.text_muted)
                 .text_center()
                 .max_w(px(380.0))
@@ -256,12 +273,10 @@ pub fn render_step1_bring_document<V: 'static>(
                 .mb(px(20.0))
                 .children(ACCEPTED_FORMATS.iter().map(|format| {
                     div()
-                        .font_family(crate::theme::MONO)
-                        .text_size(px(11.0))
-                        .font_weight(FontWeight::MEDIUM)
+                        .text_style(TextStyle::chip())
                         .px(px(9.0))
                         .py(px(4.0))
-                        .rounded(px(6.0))
+                        .rounded(theme.radius_sm())
                         .bg(theme.hover)
                         .text_color(theme.text_muted)
                         .child(*format)
@@ -269,22 +284,18 @@ pub fn render_step1_bring_document<V: 'static>(
         )
         // Drag and Drop Zone
         .child(
-            div()
-                .id("dropzone-area")
-                .w_full()
-                .max_w(px(420.0))
-                .h(px(150.0))
-                .border_1()
+            Card::new()
+                .outline()
+                .interactive("dropzone-area")
                 .border_dashed()
                 .border_color(theme.border_strong)
-                .rounded(px(11.0))
+                .max_w(px(420.0))
+                .h(px(150.0))
                 .flex()
                 .flex_col()
                 .items_center()
                 .justify_center()
                 .gap(px(8.0))
-                .cursor_pointer()
-                .hover(|s| s.bg(theme.hover).border_color(theme.accent))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                     on_browse(this, cx);
                 }))
@@ -292,27 +303,27 @@ pub fn render_step1_bring_document<V: 'static>(
                     div()
                         .w(px(34.0))
                         .h(px(34.0))
-                        .rounded(px(8.0))
+                        .rounded(theme.radius_md())
                         .border_1()
                         .border_color(theme.text_subtle)
                         .flex()
                         .items_center()
                         .justify_center()
                         .text_color(theme.text_subtle)
-                        .text_size(px(16.0))
-                        .child("↑"),
+                        // `DockIcon::Download` exists for precisely this glyph;
+                        // it was being drawn as a `↑` character, at whatever
+                        // size and in whatever font happened to carry it.
+                        .child(Icon::new(DockIcon::Download).with_size(theme.icon_lg())),
                 )
                 .child(
                     div()
-                        .font_family(SANS)
-                        .text_size(px(13.5))
+                        .text_style(TextStyle::body())
                         .text_color(theme.text)
                         .child("Drop your CV here"),
                 )
                 .child(
                     div()
-                        .font_family(SANS)
-                        .text_size(px(12.0))
+                        .text_style(TextStyle::label())
                         .text_color(theme.text_subtle)
                         .child("or click to browse"),
                 )
@@ -322,22 +333,17 @@ pub fn render_step1_bring_document<V: 'static>(
                     // format without saying where to get it is a dead end.
                     div()
                         .mt(px(10.0))
-                        .font_family(crate::theme::MONO)
-                        .text_size(px(10.5))
+                        .text_style(TextStyle::meta())
                         .text_color(theme.text_subtle)
                         .child(LINKEDIN_HINT),
                 ),
         )
         // Skip link
         .child(
-            div()
-                .id("skip-start-blank")
+            Button::new("skip-start-blank")
+                .quiet()
                 .mt(px(26.0))
-                .font_family(SANS)
-                .text_size(px(13.0))
                 .text_color(theme.text_subtle)
-                .cursor_pointer()
-                .hover(|s| s.text_color(theme.text))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                     on_skip_blank(this, cx);
                 }))
@@ -349,12 +355,12 @@ pub fn render_parsing_step<V: 'static>(
     cx: &mut Context<V>,
     filename: &str,
 ) -> impl IntoElement {
-    let theme = cx.theme().clone();
+    let theme = *cx.theme();
 
     div()
         .w(px(560.0))
         .h(px(600.0))
-        .rounded(px(11.0))
+        .rounded(theme.radius_lg())
         .overflow_hidden()
         .border_1()
         .border_color(theme.border)
@@ -367,24 +373,19 @@ pub fn render_parsing_step<V: 'static>(
         .p(px(40.0))
         .child(
             div()
-                .text_size(px(24.0))
                 .mb(px(12.0))
-                .text_color(theme.accent)
-                .child("⟳"),
+                .child(Spinner::new().large().color(theme.accent)),
         )
         .child(
             div()
-                .font_family(SERIF)
-                .text_size(px(20.0))
-                .font_weight(FontWeight::MEDIUM)
+                .text_style(TextStyle::title())
                 .text_color(theme.text)
                 .mb(px(6.0))
                 .child("Parsing document..."),
         )
         .child(
             div()
-                .font_family(SANS)
-                .text_size(px(13.0))
+                .text_style(TextStyle::body())
                 .text_color(theme.text_muted)
                 .child(filename.to_string()),
         )
@@ -401,7 +402,7 @@ fn render_unparsed<V: 'static>(cx: &mut Context<V>, imported: &ImportedDoc) -> O
     if imported.unparsed.is_empty() {
         return None;
     }
-    let theme = cx.theme().clone();
+    let theme = *cx.theme();
     let count = imported.unparsed.len();
     // Long tails are common in a scanned PDF; show enough to judge by and say
     // how many are behind it rather than pretending the list is complete.
@@ -413,7 +414,7 @@ fn render_unparsed<V: 'static>(cx: &mut Context<V>, imported: &ImportedDoc) -> O
         div()
             .mt(px(6.0))
             .p(px(12.0))
-            .rounded(px(8.0))
+            .rounded(theme.radius_md())
             .bg(theme.surface)
             .border_1()
             .border_color(theme.warning)
@@ -422,8 +423,7 @@ fn render_unparsed<V: 'static>(cx: &mut Context<V>, imported: &ImportedDoc) -> O
             .gap(px(6.0))
             .child(
                 div()
-                    .text_size(px(12.5))
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_style(TextStyle::label())
                     .text_color(theme.warning)
                     .child(format!(
                         "{count} line{} didn't fit any section",
@@ -432,7 +432,7 @@ fn render_unparsed<V: 'static>(cx: &mut Context<V>, imported: &ImportedDoc) -> O
             )
             .child(
                 div()
-                    .text_size(px(11.5))
+                    .text_style(TextStyle::label())
                     .text_color(theme.text_muted)
                     .child(
                         "They are not in the imported CV. Copy anything worth keeping before you \
@@ -441,13 +441,13 @@ fn render_unparsed<V: 'static>(cx: &mut Context<V>, imported: &ImportedDoc) -> O
             )
             .children(shown.into_iter().map(|line| {
                 div()
-                    .text_size(px(11.5))
+                    .text_style(TextStyle::meta())
                     .text_color(theme.text_subtle)
                     .child(line)
             }))
             .children((hidden > 0).then(|| {
                 div()
-                    .text_size(px(11.5))
+                    .text_style(TextStyle::meta())
                     .text_color(theme.text_subtle)
                     .child(format!("…and {hidden} more"))
             })),
@@ -460,7 +460,7 @@ pub fn render_step2_review_split<V: 'static>(
     on_undo: impl Fn(&mut V, &mut Context<V>) + 'static,
     on_continue: impl Fn(&mut V, &mut Context<V>) + 'static,
 ) -> impl IntoElement {
-    let theme = cx.theme().clone();
+    let theme = *cx.theme();
     let items = SectionReviewItem::from_imported(imported);
     let flagged_count = items.iter().filter(|i| i.needs_review).count();
     let total_count = items.len();
@@ -474,7 +474,7 @@ pub fn render_step2_review_split<V: 'static>(
         .flex_1()
         .min_h(px(420.0))
         .max_h(px(880.0))
-        .rounded(px(11.0))
+        .rounded(theme.radius_lg())
         .overflow_hidden()
         .border_1()
         .border_color(theme.border)
@@ -497,8 +497,7 @@ pub fn render_step2_review_split<V: 'static>(
                     // only way out of the review step, and it has to carry the
                     // same weight as "Back to the gallery" one step earlier.
                     Button::new("undo-import-btn")
-                        .cursor_pointer()
-                        .toolbar_secondary()
+                        .toolbar()
                         .icon(lucide("undo"))
                         .label("Undo import")
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
@@ -507,8 +506,7 @@ pub fn render_step2_review_split<V: 'static>(
                 )
                 .child(
                     div()
-                        .font_family(crate::theme::MONO)
-                        .text_size(px(11.5))
+                        .text_style(TextStyle::meta())
                         .text_color(theme.text_subtle)
                         .child(imported.format_name.clone()),
                 ),
@@ -521,17 +519,14 @@ pub fn render_step2_review_split<V: 'static>(
                 .pb(px(8.0))
                 .child(
                     div()
-                        .font_family(SERIF)
-                        .text_size(px(20.0))
-                        .font_weight(FontWeight::MEDIUM)
+                        .text_style(TextStyle::title())
                         .text_color(theme.text)
                         .mb(px(4.0))
                         .child(format!("{total_count} sections found")),
                 )
                 .child(
                     div()
-                        .font_family(crate::theme::MONO)
-                        .text_size(px(12.5))
+                        .text_style(TextStyle::meta())
                         .text_color(if flagged_count > 0 {
                             theme.accent
                         } else {
@@ -549,7 +544,7 @@ pub fn render_step2_review_split<V: 'static>(
             div()
                 .id("review-items-scroll")
                 .flex_1()
-                .overflow_y_scroll()
+                .overflow_y_scrollbar()
                 .px(px(22.0))
                 .py(px(10.0))
                 .flex()
@@ -567,7 +562,7 @@ pub fn render_step2_review_split<V: 'static>(
                         .gap(px(11.0))
                         .px(px(13.0))
                         .py(px(11.0))
-                        .rounded(px(9.0))
+                        .rounded(theme.radius_md())
                         .border_1()
                         .when(is_flagged, |s| {
                             s.border_color(theme.warning)
@@ -598,8 +593,7 @@ pub fn render_step2_review_split<V: 'static>(
                                 .min_w_0()
                                 .child(
                                     div()
-                                        .text_size(px(14.0))
-                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_style(TextStyle::control())
                                         .text_color(theme.text)
                                         .child(item.name),
                                 )
@@ -609,19 +603,21 @@ pub fn render_step2_review_split<V: 'static>(
                                 // nothing to review against.
                                 .child(
                                     div()
-                                        .text_size(px(11.5))
+                                        .text_style(TextStyle::label())
                                         .text_color(theme.text_muted)
                                         .child(item.detail),
                                 )
-                                .when_some(item.review_reason, |el, reason| {
-                                    el.child(
-                                        div()
-                                            .mt(px(2.0))
-                                            .text_size(px(11.5))
-                                            .text_color(theme.warning)
-                                            .child(reason),
-                                    )
-                                })
+                                // One line per thing the parser noticed. There
+                                // can be more than one — a section can be both
+                                // undated and missing its employers, and saying
+                                // only the first would hide half the work.
+                                .children(item.notes.iter().map(|note| {
+                                    div()
+                                        .mt(px(2.0))
+                                        .text_style(TextStyle::label())
+                                        .text_color(theme.warning)
+                                        .child(note.clone())
+                                }))
                                 .when(is_flagged && !item.preview.is_empty(), |el| {
                                     el.child(
                                         div()
@@ -629,8 +625,7 @@ pub fn render_step2_review_split<V: 'static>(
                                             .flex()
                                             .flex_col()
                                             .gap(px(3.0))
-                                            .font_family(crate::theme::MONO)
-                                            .text_size(px(11.0))
+                                            .text_style(TextStyle::meta())
                                             .text_color(theme.text)
                                             .children(
                                                 item.preview
@@ -655,7 +650,7 @@ pub fn render_step2_review_split<V: 'static>(
                         .child(
                             div()
                                 .flex_none()
-                                .text_size(px(12.0))
+                                .text_style(TextStyle::chip())
                                 .text_color(if is_flagged {
                                     theme.warning
                                 } else {
@@ -688,7 +683,7 @@ pub fn render_step2_review_split<V: 'static>(
                 // say.
                 .children((flagged_count > 0).then(|| {
                     div()
-                        .text_size(px(13.0))
+                        .text_style(TextStyle::body())
                         .text_color(theme.warning)
                         .child(format!(
                             "{flagged_count} section{} to check above",
@@ -698,8 +693,7 @@ pub fn render_step2_review_split<V: 'static>(
                 .when(flagged_count == 0, |el| el.child(div()))
                 .child(
                     Button::new("continue-to-editor")
-                        .cursor_pointer()
-                        .toolbar_primary()
+                        .action_primary()
                         .label("Looks good — continue")
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             on_continue(this, cx);
@@ -708,10 +702,153 @@ pub fn render_step2_review_split<V: 'static>(
         )
 }
 
+/// The screen a failed import lands on.
+///
+/// Everything here points one way. The remedies are worth trying and are listed
+/// in the order worth trying them, but the primary action is **Start blank** —
+/// because writing the CV by hand is the one route that cannot fail, and a
+/// person who has just been told their file will not open should not have to
+/// work out that it is still available.
+pub fn render_could_not_read<V: 'static>(
+    cx: &mut Context<V>,
+    filename: &str,
+    error: &crate::import::ImportError,
+    on_retry: impl Fn(&mut V, &mut Context<V>) + 'static + Copy,
+    on_start_blank: impl Fn(&mut V, &mut Context<V>) + 'static + Copy,
+) -> impl IntoElement {
+    let theme = *cx.theme();
+
+    div()
+        .w(px(560.0))
+        .rounded(theme.radius_lg())
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.elevated)
+        .shadow_lg()
+        .flex()
+        .flex_col()
+        .p(px(36.0))
+        .gap(px(6.0))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(9.0))
+                .mb(px(6.0))
+                .child(
+                    Icon::new(IconName::TriangleAlert)
+                        .with_size(theme.icon_md())
+                        .text_color(theme.warning),
+                )
+                .child(
+                    div()
+                        .text_style(TextStyle::eyebrow())
+                        .text_color(theme.warning)
+                        .child(TextStyle::eyebrow().apply_case("Could not read")),
+                ),
+        )
+        .child(
+            div()
+                .text_style(TextStyle::title())
+                .text_color(theme.text)
+                .child(error.headline.clone()),
+        )
+        .child(
+            div()
+                .mt(px(2.0))
+                .text_style(TextStyle::meta())
+                .text_color(theme.text_subtle)
+                .child(filename.to_string()),
+        )
+        .children((!error.detail.is_empty()).then(|| {
+            div()
+                .mt(px(14.0))
+                .text_style(TextStyle::prose())
+                .text_color(theme.text_muted)
+                .child(error.detail.clone())
+        }))
+        .children((!error.remedies.is_empty()).then(|| {
+            div()
+                .mt(px(20.0))
+                .flex()
+                .flex_col()
+                .gap(px(8.0))
+                .child(
+                    div()
+                        .text_style(TextStyle::eyebrow())
+                        .text_color(theme.text_subtle)
+                        .mb(px(2.0))
+                        .child(TextStyle::eyebrow().apply_case("What to try")),
+                )
+                .children(error.remedies.iter().map(|remedy| {
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap(px(9.0))
+                        .child(
+                            div()
+                                .flex_none()
+                                .mt(px(6.0))
+                                .w(px(4.0))
+                                .h(px(4.0))
+                                .rounded_full()
+                                .bg(theme.text_subtle),
+                        )
+                        .child(
+                            div()
+                                .text_style(TextStyle::body())
+                                .text_color(theme.text_muted)
+                                .child(remedy.clone()),
+                        )
+                }))
+        }))
+        .child(
+            div()
+                .mt(px(28.0))
+                .pt(px(20.0))
+                .border_t_1()
+                .border_color(theme.border)
+                .flex()
+                .flex_col()
+                .gap(px(12.0))
+                .child(
+                    div()
+                        .text_style(TextStyle::body())
+                        .text_color(theme.text_muted)
+                        .child(
+                            "You do not have to import anything. Start a blank CV and write it \
+                             here — you can always bring a file in later.",
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(10.0))
+                        .child(
+                            Button::new("could-not-read-blank")
+                                .action_primary()
+                                .label("Start a blank CV")
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                                    on_start_blank(this, cx);
+                                })),
+                        )
+                        .child(
+                            Button::new("could-not-read-retry")
+                                .action_secondary()
+                                .label("Try another file")
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                                    on_retry(this, cx);
+                                })),
+                        ),
+                ),
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use super::SectionReviewItem;
-    use crate::import::model::{Confidence, ImportedDoc};
+    use crate::import::model::ImportedDoc;
     use crate::resume::model::{Education, Resume, ResumeDoc, SkillGroup};
 
     fn imported_with(education: usize, skill_groups: usize) -> ImportedDoc {
@@ -727,49 +864,62 @@ mod tests {
     /// lengths — more than one education entry became "Dates look reversed",
     /// one skill group became "Couldn't tell categories apart". Both shapes are
     /// perfectly ordinary, so the screen was telling users their data was
-    /// suspect on no evidence. A section the classifier said nothing about is
-    /// not flagged.
+    /// suspect on no evidence. A section nothing was noticed about is not
+    /// flagged.
     #[test]
-    fn a_section_the_parser_said_nothing_about_is_not_flagged() {
+    fn a_section_nothing_was_noticed_about_is_not_flagged() {
         let imported = imported_with(3, 1);
         let items = SectionReviewItem::from_imported(&imported);
 
-        assert!(
-            items.iter().all(|i| !i.needs_review),
-            "nothing was reported low-confidence, so nothing may be flagged"
-        );
-        assert!(items.iter().all(|i| i.review_reason.is_none()));
+        for item in &items {
+            // Education and Skills carry entries and nothing odd about them.
+            if item.name == "Education" || item.name == "Skills" {
+                assert!(!item.needs_review, "{} was flagged: {:?}", item.name, item.notes);
+                assert!(item.notes.is_empty());
+            }
+        }
     }
 
-    /// …and what the classifier *did* report still comes through, at the
-    /// severity it reported.
+    /// …and every note the parser raised reaches the list, in full. More than
+    /// one per section, because a section can be wrong in more than one way.
     #[test]
-    fn what_the_parser_flagged_reaches_the_review_list() {
+    fn every_note_reaches_the_review_list() {
+        use crate::import::notes::{Note, Part};
+
         let mut imported = imported_with(1, 4);
-        imported.set_confidence("work", Confidence::Low);
-        imported.set_confidence("profile.name", Confidence::Medium);
+        imported.note(Part::Work, Note::Empty);
+        imported.note(
+            Part::Education,
+            Note::MissingDates {
+                found: 1,
+                without: 1,
+            },
+        );
+        imported.note(
+            Part::Education,
+            Note::MissingOrg {
+                found: 1,
+                without: 1,
+            },
+        );
 
         let items = SectionReviewItem::from_imported(&imported);
-        let flagged: Vec<(&str, Option<&str>)> = items
-            .iter()
-            .filter(|i| i.needs_review)
-            .map(|i| (i.name.as_str(), i.review_reason))
-            .collect();
+        let find = |name: &str| items.iter().find(|i| i.name == name).expect(name);
 
-        assert_eq!(flagged.len(), 2, "got {flagged:?}");
-        assert_eq!(
-            flagged
-                .iter()
-                .find(|(name, _)| *name == "Work Experience")
-                .and_then(|(_, reason)| *reason),
-            Some("Couldn't read this reliably — check it")
-        );
-        assert_eq!(
-            flagged
-                .iter()
-                .find(|(name, _)| *name == "Profile")
-                .and_then(|(_, reason)| *reason),
-            Some("Partly guessed — worth a look")
-        );
+        let work = find("Work Experience");
+        assert!(work.needs_review);
+        assert_eq!(work.notes.len(), 1);
+        assert!(work.notes[0].contains("nothing came out of it"), "{:?}", work.notes);
+
+        // Two notes on one section, both shown: saying only the first would
+        // hide half the work the user has to do.
+        let education = find("Education");
+        assert!(education.needs_review);
+        assert_eq!(education.notes.len(), 2, "{:?}", education.notes);
+        assert!(education.notes.iter().any(|n| n.contains("without dates")));
+        assert!(education
+            .notes
+            .iter()
+            .any(|n| n.contains("without an institution")));
     }
 }

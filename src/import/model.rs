@@ -1,23 +1,19 @@
 //! Data models for the document importer.
 
+use crate::import::notes::{Note, Part};
 use crate::resume::model::ResumeDoc;
-use std::collections::HashMap;
-
-/// Confidence rating for an extracted section or field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum Confidence {
-    High,
-    Medium,
-    Low,
-}
 
 /// The result of importing an external document file.
 #[derive(Clone)]
 pub struct ImportedDoc {
     /// Candidate document model converted to our ResumeDoc format.
     pub doc: ResumeDoc,
-    /// Map of field key paths to confidence levels.
-    pub confidence: HashMap<String, Confidence>,
+    /// What the parser noticed and a person should check.
+    ///
+    /// Replaces a `HashMap<String, Confidence>` — see `import::notes` for why a
+    /// level was the wrong shape. Empty on a clean import, which is the point:
+    /// a flag that is always lit carries no information.
+    pub notes: Vec<(Part, Note)>,
     /// Any raw text lines or blocks that could not be mapped into the schema.
     pub unparsed: Vec<String>,
     /// Source format name (e.g. "PDF", "DOCX", "JSON Resume", "Markdown").
@@ -28,13 +24,32 @@ impl ImportedDoc {
     pub fn new(format_name: impl Into<String>, doc: ResumeDoc) -> Self {
         Self {
             doc,
-            confidence: HashMap::new(),
+            notes: Vec::new(),
             unparsed: Vec::new(),
             format_name: format_name.into(),
         }
     }
 
-    pub fn set_confidence(&mut self, key: impl Into<String>, level: Confidence) {
-        self.confidence.insert(key.into(), level);
+    /// Read the document and record what is odd about it.
+    ///
+    /// Every engine calls this, which is what the old per-engine key-writing
+    /// never managed: three of the five keys the review screen asked for were
+    /// written by nobody.
+    pub fn observe(&mut self) {
+        self.notes.extend(crate::import::notes::observe(&self.doc));
+    }
+
+    /// A note only an engine can raise, because only the source says whether
+    /// something was supposed to be there.
+    pub fn note(&mut self, part: Part, note: Note) {
+        self.notes.push((part, note));
+    }
+
+    /// Everything noticed about one part, in the order it was noticed.
+    pub fn notes_for(&self, part: Part) -> impl Iterator<Item = String> + '_ {
+        self.notes
+            .iter()
+            .filter(move |(p, _)| *p == part)
+            .map(|(p, note)| note.message(*p))
     }
 }

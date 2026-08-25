@@ -26,7 +26,8 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::import::layout::without_bullet;
-use crate::import::model::{Confidence, ImportedDoc};
+use crate::import::model::ImportedDoc;
+use crate::import::notes::{Note, Part};
 use crate::resume::model::{
     Certificate, CustomEntry, Education, Resume, ResumeDoc, SkillGroup, Work,
 };
@@ -157,21 +158,28 @@ pub fn import_linkedin(path: &Path) -> Result<ImportedDoc, String> {
     }
 
     let mut imported = ImportedDoc::new("LinkedIn export", doc);
-    // Structured input: nothing here was guessed from layout, so nothing is
-    // flagged for review on suspicion. A section is only doubtful when the
-    // archive did not carry it.
-    for (file, key) in [
-        ("positions.csv", "work"),
-        ("education.csv", "education"),
-        ("skills.csv", "skills"),
+    // Structured input: nothing here was guessed from layout. The one thing the
+    // document cannot say is whether a table was in the archive and produced
+    // nothing — a CSV that was there and came out empty is a defect, a CSV that
+    // was never exported is not.
+    for (file, part) in [
+        ("positions.csv", Part::Work),
+        ("education.csv", Part::Education),
+        ("skills.csv", Part::Skills),
+        ("certifications.csv", Part::Certificates),
     ] {
-        if !tables.contains_key(file) {
-            imported.set_confidence(key, Confidence::Low);
+        let present = tables.contains_key(file);
+        let empty = match part {
+            Part::Work => imported.doc.work.active().is_empty(),
+            Part::Education => imported.doc.education.active().is_empty(),
+            Part::Skills => imported.doc.skills.active().is_empty(),
+            _ => imported.doc.certificates.active().is_empty(),
+        };
+        if present && empty {
+            imported.note(part, Note::Empty);
         }
     }
-    if imported.doc.profile.active().name.is_empty() {
-        imported.set_confidence("profile.name", Confidence::Low);
-    }
+    imported.observe();
     Ok(imported)
 }
 

@@ -5,7 +5,8 @@ use serde::Deserialize;
 use std::sync::OnceLock;
 
 use crate::import::layout;
-use crate::import::model::{Confidence, ImportedDoc};
+use crate::import::model::ImportedDoc;
+use crate::import::notes::{Note, Part};
 use crate::resume::model::{
     Certificate, CustomEntry, Education, NetworkProfile, Resume, ResumeDoc, SkillGroup, Volunteer,
     Work,
@@ -1130,19 +1131,33 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
 
     let mut imported = ImportedDoc::new(format_name, doc);
 
-    // Assess confidence ratings
-    if imported.doc.profile.active().name.is_empty() {
-        imported.set_confidence("profile.name", Confidence::Low);
-    } else {
-        imported.set_confidence("profile.name", Confidence::High);
+    // The one thing a result cannot say: whether a section was *supposed* to
+    // have content. `seen` is the list of headings this document actually
+    // carried, so a heading that produced nothing is a defect, while a section
+    // the CV never had is just a CV without one.
+    for kind in &seen {
+        let part = match kind {
+            SectionKind::Work => Part::Work,
+            SectionKind::Education => Part::Education,
+            SectionKind::Skills => Part::Skills,
+            SectionKind::Certificates => Part::Certificates,
+            _ => continue,
+        };
+        let empty = match kind {
+            SectionKind::Work => imported.doc.work.active().is_empty(),
+            SectionKind::Education => imported.doc.education.active().is_empty(),
+            SectionKind::Skills => imported.doc.skills.active().is_empty(),
+            SectionKind::Certificates => imported.doc.certificates.active().is_empty(),
+            _ => false,
+        };
+        if empty {
+            imported.note(part, Note::Empty);
+        }
     }
 
-    if imported.doc.work.active().is_empty() {
-        imported.set_confidence("work", Confidence::Low);
-    } else {
-        imported.set_confidence("work", Confidence::Medium);
-    }
-
+    // Everything else is derivable from the document, and therefore the same
+    // for every engine — which is what the old per-engine key-writing was not.
+    imported.observe();
     imported.unparsed = unparsed;
     imported
 }
