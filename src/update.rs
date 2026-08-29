@@ -47,6 +47,13 @@ use std::process::Command;
 /// asked. This answers exactly the question.
 pub const FEED: &str = "https://github.com/zeelex/dockcv/releases/latest/download/latest.json";
 
+/// Where a person goes to get DockCV.
+///
+/// Named once so that every route out of this feature — the button after a
+/// successful check, and the one offered when a check fails — cannot end up
+/// pointing at two different places.
+pub const DOWNLOADS: &str = "https://github.com/zeelex/dockcv/releases";
+
 /// Seconds before a check gives up. Short: nobody is waiting on this, and a
 /// hanging check that never resolves is worse than one that says it failed.
 const TIMEOUT_SECS: &str = "5";
@@ -120,19 +127,23 @@ pub enum CheckFailure {
 }
 
 impl CheckFailure {
-    /// One line, saying what to do rather than what went wrong internally.
+    /// What the user is told.
+    ///
+    /// Written for whoever is standing in front of the app, which is not
+    /// necessarily somebody who knows what `curl`, a release feed or an HTTP
+    /// status is — naming any of those explains nothing and makes an ordinary
+    /// hiccup look like a fault in their machine. The distinctions the code
+    /// keeps are for the log; the person gets one plain sentence, and the row
+    /// gives them the download page either way, so there is always somewhere
+    /// to go.
     pub fn message(self) -> &'static str {
         match self {
-            CheckFailure::NoTool => {
-                "Couldn't check — this machine has no curl. The releases page has the answer."
-            }
+            CheckFailure::NoTool => "Couldn't check for updates from this computer.",
             CheckFailure::Unreachable => {
-                "Couldn't reach the releases page. Nothing else is affected — DockCV needs \
-                 no network to work."
+                "Couldn't check for updates — there may be no connection. Nothing else is \
+                 affected: DockCV works offline."
             }
-            CheckFailure::Malformed => {
-                "The version file didn't make sense. The releases page has the answer."
-            }
+            CheckFailure::Malformed => "Couldn't check for updates just now.",
         }
     }
 }

@@ -18,7 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and sends nothing about the user — not even the version being compared, which is
   compared locally. It is made by the system's `curl`, so no HTTP client is compiled
   into the app. Nothing is ever downloaded or installed automatically: a newer version
-  appears as one line in the rail with a link that opens the release page.
+  appears as one line in the rail with a link that opens the download page.
+- **The log is reachable from Settings**: Settings ▸ Storage now opens the log file or
+  shows it in Finder, and names the path, so a problem can be looked into without
+  knowing where macOS keeps application logs.
 
 ### Fixed
 - **Version reporting**: the workspace manifest said `0.1.0` while the changelog

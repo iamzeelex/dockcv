@@ -27,6 +27,7 @@ use dockcv_ui_components::{
 };
 
 use crate::config;
+use crate::logging;
 use crate::theme::{ActiveTheme, StyledText, TextStyle, Theme, ThemeMode};
 use crate::update::Channel;
 use crate::vault;
@@ -162,7 +163,10 @@ fn general_page(shell: &WeakEntity<Shell>) -> SettingPage {
         .group(
             SettingGroup::new()
                 .title("Vault")
-                .description("Your CVs, library and diary are plain TOML files in it.")
+                .description(
+                    "Your CVs, library and diary are plain text files in it \u{2014} open them \
+                     in any editor, copy them anywhere, keep them in a backup you control.",
+                )
                 .item(SettingItem::new(
                     "Folder",
                     SettingField::render(move |_o, _window, cx: &mut App| {
@@ -184,10 +188,9 @@ fn general_page(shell: &WeakEntity<Shell>) -> SettingPage {
             SettingGroup::new()
                 .title("Updates")
                 .description(
-                    "DockCV needs no network to work and makes no other request. A check \
-                     asks github.com for a version number \u{2014} it sends nothing about \
-                     you, not even the version it is comparing, and never downloads or \
-                     installs anything by itself.",
+                    "DockCV works offline and never sends your CVs anywhere. A check looks \
+                     up the latest version number and nothing else, and nothing is ever \
+                     downloaded or installed without you.",
                 )
                 .item(SettingItem::new(
                     "Check",
@@ -233,7 +236,7 @@ fn general_page(shell: &WeakEntity<Shell>) -> SettingPage {
                             // which is the question a settings screen is for.
                             .child(readout(
                                 if last.is_empty() {
-                                    "never checked".to_string()
+                                    "not checked yet".to_string()
                                 } else {
                                     format!("last checked {last}")
                                 },
@@ -247,7 +250,7 @@ fn general_page(shell: &WeakEntity<Shell>) -> SettingPage {
         .group(
             SettingGroup::new()
                 .title("Appearance")
-                .description("Each chip previews its own palette rather than naming it.")
+                .description("Applies immediately, everywhere.")
                 .item(SettingItem::new(
                     "Theme",
                     SettingField::render(move |_o, _window, cx: &mut App| {
@@ -307,10 +310,62 @@ fn storage_page(shell: &WeakEntity<Shell>) -> SettingPage {
                     }),
                 )),
         )
+        // Between Trash and About, because that is the order the questions
+        // arrive in: what is on disk, what to do when something went wrong,
+        // what version this is.
+        .group(
+            SettingGroup::new()
+                .title("If something goes wrong")
+                .description(
+                    "DockCV keeps a log of what it did \u{2014} vaults opened, imports, \
+                     exports, and every failed read or write. It records what happened and \
+                     never what you wrote: no CV text, no diary entries, and your home \
+                     folder is written as ~ rather than by your account name. It stays on \
+                     this computer; nothing sends it anywhere.",
+                )
+                .item(SettingItem::new(
+                    "Log",
+                    SettingField::render(|_o, _window, _cx: &mut App| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                Button::new("settings-open-log")
+                                    .toolbar()
+                                    .on_click(|_: &ClickEvent, _window, cx: &mut App| {
+                                        cx.open_with_system(&logging::log_path());
+                                    })
+                                    .child("Open log"),
+                            )
+                            .child(
+                                // The folder, not the file: a log is something
+                                // a person drags into a bug report, and the
+                                // previous session's is in there too.
+                                Button::new("settings-reveal-log")
+                                    .toolbar()
+                                    .on_click(|_: &ClickEvent, _window, cx: &mut App| {
+                                        if let Some(dir) = logging::log_path().parent() {
+                                            cx.open_with_system(dir);
+                                        }
+                                    })
+                                    .child("Show in Finder"),
+                            )
+                            .into_any_element()
+                    }),
+                ))
+                .item(SettingItem::new(
+                    "File",
+                    SettingField::render(|_o, _window, cx: &mut App| {
+                        readout(logging::log_path().to_string_lossy().to_string(), true, cx)
+                            .into_any_element()
+                    }),
+                )),
+        )
         .group(
             SettingGroup::new()
                 .title("About")
-                .description("Local-first, File-over-App.")
+                .description("Worth quoting if you ever report a problem.")
                 .item(SettingItem::new(
                     "Version",
                     SettingField::render(|_o, _window, cx: &mut App| {

@@ -206,19 +206,19 @@ impl Shell {
                                 div()
                                     .text_style(TextStyle::label())
                                     .text_color(theme.text)
-                                    .child(SharedString::from(format!("DockCV {version}"))),
+                                    .child(SharedString::from(format!(
+                                        "DockCV {version} is available"
+                                    ))),
                             ),
                     )
-                    // What it is, in the user's terms: not installed, not
-                    // downloaded, nothing happening until they say so.
-                    .child(line(
-                        SharedString::from(if release.published.is_empty() {
-                            "is available to download.".to_string()
-                        } else {
-                            format!("published {}.", release.published)
-                        }),
-                        theme.text_muted,
-                    ))
+                    // Only when the feed gave a date. A second line repeating
+                    // what the first already said is a line worth not drawing.
+                    .children((!release.published.is_empty()).then(|| {
+                        line(
+                            SharedString::from(format!("Released {}.", release.published)),
+                            theme.text_muted,
+                        )
+                    }))
                     .child(
                         div()
                             .flex()
@@ -228,7 +228,7 @@ impl Shell {
                                 Button::new("update-open")
                                     .chip(false, &theme)
                                     .label("What's new")
-                                    .tooltip("Opens the release page in your browser")
+                                    .tooltip("Opens the download page in your browser")
                                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                         this.open_release_page(cx);
                                     })),
@@ -251,6 +251,19 @@ impl Shell {
             return Some(
                 row()
                     .child(line(failure.message().into(), theme.text_muted))
+                    // Always somewhere to go. "Couldn't check" with no next
+                    // step is a dead end, and the page it opens is the same
+                    // one a successful check would have led to.
+                    .child(
+                        div().child(
+                            Button::new("update-downloads")
+                                .chip(false, &theme)
+                                .label("Open the download page")
+                                .on_click(cx.listener(|_this, _: &ClickEvent, _window, cx| {
+                                    cx.open_url(update::DOWNLOADS);
+                                })),
+                        ),
+                    )
                     .into_any_element(),
             );
         }
@@ -259,7 +272,7 @@ impl Shell {
             return Some(
                 row()
                     .child(line(
-                        SharedString::from(format!("DockCV {APP_VERSION} is the newest.")),
+                        SharedString::from(format!("DockCV {APP_VERSION} — you're up to date.")),
                         theme.text_subtle,
                     ))
                     .into_any_element(),
@@ -271,9 +284,14 @@ impl Shell {
         if self.update.offer_pending {
             return Some(
                 row()
+                    // No hostnames, no protocols, and no mention of what the
+                    // app runs to do it: the person deciding this is being
+                    // asked whether they want to be told about new versions,
+                    // and all they need in order to answer is what leaves
+                    // their computer. Nothing does.
                     .child(line(
-                        "Check for updates weekly? It asks github.com for a version \
-                         number and sends nothing about you."
+                        "Check for a new version once a week? DockCV looks up the version \
+                         number and nothing else — nothing about you or your CVs is sent."
                             .into(),
                         theme.text_muted,
                     ))
