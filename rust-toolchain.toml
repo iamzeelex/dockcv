@@ -5,3 +5,10 @@
 # own rust-toolchain.toml when you advance the gpui git revision.
 channel = "1.95.0"
 components = ["rustfmt", "clippy"]
+# The engine is built for the browser in CI, and the target has to belong to
+# the toolchain above. Installing it through the workflow instead put it on
+# `stable`, while cargo in this directory used 1.95.0 — which failed with
+# "can't find crate for `core`" and cost a release build to discover. Declared
+# here, rustup installs it for the toolchain that will actually be used, on a
+# contributor's machine as well as on a runner.
+targets = ["wasm32-unknown-unknown"]
