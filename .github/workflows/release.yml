@@ -10,6 +10,12 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Read-only is the default for the workflow token, and creating a release is a
+# write. Stated per job rather than repository-wide: only the three jobs that
+# publish need it, and `verify-version` has no business writing anything.
+permissions:
+  contents: read
+
 jobs:
   # A tag says what version this is. The manifest and the changelog say it
   # too, and the three drifted apart once already — the app reported 0.1.0
@@ -45,6 +51,8 @@ jobs:
   # and it carries nothing but three strings, none of them about anybody.
   feed:
     name: Version feed
+    permissions:
+      contents: write
     needs: verify-version
     runs-on: ubuntu-latest
     steps:
@@ -74,12 +82,20 @@ jobs:
   # not an application on this platform and carried none of those files.
   macos:
     name: macOS bundle
+    permissions:
+      contents: write
     needs: verify-version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
+      # No build cache here, deliberately. This job ran out of disk while
+      # `hdiutil` was writing the image, and a restored cache is another copy
+      # of the same artefacts on a runner that has ~14 GB to spend. A release
+      # is cut rarely; paying in minutes to be sure of finishing is the right
+      # trade.
+      - name: Disk before
+        run: df -h /
 
       # The icon is rasterised from assets/icon.svg. Without it bundle.sh
       # carries on and ships the generic application icon, which is not
@@ -89,6 +105,10 @@ jobs:
 
       - name: Build DockCV.app and the disk image
         run: ./scripts/bundle.sh --dmg
+
+      - name: Disk after
+        if: always()
+        run: df -h /
 
       # Named for what it is. The bundle is ad-hoc signed and not notarised
       # (no Apple Developer ID), so HOW-TO-OPEN.txt ships beside it as the
@@ -116,6 +136,8 @@ jobs:
   # condition of distributing the binary, not a nicety.
   portable:
     name: ${{ matrix.label }}
+    permissions:
+      contents: write
     needs: verify-version
     strategy:
       fail-fast: false
@@ -141,6 +163,7 @@ jobs:
             libx11-dev \
             libxcb1-dev \
             libxkbcommon-dev \
+            libxkbcommon-x11-dev \
             libwayland-dev
 
       - uses: dtolnay/rust-toolchain@stable

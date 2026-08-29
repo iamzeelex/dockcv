@@ -68,8 +68,12 @@ REMAP="$REMAP --remap-path-prefix=$HOME/.cargo/git=/cargo/git"
 REMAP="$REMAP --remap-path-prefix=$HOME/.rustup=/rustup"
 REMAP="$REMAP --remap-path-prefix=$ROOT=/dockcv"
 
-echo "==> cargo build --release"
-(cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} $REMAP" cargo build --release --locked)
+# `-p dockcv`, not the workspace: the bundle ships exactly one binary, and
+# building the rest — the browser crate above all — is minutes and gigabytes
+# spent on artefacts nothing here will open. The macOS release runner filled
+# its disk doing it.
+echo "==> cargo build --release -p dockcv"
+(cd "$ROOT" && RUSTFLAGS="${RUSTFLAGS:-} $REMAP" cargo build --release --locked -p dockcv)
 
 BIN="$ROOT/target/release/dockcv"
 [[ -x "$BIN" ]] || { echo "no release binary at $BIN" >&2; exit 1; }

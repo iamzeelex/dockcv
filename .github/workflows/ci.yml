@@ -9,6 +9,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   fmt:
     name: Code Formatting
@@ -127,6 +130,7 @@ jobs:
             libx11-dev \
             libxcb1-dev \
             libxkbcommon-dev \
+            libxkbcommon-x11-dev \
             libwayland-dev
 
       - uses: dtolnay/rust-toolchain@stable
