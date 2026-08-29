@@ -127,7 +127,15 @@ cargo test --workspace
 # 6. Commit and Tag
 echo "==> Creating release commit and Git tag v$NEW_VERSION..."
 git add Cargo.toml Cargo.lock CHANGELOG.md
-git commit -m "chore(release): bump version to v$NEW_VERSION"
+# Only when there is something to record. Preparing the changelog and the
+# version together — which is the tidier way to work — used to leave this with
+# an empty index, and `git commit` failing takes the tag down with it under
+# `set -e`. Releasing a version that is already written is not an error.
+if git diff --cached --quiet; then
+  echo "    (version and changelog already committed — tagging only)"
+else
+  git commit -m "chore(release): bump version to v$NEW_VERSION"
+fi
 git tag -a "v$NEW_VERSION" -m "Release v$NEW_VERSION"
 
 echo ""
