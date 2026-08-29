@@ -178,6 +178,15 @@ you wrote. Say which build you are on — the version is in **Settings ▸ Stora
 About** — and, if the problem involves a specific document, whether the TOML
 still opens in a text editor.
 
+## If you work with Claude Code
+
+Three agent definitions ship in `.claude/agents/`, and they exist because the work they
+cover happens rarely enough to be forgotten between times. `release-manager` runs the
+checks and cuts a version. `dependency-warden` moves GPUI without walking into the
+resolution trap described above. `import-forensics` diagnoses a CV that imported badly
+and insists the fix arrives with a fixture. You are not obliged to use any of them, but
+the procedures they encode are the ones a reviewer will expect to have been followed.
+
 ## Licence
 
 Contributions are accepted under the same dual MIT / Apache-2.0 licence the

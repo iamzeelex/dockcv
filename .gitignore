@@ -27,3 +27,5 @@
 # is the release procedure written down in a form that can be run.
 /.claude/agents/*
 !/.claude/agents/release-manager.md
+!/.claude/agents/dependency-warden.md
+!/.claude/agents/import-forensics.md

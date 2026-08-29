@@ -238,6 +238,9 @@ worth delegating names the files to touch, the tokens or components to use, what
 of scope, and the command that proves it worked. If it cannot be written that tightly,
 it is not ready to hand over.
 
-`.claude/agents/release-manager.md` is the one agent the repository carries, because
-cutting a release is a checklist and a checklist is exactly what should not live in
-somebody's head.
+Three agent definitions travel with the repository, and they have one thing in common:
+each covers work that is rare enough to be forgotten and precise enough to be got wrong.
+`release-manager` cuts a version — a checklist, and a checklist is the last thing that
+should live in somebody's head. `dependency-warden` moves gpui, which has a trap in it
+that has already cost a day. `import-forensics` fixes an importer and makes the fix
+arrive with a fixture. The rest of the working agents are local and unpublished.
