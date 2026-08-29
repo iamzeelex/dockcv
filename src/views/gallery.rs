@@ -64,9 +64,34 @@ impl Shell {
                     ),
             );
 
-        let body: AnyElement = if self.gallery_creating {
-            self.render_template_chooser(cx).into_any_element()
-        } else if vault_is_empty {
+        // The import flow is a surface with its own footer and its own scroll,
+        // so it does **not** go inside the gallery's scroll area. Nested there,
+        // its height had nothing to resolve against: the panel grew to its
+        // content, the page scrolled, and the action bar it pins to its own
+        // bottom edge went below the fold — which is why the review step
+        // appeared to have no way forward at all.
+        if self.gallery_creating {
+            return div()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .flex()
+                .flex_col()
+                .child(top)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .px(px(34.0))
+                        .pb(px(30.0))
+                        .child(self.render_template_chooser(cx)),
+                );
+        }
+
+        let body: AnyElement = if vault_is_empty {
             // US-01 / P-13: a vault with zero documents is often the first
             // screen in a user's life with the product, so it gets a real
             // empty state rather than a barren grid.
@@ -609,11 +634,16 @@ impl Shell {
                         this.import_step = ImportStep::Step1Drop;
                     },
                 )),
+            // `flex_1` and `min_h_0`, not `justify_center`: the review panel
+            // pins an action bar to its own bottom edge, and a centred box with
+            // no bound to resolve against grows past the window and takes that
+            // bar with it.
             ImportStep::Step2Review { imported } => div()
                 .flex()
                 .flex_col()
                 .items_center()
-                .justify_center()
+                .flex_1()
+                .min_h_0()
                 .w_full()
                 .py(px(20.0))
                 .child(import_flow::render_step2_review_split(

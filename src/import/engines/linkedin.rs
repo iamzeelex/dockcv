@@ -29,10 +29,18 @@ use crate::import::layout::without_bullet;
 use crate::import::model::ImportedDoc;
 use crate::import::notes::{Note, Part};
 use crate::resume::model::{
-    Certificate, CustomEntry, Education, Resume, ResumeDoc, SkillGroup, Work,
+    Certificate, CustomEntry, Education, NetworkProfile, Resume, ResumeDoc, SkillGroup, Volunteer,
+    Work,
 };
 
-const MAX_ZIP_ENTRIES: usize = 100;
+/// How many archive members this will look at.
+///
+/// A **cap on what is read**, not a reason to refuse the file. It used to be a
+/// hard reject, which is the wrong shape for a guard sitting on the primary
+/// happy path: the user waited a day for that export, and "too many entries" is
+/// not something they can act on. The CSVs this engine reads are a handful and
+/// LinkedIn ships them at the archive root, so a bounded walk finds them.
+const MAX_ZIP_ENTRIES: usize = 512;
 const MAX_SINGLE_CSV_SIZE: u64 = 10 * 1024 * 1024; // 10 MB limit per CSV entry
 const MAX_TOTAL_UNCOMPRESSED_SIZE: u64 = 50 * 1024 * 1024; // 50 MB limit total
 
@@ -41,16 +49,9 @@ pub fn import_linkedin(path: &Path) -> Result<ImportedDoc, String> {
     let mut zip =
         zip::ZipArchive::new(file).map_err(|e| format!("This is not a readable .zip: {e}"))?;
 
-    if zip.len() > MAX_ZIP_ENTRIES {
-        return Err(format!(
-            "ZIP archive contains too many entries ({}, max allowed {MAX_ZIP_ENTRIES})",
-            zip.len()
-        ));
-    }
-
     let mut total_bytes_read: u64 = 0;
     let mut tables: HashMap<String, Table> = HashMap::new();
-    for i in 0..zip.len() {
+    for i in 0..zip.len().min(MAX_ZIP_ENTRIES) {
         let Ok(entry) = zip.by_index(i) else {
             continue;
         };
@@ -145,6 +146,26 @@ pub fn import_linkedin(path: &Path) -> Result<ImportedDoc, String> {
     if let Some(t) = tables.get("languages.csv") {
         languages = read_languages(t);
     }
+    // Organizations is a section DockCV already has, and the archive already
+    // carries the data. It was being dropped with everything else this engine
+    // did not name — the worst kind of gap, because both ends existed.
+    if let Some(t) = tables.get("volunteering.csv") {
+        resume.volunteer = read_volunteering(t);
+    }
+
+    // Every file this engine looked at. What is *not* here was in the archive
+    // and went nowhere, which is the thing US-01 says must not happen quietly.
+    const READ: [&str; 9] = [
+        "profile.csv",
+        "email addresses.csv",
+        "positions.csv",
+        "education.csv",
+        "skills.csv",
+        "certifications.csv",
+        "projects.csv",
+        "languages.csv",
+        "volunteering.csv",
+    ];
 
     let mut doc = ResumeDoc::from_resume(resume, "Base");
     for (title, entries) in [("Projects", projects), ("Languages", languages)] {
@@ -179,6 +200,22 @@ pub fn import_linkedin(path: &Path) -> Result<ImportedDoc, String> {
             imported.note(part, Note::Empty);
         }
     }
+    // Named, not counted. This is the one import path that can say exactly what
+    // it left behind: the archive hands over its file names and its row counts,
+    // so "Honors.csv — 4 rows" is a fact rather than an estimate.
+    let mut unread: Vec<(&String, usize)> = tables
+        .iter()
+        .filter(|(name, table)| !READ.contains(&name.as_str()) && !table.rows.is_empty())
+        .map(|(name, table)| (name, table.rows.len()))
+        .collect();
+    unread.sort_by(|a, b| a.0.cmp(b.0));
+    imported.unplaced.extend(unread.into_iter().map(|(name, rows)| {
+        format!(
+            "{name} — {rows} row{} the archive carried and DockCV has no section for",
+            if rows == 1 { "" } else { "s" }
+        )
+    }));
+
     imported.observe();
     Ok(imported)
 }
@@ -200,17 +237,52 @@ fn read_profile(t: &Table, resume: &mut Resume) {
         t.get(row, "Location"),
         t.get(row, "Address"),
     ]);
-    // `Websites` is `[TYPE:OTHER:https://…]` or a bare URL, depending on the
-    // export's vintage. Take the first thing that looks like one.
-    let websites = t.get(row, "Websites");
-    if let Some(at) = websites.find("http") {
-        resume.basics.url = websites[at..]
-            .trim_end_matches([']', ',', ' '])
-            .split(',')
-            .next()
-            .unwrap_or_default()
-            .to_string();
+    // `Websites` is `[TYPE:OTHER:https://…]`, several of those comma-joined, or
+    // a bare URL, depending on the export's vintage.
+    let mut websites = websites_in(&t.get(row, "Websites")).into_iter();
+    if let Some(first) = websites.next() {
+        resume.basics.url = first;
     }
+    // The rest are profiles rather than nothing. A person with a site *and* a
+    // blog had the blog dropped, and the field is a list for a reason.
+    for url in websites {
+        if resume.basics.profiles.iter().any(|p| p.url == url) {
+            continue;
+        }
+        resume.basics.profiles.push(NetworkProfile {
+            network: String::new(),
+            username: String::new(),
+            url,
+        });
+    }
+}
+
+/// Every URL in a LinkedIn `Websites` cell, in the order it was written.
+///
+/// The old reading trimmed the trailing `]` off the *whole* cell and then split
+/// on commas, which is correct for one website and wrong for two: with
+/// `[TYPE:OTHER:https://a.com],[TYPE:BLOG:https://b.com]` the trim took the
+/// bracket from the last entry and the split returned the first — still carrying
+/// its own. The url imported as `https://a.com]` and did not resolve.
+///
+/// A URL here ends at the bracket that closes its entry, the comma that
+/// separates it from the next, or any space. Reading it that way makes the
+/// one-website and many-website cases the same case.
+fn websites_in(cell: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = cell;
+    while let Some(at) = rest.find("http") {
+        let tail = &rest[at..];
+        let url = tail
+            .split(|c: char| c == ']' || c == ',' || c.is_whitespace())
+            .next()
+            .unwrap_or_default();
+        if !url.is_empty() && !out.iter().any(|seen| seen == url) {
+            out.push(url.to_string());
+        }
+        rest = &tail[url.len().max(1)..];
+    }
+    out
 }
 
 fn read_email(t: &Table, resume: &mut Resume) {
@@ -289,6 +361,34 @@ fn read_projects(t: &Table) -> Vec<CustomEntry> {
             highlights: as_highlights(&t.get(row, "Description")),
         })
         .filter(|p| !p.title.is_empty())
+        .collect()
+}
+
+/// Volunteering, which DockCV surfaces as **Organizations**.
+///
+/// Columns looked up by name like everything else here, so a header LinkedIn
+/// renames between exports costs its own field and nothing else — the
+/// `a_missing_column_costs_only_its_own_field` guarantee.
+fn read_volunteering(t: &Table) -> Vec<Volunteer> {
+    t.rows
+        .iter()
+        .map(|row| {
+            let mut highlights = as_highlights(&t.get(row, "Description"));
+            // The cause is why the entry is on the CV at all, and it has no
+            // field of its own here.
+            let cause = t.get(row, "Cause");
+            if !cause.trim().is_empty() {
+                highlights.insert(0, cause);
+            }
+            Volunteer {
+                organization: t.get(row, "Company Name"),
+                position: t.get(row, "Role"),
+                start_date: t.get(row, "Started On").into(),
+                end_date: t.get(row, "Finished On").into(),
+                highlights,
+            }
+        })
+        .filter(|v| !(v.organization.is_empty() && v.position.is_empty()))
         .collect()
 }
 
@@ -378,10 +478,31 @@ impl Table {
 /// Usually the first, but several files open with a free-text note LinkedIn
 /// adds about the export. A header row is one whose fields are all short,
 /// non-empty labels — a note is one long sentence in a single field.
+/// Which record is the header row.
+///
+/// LinkedIn prefixes some files with a `Notes:` sentence before the real header,
+/// so the rule is "the first record that reads like a list of column names":
+/// every field filled, and none of them long enough to be prose.
+///
+/// The `len() > 1` half is what tells a header from that preamble — and it also
+/// meant a **single-column file never parsed at all**. `Skills.csv` is one
+/// column (`Name`) in plenty of exports, so a person's whole skill list was
+/// dropped before anything looked at it, and no error said so. A file whose
+/// records are all one field wide has no ambiguity to resolve: its header is the
+/// first record that looks like one.
 fn find_header(records: &[Vec<String>]) -> Option<usize> {
-    records.iter().position(|r| {
-        r.len() > 1 && r.iter().all(|f| !f.is_empty() && f.chars().count() <= 40)
-    })
+    let looks_like_header =
+        |r: &Vec<String>| !r.is_empty() && r.iter().all(|f| !f.is_empty() && f.chars().count() <= 40);
+    let single_column = records.iter().all(|r| r.len() <= 1);
+
+    records
+        .iter()
+        .position(|r| r.len() > 1 && looks_like_header(r))
+        .or_else(|| {
+            single_column
+                .then(|| records.iter().position(looks_like_header))
+                .flatten()
+        })
 }
 
 #[cfg(test)]
@@ -390,6 +511,80 @@ mod tests {
 
     fn table(csv: &str) -> Table {
         Table::parse(csv.as_bytes()).expect("a header row")
+    }
+
+    /// I-08. Volunteering is a section DockCV already has, and the archive
+    /// already carries it — both ends existed and the data went nowhere.
+    #[test]
+    fn volunteering_reaches_the_organizations_section() {
+        let csv = "Company Name,Role,Cause,Started On,Finished On,Description\n\
+                   CoderDojo,Mentor,Science and Technology,2019,2021,\"Ran the Saturday club\"\n";
+        let table = super::Table::parse(csv.as_bytes()).expect("parses");
+        let entries = super::read_volunteering(&table);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].organization, "CoderDojo");
+        assert_eq!(entries[0].position, "Mentor");
+        assert_eq!(entries[0].start_date.text, "2019");
+        // The cause leads the bullets: it is why the entry is on the CV, and it
+        // has no field of its own.
+        assert_eq!(
+            entries[0].highlights,
+            vec![
+                "Science and Technology".to_string(),
+                "Ran the Saturday club".to_string()
+            ]
+        );
+    }
+
+    /// I-10, measured. The old reading trimmed the closing bracket off the
+    /// *whole* cell and then split on commas, so with two websites the first
+    /// came back still carrying its own: `https://a.com]`, which does not
+    /// resolve.
+    #[test]
+    fn a_second_website_does_not_leave_a_bracket_on_the_first() {
+        assert_eq!(
+            super::websites_in("[TYPE:OTHER:https://a.com]"),
+            vec!["https://a.com".to_string()]
+        );
+        assert_eq!(
+            super::websites_in("[TYPE:OTHER:https://a.com],[TYPE:BLOG:https://b.com]"),
+            vec!["https://a.com".to_string(), "https://b.com".to_string()]
+        );
+    }
+
+    /// Older exports write the cell as a bare URL, and some write nothing.
+    #[test]
+    fn a_bare_url_and_an_empty_cell_both_read() {
+        assert_eq!(
+            super::websites_in("https://sofiia.dev"),
+            vec!["https://sofiia.dev".to_string()]
+        );
+        assert!(super::websites_in("").is_empty());
+        assert!(super::websites_in("[TYPE:OTHER:]").is_empty());
+    }
+
+    /// The first is the person's site; the rest are profiles rather than
+    /// nothing, because the field is a list for a reason.
+    #[test]
+    fn every_website_reaches_the_profile() {
+        // Quoted, as a real export writes it — the cell contains a comma.
+        let csv = "First Name,Last Name,Websites\n\
+                   Sofiia,Medvedenko,\"[TYPE:OTHER:https://a.com],[TYPE:BLOG:https://b.com]\"\n";
+        let table = super::Table::parse(csv.as_bytes()).expect("parses");
+        let mut resume = crate::resume::model::Resume::default();
+        super::read_profile(&table, &mut resume);
+
+        assert_eq!(resume.basics.url, "https://a.com");
+        assert_eq!(
+            resume
+                .basics
+                .profiles
+                .iter()
+                .map(|p| p.url.as_str())
+                .collect::<Vec<_>>(),
+            vec!["https://b.com"]
+        );
     }
 
     #[test]
@@ -440,6 +635,28 @@ mod tests {
         assert_eq!(resume.basics.email, "hi@zeelex.me");
     }
 
+    /// A one-column file used to fail `find_header`'s `len() > 1` test and be
+    /// skipped whole. `Skills.csv` is one column in plenty of exports, so a
+    /// person's entire skill list was dropped before anything looked at it.
+    #[test]
+    fn a_single_column_file_still_has_a_header() {
+        let t = table("Name\nRust\nKafka\nKubernetes\n");
+        assert_eq!(t.column("Name"), vec!["Rust", "Kafka", "Kubernetes"]);
+    }
+
+    /// …and the preamble it was guarding against is still skipped, because the
+    /// length test is what actually tells prose from a column name.
+    #[test]
+    fn a_note_above_a_single_column_header_is_still_skipped() {
+        let t = table(
+            "\"Notes: This file contains the skills listed on your profile.\"\n\
+             Name\n\
+             Rust\n",
+        );
+        assert_eq!(t.headers, vec!["Name".to_string()]);
+        assert_eq!(t.column("Name"), vec!["Rust"]);
+    }
+
     #[test]
     fn a_note_above_the_header_row_is_skipped() {
         let t = table(
@@ -448,6 +665,49 @@ mod tests {
              Acme,Engineer\n",
         );
         assert_eq!(read_positions(&t)[0].name, "Acme");
+    }
+
+    /// I-08. Eight files were read and the rest of the archive was dropped in
+    /// silence — including Organizations, which DockCV has a section for. What
+    /// this engine does not map is now *named*, with its row count, because the
+    /// archive hands over both.
+    #[test]
+    fn a_table_the_engine_does_not_map_is_named_rather_than_dropped() {
+        let dir = std::env::temp_dir().join(format!("dockcv-linkedin-extra-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("export.zip");
+
+        let file = std::fs::File::create(&path).expect("create");
+        let mut zip = zip::ZipWriter::new(file);
+        let options: zip::write::FileOptions<'_, ()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (name, body) in [
+            ("Profile.csv", "First Name,Last Name\nSofiia,Medvedenko\n"),
+            ("Honors.csv", "Title,Description\nBest Paper,ACM\nRunner Up,IEEE\n"),
+            ("Courses.csv", "Name\nDistributed Systems\n"),
+        ] {
+            use std::io::Write as _;
+            zip.start_file(name, options).expect("entry");
+            zip.write_all(body.as_bytes()).expect("write");
+        }
+        zip.finish().expect("finish");
+
+        let imported = import_linkedin(&path).expect("the archive imports");
+        assert_eq!(
+            imported.doc.profile.active().name,
+            "Sofiia Medvedenko",
+            "the mapped table still reads"
+        );
+
+        let reported = imported.unplaced.join("\n");
+        assert!(reported.contains("courses.csv — 1 row "), "{reported}");
+        assert!(reported.contains("honors.csv — 2 rows "), "{reported}");
+        assert!(
+            !reported.contains("profile.csv"),
+            "a table that *was* read must not be reported lost: {reported}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

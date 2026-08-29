@@ -76,11 +76,11 @@ pub fn import_file(path: &Path) -> Result<ImportedDoc, ImportError> {
     // what came out, and not one line of what was in it.
     match &outcome {
         Ok(imported) => log::info!(
-            "imported .{ext} as {}: {} sections, {} jobs, {} unparsed lines",
+            "imported .{ext} as {}: {} sections, {} jobs, {} unplaced items",
             imported.format_name,
             imported.doc.sections().len(),
             imported.doc.work.active().len(),
-            imported.unparsed.len(),
+            imported.unplaced.len(),
         ),
         Err(error) => log::error!("import of .{ext} failed: {error}"),
     }

@@ -16,9 +16,10 @@
 //! formats, and here it is exact.
 
 use docx_rs::{
-    read_docx, DocumentChild, Paragraph, ParagraphChild, RunChild, TableCellContent, TableChild,
-    TableRowChild,
+    read_docx, DocumentChild, HyperlinkData, InsertChild, Paragraph, ParagraphChild, Run, RunChild,
+    Table, TableCellContent, TableChild, TableRowChild,
 };
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::import::classifier::{classify_lines, is_only_dates, names_a_section};
@@ -35,21 +36,26 @@ fn validate_docx_container(buf: &[u8]) -> Result<(), String> {
 
     let mut total_size: u64 = 0;
     for i in 0..zip.len() {
-        if let Ok(entry) = zip.by_index(i) {
-            let size = entry.size();
-            if size > MAX_DOCX_ENTRY_SIZE {
-                return Err(format!(
-                    "DOCX archive entry '{}' size ({size} bytes) exceeds limit ({MAX_DOCX_ENTRY_SIZE} bytes)",
-                    entry.name()
-                ));
-            }
-            total_size += size;
-            if total_size > MAX_DOCX_UNCOMPRESSED_TOTAL {
-                return Err(format!(
-                    "DOCX total uncompressed data size exceeds maximum allowed limit of {} MB",
-                    MAX_DOCX_UNCOMPRESSED_TOTAL / (1024 * 1024)
-                ));
-            }
+        // An entry that will not open is not one to wave through. Skipping it
+        // left its bytes out of the running total, which is exactly the archive
+        // a size guard exists to catch — a malformed member is the cheapest way
+        // to hide behind one.
+        let entry = zip
+            .by_index(i)
+            .map_err(|e| format!("DOCX archive entry {i} could not be read: {e}"))?;
+        let size = entry.size();
+        if size > MAX_DOCX_ENTRY_SIZE {
+            return Err(format!(
+                "DOCX archive entry '{}' size ({size} bytes) exceeds limit ({MAX_DOCX_ENTRY_SIZE} bytes)",
+                entry.name()
+            ));
+        }
+        total_size += size;
+        if total_size > MAX_DOCX_UNCOMPRESSED_TOTAL {
+            return Err(format!(
+                "DOCX total uncompressed data size exceeds maximum allowed limit of {} MB",
+                MAX_DOCX_UNCOMPRESSED_TOTAL / (1024 * 1024)
+            ));
         }
     }
     Ok(())
@@ -67,24 +73,21 @@ pub fn import_docx(path: &Path) -> Result<ImportedDoc, String> {
     validate_docx_container(&buf)?;
     let docx = read_docx(&buf).map_err(|e| format!("Failed to parse DOCX structure: {e}"))?;
 
+    // `r:id` → the URL behind it. A hyperlink's target lives in the document's
+    // relationships, not on the element, so without this map the only thing a
+    // link can contribute is whatever text it happened to be showing.
+    let links: HashMap<&str, &str> = docx
+        .hyperlinks
+        .iter()
+        .chain(docx.document_rels.hyperlinks.iter())
+        .map(|(rid, target, _mode)| (rid.as_str(), target.as_str()))
+        .collect();
+
     let mut lines = Vec::new();
     for element in &docx.document.children {
         match element {
-            DocumentChild::Paragraph(p) => push_paragraph(&mut lines, p),
-            // Tables are content, not decoration. Many templates lay the entire
-            // CV out in one, and reading cells in row order gives back the
-            // document as it reads on screen.
-            DocumentChild::Table(t) => {
-                for TableChild::TableRow(row) in &t.rows {
-                    for TableRowChild::TableCell(cell) in &row.cells {
-                        for content in &cell.children {
-                            if let TableCellContent::Paragraph(p) = content {
-                                push_paragraph(&mut lines, p);
-                            }
-                        }
-                    }
-                }
-            }
+            DocumentChild::Paragraph(p) => push_paragraph(&mut lines, p, &links),
+            DocumentChild::Table(t) => push_table(&mut lines, t, &links, 0),
             _ => {}
         }
     }
@@ -92,24 +95,82 @@ pub fn import_docx(path: &Path) -> Result<ImportedDoc, String> {
     Ok(classify_lines("DOCX", join_split_entry_headers(lines)))
 }
 
-fn push_paragraph(out: &mut Vec<LogicalLine>, p: &Paragraph) {
-    let mut text = String::new();
-    for child in &p.children {
-        if let ParagraphChild::Run(run) = child {
-            for run_child in &run.children {
-                match run_child {
-                    RunChild::Text(t) => text.push_str(&t.text),
-                    // A tab inside a run separates two fields on one line —
-                    // `Title\tDates`. Kept as a space so the split survives.
-                    RunChild::Tab(_) => text.push(' '),
+/// How deep a table may nest before this stops following it.
+///
+/// A CV laid out in a table often puts another inside a cell for the skills
+/// grid, and two or three levels is ordinary. A hundred is a malformed or
+/// hostile file, and recursion over one would take the stack with it — so this
+/// is a guard, not a judgement about layout.
+const MAX_TABLE_DEPTH: usize = 8;
+
+/// Tables are content, not decoration. Many templates lay the entire CV out in
+/// one, and reading cells in row order gives back the document as it reads on
+/// screen.
+///
+/// Nested tables were skipped — `TableCellContent::Table` fell into the same
+/// catch-all that lost hyperlinks. A skills grid inside a layout table is the
+/// common case, so the recursion is the point rather than an edge.
+fn push_table(out: &mut Vec<LogicalLine>, table: &Table, links: &HashMap<&str, &str>, depth: usize) {
+    if depth >= MAX_TABLE_DEPTH {
+        return;
+    }
+    for TableChild::TableRow(row) in &table.rows {
+        for TableRowChild::TableCell(cell) in &row.cells {
+            for content in &cell.children {
+                match content {
+                    TableCellContent::Paragraph(p) => push_paragraph(out, p, links),
+                    TableCellContent::Table(nested) => {
+                        push_table(out, nested, links, depth + 1)
+                    }
                     _ => {}
                 }
             }
         }
     }
-    let text = text.trim();
-    if text.is_empty() {
-        return;
+}
+
+/// One paragraph, as the **lines the author wrote** rather than as one string.
+///
+/// A paragraph is not always one line. `<w:br/>` inside a run is how a template
+/// puts an employer under a job title without starting a new paragraph, and how
+/// a multi-line address is written. Those breaks used to fall into a catch-all
+/// arm and vanish *without a separator*, so two authored lines came out welded
+/// together: `Senior EngineerAcme Corp`.
+///
+/// The exception is a bullet. There the author pressed shift-enter to wrap one
+/// item, not to start a second, so its segments rejoin with a space — the same
+/// treatment a tab already gets, and for the same reason.
+fn push_paragraph(out: &mut Vec<LogicalLine>, p: &Paragraph, links: &HashMap<&str, &str>) {
+    let mut segments: Vec<String> = vec![String::new()];
+    for child in &p.children {
+        match child {
+            ParagraphChild::Run(run) => push_run(&mut segments, run, None),
+            // A link's text is inside it, and its *target* is not: the element
+            // carries an `r:id` into the document's relationships. Both matter —
+            // a CV's LinkedIn and GitHub are hyperlinks in every template, and
+            // reading only the runs threw the addresses away.
+            ParagraphChild::Hyperlink(link) => {
+                let target = match &link.link {
+                    HyperlinkData::External { rid, .. } => links.get(rid.as_str()).copied(),
+                    HyperlinkData::Anchor { .. } => None,
+                };
+                for nested in &link.children {
+                    if let ParagraphChild::Run(run) = nested {
+                        push_run(&mut segments, run, target);
+                    }
+                }
+            }
+            // A tracked insertion is text the author added and has not yet
+            // accepted. It is on the page; it belongs in the import.
+            ParagraphChild::Insert(insert) => {
+                for nested in &insert.children {
+                    if let InsertChild::Run(run) = nested {
+                        push_run(&mut segments, run, None);
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     let style = p
@@ -119,17 +180,72 @@ fn push_paragraph(out: &mut Vec<LogicalLine>, p: &Paragraph) {
         .map(|s| s.val.to_lowercase())
         .unwrap_or_default();
     let numbered = p.property.numbering_property.is_some();
+    let is_bullet = numbered || style.contains("listbullet") || style.contains("listparagraph");
 
-    let kind = kind_of(&style, numbered, text, out.is_empty());
+    let lines: Vec<String> = if is_bullet {
+        vec![segments.join(" ")]
+    } else {
+        segments
+    };
 
-    out.push(LogicalLine::new(
-        if kind == LineKind::Bullet {
-            without_bullet(text)
-        } else {
-            text
-        },
-        kind,
-    ));
+    for line in lines {
+        let text = line.split_whitespace().collect::<Vec<_>>().join(" ");
+        if text.is_empty() {
+            continue;
+        }
+        let kind = kind_of(&style, numbered, &text, out.is_empty());
+        out.push(LogicalLine::new(
+            if kind == LineKind::Bullet {
+                without_bullet(&text)
+            } else {
+                &text
+            },
+            kind,
+        ));
+    }
+}
+
+/// Append one run's text to the segment being built, starting a new segment at
+/// every line break.
+///
+/// `target` is the URL a surrounding hyperlink points at. It is appended once,
+/// and only when the link's own text is not already the address — `linkedin.com/in/x`
+/// shown as itself needs no help, while a link reading `LinkedIn` loses
+/// everything without it.
+fn push_run(segments: &mut Vec<String>, run: &Run, target: Option<&str>) {
+    let before = segments.len();
+    let start = segments.last().map(|s| s.len()).unwrap_or(0);
+
+    for run_child in &run.children {
+        match run_child {
+            RunChild::Text(t) => segments.last_mut().expect("never empty").push_str(&t.text),
+            // A tab inside a run separates two fields on one line —
+            // `Title\tDates`. Kept as a space so the split survives.
+            RunChild::Tab(_) => segments.last_mut().expect("never empty").push(' '),
+            // The line the author actually ended.
+            RunChild::Break(_) | RunChild::CarriageReturn(_) => segments.push(String::new()),
+            _ => {}
+        }
+    }
+
+    let Some(target) = target.map(str::trim).filter(|t| !t.is_empty()) else {
+        return;
+    };
+    // Compare against what this run contributed, not the whole paragraph: a
+    // contact line holds several links and each one answers for itself.
+    let contributed: String = if segments.len() == before {
+        segments.last().map(|s| s[start..].to_string()).unwrap_or_default()
+    } else {
+        segments[before - 1..].join(" ")
+    };
+    let bare = target.trim_start_matches("mailto:");
+    if !contributed.contains(bare) {
+        let last = segments.last_mut().expect("never empty");
+        if !last.is_empty() {
+            last.push(' ');
+        }
+        last.push_str(bare);
+    }
 }
 
 /// What a paragraph is, from its style and its words.
@@ -212,6 +328,160 @@ fn join_split_entry_headers(lines: Vec<LogicalLine>) -> Vec<LogicalLine> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use docx_rs::{BreakType, Hyperlink, Run as DocxRun};
+
+    /// Run one paragraph through the reader half, with a rels table behind it.
+    fn read(paragraph: Paragraph, rels: &[(&str, &str)]) -> Vec<LogicalLine> {
+        let links: HashMap<&str, &str> = rels.iter().copied().collect();
+        let mut out = Vec::new();
+        push_paragraph(&mut out, &paragraph, &links);
+        out
+    }
+
+    fn texts(lines: &[LogicalLine]) -> Vec<&str> {
+        lines.iter().map(|l| l.text.as_str()).collect()
+    }
+
+    /// I-04. A `<w:br/>` is where the author ended a line. It used to fall into
+    /// a catch-all arm and disappear *without a separator*, welding two lines
+    /// into one: `Senior EngineerAcme Corp`.
+    #[test]
+    fn a_line_break_inside_a_run_ends_the_line() {
+        let paragraph = Paragraph::new().add_run(
+            DocxRun::new()
+                .add_text("Senior Engineer")
+                .add_break(BreakType::TextWrapping)
+                .add_text("Acme Corp"),
+        );
+        assert_eq!(
+            texts(&read(paragraph, &[])),
+            vec!["Senior Engineer", "Acme Corp"]
+        );
+    }
+
+    /// …except in a bullet, where shift-enter wraps one item rather than
+    /// starting a second. Same reasoning the tab arm already carries.
+    #[test]
+    fn a_line_break_inside_a_bullet_is_a_space() {
+        let paragraph = Paragraph::new().style("ListBullet").add_run(
+            DocxRun::new()
+                .add_text("Cut p99 latency in half")
+                .add_break(BreakType::TextWrapping)
+                .add_text("across the billing path"),
+        );
+        let lines = read(paragraph, &[]);
+        assert_eq!(
+            texts(&lines),
+            vec!["Cut p99 latency in half across the billing path"]
+        );
+        assert_eq!(lines[0].kind, LineKind::Bullet);
+    }
+
+    /// I-03. A hyperlink's text lives inside it and its target does not — the
+    /// element carries an `r:id` into the document's relationships. Reading only
+    /// `ParagraphChild::Run` threw away every address on the contact line.
+    #[test]
+    fn a_hyperlink_contributes_both_its_words_and_its_address() {
+        let link = Hyperlink {
+            link: HyperlinkData::External {
+                rid: "rId7".to_string(),
+                path: String::new(),
+            },
+            history: None,
+            children: vec![ParagraphChild::Run(Box::new(
+                DocxRun::new().add_text("LinkedIn"),
+            ))],
+        };
+        let lines = read(
+            Paragraph::new().add_hyperlink(link),
+            &[("rId7", "https://linkedin.com/in/sofiia")],
+        );
+        assert_eq!(texts(&lines), vec!["LinkedIn https://linkedin.com/in/sofiia"]);
+    }
+
+    /// A link that already shows its own address gains nothing from having it
+    /// repeated — the common shape on a CV's contact line.
+    #[test]
+    fn a_link_that_shows_its_address_is_not_made_to_say_it_twice() {
+        let link = Hyperlink {
+            link: HyperlinkData::External {
+                rid: "rId3".to_string(),
+                path: String::new(),
+            },
+            history: None,
+            children: vec![ParagraphChild::Run(Box::new(
+                DocxRun::new().add_text("s@example.com"),
+            ))],
+        };
+        let lines = read(
+            Paragraph::new().add_hyperlink(link),
+            &[("rId3", "mailto:s@example.com")],
+        );
+        assert_eq!(texts(&lines), vec!["s@example.com"]);
+    }
+
+    /// A link whose target is not in the rels table still gives up its words
+    /// rather than the whole paragraph.
+    #[test]
+    fn an_unresolvable_link_still_contributes_its_text() {
+        let link = Hyperlink {
+            link: HyperlinkData::External {
+                rid: "rId99".to_string(),
+                path: String::new(),
+            },
+            history: None,
+            children: vec![ParagraphChild::Run(Box::new(
+                DocxRun::new().add_text("Portfolio"),
+            ))],
+        };
+        assert_eq!(texts(&read(Paragraph::new().add_hyperlink(link), &[])), vec!["Portfolio"]);
+    }
+
+    /// I-11. A skills grid inside a layout table is the ordinary shape, and
+    /// `TableCellContent::Table` fell into the same catch-all that lost links.
+    #[test]
+    fn a_table_inside_a_cell_is_read_rather_than_skipped() {
+        use docx_rs::{Table as DocxTable, TableCell, TableRow};
+
+        let inner = DocxTable::new(vec![TableRow::new(vec![
+            TableCell::new().add_paragraph(Paragraph::new().add_run(DocxRun::new().add_text("Rust"))),
+            TableCell::new().add_paragraph(Paragraph::new().add_run(DocxRun::new().add_text("Kafka"))),
+        ])]);
+        let outer = DocxTable::new(vec![TableRow::new(vec![TableCell::new()
+            .add_paragraph(Paragraph::new().add_run(DocxRun::new().add_text("Skills")))
+            .add_table(inner)])]);
+
+        let mut out = Vec::new();
+        push_table(&mut out, &outer, &HashMap::new(), 0);
+        assert_eq!(texts(&out), vec!["Skills", "Rust", "Kafka"]);
+    }
+
+    /// The guard, not the layout: a file that nests past the cap stops rather
+    /// than taking the stack with it.
+    #[test]
+    fn nesting_stops_at_the_cap() {
+        use docx_rs::{Table as DocxTable, TableCell, TableRow};
+
+        let mut table = DocxTable::new(vec![TableRow::new(vec![TableCell::new()
+            .add_paragraph(Paragraph::new().add_run(DocxRun::new().add_text("deepest")))])]);
+        for level in 0..MAX_TABLE_DEPTH + 3 {
+            table = DocxTable::new(vec![TableRow::new(vec![TableCell::new()
+                .add_paragraph(
+                    Paragraph::new().add_run(DocxRun::new().add_text(format!("level{level}"))),
+                )
+                .add_table(table)])]);
+        }
+
+        let mut out = Vec::new();
+        push_table(&mut out, &table, &HashMap::new(), 0);
+        assert_eq!(out.len(), MAX_TABLE_DEPTH, "one line per level reached");
+        assert!(
+            !texts(&out).contains(&"deepest"),
+            "the cap has to actually stop: {:?}",
+            texts(&out)
+        );
+    }
 
     fn lines(input: Vec<(&str, LineKind)>) -> Vec<LogicalLine> {
         input

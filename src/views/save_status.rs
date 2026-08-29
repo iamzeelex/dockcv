@@ -10,7 +10,7 @@
 //! failure that must be impossible to miss.
 //!
 //! The same banner carries the read half ([`report_unreadable`]), because a
-//! document that will not parse now *stays* unparsed rather than being replaced
+//! document that will not parse now *stays* unplaced rather than being replaced
 //! by a fresh sample — and refusing to open something is only defensible if the
 //! refusal is visible.
 //!

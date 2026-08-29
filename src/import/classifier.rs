@@ -114,10 +114,27 @@ fn get_email_regex() -> &'static Regex {
 
 fn get_phone_regex() -> &'static Regex {
     PHONE_REGEX.get_or_init(|| {
-        // `[ .-]`, not `[\s.-]`: `\s` matches a newline, so a postal code and
-        // the fragment of a number on the line below joined into one "phone"
-        // (`10012\n212-998`). A phone number does not wrap.
-        Regex::new(r"(?:\+?\d{1,3}[ .-]?)?\(?\d{2,4}\)?[ .-]?\d{3,4}[ .-]\d{3,4}").unwrap()
+        // Two shapes, because one rule cannot cover both without letting dates
+        // in.
+        //
+        // The second alternative is the original: no country code, so a
+        // separator before the final group is what tells `415-555-0134` from
+        // `2019 - 2021`. It has to stay.
+        //
+        // The first is new. With an explicit `+` country code there is no
+        // ambiguity left to resolve — nothing writes a date range that way — so
+        // the final separator can be optional, and `+49 30 123456` reads. An
+        // ordinary Berlin number was falling through: the local part is six
+        // digits with nothing between them, and the old pattern demanded a
+        // separator there.
+        //
+        // `[ .-]`, not `[\s.-]`, throughout: `\s` matches a newline, so a postal
+        // code and the fragment of a number on the line below joined into one
+        // "phone" (`10012\n212-998`). A phone number does not wrap.
+        Regex::new(
+            r"(?:\+\d{1,3}[ .-]?\(?\d{1,4}\)?[ .-]?\d{3,4}[ .-]?\d{2,4}|\(?\d{2,4}\)?[ .-]?\d{3,4}[ .-]\d{3,4})",
+        )
+        .unwrap()
     })
 }
 
@@ -714,6 +731,34 @@ pub fn classify_raw_text(format_name: &str, raw_text: &str) -> ImportedDoc {
     classify_lines(format_name, lines)
 }
 
+/// The part of the document a contact detail may come from.
+///
+/// Everything above the first heading — which is the contact block by
+/// definition, since a CV puts its name and how to reach you before it starts
+/// saying anything — plus the body of an explicit `CONTACT` section for the
+/// templates that give it one.
+///
+/// A document with no headings at all yields the whole thing, and that is
+/// deliberate rather than an oversight: the classifier is already treating every
+/// line as contact-block material in that case (`SectionKind::Unknown` runs
+/// `absorb_contact` over all of them), and having the two disagree about where
+/// the block ends would be worse than the degenerate case itself.
+fn contact_region(lines: &[layout::LogicalLine]) -> String {
+    let mut region: Vec<&str> = Vec::new();
+    let mut in_contact_section = true;
+
+    for line in lines {
+        if line.kind == layout::LineKind::Heading {
+            in_contact_section = classify_header(&line.text) == SectionKind::Contact;
+            continue;
+        }
+        if in_contact_section {
+            region.push(line.text.as_str());
+        }
+    }
+    region.join("\n")
+}
+
 /// Turn logical lines into a candidate [`ImportedDoc`].
 ///
 /// The shared half of the importer: every format ends up here, whether its
@@ -723,21 +768,59 @@ pub fn classify_raw_text(format_name: &str, raw_text: &str) -> ImportedDoc {
 /// opens an entry, and a PDF can only infer it from a date range.
 pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> ImportedDoc {
     let mut resume = Resume::default();
-    let mut unparsed = Vec::new();
+    let mut unplaced = Vec::new();
 
-    let raw_text = lines
+    // Contact details come from the **contact block**, not from anywhere in the
+    // document. These three regexes used to run over the whole joined text and
+    // take the first hit each, which on an ordinary CV meant a vendor named in
+    // a bullet became the user's own website:
+    //
+    // ```
+    // • Migrated billing to https://stripe.com and cut p99 40%
+    // • Reached out on +1 415 555 0134 for the vendor escalation
+    // ```
+    //
+    // …imported as `basics.url = "https://stripe.com"` and
+    // `basics.phone = "+1 415 555 0134"` — a payment processor's site and
+    // somebody else's number, on the person's own CV.
+    //
+    // The region is the same one `absorb_contact` works over, so the two agree:
+    // everything above the first heading, plus anything under an explicit
+    // CONTACT heading.
+    let whole_text = lines
         .iter()
         .map(|l| l.text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
-    let raw_text = raw_text.as_str();
-    if let Some(mat) = get_email_regex().find(raw_text) {
+    let contact_text = contact_region(&lines);
+    let contact_text = contact_text.as_str();
+
+    // The email falls back to the whole document; the phone and the website do
+    // not. The asymmetry is the point.
+    //
+    // An address is a strong claim of identity — a CV that carries one carries
+    // the author's, and a company address in a bullet is rare enough to lose to
+    // the cost of dropping the user's own. A URL is the opposite: naming a
+    // vendor, a repository or a client's site inside a bullet is ordinary, which
+    // is exactly how `https://stripe.com` became someone's personal website. A
+    // phone number sits with the URL.
+    //
+    // What makes the fallback earn its keep rather than undo the fix: a
+    // two-column PDF interleaves its sidebar with its body (see
+    // `engines::pdf`'s `a_two_column_page_is_read_in_content_stream_order`), so
+    // the contact block is not above the first heading at all and a
+    // region-only reading would lose the address outright.
+    let email_scope = match get_email_regex().is_match(contact_text) {
+        true => contact_text,
+        false => whole_text.as_str(),
+    };
+    if let Some(mat) = get_email_regex().find(email_scope) {
         resume.basics.email = mat.as_str().to_string();
     }
-    if let Some(mat) = get_phone_regex().find(raw_text) {
+    if let Some(mat) = get_phone_regex().find(contact_text) {
         resume.basics.phone = mat.as_str().to_string();
     }
-    if let Some(mat) = get_url_regex().find(raw_text) {
+    if let Some(mat) = get_url_regex().find(contact_text) {
         resume.basics.url = mat.as_str().to_string();
     }
 
@@ -854,7 +937,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 // unrecognised text is reported as dropped.
                 //
                 // Before this, `first_lines` took three lines and everything
-                // after went to `unparsed`, which is why a CV's own email,
+                // after went to `unplaced`, which is why a CV's own email,
                 // LinkedIn and website were reported as "didn't fit any
                 // section" — while the email had in fact already been picked
                 // up by the regex pass above, so it was both used *and*
@@ -864,7 +947,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 } else if first_lines.len() < 3 {
                     first_lines.push(line);
                 } else {
-                    unparsed.push(line.to_string());
+                    unplaced.push(line.to_string());
                 }
             }
             SectionKind::Contact => {
@@ -873,7 +956,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 // the top of the document, and a second reading would overwrite
                 // it with whatever the block happened to start with.
                 if !absorb_contact(line, &mut resume) {
-                    unparsed.push(line.to_string());
+                    unplaced.push(line.to_string());
                 }
             }
             SectionKind::Summary => {
@@ -1158,13 +1241,126 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
     // Everything else is derivable from the document, and therefore the same
     // for every engine — which is what the old per-engine key-writing was not.
     imported.observe();
-    imported.unparsed = unparsed;
+    imported.unplaced = unplaced;
     imported
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A phone number with a country code and no separator inside the local
+    /// part — an ordinary Berlin number — used to fall through: the pattern
+    /// demanded a separator before the final group, which is what tells
+    /// `415-555-0134` from `2019 - 2021`. With an explicit `+` there is no such
+    /// ambiguity, so that shape gets its own alternative.
+    #[test]
+    fn a_country_code_makes_the_last_separator_optional() {
+        let phone = get_phone_regex();
+        for number in [
+            "+49 30 123456",
+            "+1 415 555 0134",
+            "+44 20 7946 0958",
+            "+380 44 123 4567",
+            "020 7946 0958",
+            "415-555-0134",
+            "(415) 555-0134",
+        ] {
+            assert!(phone.is_match(number), "should read as a phone: {number}");
+        }
+    }
+
+    /// …and the guard that alternative could have broken: a date range is not a
+    /// phone number, whichever way it is written.
+    #[test]
+    fn a_date_range_is_still_not_a_phone_number() {
+        let phone = get_phone_regex();
+        for dates in [
+            "2019 - 2021",
+            "2019 – 2021",
+            "Jan 2021 - Mar 2023",
+            "1999-2003",
+            "2014 2018",
+            "2021.01 - 2024.06",
+        ] {
+            assert!(!phone.is_match(dates), "read as a phone number: {dates}");
+        }
+    }
+
+    /// I-09, measured. These three regexes used to run over the whole document
+    /// and take the first hit each, so a vendor named in a bullet became the
+    /// person's own website and a number in a bullet became their phone.
+    #[test]
+    fn a_url_in_a_bullet_is_not_the_persons_own_website() {
+        let raw = "Sofiia Medvedenko\n\
+                   Staff Engineer\n\
+                   s@example.com\n\
+                   \n\
+                   EXPERIENCE\n\
+                   Staff Engineer, Acme  Jan 2021 – Present\n\
+                   • Migrated billing to https://stripe.com and cut p99 40%\n\
+                   • Reached out on +1 415 555 0134 for the vendor escalation\n";
+        let basics = classify_raw_text("PDF", raw).doc.profile.active().clone();
+
+        assert_eq!(basics.email, "s@example.com", "the contact block still reads");
+        assert_eq!(basics.url, "", "a vendor's site is not the user's: {:?}", basics.url);
+        assert_eq!(basics.phone, "", "someone else's number: {:?}", basics.phone);
+    }
+
+    /// The exception the asymmetry buys. A two-column PDF interleaves its
+    /// sidebar with its body, so the contact block is not above the first
+    /// heading and a region-only reading would drop the address. An email is a
+    /// strong enough claim of identity to take from anywhere; a URL is not.
+    #[test]
+    fn an_email_below_the_first_heading_is_still_the_persons_own() {
+        let raw = "Sofiia Medvedenko\n\
+                   EXPERIENCE\n\
+                   s@example.com\n\
+                   Staff Engineer, Acme  Jan 2021 – Present\n\
+                   • Shipped it on https://vendor.example\n";
+        let basics = classify_raw_text("PDF", raw).doc.profile.active().clone();
+
+        assert_eq!(basics.email, "s@example.com");
+        assert_eq!(
+            basics.url, "",
+            "a vendor's site is still not the user's: {:?}",
+            basics.url
+        );
+    }
+
+    /// …and the block itself is still read, which is the half that must not
+    /// regress: restricting the region would be worthless if it also lost the
+    /// details it was protecting.
+    #[test]
+    fn the_contact_block_still_gives_up_all_three() {
+        let raw = "Sofiia Medvedenko\n\
+                   s@example.com · +49 30 555 0134 · https://sofiia.dev\n\
+                   \n\
+                   EXPERIENCE\n\
+                   Staff Engineer, Acme  Jan 2021 – Present\n";
+        let basics = classify_raw_text("PDF", raw).doc.profile.active().clone();
+
+        assert_eq!(basics.email, "s@example.com");
+        assert_eq!(basics.phone, "+49 30 555 0134");
+        assert_eq!(basics.url, "https://sofiia.dev");
+    }
+
+    /// A template that gives contact details their own heading puts them below
+    /// the first one, so the region has to follow the heading rather than stop
+    /// at it.
+    #[test]
+    fn an_explicit_contact_section_is_part_of_the_region() {
+        let raw = "Sofiia Medvedenko\n\
+                   \n\
+                   EXPERIENCE\n\
+                   Staff Engineer, Acme  Jan 2021 – Present\n\
+                   • Shipped it on https://vendor.example\n\
+                   \n\
+                   CONTACT\n\
+                   https://sofiia.dev\n";
+        let basics = classify_raw_text("PDF", raw).doc.profile.active().clone();
+        assert_eq!(basics.url, "https://sofiia.dev");
+    }
 
     /// A page break inside a paragraph glues the running header onto the line
     /// above it, so the bullet arrived as
@@ -1424,7 +1620,7 @@ mod tests {
             "contact is not a section: {:#?}",
             imported.doc.custom_sections
         );
-        assert!(imported.unparsed.is_empty(), "{:?}", imported.unparsed);
+        assert!(imported.unplaced.is_empty(), "{:?}", imported.unplaced);
     }
 
     /// A line of the CV's own prose containing the word *work* is not a Work
@@ -1495,10 +1691,10 @@ mod tests {
 
         // The heart of it: contact data must not be reported as dropped. The
         // email in particular was both parsed *and* listed as lost.
-        for line in &imported.unparsed {
+        for line in &imported.unplaced {
             assert!(
                 !line.contains('@') && !line.contains("http"),
-                "contact line reported as unparsed: {line}"
+                "contact line reported as unplaced: {line}"
             );
         }
     }

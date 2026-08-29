@@ -14,8 +14,23 @@ pub struct ImportedDoc {
     /// level was the wrong shape. Empty on a clean import, which is the point:
     /// a flag that is always lit carries no information.
     pub notes: Vec<(Part, Note)>,
-    /// Any raw text lines or blocks that could not be mapped into the schema.
-    pub unparsed: Vec<String>,
+    /// Content the importer **read and had nowhere to put**.
+    ///
+    /// Named `unparsed` once, which claimed something untrue in both
+    /// directions. The classifier absorbs: Work and Education open a new entry
+    /// for any line that matches nothing, Skills continues the group above. So
+    /// nothing here failed to *parse* — it parsed and DockCV has no field for
+    /// it, which is a different fact and the one US-01 is about.
+    ///
+    /// What lands here:
+    ///
+    /// * from the classifier, lines in the contact block that are not contact
+    ///   details;
+    /// * from JSON Resume, the spec sections DockCV does not model —
+    ///   `interests`, `references`, `basics.image`;
+    /// * from LinkedIn, every CSV in the archive this engine does not map,
+    ///   named with its row count.
+    pub unplaced: Vec<String>,
     /// Source format name (e.g. "PDF", "DOCX", "JSON Resume", "Markdown").
     pub format_name: String,
 }
@@ -25,7 +40,7 @@ impl ImportedDoc {
         Self {
             doc,
             notes: Vec::new(),
-            unparsed: Vec::new(),
+            unplaced: Vec::new(),
             format_name: format_name.into(),
         }
     }

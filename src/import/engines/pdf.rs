@@ -142,6 +142,72 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// I-15. A two-column CV — a sidebar beside the body — is a very common
+    /// shape, and nothing in the importer detects columns: `layout.rs` derives
+    /// **one** measure from the document's line lengths.
+    ///
+    /// This test does not assert that columns work. It pins what actually
+    /// happens, which is what the finding asked for: the audit recorded the case
+    /// as *unknown*, and an unknown in the first minute of the product is worth
+    /// converting into a known even when the answer is "it depends on the
+    /// exporter".
+    ///
+    /// What it establishes: reading order follows the **content stream**, not
+    /// the geometry. A typesetter that writes one column and then the other
+    /// gives back one column and then the other, which reads correctly. One that
+    /// interleaves by visual row gives back interleaved lines, and nothing here
+    /// puts them back. The fixture writes the worst case — row-interleaved — so
+    /// the failure mode is recorded rather than assumed.
+    #[test]
+    fn a_two_column_page_is_read_in_content_stream_order() {
+        let dir = std::env::temp_dir().join(format!("dockcv-pdf-cols-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+
+        // Sidebar at x=60, body at x=300, written row by row as a naive
+        // exporter would.
+        let mut content = String::new();
+        for (row, (left, right)) in [
+            ("Sofiia Medvedenko", "EXPERIENCE"),
+            ("s@example.com", "Staff Engineer, Acme"),
+            ("Berlin", "Cut p99 latency in half"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let y = 720 - (row as i32 * 24);
+            content.push_str(&format!("BT /F1 12 Tf 60 {y} Td ({left}) Tj ET\n"));
+            content.push_str(&format!("BT /F1 12 Tf 300 {y} Td ({right}) Tj ET\n"));
+        }
+
+        let file = dir.join("two-column.pdf");
+        std::fs::write(&file, one_page_pdf_with_content(content.as_bytes())).expect("write");
+        let text = extract_text(&file).expect("extraction succeeds");
+
+        // Every piece survives — nothing is dropped by the column layout.
+        for fragment in [
+            "Sofiia Medvedenko",
+            "s@example.com",
+            "EXPERIENCE",
+            "Staff Engineer, Acme",
+            "Cut p99 latency in half",
+        ] {
+            assert!(text.contains(fragment), "lost {fragment:?} from:\n{text}");
+        }
+
+        // …but the sidebar and the body are interleaved, because that is the
+        // order they were written in. A person's email lands between two lines
+        // of their work history. This is the limitation, stated:
+        let name_at = text.find("Sofiia Medvedenko").expect("name");
+        let heading_at = text.find("EXPERIENCE").expect("heading");
+        let email_at = text.find("s@example.com").expect("email");
+        assert!(
+            name_at < heading_at && heading_at < email_at,
+            "reading order is the content stream's, not the page's:\n{text}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Build a one-page PDF whose only unusual property is the `/Encoding`
     /// named on its font. Everything else — xref, catalog, page tree, content
     /// stream — is valid, which is the point: this is not corrupt input, it is

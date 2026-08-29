@@ -21,7 +21,7 @@
 //! `projects`, `languages`, `awards` and `publications` become **custom
 //! sections** — the same shape the LinkedIn engine already gives them.
 //! `interests`, `references` and `basics.image` have no home at all, so they are
-//! reported in [`ImportedDoc::unparsed`] instead of being dropped in silence
+//! reported in [`ImportedDoc::unplaced`] instead of being dropped in silence
 //! (US-01).
 
 use serde::Deserialize;
@@ -474,7 +474,7 @@ impl JsonResume {
         if !self.basics.image.trim().is_empty() {
             unplaced.push(format!("basics.image: {}", self.basics.image));
         }
-        imported.unparsed = unplaced;
+        imported.unplaced = unplaced;
         imported
     }
 }
@@ -596,14 +596,14 @@ mod tests {
     fn what_has_nowhere_to_go_is_reported_rather_than_dropped() {
         let imported = import(SPEC_SHAPED).expect("parses");
         assert!(
-            imported.unparsed.iter().any(|l| l.starts_with("interests:")),
+            imported.unplaced.iter().any(|l| l.starts_with("interests:")),
             "{:?}",
-            imported.unparsed
+            imported.unplaced
         );
         assert!(
-            imported.unparsed.iter().any(|l| l.starts_with("references:")),
+            imported.unplaced.iter().any(|l| l.starts_with("references:")),
             "{:?}",
-            imported.unparsed
+            imported.unplaced
         );
     }
 

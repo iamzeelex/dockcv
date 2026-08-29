@@ -64,11 +64,41 @@ pub enum ImportStep {
 /// document.
 const PREVIEW_LINES: usize = 4;
 
+/// How long one of those entries may run before it is cut.
+///
+/// A preview line is a job title or a degree — a few words. When the parser has
+/// gone wrong it is sometimes a whole paragraph it mistook for one, and that is
+/// worth *seeing* but not worth six lines of the card: the point is to recognise
+/// the mistake, not to read it.
+const PREVIEW_CHARS: usize = 88;
+
+fn shorten(line: &str) -> String {
+    if line.chars().count() <= PREVIEW_CHARS {
+        return line.to_string();
+    }
+    let cut: String = line.chars().take(PREVIEW_CHARS).collect();
+    // Break at the last space so the cut lands between words.
+    let cut = match cut.rsplit_once(' ') {
+        Some((head, _)) if head.chars().count() > PREVIEW_CHARS / 2 => head.to_string(),
+        _ => cut,
+    };
+    format!("{}…", cut.trim_end_matches([',', '.', ' ']))
+}
+
+
 /// Standardized section item data for Step 2 review.
 struct SectionReviewItem {
     name: String,
     detail: String,
     needs_review: bool,
+    /// Nothing came out of this section.
+    ///
+    /// An empty built-in section with nothing noticed about it is not shown at
+    /// all: `Certificates · 0 entries` on a CV that has no certificates is a row
+    /// that tells the reader nothing and pushes the ones that matter down. An
+    /// empty section the *source* said was there keeps its place, because then
+    /// the emptiness is the finding and a note says so.
+    empty: bool,
     /// What the parser noticed about this section, one sentence each.
     ///
     /// Was a single `Option<&'static str>` carrying `"Partly guessed — worth a
@@ -110,6 +140,12 @@ impl SectionReviewItem {
 
         let work_highlights: usize = work.iter().map(|w| w.highlights.len()).sum();
 
+        // `1 entries` and `1 category groups` were on screen. A count the user
+        // reads is a sentence, not a template with a number pushed into it.
+        let count = |n: usize, one: &str, many: &str| {
+            format!("{n} {}", if n == 1 { one } else { many })
+        };
+
         // Join the parts an entry actually has — an empty field would otherwise
         // show up as a stray separator, which reads as data the parser lost.
         let line = |parts: [&str; 2]| {
@@ -125,6 +161,7 @@ impl SectionReviewItem {
             (
                 "Profile",
                 format!("{}, {}, {}", profile.name, profile.label, profile.email),
+                false,
                 notes(Part::Profile),
                 vec![
                     line([&profile.name, &profile.label]),
@@ -133,13 +170,19 @@ impl SectionReviewItem {
             ),
             (
                 "Work Experience",
-                format!("{} roles, {work_highlights} highlights", work.len()),
+                format!(
+                    "{}, {}",
+                    count(work.len(), "role", "roles"),
+                    count(work_highlights, "highlight", "highlights")
+                ),
+                work.is_empty(),
                 notes(Part::Work),
                 work.iter().map(|w| line([&w.position, &w.name])).collect(),
             ),
             (
                 "Education",
-                format!("{} entries", edu.len()),
+                count(edu.len(), "entry", "entries"),
+                edu.is_empty(),
                 notes(Part::Education),
                 edu.iter()
                     .map(|e| line([&e.study_type, &e.institution]))
@@ -147,25 +190,29 @@ impl SectionReviewItem {
             ),
             (
                 "Skills",
-                format!("{} category groups", skills.len()),
+                count(skills.len(), "group", "groups"),
+                skills.is_empty(),
                 notes(Part::Skills),
                 skills.iter().map(|s| s.name.clone()).collect(),
             ),
             (
                 "Certificates",
-                format!("{} entries", certs.len()),
+                count(certs.len(), "entry", "entries"),
+                certs.is_empty(),
                 notes(Part::Certificates),
                 certs.iter().map(|c| line([&c.name, &c.issuer])).collect(),
             ),
         ]
         .into_iter()
-        .map(|(name, detail, notes, preview)| Self {
+        .map(|(name, detail, empty, notes, preview)| Self {
             name: name.to_string(),
             detail,
+            empty,
             needs_review: !notes.is_empty(),
             notes,
             preview: preview.into_iter().filter(|l| !l.is_empty()).collect(),
         })
+        .filter(|item| !item.empty || item.needs_review)
         // Sections the document had and the model has no built-in shape for —
         // Projects, Languages, Interests. They were imported and **not listed**,
         // so "5 sections found" was five however many the CV really had, and a
@@ -179,6 +226,7 @@ impl SectionReviewItem {
                     entries.len(),
                     if entries.len() == 1 { "entry" } else { "entries" }
                 ),
+                empty: entries.is_empty(),
                 needs_review: false,
                 notes: Vec::new(),
                 preview: entries
@@ -391,23 +439,23 @@ pub fn render_parsing_step<V: 'static>(
         )
 }
 
-/// The lines the classifier could not place in any section.
+/// What the importer read and had nowhere to put.
 ///
 /// This is the requirement US-01 is actually about — "everything not understood
 /// is flagged, not silently dropped" — and until now nothing rendered
-/// `ImportedDoc::unparsed` at all: the importer computed it and threw it away,
+/// `ImportedDoc::unplaced` at all: the importer computed it and threw it away,
 /// so a CV could lose paragraphs on the way in with no trace. Shown verbatim,
 /// because a summary of what was lost is not evidence of what was lost.
-fn render_unparsed<V: 'static>(cx: &mut Context<V>, imported: &ImportedDoc) -> Option<impl IntoElement> {
-    if imported.unparsed.is_empty() {
+fn render_unplaced<V: 'static>(cx: &mut Context<V>, imported: &ImportedDoc) -> Option<impl IntoElement> {
+    if imported.unplaced.is_empty() {
         return None;
     }
     let theme = *cx.theme();
-    let count = imported.unparsed.len();
+    let count = imported.unplaced.len();
     // Long tails are common in a scanned PDF; show enough to judge by and say
     // how many are behind it rather than pretending the list is complete.
     const SHOWN: usize = 12;
-    let shown: Vec<String> = imported.unparsed.iter().take(SHOWN).cloned().collect();
+    let shown: Vec<String> = imported.unplaced.iter().take(SHOWN).cloned().collect();
     let hidden = count.saturating_sub(shown.len());
 
     Some(
@@ -426,7 +474,7 @@ fn render_unparsed<V: 'static>(cx: &mut Context<V>, imported: &ImportedDoc) -> O
                     .text_style(TextStyle::label())
                     .text_color(theme.warning)
                     .child(format!(
-                        "{count} line{} didn't fit any section",
+                        "{count} thing{} came in that DockCV has nowhere for",
                         if count == 1 { "" } else { "s" }
                     )),
             )
@@ -435,8 +483,9 @@ fn render_unparsed<V: 'static>(cx: &mut Context<V>, imported: &ImportedDoc) -> O
                     .text_style(TextStyle::label())
                     .text_color(theme.text_muted)
                     .child(
-                        "They are not in the imported CV. Copy anything worth keeping before you \
-                         continue, or undo the import and bring the file in another format.",
+                        "They were read from your file and are not in the imported CV. Copy \
+                         anything worth keeping before you continue, or undo the import and bring \
+                         the file in another format.",
                     ),
             )
             .children(shown.into_iter().map(|line| {
@@ -482,61 +531,57 @@ pub fn render_step2_review_split<V: 'static>(
         .shadow_lg()
         .flex()
         .flex_col()
-        // Top Bar
+        // Header. `Undo import` used to sit alone in a bar of its own at the
+        // top, which made the one control on screen the one that throws the
+        // work away. Both decisions now live together in the footer, where a
+        // decision belongs.
         .child(
             div()
                 .flex()
-                .items_center()
+                .items_start()
                 .justify_between()
+                .gap(px(16.0))
                 .px(px(22.0))
-                .py(px(16.0))
-                .border_b_1()
-                .border_color(theme.border)
+                .pt(px(20.0))
+                .pb(px(12.0))
                 .child(
-                    // A bordered control, not accent-coloured text: this is the
-                    // only way out of the review step, and it has to carry the
-                    // same weight as "Back to the gallery" one step earlier.
-                    Button::new("undo-import-btn")
-                        .toolbar()
-                        .icon(lucide("undo"))
-                        .label("Undo import")
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                            on_undo(this, cx);
-                        })),
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(3.0))
+                        .child(
+                            div()
+                                .text_style(TextStyle::title())
+                                .text_color(theme.text)
+                                .child(format!("{total_count} sections found")),
+                        )
+                        .child(
+                            div()
+                                // Amber, not accent: this is a warning about
+                                // work left to do, and accent-on-mono read as a
+                                // link that went nowhere.
+                                .text_style(TextStyle::label())
+                                .text_color(if flagged_count > 0 {
+                                    theme.warning
+                                } else {
+                                    theme.text_muted
+                                })
+                                .child(if flagged_count > 0 {
+                                    format!(
+                                        "{flagged_count} need{} a quick look before you continue",
+                                        if flagged_count == 1 { "s" } else { "" }
+                                    )
+                                } else {
+                                    "Everything came through cleanly".to_string()
+                                }),
+                        ),
                 )
                 .child(
                     div()
-                        .text_style(TextStyle::meta())
+                        .flex_none()
+                        .text_style(TextStyle::chip())
                         .text_color(theme.text_subtle)
                         .child(imported.format_name.clone()),
-                ),
-        )
-        // Overview Header
-        .child(
-            div()
-                .px(px(22.0))
-                .pt(px(18.0))
-                .pb(px(8.0))
-                .child(
-                    div()
-                        .text_style(TextStyle::title())
-                        .text_color(theme.text)
-                        .mb(px(4.0))
-                        .child(format!("{total_count} sections found")),
-                )
-                .child(
-                    div()
-                        .text_style(TextStyle::meta())
-                        .text_color(if flagged_count > 0 {
-                            theme.accent
-                        } else {
-                            theme.text_muted
-                        })
-                        .child(if flagged_count > 0 {
-                            format!("{flagged_count} need a quick look")
-                        } else {
-                            "All sections extracted cleanly".to_string()
-                        }),
                 ),
         )
         // Section Cards List
@@ -555,42 +600,28 @@ pub fn render_step2_review_split<V: 'static>(
                     div()
                         .id(SharedString::from(format!("review-item-{idx}")))
                         .flex()
-                        // A flagged card grows to fit its evidence, so the dot
-                        // and the badge align to the title rather than drifting
-                        // to the middle of the block.
-                        .items_start()
-                        .gap(px(11.0))
+                        .flex_col()
                         .px(px(13.0))
-                        .py(px(11.0))
+                        .py(px(10.0))
                         .rounded(theme.radius_md())
-                        .border_1()
+                        // A section with nothing to say says nothing. It used
+                        // to carry a green dot and a `Looks good` badge, and
+                        // seven of those competed with the two that mattered —
+                        // the same "a flag that is always lit" failure the
+                        // notes mechanism was built to end, wearing the
+                        // opposite colour. `Certificates · 0 entries · Looks
+                        // good` was the tell: an empty section is not good, it
+                        // is empty.
                         .when(is_flagged, |s| {
-                            s.border_color(theme.warning)
-                                .bg(theme.hover)
+                            s.bg(theme.hover).border_l_2().border_color(theme.warning)
                         })
-                        .when(!is_flagged, |s| {
-                            s.border_color(theme.border)
-                                .bg(theme.surface)
-                        })
-                        // Status dot
+                        .when(!is_flagged, |s| s.bg(theme.surface))
                         .child(
                             div()
-                                .mt(px(6.0))
-                                .w(px(8.0))
-                                .h(px(8.0))
-                                .rounded_full()
-                                .flex_none()
-                                .bg(if is_flagged {
-                                    theme.warning
-                                } else {
-                                    theme.success
-                                }),
-                        )
-                        // Content
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
+                                .flex()
+                                .items_baseline()
+                                .justify_between()
+                                .gap(px(10.0))
                                 .child(
                                     div()
                                         .text_style(TextStyle::control())
@@ -603,98 +634,92 @@ pub fn render_step2_review_split<V: 'static>(
                                 // nothing to review against.
                                 .child(
                                     div()
-                                        .text_style(TextStyle::label())
-                                        .text_color(theme.text_muted)
+                                        .flex_none()
+                                        .text_style(TextStyle::chip())
+                                        .text_color(theme.text_subtle)
                                         .child(item.detail),
-                                )
-                                // One line per thing the parser noticed. There
-                                // can be more than one — a section can be both
-                                // undated and missing its employers, and saying
-                                // only the first would hide half the work.
-                                .children(item.notes.iter().map(|note| {
-                                    div()
-                                        .mt(px(2.0))
-                                        .text_style(TextStyle::label())
-                                        .text_color(theme.warning)
-                                        .child(note.clone())
-                                }))
-                                .when(is_flagged && !item.preview.is_empty(), |el| {
-                                    el.child(
-                                        div()
-                                            .mt(px(7.0))
-                                            .flex()
-                                            .flex_col()
-                                            .gap(px(3.0))
-                                            .text_style(TextStyle::meta())
-                                            .text_color(theme.text)
-                                            .children(
-                                                item.preview
-                                                    .iter()
-                                                    .take(PREVIEW_LINES)
-                                                    .map(|l| div().child(l.clone())),
-                                            )
-                                            .when(item.preview.len() > PREVIEW_LINES, |el| {
-                                                el.child(
-                                                    div().text_color(theme.text_muted).child(
-                                                        format!(
-                                                            "+{} more",
-                                                            item.preview.len() - PREVIEW_LINES
-                                                        ),
-                                                    ),
-                                                )
-                                            }),
-                                    )
-                                }),
+                                ),
                         )
-                        // Label badge
-                        .child(
+                        // One line per thing the parser noticed. There can be
+                        // more than one — a section can be both undated and
+                        // missing its employers, and saying only the first
+                        // would hide half the work.
+                        .children(item.notes.iter().map(|note| {
                             div()
-                                .flex_none()
-                                .text_style(TextStyle::chip())
-                                .text_color(if is_flagged {
-                                    theme.warning
-                                } else {
-                                    theme.success
-                                })
-                                .child(if is_flagged {
-                                    "Needs review"
-                                } else {
-                                    "Looks good"
-                                }),
-                        )
+                                .mt(px(4.0))
+                                .text_style(TextStyle::label())
+                                .text_color(theme.warning)
+                                .child(note.clone())
+                        }))
+                        .when(is_flagged && !item.preview.is_empty(), |el| {
+                            el.child(
+                                div()
+                                    .mt(px(8.0))
+                                    .pt(px(8.0))
+                                    .border_t_1()
+                                    .border_color(theme.border)
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(3.0))
+                                    // Sans, not mono. These are the entries a
+                                    // CV is made of — a job title, a degree —
+                                    // and mono is for data (L-05). One of them
+                                    // being a stray paragraph the parser turned
+                                    // into a job is exactly what the user is
+                                    // here to notice.
+                                    .text_style(TextStyle::body())
+                                    .text_color(theme.text_muted)
+                                    .children(
+                                        item.preview
+                                            .iter()
+                                            .take(PREVIEW_LINES)
+                                            .map(|l| div().child(shorten(l))),
+                                    )
+                                    .when(item.preview.len() > PREVIEW_LINES, |el| {
+                                        el.child(
+                                            div().text_color(theme.text_subtle).child(format!(
+                                                "+{} more",
+                                                item.preview.len() - PREVIEW_LINES
+                                            )),
+                                        )
+                                    }),
+                            )
+                        })
                 }))
-                .children(render_unparsed(cx, imported)),
+                .children(render_unplaced(cx, imported)),
         )
-        // Bottom Action Bar
+        // Bottom Action Bar. Both decisions, side by side: this is the last
+        // screen before a document exists, and the two things a person can do
+        // here are keep it or throw it away.
         .child(
             div()
                 .flex()
                 .items_center()
                 .justify_between()
+                .gap(px(12.0))
                 .px(px(22.0))
-                .py(px(16.0))
+                .py(px(14.0))
                 .border_t_1()
                 .border_color(theme.border)
-                // A statement of what is left to do, not a control. It used to
-                // read "Review flagged first" as plain text in the slot a
-                // secondary button occupies, so it looked clickable and was
-                // not — the same false affordance P-09 names. Now it says
-                // something true and says nothing when there is nothing to
-                // say.
-                .children((flagged_count > 0).then(|| {
-                    div()
-                        .text_style(TextStyle::body())
-                        .text_color(theme.warning)
-                        .child(format!(
-                            "{flagged_count} section{} to check above",
-                            if flagged_count == 1 { "" } else { "s" }
-                        ))
-                }))
-                .when(flagged_count == 0, |el| el.child(div()))
                 .child(
+                    Button::new("undo-import-btn")
+                        .quiet()
+                        .icon(lucide("undo"))
+                        .label("Undo import")
+                        .tooltip("Throw this away and pick another file")
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            on_undo(this, cx);
+                        })),
+                )
+                .child(
+                    // Named for what it does. "Looks good — continue" is a
+                    // claim about the import that the screen has just spent
+                    // three amber lines contradicting; pressing it creates the
+                    // document, and it can say so whether or not anything is
+                    // flagged.
                     Button::new("continue-to-editor")
                         .action_primary()
-                        .label("Looks good — continue")
+                        .label("Create the CV")
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             on_continue(this, cx);
                         })),
@@ -858,6 +883,61 @@ mod tests {
             ..Default::default()
         };
         ImportedDoc::new("PDF", ResumeDoc::from_resume(resume, "Base"))
+    }
+
+    /// `Certificates · 0 entries · Looks good` was on screen: a row that tells
+    /// the reader nothing and pushes the ones that matter down.
+    #[test]
+    fn an_empty_section_with_nothing_to_report_is_not_listed() {
+        let imported = imported_with(0, 0);
+        let names: Vec<&str> = SectionReviewItem::from_imported(&imported)
+            .iter()
+            .map(|i| i.name.clone())
+            .collect::<Vec<_>>()
+            .leak()
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        assert!(!names.contains(&"Certificates"), "{names:?}");
+        assert!(!names.contains(&"Education"), "{names:?}");
+        // Profile is never a count, so it always has something to say.
+        assert!(names.contains(&"Profile"), "{names:?}");
+    }
+
+    /// …but an empty section the *source* said was there keeps its place,
+    /// because then the emptiness is the finding.
+    #[test]
+    fn an_empty_section_the_parser_flagged_keeps_its_place() {
+        use crate::import::notes::{Note, Part};
+
+        let mut imported = imported_with(0, 0);
+        imported.note(Part::Certificates, Note::Empty);
+
+        let items = SectionReviewItem::from_imported(&imported);
+        let certificates = items
+            .iter()
+            .find(|i| i.name == "Certificates")
+            .expect("an empty section with a note is still listed");
+        assert!(certificates.needs_review);
+        assert_eq!(certificates.detail, "0 entries");
+    }
+
+    /// A preview line is a job title. When the parser has gone wrong it is
+    /// sometimes a paragraph it mistook for one — worth seeing, not worth six
+    /// lines of the card.
+    #[test]
+    fn a_paragraph_mistaken_for_an_entry_is_cut_between_words() {
+        let long = "Responsibilities: overseeing daily operations, managing staff, ensuring \
+                    compliance with banking regulations, and providing exceptional service";
+        let short = super::shorten(long);
+
+        assert!(short.chars().count() <= super::PREVIEW_CHARS + 1, "{short}");
+        assert!(short.ends_with('…'), "{short}");
+        assert!(
+            !short.contains("  ") && !short.trim_end_matches('…').ends_with(' '),
+            "the cut lands between words: {short}"
+        );
+        assert_eq!(super::shorten("Assistant Manager — Woodgrove Bank"), "Assistant Manager — Woodgrove Bank");
     }
 
     /// The regression this guards: review flags used to be inferred from list
