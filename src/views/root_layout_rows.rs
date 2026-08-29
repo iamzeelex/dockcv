@@ -14,7 +14,7 @@ use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, IntoElement, SharedString};
 
 use dockcv_ui_components::{
-    Button, ButtonExt, ButtonGroup, Selectable, DropdownMenu, IconName, PopupMenuItem, Slider,
+    Button, ButtonExt, ButtonGroup, DropdownMenu, IconName, PopupMenuItem, Selectable, Slider,
 };
 
 use crate::resume::model::{
@@ -40,61 +40,76 @@ impl Root {
     /// to forbid — the reference layouts that offer one are reading a field
     /// their model has and ours does not. Where a person wants to say it, they
     /// type it: `Expert: Python` is a keyword like any other.
-    pub(super) fn skills_rows(&self, cx: &mut Context<Self>, skills: SkillsLayout) -> impl IntoElement {
+    pub(super) fn skills_rows(
+        &self,
+        cx: &mut Context<Self>,
+        skills: SkillsLayout,
+    ) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
             .gap(px(9.0))
-            .child(self.skills_pick(
-                cx,
-                "Layout",
-                "layout-skills-style",
-                skills.style.label(),
-                SkillsStyle::ALL
-                    .iter()
-                    .map(|s| (s.label(), *s == skills.style, *s))
-                    .collect(),
-                |doc, style| doc.layout.skills.style = style,
-            ))
-            .child(self.skills_pick(
-                cx,
-                "Separator",
-                "layout-skills-sep",
-                skills.separator.label(),
-                SkillSeparator::ALL
-                    .iter()
-                    .map(|s| (s.label(), *s == skills.separator, *s))
-                    .collect(),
-                |doc, sep| doc.layout.skills.separator = sep,
-            ))
-            .child(self.skills_pick(
-                cx,
-                "Category",
-                "layout-skills-mark",
-                skills.mark.label(),
-                CategoryMark::ALL
-                    .iter()
-                    .map(|m| (m.label(), *m == skills.mark, *m))
-                    .collect(),
-                |doc, mark| doc.layout.skills.mark = mark,
-            ))
-            .child(self.skills_pick(
-                cx,
-                "Row spacing",
-                "layout-skills-spacing",
-                skills.spacing.label(),
-                RowSpacing::ALL
-                    .iter()
-                    .map(|s| (s.label(), *s == skills.spacing, *s))
-                    .collect(),
-                |doc, spacing| doc.layout.skills.spacing = spacing,
-            ))
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Layout",
+                    "layout-skills-style",
+                    skills.style.label(),
+                    SkillsStyle::ALL
+                        .iter()
+                        .map(|s| (s.label(), *s == skills.style, *s))
+                        .collect(),
+                    |doc, style| doc.layout.skills.style = style,
+                ),
+            )
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Separator",
+                    "layout-skills-sep",
+                    skills.separator.label(),
+                    SkillSeparator::ALL
+                        .iter()
+                        .map(|s| (s.label(), *s == skills.separator, *s))
+                        .collect(),
+                    |doc, sep| doc.layout.skills.separator = sep,
+                ),
+            )
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Category",
+                    "layout-skills-mark",
+                    skills.mark.label(),
+                    CategoryMark::ALL
+                        .iter()
+                        .map(|m| (m.label(), *m == skills.mark, *m))
+                        .collect(),
+                    |doc, mark| doc.layout.skills.mark = mark,
+                ),
+            )
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Row spacing",
+                    "layout-skills-spacing",
+                    skills.spacing.label(),
+                    RowSpacing::ALL
+                        .iter()
+                        .map(|s| (s.label(), *s == skills.spacing, *s))
+                        .collect(),
+                    |doc, spacing| doc.layout.skills.spacing = spacing,
+                ),
+            )
             .child(self.skills_pick(
                 cx,
                 "Row marker",
                 "layout-skills-bullets",
                 if skills.bullets { "Bullet" } else { "None" },
-                vec![("None", !skills.bullets, false), ("Bullet", skills.bullets, true)],
+                vec![
+                    ("None", !skills.bullets, false),
+                    ("Bullet", skills.bullets, true),
+                ],
                 |doc, bullets| doc.layout.skills.bullets = bullets,
             ))
     }
@@ -104,7 +119,11 @@ impl Root {
     /// Without it the Sections group was five bare labels — `Layout`,
     /// `Separator`, `Category` — and nothing said they were about Skills.
     /// `Bubbles` is an obvious answer to a question the panel never asked.
-    pub(super) fn rail_subsection(&self, cx: &mut Context<Self>, title: &'static str) -> impl IntoElement {
+    pub(super) fn rail_subsection(
+        &self,
+        cx: &mut Context<Self>,
+        title: &'static str,
+    ) -> impl IntoElement {
         let theme = *cx.theme();
         div()
             .flex()
@@ -126,33 +145,41 @@ impl Root {
     /// No icon control. Drawing a glyph before each detail needs an icon font
     /// inside the document, which is its own piece of work rather than a
     /// fourth dropdown — see `HeaderLayout`.
-    pub(super) fn header_rows(&self, cx: &mut Context<Self>, header: HeaderLayout) -> impl IntoElement {
+    pub(super) fn header_rows(
+        &self,
+        cx: &mut Context<Self>,
+        header: HeaderLayout,
+    ) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
             .gap(px(9.0))
-            .child(self.skills_pick(
-                cx,
-                "Alignment",
-                "layout-header-align",
-                header.align.label(),
-                HeaderAlign::ALL
-                    .iter()
-                    .map(|a| (a.label(), *a == header.align, *a))
-                    .collect(),
-                |doc, v| doc.layout.header.align = v,
-            ))
-            .child(self.skills_pick(
-                cx,
-                "Contact details",
-                "layout-header-contacts",
-                header.contacts.label(),
-                ContactLayout::ALL
-                    .iter()
-                    .map(|c| (c.label(), *c == header.contacts, *c))
-                    .collect(),
-                |doc, v| doc.layout.header.contacts = v,
-            ))
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Alignment",
+                    "layout-header-align",
+                    header.align.label(),
+                    HeaderAlign::ALL
+                        .iter()
+                        .map(|a| (a.label(), *a == header.align, *a))
+                        .collect(),
+                    |doc, v| doc.layout.header.align = v,
+                ),
+            )
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Contact details",
+                    "layout-header-contacts",
+                    header.contacts.label(),
+                    ContactLayout::ALL
+                        .iter()
+                        .map(|c| (c.label(), *c == header.contacts, *c))
+                        .collect(),
+                    |doc, v| doc.layout.header.contacts = v,
+                ),
+            )
             // Only when they share a line. On the two shapes that give each
             // detail its own row there is nothing between them, and a control
             // that changes nothing teaches the user something untrue about the
@@ -179,33 +206,41 @@ impl Root {
     /// No icon control, for the reason `header_rows` gives: a glyph inside the
     /// document needs an icon font in the Typst source, which is a piece of
     /// work rather than a fourth dropdown.
-    pub(super) fn heading_rows(&self, cx: &mut Context<Self>, headings: HeadingLayout) -> impl IntoElement {
+    pub(super) fn heading_rows(
+        &self,
+        cx: &mut Context<Self>,
+        headings: HeadingLayout,
+    ) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
             .gap(px(9.0))
-            .child(self.skills_pick(
-                cx,
-                "Style",
-                "layout-heading-style",
-                headings.style.label(),
-                HeadingStyle::ALL
-                    .iter()
-                    .map(|s| (s.label(), *s == headings.style, *s))
-                    .collect(),
-                |doc, v| doc.layout.headings.style = v,
-            ))
-            .child(self.skills_pick(
-                cx,
-                "Capitalization",
-                "layout-heading-case",
-                headings.case.label(),
-                HeadingCase::ALL
-                    .iter()
-                    .map(|c| (c.label(), *c == headings.case, *c))
-                    .collect(),
-                |doc, v| doc.layout.headings.case = v,
-            ))
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Style",
+                    "layout-heading-style",
+                    headings.style.label(),
+                    HeadingStyle::ALL
+                        .iter()
+                        .map(|s| (s.label(), *s == headings.style, *s))
+                        .collect(),
+                    |doc, v| doc.layout.headings.style = v,
+                ),
+            )
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Capitalization",
+                    "layout-heading-case",
+                    headings.case.label(),
+                    HeadingCase::ALL
+                        .iter()
+                        .map(|c| (c.label(), *c == headings.case, *c))
+                        .collect(),
+                    |doc, v| doc.layout.headings.case = v,
+                ),
+            )
             // Hidden for the one style whose words have nowhere to go: the
             // rule takes whatever they leave, so they are always at the left.
             // A control that changes nothing teaches something untrue (E-43).
@@ -226,71 +261,89 @@ impl Root {
 
     /// How a dated entry is set — a job, a degree, a certificate. The other
     /// half of `Sections`, and the one that repeats most on a CV.
-    pub(super) fn entry_rows(&self, cx: &mut Context<Self>, entries: EntryLayout) -> impl IntoElement {
+    pub(super) fn entry_rows(
+        &self,
+        cx: &mut Context<Self>,
+        entries: EntryLayout,
+    ) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
             .gap(px(9.0))
-            .child(self.skills_pick(
-                cx,
-                "Date & place",
-                "layout-entry-meta-pos",
-                entries.meta_position.label(),
-                MetaPosition::ALL
-                    .iter()
-                    .map(|m| (m.label(), *m == entries.meta_position, *m))
-                    .collect(),
-                |doc, v| doc.layout.entries.meta_position = v,
-            ))
-            .child(self.skills_pick(
-                cx,
-                "Order",
-                "layout-entry-meta-order",
-                entries.meta_order.label(),
-                MetaOrder::ALL
-                    .iter()
-                    .map(|m| (m.label(), *m == entries.meta_order, *m))
-                    .collect(),
-                |doc, v| doc.layout.entries.meta_order = v,
-            ))
-            .child(self.skills_pick(
-                cx,
-                "Subtitle",
-                "layout-entry-subtitle",
-                entries.subtitle.label(),
-                Emphasis::ALL
-                    .iter()
-                    .map(|e| (e.label(), *e == entries.subtitle, *e))
-                    .collect(),
-                |doc, v| doc.layout.entries.subtitle = v,
-            ))
-            .child(self.skills_pick(
-                cx,
-                "Date & place style",
-                "layout-entry-meta-style",
-                entries.meta.label(),
-                Emphasis::ALL
-                    .iter()
-                    .map(|e| (e.label(), *e == entries.meta, *e))
-                    .collect(),
-                |doc, v| doc.layout.entries.meta = v,
-            ))
-            .child(self.skills_pick(
-                cx,
-                "Bullets",
-                "layout-entry-bullet",
-                entries.bullet.label(),
-                BulletGlyph::ALL
-                    .iter()
-                    .map(|b| (b.label(), *b == entries.bullet, *b))
-                    .collect(),
-                |doc, v| doc.layout.entries.bullet = v,
-            ))
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Date & place",
+                    "layout-entry-meta-pos",
+                    entries.meta_position.label(),
+                    MetaPosition::ALL
+                        .iter()
+                        .map(|m| (m.label(), *m == entries.meta_position, *m))
+                        .collect(),
+                    |doc, v| doc.layout.entries.meta_position = v,
+                ),
+            )
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Order",
+                    "layout-entry-meta-order",
+                    entries.meta_order.label(),
+                    MetaOrder::ALL
+                        .iter()
+                        .map(|m| (m.label(), *m == entries.meta_order, *m))
+                        .collect(),
+                    |doc, v| doc.layout.entries.meta_order = v,
+                ),
+            )
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Subtitle",
+                    "layout-entry-subtitle",
+                    entries.subtitle.label(),
+                    Emphasis::ALL
+                        .iter()
+                        .map(|e| (e.label(), *e == entries.subtitle, *e))
+                        .collect(),
+                    |doc, v| doc.layout.entries.subtitle = v,
+                ),
+            )
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Date & place style",
+                    "layout-entry-meta-style",
+                    entries.meta.label(),
+                    Emphasis::ALL
+                        .iter()
+                        .map(|e| (e.label(), *e == entries.meta, *e))
+                        .collect(),
+                    |doc, v| doc.layout.entries.meta = v,
+                ),
+            )
+            .child(
+                self.skills_pick(
+                    cx,
+                    "Bullets",
+                    "layout-entry-bullet",
+                    entries.bullet.label(),
+                    BulletGlyph::ALL
+                        .iter()
+                        .map(|b| (b.label(), *b == entries.bullet, *b))
+                        .collect(),
+                    |doc, v| doc.layout.entries.bullet = v,
+                ),
+            )
             .child(self.skills_pick(
                 cx,
                 "Body",
                 "layout-entry-indent",
-                if entries.indent_body { "Indented" } else { "Full width" },
+                if entries.indent_body {
+                    "Indented"
+                } else {
+                    "Full width"
+                },
                 vec![
                     ("Full width", !entries.indent_body, false),
                     ("Indented", entries.indent_body, true),
@@ -326,16 +379,14 @@ impl Root {
                     .dropdown_menu(move |mut menu, _window, _cx| {
                         for (text, checked, value) in options.clone() {
                             let root = root.clone();
-                            menu = menu.item(
-                                PopupMenuItem::new(text)
-                                    .checked(checked)
-                                    .on_click(move |_ev, window, cx| {
-                                        let _ = root.update(cx, |this, cx| {
-                                            apply(&mut this.doc, value);
-                                            this.after_layout_change(window, cx);
-                                        });
-                                    }),
-                            );
+                            menu = menu.item(PopupMenuItem::new(text).checked(checked).on_click(
+                                move |_ev, window, cx| {
+                                    let _ = root.update(cx, |this, cx| {
+                                        apply(&mut this.doc, value);
+                                        this.after_layout_change(window, cx);
+                                    });
+                                },
+                            ));
                         }
                         menu
                     }),
@@ -349,7 +400,11 @@ impl Root {
     /// own, so every CV was Typst's default serif and a sans-serif résumé was
     /// not expressible. Font *is* the first real difference between templates,
     /// so this is the honest version of that row.
-    pub(super) fn font_row(&self, cx: &mut Context<Self>, active: DocumentFont) -> impl IntoElement {
+    pub(super) fn font_row(
+        &self,
+        cx: &mut Context<Self>,
+        active: DocumentFont,
+    ) -> impl IntoElement {
         let _theme = *cx.theme();
         let root = cx.weak_entity();
         div()
@@ -384,7 +439,11 @@ impl Root {
     /// Each menu item shows its **worked example** beside the pattern, the
     /// way FlowCV's does — `DD MMM YYYY` tells you the shape only if you
     /// already know the notation, while `08 Aug 2026` just shows it.
-    pub(super) fn date_format_row(&self, cx: &mut Context<Self>, active: DateFormat) -> impl IntoElement {
+    pub(super) fn date_format_row(
+        &self,
+        cx: &mut Context<Self>,
+        active: DateFormat,
+    ) -> impl IntoElement {
         let _theme = *cx.theme();
         let root = cx.weak_entity();
         div()
@@ -407,12 +466,14 @@ impl Root {
                                     format.label(),
                                     format.example()
                                 ))
-                                .on_click(move |_ev, window, cx| {
-                                    let _ = root.update(cx, |this, cx| {
-                                        this.doc.layout.date_format = format;
-                                        this.after_layout_change(window, cx);
-                                    });
-                                }),
+                                .on_click(
+                                    move |_ev, window, cx| {
+                                        let _ = root.update(cx, |this, cx| {
+                                            this.doc.layout.date_format = format;
+                                            this.after_layout_change(window, cx);
+                                        });
+                                    },
+                                ),
                             );
                         }
                         menu
@@ -420,7 +481,11 @@ impl Root {
             )
     }
 
-    pub(super) fn page_size_row(&self, cx: &mut Context<Self>, active: PageSize) -> impl IntoElement {
+    pub(super) fn page_size_row(
+        &self,
+        cx: &mut Context<Self>,
+        active: PageSize,
+    ) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
@@ -452,7 +517,11 @@ impl Root {
             )
     }
 
-    pub(super) fn margins_row(&self, cx: &mut Context<Self>, layout: &LayoutSettings) -> impl IntoElement {
+    pub(super) fn margins_row(
+        &self,
+        cx: &mut Context<Self>,
+        layout: &LayoutSettings,
+    ) -> impl IntoElement {
         let readout = if layout.margins.is_uniform() {
             format_margin(layout.margins.x_mm, layout.page_size)
         } else {
@@ -470,7 +539,11 @@ impl Root {
             .child(self.rail_readout(cx, readout))
     }
 
-    pub(super) fn text_scale_row(&self, cx: &mut Context<Self>, layout: &LayoutSettings) -> impl IntoElement {
+    pub(super) fn text_scale_row(
+        &self,
+        cx: &mut Context<Self>,
+        layout: &LayoutSettings,
+    ) -> impl IntoElement {
         div()
             .flex()
             .flex_col()

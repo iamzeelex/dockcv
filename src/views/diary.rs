@@ -15,8 +15,9 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement, SharedString};
 
-use dockcv_ui_components::{ScrollableElement, 
-    Button, ButtonExt, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, Tag, TextField,
+use dockcv_ui_components::{
+    Button, ButtonExt, DropdownMenu, Icon, IconName, PopupMenuItem, ScrollableElement, Sizable,
+    Tag, TextField,
 };
 
 use crate::resume::model::{Diary, DiaryEntry};
@@ -216,9 +217,14 @@ impl Shell {
             .bg(theme.surface)
             .border_1()
             .border_color(theme.border)
-            .child(div().w_full().children(self.diary_draft.as_ref().map(|state| {
-                TextField::new(state).placeholder("What did you ship, fix, or learn this week?")
-            })))
+            .child(
+                div()
+                    .w_full()
+                    .children(self.diary_draft.as_ref().map(|state| {
+                        TextField::new(state)
+                            .placeholder("What did you ship, fix, or learn this week?")
+                    })),
+            )
             .child(
                 div()
                     .flex()
@@ -510,15 +516,17 @@ impl Shell {
                                 } else {
                                     "Mark confidential"
                                 })
-                                .on_click(move |_ev, _window, cx| {
-                                    let _ = shell_mark.update(cx, |this, cx| {
-                                        this.toggle_diary_confidential(index, cx);
-                                    });
-                                }),
+                                .on_click(
+                                    move |_ev, _window, cx| {
+                                        let _ = shell_mark.update(cx, |this, cx| {
+                                            this.toggle_diary_confidential(index, cx);
+                                        });
+                                    },
+                                ),
                             )
                             .separator()
-                            .item(PopupMenuItem::new("Delete").on_click(
-                                move |_ev, window, cx| {
+                            .item(
+                                PopupMenuItem::new("Delete").on_click(move |_ev, window, cx| {
                                     let _ = shell.update(cx, |_this, cx| {
                                         confirm::destructive(
                                             "Delete this diary entry?".into(),
@@ -535,8 +543,8 @@ impl Shell {
                                             },
                                         );
                                     });
-                                },
-                            ))
+                                }),
+                            )
                         }),
                 ),
             )
@@ -652,7 +660,10 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(matches_diary_query(&entry, ""), "an empty query matches all");
+        assert!(
+            matches_diary_query(&entry, ""),
+            "an empty query matches all"
+        );
         assert!(matches_diary_query(&entry, "p99"));
         assert!(matches_diary_query(&entry, "acme"), "role is searchable");
         // The reason tags exist is to be findable later.
@@ -683,7 +694,10 @@ mod tests {
             vec!["performance", "architecture"]
         );
         // Separator the user reached for, whichever it was.
-        assert_eq!(parse_tags("perf architecture"), vec!["perf", "architecture"]);
+        assert_eq!(
+            parse_tags("perf architecture"),
+            vec!["perf", "architecture"]
+        );
         // Same tag twice is a typo, not two facts — and case is not a
         // distinction between tags.
         assert_eq!(parse_tags("#perf #PERF perf"), vec!["perf"]);

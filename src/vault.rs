@@ -24,10 +24,12 @@ const RESERVED_FILES: [&str; 3] = [LIBRARY_FILE, DIARY_FILE, APPLICATIONS_FILE];
 pub fn user_home_dir() -> PathBuf {
     std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
-        .or_else(|_| match (std::env::var("HOMEDRIVE"), std::env::var("HOMEPATH")) {
-            (Ok(drive), Ok(path)) => Ok(format!("{drive}{path}")),
-            _ => Err(std::env::VarError::NotPresent),
-        })
+        .or_else(
+            |_| match (std::env::var("HOMEDRIVE"), std::env::var("HOMEPATH")) {
+                (Ok(drive), Ok(path)) => Ok(format!("{drive}{path}")),
+                _ => Err(std::env::VarError::NotPresent),
+            },
+        )
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))
 }
@@ -119,7 +121,10 @@ pub fn mark_as_vault(dir: &Path) {
     }
     let _ = fs::write(
         &path,
-        format!("# This folder is a DockCV vault.\ncreated = \"{}\"\n", today_iso()),
+        format!(
+            "# This folder is a DockCV vault.\ncreated = \"{}\"\n",
+            today_iso()
+        ),
     );
 }
 
@@ -619,7 +624,10 @@ const MAX_VAULT_DOC_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
 pub fn load(path: &Path) -> Result<ResumeDoc, String> {
     if let Ok(meta) = fs::metadata(path) {
         if meta.len() > MAX_VAULT_DOC_SIZE {
-            return Err(format!("document exceeds size limit of {} MB", MAX_VAULT_DOC_SIZE / (1024 * 1024)));
+            return Err(format!(
+                "document exceeds size limit of {} MB",
+                MAX_VAULT_DOC_SIZE / (1024 * 1024)
+            ));
         }
     }
     let text = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
@@ -693,7 +701,10 @@ mod tests {
         assert_ne!(broken, good, "the fixture must actually be broken");
         std::fs::write(&path, &broken).expect("write");
 
-        assert!(super::load(&path).is_err(), "a broken document must not load");
+        assert!(
+            super::load(&path).is_err(),
+            "a broken document must not load"
+        );
         assert_eq!(
             std::fs::read_to_string(&path).expect("still there"),
             broken,
@@ -747,11 +758,15 @@ mod tests {
         // And a word we *do* understand is still written from the enum, so a
         // card moved on the board writes where it was moved to.
         let mut applications = super::load_applications(&dir);
-        applications.entries[0].advance_to(crate::resume::model::ApplicationStatus::Offer, "2026-08-21");
+        applications.entries[0]
+            .advance_to(crate::resume::model::ApplicationStatus::Offer, "2026-08-21");
         super::save_applications(&dir, &applications).expect("save");
         let text = std::fs::read_to_string(super::applications_path(&dir)).expect("read back");
         assert!(text.contains("status = \"offer\""), "got:\n{text}");
-        assert!(!text.contains("ofer\""), "the typo is gone once it is corrected");
+        assert!(
+            !text.contains("ofer\""),
+            "the typo is gone once it is corrected"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -765,11 +780,15 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("temp vault");
 
         let mut applications = crate::resume::model::Applications::default();
-        applications.entries.push(crate::resume::model::Application {
-            company: "Acme".into(),
-            status_word: crate::resume::model::ApplicationStatus::Applied.word().into(),
-            ..Default::default()
-        });
+        applications
+            .entries
+            .push(crate::resume::model::Application {
+                company: "Acme".into(),
+                status_word: crate::resume::model::ApplicationStatus::Applied
+                    .word()
+                    .into(),
+                ..Default::default()
+            });
         super::save_applications(&dir, &applications).expect("save");
 
         let text = std::fs::read_to_string(super::applications_path(&dir)).expect("read back");
@@ -842,7 +861,11 @@ mod tests {
         let mut second = ResumeDoc::from_resume(crate::resume::model::Resume::default(), "Base");
         second.profile.active_mut().name = "The second one".into();
         let path = super::create_document(&dir, &second, "cv").expect("recreate");
-        assert_eq!(path.file_name().unwrap(), "cv.toml", "the name is free again");
+        assert_eq!(
+            path.file_name().unwrap(),
+            "cv.toml",
+            "the name is free again"
+        );
         super::delete_document(&path).expect("delete again");
 
         assert_eq!(super::trash_count(&dir), 2, "both must survive");
@@ -989,7 +1012,6 @@ mod tests {
         assert!(no_presets.is_draft());
     }
 
-
     #[test]
     fn read_meta_populates_modified_secs() {
         let dir =
@@ -1045,7 +1067,10 @@ mod tests {
         promoted.entries[0].used_in = vec!["sofiia-senior-swe".into(), "sofiia-em".into()];
         let text = toml::to_string_pretty(&promoted).expect("serializes");
         let back: Diary = toml::from_str(&text).expect("round-trips");
-        assert_eq!(back.entries[0].used_in, vec!["sofiia-senior-swe", "sofiia-em"]);
+        assert_eq!(
+            back.entries[0].used_in,
+            vec!["sofiia-senior-swe", "sofiia-em"]
+        );
     }
 
     /// The confidential mark (US-36) is additive, and an unmarked entry must
@@ -1102,8 +1127,12 @@ mod tests {
     fn hiding_a_section_survives_a_round_trip_and_reaches_the_render() {
         use crate::resume::model::SectionKind;
 
-        let mut doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
-        assert!(!doc.compose().certificates.is_empty(), "fixture must have certificates");
+        let mut doc =
+            ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+        assert!(
+            !doc.compose().certificates.is_empty(),
+            "fixture must have certificates"
+        );
 
         doc.set_hidden(SectionKind::Certificates, true);
         assert!(doc.is_hidden(SectionKind::Certificates));
@@ -1124,7 +1153,10 @@ mod tests {
         // Showing it again empties the list, and an empty list is not written.
         doc.set_hidden(SectionKind::Certificates, false);
         let text = super::to_toml(&doc).expect("serializes");
-        assert!(!text.contains("hidden_sections"), "an empty list must not be written");
+        assert!(
+            !text.contains("hidden_sections"),
+            "an empty list must not be written"
+        );
     }
 
     /// The first per-section override has to survive the disk, and — because
@@ -1134,7 +1166,8 @@ mod tests {
     fn a_sections_own_layout_survives_a_round_trip_and_is_absent_until_used() {
         use crate::resume::model::SectionKind;
 
-        let mut doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+        let mut doc =
+            ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
         let text = super::to_toml(&doc).expect("serializes");
         assert!(
             !text.contains("section_overrides"),
@@ -1143,7 +1176,10 @@ mod tests {
 
         doc.set_heading_printed(SectionKind::Profile, false);
         assert!(!doc.prints_heading(SectionKind::Profile));
-        assert!(doc.prints_heading(SectionKind::Work), "one section, not all of them");
+        assert!(
+            doc.prints_heading(SectionKind::Work),
+            "one section, not all of them"
+        );
 
         let text = super::to_toml(&doc).expect("serializes");
         let back: ResumeDoc = toml::from_str(&text).expect("round-trips");
@@ -1304,7 +1340,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp vault");
 
-        let mut doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+        let mut doc =
+            ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
         doc.add_variant(SectionKind::Work);
         doc.add_variant(SectionKind::Skills);
         doc.add_preset("FAANG · concise");
@@ -1567,10 +1604,16 @@ mod tests {
                 without_sizes.push('\n');
             }
         }
-        assert!(!without_sizes.contains("name_pt"), "the cut missed the table");
+        assert!(
+            !without_sizes.contains("name_pt"),
+            "the cut missed the table"
+        );
         let back3: ResumeDoc = toml::from_str(&without_sizes).expect("loads without sizes");
         assert_eq!(back3.layout.sizes, TypeSizes::default());
-        assert_eq!(back3.layout.text_scale_pct, 90, "the rest of the table survived the cut");
+        assert_eq!(
+            back3.layout.text_scale_pct, 90,
+            "the rest of the table survived the cut"
+        );
     }
 
     /// A document written before custom sections existed (D-9) — no

@@ -38,7 +38,10 @@
 use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, Entity, IntoElement, SharedString, Window};
 
-use dockcv_ui_components::{ScrollableElement, Button, ListItem, ListItemExt, ButtonExt, Disableable, TextField, TextFieldState};
+use dockcv_ui_components::{
+    Button, ButtonExt, Disableable, ListItem, ListItemExt, ScrollableElement, TextField,
+    TextFieldState,
+};
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
@@ -219,7 +222,10 @@ impl Shell {
     }
 
     /// The sheet, or nothing when it is closed.
-    pub(super) fn render_diary_use_sheet(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    pub(super) fn render_diary_use_sheet(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
         let sheet = self.diary_use.as_ref()?;
         let theme = *cx.theme();
 
@@ -240,7 +246,11 @@ impl Shell {
             })
             .collect();
 
-        let jobs = sheet.doc.as_ref().map(|d| d.jobs.clone()).unwrap_or_default();
+        let jobs = sheet
+            .doc
+            .as_ref()
+            .map(|d| d.jobs.clone())
+            .unwrap_or_default();
 
         let ready = sheet.doc.is_some() && sheet.work.is_some();
         let chosen_path = sheet.doc.as_ref().map(|d| d.path.clone());
@@ -267,11 +277,15 @@ impl Shell {
                 )))
                 .row()
                 .selected(selected)
-                .text_color(if selected { theme.text } else { theme.text_muted })
+                .text_color(if selected {
+                    theme.text
+                } else {
+                    theme.text_muted
+                })
                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.choose_diary_use_doc(for_click.clone(), cx);
-                    }))
-                    .child(label)
+                    this.choose_diary_use_doc(for_click.clone(), cx);
+                }))
+                .child(label)
             }));
 
         let job_list: gpui::AnyElement = if sheet.doc.is_none() {
@@ -299,7 +313,11 @@ impl Shell {
                     ListItem::new(SharedString::from(format!("diary-use-job-{index}")))
                         .row()
                         .selected(selected)
-                        .text_color(if selected { theme.text } else { theme.text_muted })
+                        .text_color(if selected {
+                            theme.text
+                        } else {
+                            theme.text_muted
+                        })
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             if let Some(sheet) = this.diary_use.as_mut() {
                                 sheet.work = Some(index);

@@ -54,9 +54,7 @@ fn parse(input: &str) -> Result<ResumeDoc, String> {
 pub fn render(input: &str) -> Result<Vec<JsValue>, JsValue> {
     let doc = parse(input).map_err(|e| JsValue::from_str(&e))?;
     let engine = TypstEngine::new(template::generate_for(&doc));
-    let pages = engine
-        .compile_to_svg()
-        .map_err(|e| JsValue::from_str(&e))?;
+    let pages = engine.compile_to_svg().map_err(|e| JsValue::from_str(&e))?;
     Ok(pages.into_iter().map(|p| JsValue::from_str(&p)).collect())
 }
 

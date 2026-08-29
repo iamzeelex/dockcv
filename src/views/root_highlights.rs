@@ -24,7 +24,6 @@ use super::root_sidebar::FIELD_LABEL_LINE_HEIGHT;
 use super::Root;
 
 impl Root {
-
     /// C-5 (`docs/design/editor-comfort.md`): a "Highlights" list — one label
     /// above a stack of bullet rows, each a small glyph, the input and the
     /// remove control together on the input's own line. Replaces giving

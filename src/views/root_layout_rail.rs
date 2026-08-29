@@ -43,7 +43,7 @@
 use gpui::prelude::*;
 use gpui::{div, px, Context, IntoElement, Window};
 
-use dockcv_ui_components::{ScrollableElement, Accordion, SliderEvent, SliderState};
+use dockcv_ui_components::{Accordion, ScrollableElement, SliderEvent, SliderState};
 
 use crate::resume::model::LayoutSettings;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
@@ -91,7 +91,9 @@ impl Root {
                 .min(scale_min as f32)
                 .max(scale_max as f32)
                 .step(1.0)
-                .default_value((layout.text_scale_pct as f32).clamp(scale_min as f32, scale_max as f32))
+                .default_value(
+                    (layout.text_scale_pct as f32).clamp(scale_min as f32, scale_max as f32),
+                )
         });
         self.slider_subscriptions.push(cx.subscribe_in(
             &scale,
@@ -177,89 +179,89 @@ impl Root {
                     // content-height box there is nothing to divide.
                     .child(
                         div().child(
-                        Accordion::new("layout-groups")
-                            .multiple(false)
-                            .bordered(false)
-                            .item(|item| {
-                                item.title(self.rail_group_title(cx, "Typography"))
-                                    .open(open == 0)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .gap(px(10.0))
-                                            .pt(px(4.0))
-                                            .child(self.font_row(cx, layout.font))
-                                            .child(self.text_scale_row(cx, &layout))
-                                            .child(self.rail_subsection(cx, "Element sizes"))
-                                            .child(self.size_rows(cx)),
-                                    )
-                            })
-                            .item(|item| {
-                                item.title(self.rail_group_title(cx, "Page"))
-                                    .open(open == 1)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .gap(px(10.0))
-                                            .pt(px(4.0))
-                                            .child(self.page_size_row(cx, layout.page_size))
-                                            .child(self.margins_row(cx, &layout)),
-                                    )
-                            })
-                            .item(|item| {
-                                item.title(self.rail_group_title(cx, "Dates"))
-                                    .open(open == 2)
-                                    .child(
-                                        div()
-                                            .pt(px(4.0))
-                                            .child(self.date_format_row(cx, layout.date_format)),
-                                    )
-                            })
-                            // Sections: how a section arranges what is inside
-                            // it, as opposed to the document-wide decisions
-                            // above. Skills needed it most — a CV's
-                            // technologies are what a reader scans for, and
-                            // this document spends most of a page on them.
-                            .item(|item| {
-                                item.title(self.rail_group_title(cx, "Header"))
-                                    .open(open == 3)
-                                    .child(
-                                        div()
-                                            .pt(px(4.0))
-                                            .child(self.header_rows(cx, layout.header)),
-                                    )
-                            })
-                            .item(|item| {
-                                item.title(self.rail_group_title(cx, "Sections"))
-                                    .open(open == 4)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .gap(px(12.0))
-                                            .pt(px(4.0))
-                                            .child(self.rail_subsection(cx, "Headings"))
-                                            .child(self.heading_rows(cx, layout.headings))
-                                            .child(self.rail_subsection(cx, "Entries"))
-                                            .child(self.entry_rows(cx, layout.entries))
-                                            .child(self.rail_subsection(cx, "Skills"))
-                                            .child(self.skills_rows(cx, layout.skills)),
-                                    )
-                            })
-                            .on_toggle_click(move |open, _window, cx| {
-                                // `multiple(false)` means at most one index.
-                                // An empty slice is the group closing itself,
-                                // which leaves the rail with four headings and
-                                // nothing under them — a legitimate state, and
-                                // `usize::MAX` is how it is spelled here.
-                                let next = open.first().copied().unwrap_or(usize::MAX);
-                                let _ = root.update(cx, |this, cx| {
-                                    this.layout_group = next;
-                                    cx.notify();
-                                });
-                            }),
+                            Accordion::new("layout-groups")
+                                .multiple(false)
+                                .bordered(false)
+                                .item(|item| {
+                                    item.title(self.rail_group_title(cx, "Typography"))
+                                        .open(open == 0)
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .gap(px(10.0))
+                                                .pt(px(4.0))
+                                                .child(self.font_row(cx, layout.font))
+                                                .child(self.text_scale_row(cx, &layout))
+                                                .child(self.rail_subsection(cx, "Element sizes"))
+                                                .child(self.size_rows(cx)),
+                                        )
+                                })
+                                .item(|item| {
+                                    item.title(self.rail_group_title(cx, "Page"))
+                                        .open(open == 1)
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .gap(px(10.0))
+                                                .pt(px(4.0))
+                                                .child(self.page_size_row(cx, layout.page_size))
+                                                .child(self.margins_row(cx, &layout)),
+                                        )
+                                })
+                                .item(|item| {
+                                    item.title(self.rail_group_title(cx, "Dates"))
+                                        .open(open == 2)
+                                        .child(
+                                            div().pt(px(4.0)).child(
+                                                self.date_format_row(cx, layout.date_format),
+                                            ),
+                                        )
+                                })
+                                // Sections: how a section arranges what is inside
+                                // it, as opposed to the document-wide decisions
+                                // above. Skills needed it most — a CV's
+                                // technologies are what a reader scans for, and
+                                // this document spends most of a page on them.
+                                .item(|item| {
+                                    item.title(self.rail_group_title(cx, "Header"))
+                                        .open(open == 3)
+                                        .child(
+                                            div()
+                                                .pt(px(4.0))
+                                                .child(self.header_rows(cx, layout.header)),
+                                        )
+                                })
+                                .item(|item| {
+                                    item.title(self.rail_group_title(cx, "Sections"))
+                                        .open(open == 4)
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .gap(px(12.0))
+                                                .pt(px(4.0))
+                                                .child(self.rail_subsection(cx, "Headings"))
+                                                .child(self.heading_rows(cx, layout.headings))
+                                                .child(self.rail_subsection(cx, "Entries"))
+                                                .child(self.entry_rows(cx, layout.entries))
+                                                .child(self.rail_subsection(cx, "Skills"))
+                                                .child(self.skills_rows(cx, layout.skills)),
+                                        )
+                                })
+                                .on_toggle_click(move |open, _window, cx| {
+                                    // `multiple(false)` means at most one index.
+                                    // An empty slice is the group closing itself,
+                                    // which leaves the rail with four headings and
+                                    // nothing under them — a legitimate state, and
+                                    // `usize::MAX` is how it is spelled here.
+                                    let next = open.first().copied().unwrap_or(usize::MAX);
+                                    let _ = root.update(cx, |this, cx| {
+                                        this.layout_group = next;
+                                        cx.notify();
+                                    });
+                                }),
                         ),
                     ),
             )

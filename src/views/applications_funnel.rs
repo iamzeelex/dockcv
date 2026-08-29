@@ -221,9 +221,9 @@ impl Funnel {
 
 #[cfg(test)]
 mod tests {
-    use crate::resume::model::SentCv;
     use super::*;
     use crate::resume::model::Application;
+    use crate::resume::model::SentCv;
 
     /// Walked to `furthest` and then dropped in `status`, which is how a card
     /// that interviewed and was then rejected actually comes about.
@@ -249,11 +249,27 @@ mod tests {
     #[test]
     fn every_sent_application_contributes_exactly_one_unit() {
         let funnel = Funnel::of(&board(vec![
-            app("FAANG", ApplicationStatus::Applied, ApplicationStatus::Applied),
-            app("FAANG", ApplicationStatus::Closed, ApplicationStatus::Applied),
+            app(
+                "FAANG",
+                ApplicationStatus::Applied,
+                ApplicationStatus::Applied,
+            ),
+            app(
+                "FAANG",
+                ApplicationStatus::Closed,
+                ApplicationStatus::Applied,
+            ),
             app("FAANG", ApplicationStatus::Offer, ApplicationStatus::Offer),
-            app("Infra", ApplicationStatus::Interviewing, ApplicationStatus::Interviewing),
-            app("Infra", ApplicationStatus::Wishlist, ApplicationStatus::Wishlist),
+            app(
+                "Infra",
+                ApplicationStatus::Interviewing,
+                ApplicationStatus::Interviewing,
+            ),
+            app(
+                "Infra",
+                ApplicationStatus::Wishlist,
+                ApplicationStatus::Wishlist,
+            ),
         ]));
 
         assert_eq!(funnel.sent, 4);
@@ -271,9 +287,17 @@ mod tests {
     fn an_interview_counts_even_when_the_answer_was_later_no() {
         let funnel = Funnel::of(&board(vec![
             // Interviewed, then rejected.
-            app("FAANG", ApplicationStatus::Closed, ApplicationStatus::Interviewing),
+            app(
+                "FAANG",
+                ApplicationStatus::Closed,
+                ApplicationStatus::Interviewing,
+            ),
             // Rejected without ever interviewing.
-            app("FAANG", ApplicationStatus::Closed, ApplicationStatus::Applied),
+            app(
+                "FAANG",
+                ApplicationStatus::Closed,
+                ApplicationStatus::Applied,
+            ),
         ]));
 
         assert_eq!(funnel.total(Outcome::Interviewed), 1);
@@ -303,7 +327,11 @@ mod tests {
             app("", ApplicationStatus::Applied, ApplicationStatus::Applied),
             app("", ApplicationStatus::Applied, ApplicationStatus::Applied),
             app("", ApplicationStatus::Applied, ApplicationStatus::Applied),
-            app("FAANG", ApplicationStatus::Applied, ApplicationStatus::Applied),
+            app(
+                "FAANG",
+                ApplicationStatus::Applied,
+                ApplicationStatus::Applied,
+            ),
         ]));
 
         // Busiest first would put the blank column first; it is pinned last.
@@ -316,10 +344,26 @@ mod tests {
     #[test]
     fn presets_are_ordered_by_volume_then_name() {
         let funnel = Funnel::of(&board(vec![
-            app("Zebra", ApplicationStatus::Applied, ApplicationStatus::Applied),
-            app("Alpha", ApplicationStatus::Applied, ApplicationStatus::Applied),
-            app("Busy", ApplicationStatus::Applied, ApplicationStatus::Applied),
-            app("Busy", ApplicationStatus::Applied, ApplicationStatus::Applied),
+            app(
+                "Zebra",
+                ApplicationStatus::Applied,
+                ApplicationStatus::Applied,
+            ),
+            app(
+                "Alpha",
+                ApplicationStatus::Applied,
+                ApplicationStatus::Applied,
+            ),
+            app(
+                "Busy",
+                ApplicationStatus::Applied,
+                ApplicationStatus::Applied,
+            ),
+            app(
+                "Busy",
+                ApplicationStatus::Applied,
+                ApplicationStatus::Applied,
+            ),
         ]));
         assert_eq!(funnel.presets, vec!["Busy", "Alpha", "Zebra"]);
     }
@@ -348,7 +392,11 @@ mod tests {
             // One preset, every outcome.
             vec![
                 app("A", ApplicationStatus::Offer, ApplicationStatus::Offer),
-                app("A", ApplicationStatus::Interviewing, ApplicationStatus::Interviewing),
+                app(
+                    "A",
+                    ApplicationStatus::Interviewing,
+                    ApplicationStatus::Interviewing,
+                ),
                 app("A", ApplicationStatus::Closed, ApplicationStatus::Applied),
                 app("A", ApplicationStatus::Applied, ApplicationStatus::Applied),
             ],
@@ -366,7 +414,10 @@ mod tests {
             for flow in &funnel.flows {
                 let source = funnel.presets.iter().position(|p| p == &flow.preset);
                 let target = funnel.outcomes.iter().position(|o| *o == flow.outcome);
-                let (source, target) = (source.expect("preset node"), outcome_base + target.expect("outcome node"));
+                let (source, target) = (
+                    source.expect("preset node"),
+                    outcome_base + target.expect("outcome node"),
+                );
                 assert!(source < outcome_base, "a preset must be a source node");
                 assert!(target >= outcome_base, "an outcome must be a target node");
                 assert!(source < target, "links must run left to right");
@@ -379,7 +430,11 @@ mod tests {
     fn the_interview_rate_counts_offers_as_interviews_too() {
         let funnel = Funnel::of(&board(vec![
             app("A", ApplicationStatus::Offer, ApplicationStatus::Offer),
-            app("A", ApplicationStatus::Interviewing, ApplicationStatus::Interviewing),
+            app(
+                "A",
+                ApplicationStatus::Interviewing,
+                ApplicationStatus::Interviewing,
+            ),
             app("A", ApplicationStatus::Applied, ApplicationStatus::Applied),
             app("A", ApplicationStatus::Applied, ApplicationStatus::Applied),
         ]));
@@ -467,9 +522,9 @@ pub(super) fn stage_flow(applications: &Applications, from: &str, to: &str) -> V
             // advances into it — a rejection is an outcome, not a stage on
             // the way somewhere.
             let here = stage.depth();
-            let went_on = steps[i + 1..].iter().any(|(_, later)| {
-                matches!((later.depth(), here), (Some(l), Some(h)) if l > h)
-            });
+            let went_on = steps[i + 1..]
+                .iter()
+                .any(|(_, later)| matches!((later.depth(), here), (Some(l), Some(h)) if l > h));
             if went_on {
                 advanced[slot] += 1;
             }
@@ -831,7 +886,11 @@ mod journey_tests {
         assert_eq!(link(&j, JourneyNode::Round(1), JourneyNode::Round(2)), 1);
         assert_eq!(link(&j, JourneyNode::Round(2), JourneyNode::Offer), 1);
         assert_eq!(
-            link(&j, JourneyNode::Offer, JourneyNode::Closed(Closure::Accepted)),
+            link(
+                &j,
+                JourneyNode::Offer,
+                JourneyNode::Closed(Closure::Accepted)
+            ),
             1
         );
         assert_eq!(j.links.len(), 4, "the path branched: {:?}", j.links);
@@ -893,7 +952,11 @@ mod journey_tests {
         )]));
         assert_eq!(link(&j, JourneyNode::Round(1), JourneyNode::Offer), 1);
         assert_eq!(
-            link(&j, JourneyNode::Offer, JourneyNode::Closed(Closure::Declined)),
+            link(
+                &j,
+                JourneyNode::Offer,
+                JourneyNode::Closed(Closure::Declined)
+            ),
             1
         );
     }
@@ -916,7 +979,10 @@ mod closure_invariant_tests {
         assert_eq!(app.closed_as, None, "a sent application is not finished");
 
         app.advance_to(ApplicationStatus::Closed, "2026-06-20");
-        assert_eq!(app.closed_as, None, "the board answered a question nobody asked");
+        assert_eq!(
+            app.closed_as, None,
+            "the board answered a question nobody asked"
+        );
         assert_eq!(app.status(), ApplicationStatus::Closed);
     }
 
@@ -984,7 +1050,11 @@ mod unsaid_tests {
                 .unwrap_or(0)
         };
         assert_eq!(link(JourneyNode::Unsaid), 1);
-        assert_eq!(link(JourneyNode::Live), 0, "an ended card is not in progress");
+        assert_eq!(
+            link(JourneyNode::Live),
+            0,
+            "an ended card is not in progress"
+        );
         assert_eq!(
             link(JourneyNode::Closed(Closure::Rejected)),
             0,

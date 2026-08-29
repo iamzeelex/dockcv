@@ -1065,7 +1065,11 @@ mod tests {
             let pdf = engine
                 .compile_to_pdf()
                 .unwrap_or_else(|e| panic!("{} did not compile: {e}", style.label()));
-            assert!(pdf.starts_with(b"%PDF"), "{} produced no PDF", style.label());
+            assert!(
+                pdf.starts_with(b"%PDF"),
+                "{} produced no PDF",
+                style.label()
+            );
             heights.push((style, pdf.len()));
         }
 
@@ -1232,9 +1236,7 @@ mod tests {
     /// each changes the page, and the default leaves a document alone.
     #[test]
     fn every_heading_control_changes_the_page_and_the_default_changes_nothing() {
-        use crate::resume::model::{
-            HeaderAlign, HeadingCase, HeadingLayout, HeadingStyle, Work,
-        };
+        use crate::resume::model::{HeaderAlign, HeadingCase, HeadingLayout, HeadingStyle, Work};
         use crate::typst_engine::TypstEngine;
 
         let resume = Resume {
@@ -1264,9 +1266,27 @@ mod tests {
         );
 
         let variants: [(&str, HeadingLayout); 3] = [
-            ("plain style", HeadingLayout { style: HeadingStyle::Plain, ..Default::default() }),
-            ("as-typed case", HeadingLayout { case: HeadingCase::AsTyped, ..Default::default() }),
-            ("left aligned", HeadingLayout { align: HeaderAlign::Left, ..Default::default() }),
+            (
+                "plain style",
+                HeadingLayout {
+                    style: HeadingStyle::Plain,
+                    ..Default::default()
+                },
+            ),
+            (
+                "as-typed case",
+                HeadingLayout {
+                    case: HeadingCase::AsTyped,
+                    ..Default::default()
+                },
+            ),
+            (
+                "left aligned",
+                HeadingLayout {
+                    align: HeaderAlign::Left,
+                    ..Default::default()
+                },
+            ),
         ];
         for (what, headings) in variants {
             assert_ne!(
@@ -1438,7 +1458,10 @@ mod tests {
         );
 
         // The model's own answer…
-        assert_eq!(doc.headings_for(SectionKind::Work).style, HeadingStyle::Plain);
+        assert_eq!(
+            doc.headings_for(SectionKind::Work).style,
+            HeadingStyle::Plain
+        );
         assert_eq!(doc.headings_for(SectionKind::Work).case, HeadingCase::Upper);
         doc.layout.headings.case = HeadingCase::AsTyped;
         assert_eq!(
@@ -1473,7 +1496,7 @@ mod tests {
     /// An untouched document emits an empty table and is unchanged.
     #[test]
     fn no_overrides_means_an_empty_table_and_the_document_it_always_was() {
-        use crate::resume::model::{SectionOverrides, HeadingStyle};
+        use crate::resume::model::{HeadingStyle, SectionOverrides};
 
         let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
         let before = generate_for(&doc);
@@ -1543,10 +1566,34 @@ mod tests {
         );
 
         let variants: [(&str, HeaderLayout); 4] = [
-            ("left aligned", HeaderLayout { align: HeaderAlign::Left, ..Default::default() }),
-            ("stacked contacts", HeaderLayout { contacts: ContactLayout::Stacked, ..Default::default() }),
-            ("two columns", HeaderLayout { contacts: ContactLayout::Columns, ..Default::default() }),
-            ("bullet separator", HeaderLayout { separator: SkillSeparator::Bullet, ..Default::default() }),
+            (
+                "left aligned",
+                HeaderLayout {
+                    align: HeaderAlign::Left,
+                    ..Default::default()
+                },
+            ),
+            (
+                "stacked contacts",
+                HeaderLayout {
+                    contacts: ContactLayout::Stacked,
+                    ..Default::default()
+                },
+            ),
+            (
+                "two columns",
+                HeaderLayout {
+                    contacts: ContactLayout::Columns,
+                    ..Default::default()
+                },
+            ),
+            (
+                "bullet separator",
+                HeaderLayout {
+                    separator: SkillSeparator::Bullet,
+                    ..Default::default()
+                },
+            ),
         ];
         for (what, header) in variants {
             assert_ne!(
@@ -1572,7 +1619,6 @@ mod tests {
             "the separator changed a stacked header — the rail hides a control that does something"
         );
     }
-
 
     /// The per-element sizes, held to the two rules the other layout groups
     /// are: each control has to reach the page, and a document nobody has
@@ -1631,10 +1677,34 @@ mod tests {
 
         let base = pixels(TypeSizes::default());
         let variants: [(&str, TypeSizes); 4] = [
-            ("name", TypeSizes { name_pt: 14.0, ..Default::default() }),
-            ("professional title", TypeSizes { title_pt: 5.0, ..Default::default() }),
-            ("section headings", TypeSizes { heading_pt: 3.0, ..Default::default() }),
-            ("entry title", TypeSizes { entry_pt: 3.0, ..Default::default() }),
+            (
+                "name",
+                TypeSizes {
+                    name_pt: 14.0,
+                    ..Default::default()
+                },
+            ),
+            (
+                "professional title",
+                TypeSizes {
+                    title_pt: 5.0,
+                    ..Default::default()
+                },
+            ),
+            (
+                "section headings",
+                TypeSizes {
+                    heading_pt: 3.0,
+                    ..Default::default()
+                },
+            ),
+            (
+                "entry title",
+                TypeSizes {
+                    entry_pt: 3.0,
+                    ..Default::default()
+                },
+            ),
         ];
         for (what, sizes) in variants {
             assert_ne!(
@@ -1704,7 +1774,10 @@ mod tests {
                 start_date: "2022-01".into(),
                 end_date: "2024-06".into(),
                 summary: "Recovered reliable state from unreliable measurement.".into(),
-                highlights: vec!["Cut p99 latency in half.".into(), "Rewrote the ingest.".into()],
+                highlights: vec![
+                    "Cut p99 latency in half.".into(),
+                    "Rewrote the ingest.".into(),
+                ],
             }],
             ..Default::default()
         };
@@ -1729,12 +1802,48 @@ mod tests {
         );
 
         let variants: [(&str, EntryLayout); 6] = [
-            ("meta below", EntryLayout { meta_position: MetaPosition::Below, ..Default::default() }),
-            ("place first", EntryLayout { meta_order: MetaOrder::LocationFirst, ..Default::default() }),
-            ("subtitle bold", EntryLayout { subtitle: Emphasis::Bold, ..Default::default() }),
-            ("meta bold", EntryLayout { meta: Emphasis::Bold, ..Default::default() }),
-            ("dash bullets", EntryLayout { bullet: BulletGlyph::Dash, ..Default::default() }),
-            ("indented body", EntryLayout { indent_body: true, ..Default::default() }),
+            (
+                "meta below",
+                EntryLayout {
+                    meta_position: MetaPosition::Below,
+                    ..Default::default()
+                },
+            ),
+            (
+                "place first",
+                EntryLayout {
+                    meta_order: MetaOrder::LocationFirst,
+                    ..Default::default()
+                },
+            ),
+            (
+                "subtitle bold",
+                EntryLayout {
+                    subtitle: Emphasis::Bold,
+                    ..Default::default()
+                },
+            ),
+            (
+                "meta bold",
+                EntryLayout {
+                    meta: Emphasis::Bold,
+                    ..Default::default()
+                },
+            ),
+            (
+                "dash bullets",
+                EntryLayout {
+                    bullet: BulletGlyph::Dash,
+                    ..Default::default()
+                },
+            ),
+            (
+                "indented body",
+                EntryLayout {
+                    indent_body: true,
+                    ..Default::default()
+                },
+            ),
         ];
 
         for (what, entries) in variants {
@@ -1909,8 +2018,8 @@ mod tests {
     /// generated source would not have caught it — only the compiler knows.
     #[test]
     fn prose_that_looks_like_typst_syntax_still_compiles() {
-        use crate::typst_engine::TypstEngine;
         use crate::resume::model::Work;
+        use crate::typst_engine::TypstEngine;
 
         let resume = Resume {
             work: vec![Work {
@@ -1957,7 +2066,10 @@ mod tests {
             source.contains(doc.layout.font.family()),
             "the chosen font never reached the source"
         );
-        assert!(source.contains(r#"paper: "us-letter""#), "page size was dropped");
+        assert!(
+            source.contains(r#"paper: "us-letter""#),
+            "page size was dropped"
+        );
         assert_ne!(
             source,
             generate(&doc.compose()),
@@ -2070,7 +2182,10 @@ mod tests {
         };
 
         let source = generate(&resume);
-        assert!(source.contains("https://spe.org/cert/42"), "the url is not emitted");
+        assert!(
+            source.contains("https://spe.org/cert/42"),
+            "the url is not emitted"
+        );
         assert!(
             RENDERER.contains(r#"let u = c.at("url", default: "")"#),
             "the renderer no longer reads a certificate's url"
@@ -2229,7 +2344,10 @@ mod section_order_tests {
         // Untouched: no `order` line at all, so existing documents generate
         // byte-identical source to before this feature.
         let before = generate(&doc.compose());
-        assert!(!before.contains("order: ("), "default order must not be emitted");
+        assert!(
+            !before.contains("order: ("),
+            "default order must not be emitted"
+        );
 
         // Move Education up one slot, so it sits above Work.
         doc.move_section(SectionKind::Education, -1);
@@ -2240,7 +2358,10 @@ mod section_order_tests {
         );
 
         let after = generate(&doc.compose());
-        assert!(after.contains("order: ("), "a reordered document must emit its order");
+        assert!(
+            after.contains("order: ("),
+            "a reordered document must emit its order"
+        );
         let order_line = after
             .lines()
             .find(|l| l.trim_start().starts_with("order: ("))
@@ -2348,12 +2469,14 @@ mod section_order_tests {
     fn a_custom_section_keeps_its_position_in_the_order() {
         let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
         let id = doc.add_custom_section("Publications");
-        doc.custom_section_mut(id).unwrap().content.active_mut().push(
-            crate::resume::model::CustomEntry {
+        doc.custom_section_mut(id)
+            .unwrap()
+            .content
+            .active_mut()
+            .push(crate::resume::model::CustomEntry {
                 title: "A paper".into(),
                 ..Default::default()
-            },
-        );
+            });
 
         // Pull it to the very top.
         for _ in 0..doc.sections().len() {
@@ -2397,7 +2520,9 @@ mod empty_document_tests {
 
         let mut engine = TypstEngine::new(String::new());
         engine.set_source(source);
-        engine.compile_to_pixels(1.0).expect("a blank CV must compile");
+        engine
+            .compile_to_pixels(1.0)
+            .expect("a blank CV must compile");
     }
 }
 
@@ -2438,7 +2563,10 @@ mod date_format_tests {
         assert!(iso.contains("2024-06-15"));
 
         let uk = with(DateFormat::DayMonShortYear);
-        assert!(uk.contains("Jan 2022"), "month-only degrades, no invented day");
+        assert!(
+            uk.contains("Jan 2022"),
+            "month-only degrades, no invented day"
+        );
         assert!(uk.contains("15 Jun 2024"));
         assert!(!uk.contains("2024-06-15"), "the ISO form must be gone");
 
@@ -2476,6 +2604,9 @@ mod date_format_tests {
 
     #[test]
     fn neutralize_escapes_backslashes_and_special_markup() {
-        assert_eq!(neutralize(r"C:\#1 @user [test] $100"), r"C:\\\#1 \@user \[test\] \$100");
+        assert_eq!(
+            neutralize(r"C:\#1 @user [test] $100"),
+            r"C:\\\#1 \@user \[test\] \$100"
+        );
     }
 }

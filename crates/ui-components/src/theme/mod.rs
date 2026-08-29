@@ -486,7 +486,11 @@ mod tests {
         for (bg_name, bg) in surfaces {
             for (chip, fg, label) in [
                 (theme.chip_bg, theme.chip_fg, "chip_fg on chip_bg"),
-                (theme.chip_bg_neutral, theme.text_muted, "text_muted on chip_bg_neutral"),
+                (
+                    theme.chip_bg_neutral,
+                    theme.text_muted,
+                    "text_muted on chip_bg_neutral",
+                ),
             ] {
                 let ratio = contrast(fg, over(chip, bg));
                 assert!(

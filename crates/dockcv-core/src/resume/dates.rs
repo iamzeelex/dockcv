@@ -224,7 +224,11 @@ fn parse_date(text: &str) -> Option<CivilDate> {
 
     // ISO, dash-separated.
     let parts: Vec<&str> = text.split('-').collect();
-    if parts.len() <= 3 && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())) {
+    if parts.len() <= 3
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+    {
         let year: i32 = parts[0].parse().ok()?;
         if parts[0].len() != 4 {
             return None;
@@ -243,7 +247,11 @@ fn parse_date(text: &str) -> Option<CivilDate> {
             .find_map(|w| (w.len() == 4).then(|| w.parse::<i32>().ok()).flatten());
         let day = words.iter().find_map(|w| {
             (w.len() <= 2)
-                .then(|| w.trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<u32>().ok())
+                .then(|| {
+                    w.trim_end_matches(|c: char| !c.is_ascii_digit())
+                        .parse::<u32>()
+                        .ok()
+                })
                 .flatten()
         });
         if let (Some(month), Some(year)) = (month, year) {
@@ -306,9 +314,15 @@ mod tests {
         let d = ResumeDate::new("2026-08-08");
         assert_eq!(d.display(DateFormat::Iso), "2026-08-08");
         assert_eq!(d.display(DateFormat::DayMonShortYear), "08 Aug 2026");
-        assert_eq!(d.display(DateFormat::DayOrdinalMonthYear), "8th August 2026");
+        assert_eq!(
+            d.display(DateFormat::DayOrdinalMonthYear),
+            "8th August 2026"
+        );
         assert_eq!(d.display(DateFormat::MonShortDayYear), "Aug 08, 2026");
-        assert_eq!(d.display(DateFormat::MonthDayOrdinalYear), "August 8th, 2026");
+        assert_eq!(
+            d.display(DateFormat::MonthDayOrdinalYear),
+            "August 8th, 2026"
+        );
         assert_eq!(d.display(DateFormat::SlashDayFirst), "08/08/2026");
         assert_eq!(d.display(DateFormat::SlashMonthFirst), "08/08/2026");
         assert_eq!(d.display(DateFormat::DotDayFirst), "08.08.2026");
@@ -338,15 +352,27 @@ mod tests {
     fn month_names_parse_in_either_order() {
         assert_eq!(
             ResumeDate::new("Jan 2022").parse(),
-            Some(CivilDate { year: 2022, month: Some(1), day: None })
+            Some(CivilDate {
+                year: 2022,
+                month: Some(1),
+                day: None
+            })
         );
         assert_eq!(
             ResumeDate::new("January 2022").parse(),
-            Some(CivilDate { year: 2022, month: Some(1), day: None })
+            Some(CivilDate {
+                year: 2022,
+                month: Some(1),
+                day: None
+            })
         );
         assert_eq!(
             ResumeDate::new("15 March 2022").parse(),
-            Some(CivilDate { year: 2022, month: Some(3), day: Some(15) })
+            Some(CivilDate {
+                year: 2022,
+                month: Some(3),
+                day: Some(15)
+            })
         );
     }
 

@@ -7,8 +7,8 @@
 use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, IntoElement};
 
-use dockcv_ui_components::{Button, ButtonExt, IconName};
 use crate::theme::StyledText;
+use dockcv_ui_components::{Button, ButtonExt, IconName};
 
 use crate::theme::{ActiveTheme, TextStyle};
 
@@ -44,7 +44,6 @@ impl Root {
             .right_0()
             .flex()
             .justify_center()
-
             .child(
                 div()
                     .h(px(36.0))
@@ -88,10 +87,8 @@ impl Root {
         icon: IconName,
         direction: i32,
     ) -> impl IntoElement {
-        Button::new(id)
-            .icon_only()
-            .icon(icon)
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+        Button::new(id).icon_only().icon(icon).on_click(cx.listener(
+            move |this, _: &ClickEvent, window, cx| {
                 // From wherever a pinch left the zoom, `+`/`-` moves to the
                 // next step in that direction rather than to the step nearest
                 // the current value — pressing `+` must always zoom in.
@@ -116,7 +113,8 @@ impl Root {
                 // bitmap stretches immediately (so the control feels instant)
                 // and a sharp pass lands behind it.
                 this.schedule_recompile(window, cx);
-            }))
+            },
+        ))
     }
 
     /// Compile state, always visible — US-07's acceptance text asks for
@@ -184,7 +182,11 @@ mod zoom_tests {
             .into()
         };
 
-        assert_eq!(step(103.7, 1), 110.0, "+ must leave a mid-step value upward");
+        assert_eq!(
+            step(103.7, 1),
+            110.0,
+            "+ must leave a mid-step value upward"
+        );
         assert_eq!(step(103.7, -1), 100.0, "- must leave it downward");
         // Exactly on a step, it moves to the next one rather than standing still.
         assert_eq!(step(100.0, 1), 110.0);
@@ -198,7 +200,8 @@ mod zoom_tests {
     /// cannot bring it back from.
     #[test]
     fn a_pinch_cannot_leave_the_stepped_range() {
-        let pinch = |from: f32, delta: f32| (from * (1.0 + delta)).clamp(MIN_ZOOM_PCT, MAX_ZOOM_PCT);
+        let pinch =
+            |from: f32, delta: f32| (from * (1.0 + delta)).clamp(MIN_ZOOM_PCT, MAX_ZOOM_PCT);
         assert_eq!(pinch(200.0, 0.5), MAX_ZOOM_PCT);
         assert_eq!(pinch(50.0, -0.5), MIN_ZOOM_PCT);
         assert!((pinch(100.0, 0.1) - 110.0).abs() < 0.01);

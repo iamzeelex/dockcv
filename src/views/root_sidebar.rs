@@ -6,8 +6,9 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement, Pixels, SharedString};
 
-use dockcv_ui_components::{ScrollableElement, 
-    Button, ButtonExt, DockIcon, Field, Form, Icon, IconName, Sizable, Tag, TextField, SANS,
+use dockcv_ui_components::{
+    Button, ButtonExt, DockIcon, Field, Form, Icon, IconName, ScrollableElement, Sizable, Tag,
+    TextField, SANS,
 };
 
 use crate::resume::edit::{FieldId, ListId};
@@ -112,19 +113,53 @@ impl Root {
         // it is faster than its label does.
         f.push(self.field(cx, FieldId::Name, "Name").col_span(2));
         f.push(self.field(cx, FieldId::Label, "Title").col_span(2));
-        f.push(self.field_with_icon(cx, FieldId::Email, "Email", DockIcon::Mail, TextStyle::code()));
-        f.push(self.field_with_icon(cx, FieldId::Phone, "Phone", DockIcon::Phone, TextStyle::code()));
-        f.push(self.field_with_icon(cx, FieldId::Location, "Location", DockIcon::MapPin, TextStyle::body()));
-        f.push(self.field_with_icon(cx, FieldId::Url, "Website", DockIcon::Link, TextStyle::code()));
+        f.push(self.field_with_icon(
+            cx,
+            FieldId::Email,
+            "Email",
+            DockIcon::Mail,
+            TextStyle::code(),
+        ));
+        f.push(self.field_with_icon(
+            cx,
+            FieldId::Phone,
+            "Phone",
+            DockIcon::Phone,
+            TextStyle::code(),
+        ));
+        f.push(self.field_with_icon(
+            cx,
+            FieldId::Location,
+            "Location",
+            DockIcon::MapPin,
+            TextStyle::body(),
+        ));
+        f.push(self.field_with_icon(
+            cx,
+            FieldId::Url,
+            "Website",
+            DockIcon::Link,
+            TextStyle::code(),
+        ));
         f.push(self.field(cx, FieldId::Summary, "Summary"));
         let profiles = self.doc.profile.active().profiles.len();
         for i in 0..profiles {
-            f.push(Self::wide(self.entry_header(cx, format!("Profile {}", i + 1), ListId::Profiles, i, None)));
+            f.push(Self::wide(self.entry_header(
+                cx,
+                format!("Profile {}", i + 1),
+                ListId::Profiles,
+                i,
+                None,
+            )));
             f.push(self.field(cx, FieldId::ProfileNetwork(i), "Network"));
             f.push(self.field(cx, FieldId::ProfileUsername(i), "Username"));
             f.push(self.field(cx, FieldId::ProfileUrl(i), "URL"));
         }
-        f.push(Self::wide(self.add_button(cx, "Add profile", ListId::Profiles)));
+        f.push(Self::wide(self.add_button(
+            cx,
+            "Add profile",
+            ListId::Profiles,
+        )));
         self.card(cx, SectionKind::Profile, "Profile", profiles, f, None)
     }
 
@@ -149,18 +184,32 @@ impl Root {
             f.push(self.field(cx, FieldId::WorkSummary(i), "Summary"));
             // C-5: one "Highlights" list, not a `Highlight 1`/`Highlight 2`…
             // row each.
-            let highlight_fields: Vec<FieldId> =
-                (0..w.highlights.len()).map(|j| FieldId::WorkHighlight(i, j)).collect();
-            if let Some(highlights) =
-                self.highlight_list(cx, "Highlights", ListId::WorkHighlights(i), &highlight_fields)
-            {
+            let highlight_fields: Vec<FieldId> = (0..w.highlights.len())
+                .map(|j| FieldId::WorkHighlight(i, j))
+                .collect();
+            if let Some(highlights) = self.highlight_list(
+                cx,
+                "Highlights",
+                ListId::WorkHighlights(i),
+                &highlight_fields,
+            ) {
                 f.push(highlights);
             }
-            f.push(Self::wide(self.add_button(cx, "Add highlight", ListId::WorkHighlights(i))));
+            f.push(Self::wide(self.add_button(
+                cx,
+                "Add highlight",
+                ListId::WorkHighlights(i),
+            )));
             f.push(Self::wide(self.diary_picker_button(cx, i)));
         }
-        f.push(Self::wide(self.add_button(cx, "Add work entry", ListId::Work)));
-        f.push(Self::wide(self.library_picker_button(cx, SectionKind::Work)));
+        f.push(Self::wide(self.add_button(
+            cx,
+            "Add work entry",
+            ListId::Work,
+        )));
+        f.push(Self::wide(
+            self.library_picker_button(cx, SectionKind::Work),
+        ));
         self.card(
             cx,
             SectionKind::Work,
@@ -186,17 +235,31 @@ impl Root {
             f.push(self.field(cx, FieldId::EduInstitution(i), "Institution"));
             f.extend(self.date_fields(cx, FieldId::EduStart(i), FieldId::EduEnd(i)));
             f.push(self.field(cx, FieldId::EduUrl(i), "URL"));
-            let highlight_fields: Vec<FieldId> =
-                (0..entry.highlights.len()).map(|j| FieldId::EduHighlight(i, j)).collect();
-            if let Some(highlights) =
-                self.highlight_list(cx, "Highlights", ListId::EduHighlights(i), &highlight_fields)
-            {
+            let highlight_fields: Vec<FieldId> = (0..entry.highlights.len())
+                .map(|j| FieldId::EduHighlight(i, j))
+                .collect();
+            if let Some(highlights) = self.highlight_list(
+                cx,
+                "Highlights",
+                ListId::EduHighlights(i),
+                &highlight_fields,
+            ) {
                 f.push(highlights);
             }
-            f.push(Self::wide(self.add_button(cx, "Add highlight", ListId::EduHighlights(i))));
+            f.push(Self::wide(self.add_button(
+                cx,
+                "Add highlight",
+                ListId::EduHighlights(i),
+            )));
         }
-        f.push(Self::wide(self.add_button(cx, "Add education entry", ListId::Education)));
-        f.push(Self::wide(self.library_picker_button(cx, SectionKind::Education)));
+        f.push(Self::wide(self.add_button(
+            cx,
+            "Add education entry",
+            ListId::Education,
+        )));
+        f.push(Self::wide(
+            self.library_picker_button(cx, SectionKind::Education),
+        ));
         self.card(cx, SectionKind::Education, "Education", edu.len(), f, None)
     }
 
@@ -219,10 +282,20 @@ impl Root {
                 .map(|j| FieldId::SkillKeyword(i, j))
                 .collect();
             f.extend(self.highlight_list(cx, "Skills", ListId::SkillKeywords(i), &keywords));
-            f.push(Self::wide(self.add_button(cx, "Add skill", ListId::SkillKeywords(i))));
+            f.push(Self::wide(self.add_button(
+                cx,
+                "Add skill",
+                ListId::SkillKeywords(i),
+            )));
         }
-        f.push(Self::wide(self.add_button(cx, "Add skill group", ListId::Skills)));
-        f.push(Self::wide(self.library_picker_button(cx, SectionKind::Skills)));
+        f.push(Self::wide(self.add_button(
+            cx,
+            "Add skill group",
+            ListId::Skills,
+        )));
+        f.push(Self::wide(
+            self.library_picker_button(cx, SectionKind::Skills),
+        ));
         self.card(cx, SectionKind::Skills, "Skills", skills.len(), f, None)
     }
 
@@ -242,8 +315,14 @@ impl Root {
             f.push(self.single_date_field(cx, FieldId::CertDate(i), "Date"));
             f.push(self.field(cx, FieldId::CertUrl(i), "URL"));
         }
-        f.push(Self::wide(self.add_button(cx, "Add certificate", ListId::Certificates)));
-        f.push(Self::wide(self.library_picker_button(cx, SectionKind::Certificates)));
+        f.push(Self::wide(self.add_button(
+            cx,
+            "Add certificate",
+            ListId::Certificates,
+        )));
+        f.push(Self::wide(
+            self.library_picker_button(cx, SectionKind::Certificates),
+        ));
         self.card(
             cx,
             SectionKind::Certificates,
@@ -268,17 +347,31 @@ impl Root {
             f.push(self.field(cx, FieldId::VolPosition(i), "Role"));
             f.push(self.field(cx, FieldId::VolOrg(i), "Organization"));
             f.extend(self.date_fields(cx, FieldId::VolStart(i), FieldId::VolEnd(i)));
-            let highlight_fields: Vec<FieldId> =
-                (0..v.highlights.len()).map(|j| FieldId::VolHighlight(i, j)).collect();
-            if let Some(highlights) =
-                self.highlight_list(cx, "Highlights", ListId::VolHighlights(i), &highlight_fields)
-            {
+            let highlight_fields: Vec<FieldId> = (0..v.highlights.len())
+                .map(|j| FieldId::VolHighlight(i, j))
+                .collect();
+            if let Some(highlights) = self.highlight_list(
+                cx,
+                "Highlights",
+                ListId::VolHighlights(i),
+                &highlight_fields,
+            ) {
                 f.push(highlights);
             }
-            f.push(Self::wide(self.add_button(cx, "Add highlight", ListId::VolHighlights(i))));
+            f.push(Self::wide(self.add_button(
+                cx,
+                "Add highlight",
+                ListId::VolHighlights(i),
+            )));
         }
-        f.push(Self::wide(self.add_button(cx, "Add organization", ListId::Volunteer)));
-        f.push(Self::wide(self.library_picker_button(cx, SectionKind::Organizations)));
+        f.push(Self::wide(self.add_button(
+            cx,
+            "Add organization",
+            ListId::Volunteer,
+        )));
+        f.push(Self::wide(
+            self.library_picker_button(cx, SectionKind::Organizations),
+        ));
         self.card(
             cx,
             SectionKind::Organizations,
@@ -588,7 +681,6 @@ impl Root {
         };
         self.field_with_style(cx, field, label, style)
     }
-
 
     /// A field whose label carries an icon — the contact rows, where the glyph
     /// says what the value is faster than the word does.

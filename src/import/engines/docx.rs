@@ -110,7 +110,12 @@ const MAX_TABLE_DEPTH: usize = 8;
 /// Nested tables were skipped — `TableCellContent::Table` fell into the same
 /// catch-all that lost hyperlinks. A skills grid inside a layout table is the
 /// common case, so the recursion is the point rather than an edge.
-fn push_table(out: &mut Vec<LogicalLine>, table: &Table, links: &HashMap<&str, &str>, depth: usize) {
+fn push_table(
+    out: &mut Vec<LogicalLine>,
+    table: &Table,
+    links: &HashMap<&str, &str>,
+    depth: usize,
+) {
     if depth >= MAX_TABLE_DEPTH {
         return;
     }
@@ -119,9 +124,7 @@ fn push_table(out: &mut Vec<LogicalLine>, table: &Table, links: &HashMap<&str, &
             for content in &cell.children {
                 match content {
                     TableCellContent::Paragraph(p) => push_paragraph(out, p, links),
-                    TableCellContent::Table(nested) => {
-                        push_table(out, nested, links, depth + 1)
-                    }
+                    TableCellContent::Table(nested) => push_table(out, nested, links, depth + 1),
                     _ => {}
                 }
             }
@@ -234,7 +237,10 @@ fn push_run(segments: &mut Vec<String>, run: &Run, target: Option<&str>) {
     // Compare against what this run contributed, not the whole paragraph: a
     // contact line holds several links and each one answers for itself.
     let contributed: String = if segments.len() == before {
-        segments.last().map(|s| s[start..].to_string()).unwrap_or_default()
+        segments
+            .last()
+            .map(|s| s[start..].to_string())
+            .unwrap_or_default()
     } else {
         segments[before - 1..].join(" ")
     };
@@ -311,10 +317,7 @@ fn join_split_entry_headers(lines: Vec<LogicalLine>) -> Vec<LogicalLine> {
             )),
             // A heading follows: the dates belonged to the entry above it.
             Some(dates) => {
-                if let Some(prev) = out
-                    .last_mut()
-                    .filter(|p| p.kind == LineKind::EntryHeader)
-                {
+                if let Some(prev) = out.last_mut().filter(|p| p.kind == LineKind::EntryHeader) {
                     prev.text = format!("{} {}", prev.text, dates);
                 }
                 out.push(line);
@@ -397,7 +400,10 @@ mod tests {
             Paragraph::new().add_hyperlink(link),
             &[("rId7", "https://linkedin.com/in/sofiia")],
         );
-        assert_eq!(texts(&lines), vec!["LinkedIn https://linkedin.com/in/sofiia"]);
+        assert_eq!(
+            texts(&lines),
+            vec!["LinkedIn https://linkedin.com/in/sofiia"]
+        );
     }
 
     /// A link that already shows its own address gains nothing from having it
@@ -435,7 +441,10 @@ mod tests {
                 DocxRun::new().add_text("Portfolio"),
             ))],
         };
-        assert_eq!(texts(&read(Paragraph::new().add_hyperlink(link), &[])), vec!["Portfolio"]);
+        assert_eq!(
+            texts(&read(Paragraph::new().add_hyperlink(link), &[])),
+            vec!["Portfolio"]
+        );
     }
 
     /// I-11. A skills grid inside a layout table is the ordinary shape, and
@@ -445,8 +454,10 @@ mod tests {
         use docx_rs::{Table as DocxTable, TableCell, TableRow};
 
         let inner = DocxTable::new(vec![TableRow::new(vec![
-            TableCell::new().add_paragraph(Paragraph::new().add_run(DocxRun::new().add_text("Rust"))),
-            TableCell::new().add_paragraph(Paragraph::new().add_run(DocxRun::new().add_text("Kafka"))),
+            TableCell::new()
+                .add_paragraph(Paragraph::new().add_run(DocxRun::new().add_text("Rust"))),
+            TableCell::new()
+                .add_paragraph(Paragraph::new().add_run(DocxRun::new().add_text("Kafka"))),
         ])]);
         let outer = DocxTable::new(vec![TableRow::new(vec![TableCell::new()
             .add_paragraph(Paragraph::new().add_run(DocxRun::new().add_text("Skills")))
@@ -510,14 +521,23 @@ mod tests {
         // Two entry headers in, two out: neither absorbs the other, and the
         // date between the pipes is not mistaken for a bare date line.
         assert_eq!(joined.len(), 3, "{joined:#?}");
-        assert!(joined.iter().filter(|l| l.kind == LineKind::EntryHeader).count() == 2);
+        assert!(
+            joined
+                .iter()
+                .filter(|l| l.kind == LineKind::EntryHeader)
+                .count()
+                == 2
+        );
     }
 
     /// Harvard sets `Experience` as bold body text. Missing it did not lose one
     /// line — it moved the section boundary and swallowed the twenty under it.
     #[test]
     fn a_heading_is_read_from_its_words_when_the_style_does_not_say_so() {
-        assert_eq!(kind_of("bodytext", false, "Experience", false), LineKind::Heading);
+        assert_eq!(
+            kind_of("bodytext", false, "Experience", false),
+            LineKind::Heading
+        );
         assert_eq!(kind_of("", false, "Skills", false), LineKind::Heading);
     }
 
@@ -525,7 +545,10 @@ mod tests {
     /// filed their address and their whole education under their own name.
     #[test]
     fn the_first_heading_naming_no_section_is_the_documents_title() {
-        assert_eq!(kind_of("heading1", false, "Barry Alan Manilow", true), LineKind::Text);
+        assert_eq!(
+            kind_of("heading1", false, "Barry Alan Manilow", true),
+            LineKind::Text
+        );
         // The same style later in the document is a section of its own (D-9).
         assert_eq!(
             kind_of("heading1", false, "Leadership & Activities", false),
@@ -550,7 +573,10 @@ mod tests {
         ]));
 
         assert_eq!(joined.len(), 3, "{joined:#?}");
-        assert_eq!(joined[1].text, "Cardiothoracic Surgery Fellow 8.2019 – 12.2021");
+        assert_eq!(
+            joined[1].text,
+            "Cardiothoracic Surgery Fellow 8.2019 – 12.2021"
+        );
         assert_eq!(joined[1].kind, LineKind::EntryHeader);
     }
 

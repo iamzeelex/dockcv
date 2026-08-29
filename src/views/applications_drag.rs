@@ -94,7 +94,12 @@ impl Shell {
     /// menu uses — so a card dragged into Applied records its send date and
     /// captures its PDF snapshot (D4a) exactly as it would have via the menu.
     /// A drag must not be a second, quieter path that skips those.
-    pub(super) fn column_drop_target<E>(&self, cx: &mut Context<Self>, status: ApplicationStatus, el: E) -> E
+    pub(super) fn column_drop_target<E>(
+        &self,
+        cx: &mut Context<Self>,
+        status: ApplicationStatus,
+        el: E,
+    ) -> E
     where
         E: InteractiveElement,
     {
@@ -107,8 +112,10 @@ impl Shell {
         .drag_over::<DraggedCard>(move |style, _dragged, _window, _cx| {
             style.border_color(theme.accent).bg(theme.selected)
         })
-        .on_drop(cx.listener(move |this, dragged: &DraggedCard, _window, cx| {
-            this.advance_application(dragged.index, status, cx);
-        }))
+        .on_drop(
+            cx.listener(move |this, dragged: &DraggedCard, _window, cx| {
+                this.advance_application(dragged.index, status, cx);
+            }),
+        )
     }
 }

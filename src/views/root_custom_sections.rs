@@ -13,9 +13,7 @@
 
 use gpui::{div, AnyElement, Context, IntoElement, SharedString};
 
-use dockcv_ui_components::{
-    Button, ButtonExt, DropdownMenu, IconName, PopupMenuItem,
-};
+use dockcv_ui_components::{Button, ButtonExt, DropdownMenu, IconName, PopupMenuItem};
 
 use crate::resume::edit::{FieldId, ListId};
 use crate::resume::model::{CustomSectionId, SectionKind};
@@ -69,7 +67,11 @@ impl Root {
             )));
             f.push(self.field(cx, FieldId::CustomEntryTitle(id, i), "Title"));
             f.push(self.field(cx, FieldId::CustomEntrySubtitle(id, i), "Subtitle"));
-            f.extend(self.date_fields(cx, FieldId::CustomEntryStart(id, i), FieldId::CustomEntryEnd(id, i)));
+            f.extend(self.date_fields(
+                cx,
+                FieldId::CustomEntryStart(id, i),
+                FieldId::CustomEntryEnd(id, i),
+            ));
             f.push(self.field(cx, FieldId::CustomEntryUrl(id, i), "URL"));
             let highlights: Vec<FieldId> = (0..entry.highlights.len())
                 .map(|j| FieldId::CustomEntryHighlight(id, i, j))
@@ -80,9 +82,17 @@ impl Root {
                 ListId::CustomEntryHighlights(id, i),
                 &highlights,
             ));
-            f.push(Self::wide(self.add_button(cx, "Add highlight", ListId::CustomEntryHighlights(id, i))));
+            f.push(Self::wide(self.add_button(
+                cx,
+                "Add highlight",
+                ListId::CustomEntryHighlights(id, i),
+            )));
         }
-        f.push(Self::wide(self.add_button(cx, "Add entry", ListId::CustomEntries(id))));
+        f.push(Self::wide(self.add_button(
+            cx,
+            "Add entry",
+            ListId::CustomEntries(id),
+        )));
 
         let menu = self.section_menu_button(cx, id);
         self.card(cx, SectionKind::Custom(id), title, count, f, Some(menu))

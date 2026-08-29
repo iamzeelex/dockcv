@@ -87,7 +87,11 @@ pub fn init() -> PathBuf {
     }
     rotate_if_large(&path);
 
-    let file = OpenOptions::new().create(true).append(true).open(&path).ok();
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .ok();
     if file.is_none() {
         eprintln!("DockCV: could not open {}; stderr only", path.display());
     }
@@ -156,7 +160,12 @@ fn rotate_if_large(path: &Path) {
 }
 
 fn level_from_env(var: &str, fallback: LevelFilter) -> LevelFilter {
-    match std::env::var(var).unwrap_or_default().trim().to_lowercase().as_str() {
+    match std::env::var(var)
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase()
+        .as_str()
+    {
         "off" => LevelFilter::Off,
         "error" => LevelFilter::Error,
         "warn" => LevelFilter::Warn,
@@ -279,7 +288,10 @@ mod tests {
     /// every `.` in a message would mangle it into nonsense.
     #[test]
     fn a_degenerate_home_redacts_nothing() {
-        assert_eq!(redact("saved cv.toml in 1.2s", "."), "saved cv.toml in 1.2s");
+        assert_eq!(
+            redact("saved cv.toml in 1.2s", "."),
+            "saved cv.toml in 1.2s"
+        );
         assert_eq!(redact("saved cv.toml", ""), "saved cv.toml");
     }
 
@@ -287,7 +299,10 @@ mod tests {
     fn the_level_comes_from_the_environment_and_falls_back_when_unset() {
         // Not `set_var` — tests share a process, and one test changing the
         // environment under another is the kind of flake that costs a day.
-        assert_eq!(level_from_env("DOCKCV_LOG_TEST_UNSET", LevelFilter::Info), LevelFilter::Info);
+        assert_eq!(
+            level_from_env("DOCKCV_LOG_TEST_UNSET", LevelFilter::Info),
+            LevelFilter::Info
+        );
     }
 
     #[test]
@@ -295,10 +310,16 @@ mod tests {
         let logger = FileLogger {
             app_level: LevelFilter::Info,
             dep_level: LevelFilter::Warn,
-            sink: Mutex::new(Sink { file: None, home: String::new() }),
+            sink: Mutex::new(Sink {
+                file: None,
+                home: String::new(),
+            }),
         };
         assert_eq!(logger.threshold("dockcv::vault"), LevelFilter::Info);
-        assert_eq!(logger.threshold("dockcv_ui_components::theme"), LevelFilter::Info);
+        assert_eq!(
+            logger.threshold("dockcv_ui_components::theme"),
+            LevelFilter::Info
+        );
         // The reason the split exists: GPUI is chatty at info, and a log the
         // user has to scroll is a log nobody reads.
         assert_eq!(logger.threshold("gpui::text_system"), LevelFilter::Warn);

@@ -19,9 +19,9 @@
 use gpui::prelude::*;
 use gpui::{div, px, Context, Hsla, IntoElement, SharedString};
 
-use dockcv_ui_components::{ScrollableElement, 
-    Button, ButtonExt, DropdownMenu, EmptyState, PopupMenuItem, SankeyAlign,
-    SankeyChart, SankeyLabel, SankeyLink, SankeyValueScale,
+use dockcv_ui_components::{
+    Button, ButtonExt, DropdownMenu, EmptyState, PopupMenuItem, SankeyAlign, SankeyChart,
+    SankeyLabel, SankeyLink, SankeyValueScale, ScrollableElement,
 };
 
 use crate::resume::model::{ApplicationStatus, Applications, Closure};
@@ -306,7 +306,11 @@ impl Shell {
 
     /// The Sankey itself, in a titled panel that says what it is counting.
     /// The journey: every sent application, from sent to however it ended.
-    fn journey_panel(&self, cx: &mut Context<Self>, applications: &Applications) -> impl IntoElement {
+    fn journey_panel(
+        &self,
+        cx: &mut Context<Self>,
+        applications: &Applications,
+    ) -> impl IntoElement {
         let theme = *cx.theme();
         let journey = journey(applications);
 
@@ -434,13 +438,10 @@ impl Shell {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(
-                    EmptyState::new("Nothing sent yet")
-                        .body(
-                            "Move an application to Applied and this will show which \
+                .child(EmptyState::new("Nothing sent yet").body(
+                    "Move an application to Applied and this will show which \
                              CV you sent, and how far it got.",
-                        ),
-                )
+                ))
                 .into_any_element()
         } else {
             self.sankey(theme, funnel).into_any_element()

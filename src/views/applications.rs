@@ -20,13 +20,13 @@
 //! hover — rather than an invented layout.
 
 use gpui::prelude::*;
-use gpui::{AnyElement, 
-    div, px, App, ClickEvent, Context, FontWeight, IntoElement, SharedString, Window,
+use gpui::{
+    div, px, AnyElement, App, ClickEvent, Context, FontWeight, IntoElement, SharedString, Window,
 };
 
-use dockcv_ui_components::{ScrollableElement, 
-    Button, ButtonExt, ButtonGroup, Selectable, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable,
-    StatusTint, Tag, TextField,
+use dockcv_ui_components::{
+    Button, ButtonExt, ButtonGroup, DropdownMenu, Icon, IconName, PopupMenuItem, ScrollableElement,
+    Selectable, Sizable, StatusTint, Tag, TextField,
 };
 
 use crate::resume::model::{Application, ApplicationStatus, Applications, Closure};
@@ -35,11 +35,11 @@ use crate::vault;
 
 use super::save_status;
 
-use super::applications_data::{
-    card_chip_text, interviews_this_week, matches_query, plural, sort_rows,
-    status_title, ApplicationSort, ApplicationsView,
-};
 use super::applications_card::{card_meta, column_tint};
+use super::applications_data::{
+    card_chip_text, interviews_this_week, matches_query, plural, sort_rows, status_title,
+    ApplicationSort, ApplicationsView,
+};
 use super::applications_menu::{application_menu, MenuContext};
 use super::shell::{remove_at, Shell};
 
@@ -59,13 +59,22 @@ fn count_chip(theme: &crate::theme::Theme, text: String) -> impl IntoElement {
 
 /// The five board columns, in display order.
 const COLUMNS: [(ApplicationStatus, &str); 5] = [
-    (ApplicationStatus::Wishlist, status_title(ApplicationStatus::Wishlist)),
-    (ApplicationStatus::Applied, status_title(ApplicationStatus::Applied)),
+    (
+        ApplicationStatus::Wishlist,
+        status_title(ApplicationStatus::Wishlist),
+    ),
+    (
+        ApplicationStatus::Applied,
+        status_title(ApplicationStatus::Applied),
+    ),
     (
         ApplicationStatus::Interviewing,
         status_title(ApplicationStatus::Interviewing),
     ),
-    (ApplicationStatus::Offer, status_title(ApplicationStatus::Offer)),
+    (
+        ApplicationStatus::Offer,
+        status_title(ApplicationStatus::Offer),
+    ),
     (
         ApplicationStatus::Closed,
         status_title(ApplicationStatus::Closed),
@@ -91,9 +100,9 @@ impl Shell {
             .flex_col()
             .child(self.applications_header(cx, applications, &today))
             .child(match self.applications_view {
-                ApplicationsView::Board => {
-                    self.board(cx, applications, &query, now_secs).into_any_element()
-                }
+                ApplicationsView::Board => self
+                    .board(cx, applications, &query, now_secs)
+                    .into_any_element(),
                 ApplicationsView::List => self
                     .render_applications_list(cx, applications, &query)
                     .into_any_element(),
@@ -178,11 +187,7 @@ impl Shell {
                             .icon(IconName::Plus)
                             .label("New application")
                             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                                this.start_application(
-                                    ApplicationStatus::Wishlist,
-                                    window,
-                                    cx,
-                                );
+                                this.start_application(ApplicationStatus::Wishlist, window, cx);
                             })),
                     ),
             );
@@ -306,7 +311,6 @@ impl Shell {
             )
     }
 
-
     /// The five columns.
     fn board(
         &self,
@@ -318,8 +322,7 @@ impl Shell {
         // Borrowed, not cloned. Five columns each filtering a cloned copy of
         // every application, every frame, was five deep copies of the whole
         // board per redraw — and a card only ever reads what it draws.
-        let all: Vec<(usize, &Application)> =
-            applications.entries.iter().enumerate().collect();
+        let all: Vec<(usize, &Application)> = applications.entries.iter().enumerate().collect();
 
         div()
             .id("applications-board")
@@ -392,48 +395,46 @@ impl Shell {
             );
         }
 
-
         // The whole column is the drop target, empty space included — a card
         // has to be droppable into a column that holds nothing yet.
-        let column = div()
-            .id(SharedString::from(format!("apps-col-{status:?}")))
-            // Adaptive, not 168px fixed. Five fixed columns left two thirds of
-            // a wide window empty and huddled at the left edge; below a narrow
-            // window they were unreadably thin either way. `flex_1` with a
-            // floor gives each column an equal share of whatever there is, and
-            // the board's own `overflow_x_scroll` takes over once five columns
-            // can no longer fit above the floor.
-            .flex_1()
-            // Five columns plus their gaps and the pane's own padding come to
-            // `5 * min + 108`, so the floor is what decides whether a default
-            // 1100px window shows the whole board or hides Rejected behind a
-            // scroll. 150 fits; 184 did not. Above the floor they share the
-            // width evenly, and the ceiling keeps a two-card vault from
-            // drawing columns wider than a card ever needs.
-            .min_w(px(150.0))
-            .max_w(px(300.0))
-            .h_full()
-            .flex()
-            .flex_col()
-            .rounded(theme.radius_md())
-            .border_1()
-            .border_color(gpui::transparent_black())
-            .child(header)
-            .child(
-                div()
-                    .id(SharedString::from(format!("apps-col-scroll-{status:?}")))
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scrollbar()
-                    .flex()
-                    .flex_col()
-                    .gap(px(10.0))
-                    .children(
-                        cards
-                            .into_iter()
-                            .map(|(index, app)| self.card(cx, index, app, status, &tint, now_secs)),
-                    ),
-            );
+        let column =
+            div()
+                .id(SharedString::from(format!("apps-col-{status:?}")))
+                // Adaptive, not 168px fixed. Five fixed columns left two thirds of
+                // a wide window empty and huddled at the left edge; below a narrow
+                // window they were unreadably thin either way. `flex_1` with a
+                // floor gives each column an equal share of whatever there is, and
+                // the board's own `overflow_x_scroll` takes over once five columns
+                // can no longer fit above the floor.
+                .flex_1()
+                // Five columns plus their gaps and the pane's own padding come to
+                // `5 * min + 108`, so the floor is what decides whether a default
+                // 1100px window shows the whole board or hides Rejected behind a
+                // scroll. 150 fits; 184 did not. Above the floor they share the
+                // width evenly, and the ceiling keeps a two-card vault from
+                // drawing columns wider than a card ever needs.
+                .min_w(px(150.0))
+                .max_w(px(300.0))
+                .h_full()
+                .flex()
+                .flex_col()
+                .rounded(theme.radius_md())
+                .border_1()
+                .border_color(gpui::transparent_black())
+                .child(header)
+                .child(
+                    div()
+                        .id(SharedString::from(format!("apps-col-scroll-{status:?}")))
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scrollbar()
+                        .flex()
+                        .flex_col()
+                        .gap(px(10.0))
+                        .children(cards.into_iter().map(|(index, app)| {
+                            self.card(cx, index, app, status, &tint, now_secs)
+                        })),
+                );
 
         self.column_drop_target(cx, status, column)
     }
@@ -483,11 +484,7 @@ impl Shell {
                                 menu = menu.item(PopupMenuItem::new(closure.label()).on_click(
                                     move |_ev, _window, cx| {
                                         let _ = shell.update(cx, |this, cx| {
-                                            this.set_application_closure(
-                                                index,
-                                                Some(closure),
-                                                cx,
-                                            );
+                                            this.set_application_closure(index, Some(closure), cx);
                                         });
                                     },
                                 ));
@@ -689,11 +686,11 @@ impl Shell {
                     .right(px(8.0))
                     .occlude()
                     .child(
-                Button::new(SharedString::from(format!("apps-menu-{index}")))
-                    .icon_only()
-                    .icon(IconName::Ellipsis)
-                    .tooltip("More")
-                    .dropdown_menu(application_menu(menu_context)),
+                        Button::new(SharedString::from(format!("apps-menu-{index}")))
+                            .icon_only()
+                            .icon(IconName::Ellipsis)
+                            .tooltip("More")
+                            .dropdown_menu(application_menu(menu_context)),
                     ),
             )
     }
@@ -772,7 +769,11 @@ impl Shell {
                 first_send = true;
             }
         }
-        save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
+        save_status::record(
+            cx,
+            "applications board",
+            vault::save_applications(&vault, &applications),
+        );
         cx.notify();
 
         // D4a: the moment "this is what they got" becomes a true statement is
@@ -789,7 +790,11 @@ impl Shell {
         };
         let mut applications = vault::load_applications(&vault);
         remove_at(&mut applications.entries, index);
-        save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
+        save_status::record(
+            cx,
+            "applications board",
+            vault::save_applications(&vault, &applications),
+        );
 
         // The detail panel holds an index into the list that just shifted.
         // Left alone it would go on editing whichever card slid into the gap.

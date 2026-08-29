@@ -197,7 +197,7 @@ pub(super) fn candidates(pasted: &str) -> Vec<Candidate> {
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, Entity, IntoElement, SharedString, Window};
 
-use dockcv_ui_components::{ScrollableElement, Button, ButtonExt, TextField, TextFieldState};
+use dockcv_ui_components::{Button, ButtonExt, ScrollableElement, TextField, TextFieldState};
 
 use crate::resume::model::DiaryEntry;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
@@ -339,9 +339,7 @@ impl Shell {
                              paragraph becomes a candidate you can keep, edit or skip.",
                         ),
                 )
-                .child(TextField::new(&sheet.source).placeholder(
-                    "Paste here…",
-                ))
+                .child(TextField::new(&sheet.source).placeholder("Paste here…"))
                 .into_any_element()
         } else if sheet.queue.is_empty() {
             div()
@@ -473,32 +471,40 @@ impl Shell {
                             .child(subtitle),
                     ),
             )
-            .child(div().p_4().flex().flex_col().gap(px(12.0)).child(body).child(
+            .child(
                 div()
+                    .p_4()
                     .flex()
-                    .justify_end()
-                    .gap(px(8.0))
+                    .flex_col()
+                    .gap(px(12.0))
+                    .child(body)
                     .child(
-                        Button::new("diary-paste-close")
-                            .toolbar()
-                            .label(if sheet.queue.is_empty() && sheet.parsed {
-                                "Done"
-                            } else {
-                                "Cancel"
-                            })
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.close_diary_paste(cx);
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap(px(8.0))
+                            .child(
+                                Button::new("diary-paste-close")
+                                    .toolbar()
+                                    .label(if sheet.queue.is_empty() && sheet.parsed {
+                                        "Done"
+                                    } else {
+                                        "Cancel"
+                                    })
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                        this.close_diary_paste(cx);
+                                    })),
+                            )
+                            .children(sheet.queue.is_empty().then(|| {
+                                Button::new("diary-paste-find")
+                                    .toolbar_primary()
+                                    .label("Find wins")
+                                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                                        this.find_wins(window, cx);
+                                    }))
                             })),
-                    )
-                    .children(sheet.queue.is_empty().then(|| {
-                        Button::new("diary-paste-find")
-                            .toolbar_primary()
-                            .label("Find wins")
-                            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                                this.find_wins(window, cx);
-                            }))
-                    })),
-            ));
+                    ),
+            );
 
         Some(
             div()
@@ -613,7 +619,10 @@ Next week I am picking up the billing backlog.
     #[test]
     fn a_dash_is_only_a_marker_when_a_space_follows_it() {
         assert_eq!(list_marker_len("- Shipped it"), Some(1));
-        assert_eq!(list_marker_len("-5% churn this quarter across the board"), None);
+        assert_eq!(
+            list_marker_len("-5% churn this quarter across the board"),
+            None
+        );
         assert_eq!(list_marker_len("--"), None);
         assert_eq!(list_marker_len("2026-08-11 was the release date"), None);
     }

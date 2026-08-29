@@ -80,7 +80,8 @@ pub fn import_linkedin(path: &Path) -> Result<ImportedDoc, String> {
         let bytes_read = entry
             .take(MAX_SINGLE_CSV_SIZE + 1)
             .read_to_end(&mut bytes)
-            .map_err(|e| format!("Error reading archive entry '{name}': {e}"))? as u64;
+            .map_err(|e| format!("Error reading archive entry '{name}': {e}"))?
+            as u64;
 
         if bytes_read > MAX_SINGLE_CSV_SIZE {
             return Err(format!(
@@ -209,12 +210,14 @@ pub fn import_linkedin(path: &Path) -> Result<ImportedDoc, String> {
         .map(|(name, table)| (name, table.rows.len()))
         .collect();
     unread.sort_by(|a, b| a.0.cmp(b.0));
-    imported.unplaced.extend(unread.into_iter().map(|(name, rows)| {
-        format!(
-            "{name} — {rows} row{} the archive carried and DockCV has no section for",
-            if rows == 1 { "" } else { "s" }
-        )
-    }));
+    imported
+        .unplaced
+        .extend(unread.into_iter().map(|(name, rows)| {
+            format!(
+                "{name} — {rows} row{} the archive carried and DockCV has no section for",
+                if rows == 1 { "" } else { "s" }
+            )
+        }));
 
     imported.observe();
     Ok(imported)
@@ -491,8 +494,9 @@ impl Table {
 /// records are all one field wide has no ambiguity to resolve: its header is the
 /// first record that looks like one.
 fn find_header(records: &[Vec<String>]) -> Option<usize> {
-    let looks_like_header =
-        |r: &Vec<String>| !r.is_empty() && r.iter().all(|f| !f.is_empty() && f.chars().count() <= 40);
+    let looks_like_header = |r: &Vec<String>| {
+        !r.is_empty() && r.iter().all(|f| !f.is_empty() && f.chars().count() <= 40)
+    };
     let single_column = records.iter().all(|r| r.len() <= 1);
 
     records
@@ -627,9 +631,7 @@ mod tests {
 
     #[test]
     fn the_primary_address_is_the_one_that_reaches_the_cv() {
-        let t = table(
-            "Email Address,Primary\nold@example.com,No\nhi@zeelex.me,Yes\n",
-        );
+        let t = table("Email Address,Primary\nold@example.com,No\nhi@zeelex.me,Yes\n");
         let mut resume = Resume::default();
         read_email(&t, &mut resume);
         assert_eq!(resume.basics.email, "hi@zeelex.me");
@@ -673,7 +675,8 @@ mod tests {
     /// archive hands over both.
     #[test]
     fn a_table_the_engine_does_not_map_is_named_rather_than_dropped() {
-        let dir = std::env::temp_dir().join(format!("dockcv-linkedin-extra-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("dockcv-linkedin-extra-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let path = dir.join("export.zip");
 
@@ -683,7 +686,10 @@ mod tests {
             zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
         for (name, body) in [
             ("Profile.csv", "First Name,Last Name\nSofiia,Medvedenko\n"),
-            ("Honors.csv", "Title,Description\nBest Paper,ACM\nRunner Up,IEEE\n"),
+            (
+                "Honors.csv",
+                "Title,Description\nBest Paper,ACM\nRunner Up,IEEE\n",
+            ),
             ("Courses.csv", "Name\nDistributed Systems\n"),
         ] {
             use std::io::Write as _;

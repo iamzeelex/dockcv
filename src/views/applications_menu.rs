@@ -53,13 +53,22 @@ impl MenuContext {
 
 /// The columns a card can be moved to, in board order.
 const COLUMNS: [(ApplicationStatus, &str); 5] = [
-    (ApplicationStatus::Wishlist, status_title(ApplicationStatus::Wishlist)),
-    (ApplicationStatus::Applied, status_title(ApplicationStatus::Applied)),
+    (
+        ApplicationStatus::Wishlist,
+        status_title(ApplicationStatus::Wishlist),
+    ),
+    (
+        ApplicationStatus::Applied,
+        status_title(ApplicationStatus::Applied),
+    ),
     (
         ApplicationStatus::Interviewing,
         status_title(ApplicationStatus::Interviewing),
     ),
-    (ApplicationStatus::Offer, status_title(ApplicationStatus::Offer)),
+    (
+        ApplicationStatus::Offer,
+        status_title(ApplicationStatus::Offer),
+    ),
     (
         ApplicationStatus::Closed,
         status_title(ApplicationStatus::Closed),
@@ -144,11 +153,13 @@ pub(super) fn application_menu(
         if *has_snapshot {
             let shell_open = shell.clone();
             let index = *index;
-            menu = menu.separator().item(PopupMenuItem::new("Open sent PDF").on_click(
-                move |_ev, _window, cx| {
-                    let _ = shell_open.update(cx, |this, cx| this.reveal_snapshot(index, cx));
-                },
-            ));
+            menu = menu
+                .separator()
+                .item(
+                    PopupMenuItem::new("Open sent PDF").on_click(move |_ev, _window, cx| {
+                        let _ = shell_open.update(cx, |this, cx| this.reveal_snapshot(index, cx));
+                    }),
+                );
         } else if pinned.is_some() {
             // O-19: the capture that runs on send can fail — a document that
             // no longer compiles, a vault gone read-only — and until now the
@@ -156,18 +167,20 @@ pub(super) fn application_menu(
             // back. The banner that reported the failure is long gone by then.
             let shell_retry = shell.clone();
             let index = *index;
-            menu = menu.separator().item(PopupMenuItem::new("Capture snapshot now").on_click(
-                move |_ev, _window, cx| {
-                    let _ = shell_retry.update(cx, |this, cx| this.capture_snapshot(index, cx));
-                },
-            ));
+            menu = menu
+                .separator()
+                .item(PopupMenuItem::new("Capture snapshot now").on_click(
+                    move |_ev, _window, cx| {
+                        let _ = shell_retry.update(cx, |this, cx| this.capture_snapshot(index, cx));
+                    },
+                ));
         }
 
         let shell_del = shell.clone();
         let index = *index;
         let company = company.clone();
-        menu.separator()
-            .item(PopupMenuItem::new("Delete").on_click(move |_ev, window, cx| {
+        menu.separator().item(
+            PopupMenuItem::new("Delete").on_click(move |_ev, window, cx| {
                 let company = company.clone();
                 let _ = shell_del.update(cx, |_this, cx: &mut Context<Shell>| {
                     let who = if company.trim().is_empty() {
@@ -188,6 +201,7 @@ pub(super) fn application_menu(
                         move |this, _window, cx| this.delete_application(index, cx),
                     );
                 });
-            }))
+            }),
+        )
     }
 }

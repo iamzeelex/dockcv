@@ -18,8 +18,7 @@ use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, FontWeight, IntoElement, SharedString};
 
 use dockcv_ui_components::{
-    lucide, Button, ButtonExt, Card, DockIcon, Icon, IconName, ScrollableElement, Sizable,
-    Spinner,
+    lucide, Button, ButtonExt, Card, DockIcon, Icon, IconName, ScrollableElement, Sizable, Spinner,
 };
 
 use crate::import::model::ImportedDoc;
@@ -85,7 +84,6 @@ fn shorten(line: &str) -> String {
     format!("{}…", cut.trim_end_matches([',', '.', ' ']))
 }
 
-
 /// Standardized section item data for Step 2 review.
 struct SectionReviewItem {
     name: String,
@@ -142,9 +140,8 @@ impl SectionReviewItem {
 
         // `1 entries` and `1 category groups` were on screen. A count the user
         // reads is a sentence, not a template with a number pushed into it.
-        let count = |n: usize, one: &str, many: &str| {
-            format!("{n} {}", if n == 1 { one } else { many })
-        };
+        let count =
+            |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
 
         // Join the parts an entry actually has — an empty field would otherwise
         // show up as a stray separator, which reads as data the parser lost.
@@ -224,7 +221,11 @@ impl SectionReviewItem {
                 detail: format!(
                     "{} {}",
                     entries.len(),
-                    if entries.len() == 1 { "entry" } else { "entries" }
+                    if entries.len() == 1 {
+                        "entry"
+                    } else {
+                        "entries"
+                    }
                 ),
                 empty: entries.is_empty(),
                 needs_review: false,
@@ -399,10 +400,7 @@ pub fn render_step1_bring_document<V: 'static>(
         )
 }
 
-pub fn render_parsing_step<V: 'static>(
-    cx: &mut Context<V>,
-    filename: &str,
-) -> impl IntoElement {
+pub fn render_parsing_step<V: 'static>(cx: &mut Context<V>, filename: &str) -> impl IntoElement {
     let theme = *cx.theme();
 
     div()
@@ -446,7 +444,10 @@ pub fn render_parsing_step<V: 'static>(
 /// `ImportedDoc::unplaced` at all: the importer computed it and threw it away,
 /// so a CV could lose paragraphs on the way in with no trace. Shown verbatim,
 /// because a summary of what was lost is not evidence of what was lost.
-fn render_unplaced<V: 'static>(cx: &mut Context<V>, imported: &ImportedDoc) -> Option<impl IntoElement> {
+fn render_unplaced<V: 'static>(
+    cx: &mut Context<V>,
+    imported: &ImportedDoc,
+) -> Option<impl IntoElement> {
     if imported.unplaced.is_empty() {
         return None;
     }
@@ -676,12 +677,9 @@ pub fn render_step2_review_split<V: 'static>(
                                             .map(|l| div().child(shorten(l))),
                                     )
                                     .when(item.preview.len() > PREVIEW_LINES, |el| {
-                                        el.child(
-                                            div().text_color(theme.text_subtle).child(format!(
-                                                "+{} more",
-                                                item.preview.len() - PREVIEW_LINES
-                                            )),
-                                        )
+                                        el.child(div().text_color(theme.text_subtle).child(
+                                            format!("+{} more", item.preview.len() - PREVIEW_LINES),
+                                        ))
                                     }),
                             )
                         })
@@ -937,7 +935,10 @@ mod tests {
             !short.contains("  ") && !short.trim_end_matches('…').ends_with(' '),
             "the cut lands between words: {short}"
         );
-        assert_eq!(super::shorten("Assistant Manager — Woodgrove Bank"), "Assistant Manager — Woodgrove Bank");
+        assert_eq!(
+            super::shorten("Assistant Manager — Woodgrove Bank"),
+            "Assistant Manager — Woodgrove Bank"
+        );
     }
 
     /// The regression this guards: review flags used to be inferred from list
@@ -954,7 +955,11 @@ mod tests {
         for item in &items {
             // Education and Skills carry entries and nothing odd about them.
             if item.name == "Education" || item.name == "Skills" {
-                assert!(!item.needs_review, "{} was flagged: {:?}", item.name, item.notes);
+                assert!(
+                    !item.needs_review,
+                    "{} was flagged: {:?}",
+                    item.name, item.notes
+                );
                 assert!(item.notes.is_empty());
             }
         }
@@ -989,7 +994,11 @@ mod tests {
         let work = find("Work Experience");
         assert!(work.needs_review);
         assert_eq!(work.notes.len(), 1);
-        assert!(work.notes[0].contains("nothing came out of it"), "{:?}", work.notes);
+        assert!(
+            work.notes[0].contains("nothing came out of it"),
+            "{:?}",
+            work.notes
+        );
 
         // Two notes on one section, both shown: saying only the first would
         // hide half the work the user has to do.

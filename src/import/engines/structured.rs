@@ -42,13 +42,11 @@ pub fn import_structured(path: &Path) -> Result<ImportedDoc, ImportError> {
         }
     }
 
-    Err(
-        ImportError::new("This file is not a CV DockCV can read")
-            .detail(
-                "It parsed, but it does not carry a name, any jobs or any education — so it is \
+    Err(ImportError::new("This file is not a CV DockCV can read")
+        .detail(
+            "It parsed, but it does not carry a name, any jobs or any education — so it is \
                  some other document that happens to be JSON.",
-            )
-            .remedy("If it is a JSON Resume, check it has a `basics.name` or a `work` list")
-            .remedy("If it came out of another CV tool, export it as PDF or DOCX instead"),
-    )
+        )
+        .remedy("If it is a JSON Resume, check it has a `basics.name` or a `work` list")
+        .remedy("If it came out of another CV tool, export it as PDF or DOCX instead"))
 }

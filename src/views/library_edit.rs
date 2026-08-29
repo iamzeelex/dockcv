@@ -95,7 +95,10 @@ const EDUCATION: [FieldSpec; 5] = [
 ];
 
 const SKILLS: [FieldSpec; 2] = [
-    line("Category", "Infrastructure — leave blank for an ungrouped list"),
+    line(
+        "Category",
+        "Infrastructure — leave blank for an ungrouped list",
+    ),
     lines("Skills", "One per line: Kafka, AWS, Kubernetes…"),
 ];
 
@@ -256,7 +259,12 @@ pub(super) fn apply(
     index: Option<usize>,
     values: &[String],
 ) -> bool {
-    let at = |i: usize| values.get(i).map(|v| v.trim().to_string()).unwrap_or_default();
+    let at = |i: usize| {
+        values
+            .get(i)
+            .map(|v| v.trim().to_string())
+            .unwrap_or_default()
+    };
     if values.iter().all(|v| v.trim().is_empty()) {
         return false;
     }
@@ -337,8 +345,8 @@ use gpui::{
     Window,
 };
 
-use dockcv_ui_components::{ScrollableElement, 
-    Button, ButtonExt, Disableable, TextField, TextFieldEvent, TextFieldState,
+use dockcv_ui_components::{
+    Button, ButtonExt, Disableable, ScrollableElement, TextField, TextFieldEvent, TextFieldState,
 };
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
@@ -389,16 +397,18 @@ impl Shell {
             if !value.is_empty() {
                 field.update(cx, |state, cx| state.seed(&value, window, cx));
             }
-            subscriptions.push(cx.subscribe(
-                &field,
-                |this, _field, event: &TextFieldEvent, cx| match event {
-                    // Enter in any single-line field saves, the way it does in
-                    // every other one-screen form here.
-                    TextFieldEvent::Submitted => this.commit_library_edit(cx),
-                    TextFieldEvent::Changed => cx.notify(),
-                    _ => {}
-                },
-            ));
+            subscriptions.push(
+                cx.subscribe(
+                    &field,
+                    |this, _field, event: &TextFieldEvent, cx| match event {
+                        // Enter in any single-line field saves, the way it does in
+                        // every other one-screen form here.
+                        TextFieldEvent::Submitted => this.commit_library_edit(cx),
+                        TextFieldEvent::Changed => cx.notify(),
+                        _ => {}
+                    },
+                ),
+            );
             values.push(field);
         }
 
@@ -468,8 +478,8 @@ impl Shell {
         // whitespace — has nothing to propagate, and a dialog about it would
         // be noise on a no-op.
         if let Some((index, identity, before, targets)) = radius {
-            let changed = block_fingerprint(&library, section, index)
-                .is_some_and(|after| after != before);
+            let changed =
+                block_fingerprint(&library, section, index).is_some_and(|after| after != before);
             if changed {
                 let title = block_title(&library, section, index)
                     .unwrap_or_else(|| block_noun(section).to_string());
@@ -642,8 +652,18 @@ mod tests {
     #[test]
     fn editing_replaces_and_does_not_append() {
         let mut library = Library::default();
-        apply(&mut library, SectionKind::Skills, None, &["A".into(), "x".into()]);
-        apply(&mut library, SectionKind::Skills, None, &["B".into(), "y".into()]);
+        apply(
+            &mut library,
+            SectionKind::Skills,
+            None,
+            &["A".into(), "x".into()],
+        );
+        apply(
+            &mut library,
+            SectionKind::Skills,
+            None,
+            &["B".into(), "y".into()],
+        );
         assert_eq!(library.skills.len(), 2);
 
         apply(
@@ -668,7 +688,14 @@ mod tests {
         assert!(library.work.is_empty());
 
         // Whitespace is empty too.
-        let spaces = vec!["   ".into(), "\n".into(), String::new(), String::new(), String::new(), String::new()];
+        let spaces = vec![
+            "   ".into(),
+            "\n".into(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ];
         assert!(!apply(&mut library, SectionKind::Work, None, &spaces));
         assert!(library.work.is_empty());
     }
@@ -684,7 +711,10 @@ mod tests {
             None,
             &["Infra".into(), "Kafka\n\n  AWS  \nKubernetes\n".into()],
         );
-        assert_eq!(library.skills[0].keywords, vec!["Kafka", "AWS", "Kubernetes"]);
+        assert_eq!(
+            library.skills[0].keywords,
+            vec!["Kafka", "AWS", "Kubernetes"]
+        );
     }
 
     /// A comma belongs to the bullet, not to the parser — which is why list

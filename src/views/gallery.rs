@@ -6,12 +6,12 @@
 use gpui::prelude::*;
 use gpui::{div, img, px, AnyElement, ClickEvent, Context, FontWeight, IntoElement, SharedString};
 
+use super::import_flow::{self, ImportStep};
 use crate::resume::model::{Resume, ResumeDoc};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
-use super::import_flow::{self, ImportStep};
-use dockcv_ui_components::{ScrollableElement, 
-    Button, ButtonExt, Card, DropdownMenu, EmptyState, Icon, IconName, PopupMenuItem, Sizable, Tag,
-    TextField, SANS,
+use dockcv_ui_components::{
+    Button, ButtonExt, Card, DropdownMenu, EmptyState, Icon, IconName, PopupMenuItem,
+    ScrollableElement, Sizable, Tag, TextField, SANS,
 };
 
 use crate::vault;
@@ -195,15 +195,11 @@ impl Shell {
             .len()
             > 1;
 
-        div()
-            .flex()
-            .flex_wrap()
-            .gap(px(18.0))
-            .children(
-                metas
-                    .into_iter()
-                    .map(|meta| self.doc_card(cx, meta, now, mixed_names)),
-            )
+        div().flex().flex_wrap().gap(px(18.0)).children(
+            metas
+                .into_iter()
+                .map(|meta| self.doc_card(cx, meta, now, mixed_names)),
+        )
     }
 
     /// One document card.
@@ -378,11 +374,13 @@ impl Shell {
                 // Same reason as the `···` wrapper: typing in this box must
                 // not read as a click on the card behind it.
                 .occlude()
-                .child(div().flex_1().min_w_0().children(
-                    self.rename_field.as_ref().map(|state| {
-                        TextField::new(state).placeholder("Document name")
-                    }),
-                ))
+                .child(
+                    div().flex_1().min_w_0().children(
+                        self.rename_field
+                            .as_ref()
+                            .map(|state| TextField::new(state).placeholder("Document name")),
+                    ),
+                )
                 // A way out that is not "press Escape and hope": the rename
                 // box replaces the card's title, so without this the only
                 // exits are committing or restarting the app.
@@ -472,12 +470,16 @@ impl Shell {
             .gap(px(6.0))
             .when(meta.is_draft(), |row| {
                 row.child(
-                    Tag::custom(theme.chip_bg_neutral, theme.text_muted, theme.chip_bg_neutral)
-                        .px(px(8.0))
-                        .py(px(3.0))
-                        .rounded(theme.radius_sm())
-                        .text_style(TextStyle::chip())
-                        .child("draft"),
+                    Tag::custom(
+                        theme.chip_bg_neutral,
+                        theme.text_muted,
+                        theme.chip_bg_neutral,
+                    )
+                    .px(px(8.0))
+                    .py(px(3.0))
+                    .rounded(theme.radius_sm())
+                    .text_style(TextStyle::chip())
+                    .child("draft"),
                 )
             })
             .children(shown.into_iter().map(|name| {
@@ -521,89 +523,96 @@ impl Shell {
             .right(px(10.0))
             .occlude()
             .child(
-        Button::new(SharedString::from(format!(
-            "card-menu-{}",
-            meta.path.to_string_lossy()
-        )))
-        .icon_only()
-        .icon(IconName::Ellipsis)
-        .tooltip("More")
-        .dropdown_menu(move |menu, _window, _cx| {
-            let (rename, matrix, dup, del, reveal) = (
-                shell.clone(),
-                shell.clone(),
-                shell.clone(),
-                shell.clone(),
-                shell.clone(),
-            );
-            let (p_rename, p_matrix, p_dup, p_del) =
-                (path.clone(), path.clone(), path.clone(), path.clone());
-            let vault_dir = vault_dir.clone();
+                Button::new(SharedString::from(format!(
+                    "card-menu-{}",
+                    meta.path.to_string_lossy()
+                )))
+                .icon_only()
+                .icon(IconName::Ellipsis)
+                .tooltip("More")
+                .dropdown_menu(move |menu, _window, _cx| {
+                    let (rename, matrix, dup, del, reveal) = (
+                        shell.clone(),
+                        shell.clone(),
+                        shell.clone(),
+                        shell.clone(),
+                        shell.clone(),
+                    );
+                    let (p_rename, p_matrix, p_dup, p_del) =
+                        (path.clone(), path.clone(), path.clone(), path.clone());
+                    let vault_dir = vault_dir.clone();
 
-            menu.item(PopupMenuItem::new("Rename…").on_click(
-                move |_ev, window, cx| {
-                    let _ = rename.update(cx, |this, cx| {
-                        this.start_rename(p_rename.clone(), window, cx);
-                    });
-                },
-            ))
-            .item(PopupMenuItem::new("Presets…").on_click(move |_ev, _window, cx| {
-                let _ = matrix.update(cx, |this, cx| {
-                    this.open_preset_matrix(p_matrix.clone(), cx);
-                });
-            }))
-            .item(PopupMenuItem::new("Duplicate").on_click(move |_ev, _window, cx| {
-                let _ = dup.update(cx, |this, cx| this.duplicate_doc(p_dup.clone(), cx));
-            }))
-            .item(PopupMenuItem::new("Show in Finder").on_click(move |_ev, _window, cx| {
-                let _ = reveal.update(cx, |_this, cx| {
-                    if let Some(dir) = vault_dir.clone() {
-                        cx.open_with_system(&dir);
-                    }
-                });
-            }))
-            .separator()
-            .item(PopupMenuItem::new("Delete").on_click(move |_ev, _window, cx| {
-                let _ = del.update(cx, |this, cx| this.delete_doc(p_del.clone(), cx));
-            }))
-        }),
+                    menu.item(
+                        PopupMenuItem::new("Rename…").on_click(move |_ev, window, cx| {
+                            let _ = rename.update(cx, |this, cx| {
+                                this.start_rename(p_rename.clone(), window, cx);
+                            });
+                        }),
+                    )
+                    .item(
+                        PopupMenuItem::new("Presets…").on_click(move |_ev, _window, cx| {
+                            let _ = matrix.update(cx, |this, cx| {
+                                this.open_preset_matrix(p_matrix.clone(), cx);
+                            });
+                        }),
+                    )
+                    .item(
+                        PopupMenuItem::new("Duplicate").on_click(move |_ev, _window, cx| {
+                            let _ =
+                                dup.update(cx, |this, cx| this.duplicate_doc(p_dup.clone(), cx));
+                        }),
+                    )
+                    .item(
+                        PopupMenuItem::new("Show in Finder").on_click(move |_ev, _window, cx| {
+                            let _ = reveal.update(cx, |_this, cx| {
+                                if let Some(dir) = vault_dir.clone() {
+                                    cx.open_with_system(&dir);
+                                }
+                            });
+                        }),
+                    )
+                    .separator()
+                    .item(
+                        PopupMenuItem::new("Delete").on_click(move |_ev, _window, cx| {
+                            let _ = del.update(cx, |this, cx| this.delete_doc(p_del.clone(), cx));
+                        }),
+                    )
+                }),
             )
     }
 
     pub(super) fn render_template_chooser(&self, cx: &mut Context<Self>) -> impl IntoElement {
         match &self.import_step {
-            ImportStep::Step1Drop => {
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .w_full()
-                    .py(px(20.0))
-                    .child(import_flow::render_step1_bring_document(
-                        cx,
-                        |this, cx| {
-                            this.import_existing_resume(cx);
-                        },
-                        |this, cx| {
-                            let doc = ResumeDoc::from_resume(Resume::default(), "Base");
-                            this.create_doc(doc, "cv", cx);
+            ImportStep::Step1Drop => div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .w_full()
+                .py(px(20.0))
+                .child(import_flow::render_step1_bring_document(
+                    cx,
+                    |this, cx| {
+                        this.import_existing_resume(cx);
+                    },
+                    |this, cx| {
+                        let doc = ResumeDoc::from_resume(Resume::default(), "Base");
+                        this.create_doc(doc, "cv", cx);
+                        this.gallery_creating = false;
+                        this.import_step = ImportStep::Step1Drop;
+                    },
+                ))
+                .child(
+                    Button::new("tpl-cancel")
+                        .quiet()
+                        .mt(px(16.0))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                             this.gallery_creating = false;
                             this.import_step = ImportStep::Step1Drop;
-                        },
-                    ))
-                    .child(
-                        Button::new("tpl-cancel")
-                            .quiet()
-                            .mt(px(16.0))
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.gallery_creating = false;
-                                this.import_step = ImportStep::Step1Drop;
-                                cx.notify();
-                            }))
-                            .child("← Back to Gallery"),
-                    )
-            }
+                            cx.notify();
+                        }))
+                        .child("← Back to Gallery"),
+                ),
             ImportStep::Parsing { filename } => div()
                 .flex()
                 .flex_col()
@@ -694,5 +703,3 @@ impl Shell {
             )
     }
 }
-
-

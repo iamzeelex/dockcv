@@ -18,20 +18,20 @@
 use gpui::prelude::*;
 use gpui::{div, px, relative, ClickEvent, Context, IntoElement, SharedString};
 
-use dockcv_ui_components::{ScrollableElement, 
-    Button, ButtonExt, ContextMenuExt, EmptyState, Icon, IconName, Sizable, Table, TableBody,
-    TableCell, TableHead, TableHeader, TableRow, Tag,
+use dockcv_ui_components::{
+    Button, ButtonExt, ContextMenuExt, EmptyState, Icon, IconName, ScrollableElement, Sizable,
+    Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Tag,
 };
 
 use crate::resume::model::{Application, Applications};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use super::applications_card::column_tint;
-use super::applications_menu::{application_menu, MenuContext};
 use super::applications_data::{
     last_touched, matches_query, next_step_caption, short_date, sort_rows, status_title,
     ApplicationSort,
 };
+use super::applications_menu::{application_menu, MenuContext};
 use super::shell::Shell;
 
 /// A column: what it is called, the sort a header click selects, and how much
@@ -58,12 +58,42 @@ struct Column {
 /// with something to say were the first to run out of room. The numbers below
 /// are read off what each column actually holds.
 const COLUMNS: [Column; 6] = [
-    Column { title: "Company",      sort: Some(ApplicationSort::Company), grow: 2.6, min_px: 150.0 },
-    Column { title: "Stage",        sort: Some(ApplicationSort::Stage),   grow: 1.2, min_px: 96.0 },
-    Column { title: "CV sent",      sort: None,                           grow: 2.4, min_px: 120.0 },
-    Column { title: "Applied",      sort: Some(ApplicationSort::Applied), grow: 1.0, min_px: 76.0 },
-    Column { title: "Next step",    sort: None,                           grow: 2.2, min_px: 120.0 },
-    Column { title: "Last touched", sort: Some(ApplicationSort::Stale),   grow: 1.2, min_px: 92.0 },
+    Column {
+        title: "Company",
+        sort: Some(ApplicationSort::Company),
+        grow: 2.6,
+        min_px: 150.0,
+    },
+    Column {
+        title: "Stage",
+        sort: Some(ApplicationSort::Stage),
+        grow: 1.2,
+        min_px: 96.0,
+    },
+    Column {
+        title: "CV sent",
+        sort: None,
+        grow: 2.4,
+        min_px: 120.0,
+    },
+    Column {
+        title: "Applied",
+        sort: Some(ApplicationSort::Applied),
+        grow: 1.0,
+        min_px: 76.0,
+    },
+    Column {
+        title: "Next step",
+        sort: None,
+        grow: 2.2,
+        min_px: 120.0,
+    },
+    Column {
+        title: "Last touched",
+        sort: Some(ApplicationSort::Stale),
+        grow: 1.2,
+        min_px: 92.0,
+    },
 ];
 
 /// Give a header or a cell its column's width.
@@ -130,7 +160,11 @@ impl Shell {
                 .min_w_0()
                 .gap(px(4.0))
                 .text_style(TextStyle::label())
-                .text_color(if is_active { theme.text } else { theme.text_muted })
+                .text_color(if is_active {
+                    theme.text
+                } else {
+                    theme.text_muted
+                })
                 .child(title);
             if is_active {
                 // Only the column actually in force draws the caret. A caret
@@ -268,22 +302,24 @@ impl Shell {
             // user who lives in the list is not sent back to the board to move
             // a card. Right-click rather than a per-row button: the list is
             // dense, and six columns plus a control is five columns of data.
-            .child(sized(TableCell::new(), &COLUMNS[0]).child(
-                // The list gets the board card's whole menu, on right-click:
-                // a user who lives here should never be sent back to the board
-                // to move a card. A per-row `···` button would be a seventh
-                // column of chrome on a table that is already six of data.
-                div()
-                    .id(SharedString::from(format!("apps-row-{index}")))
-                    .w_full()
-                    .min_w_0()
-                    .context_menu(application_menu(MenuContext::of(
-                        cx.weak_entity(),
-                        index,
-                        app,
-                    )))
-                    .child(identity),
-            ))
+            .child(
+                sized(TableCell::new(), &COLUMNS[0]).child(
+                    // The list gets the board card's whole menu, on right-click:
+                    // a user who lives here should never be sent back to the board
+                    // to move a card. A per-row `···` button would be a seventh
+                    // column of chrome on a table that is already six of data.
+                    div()
+                        .id(SharedString::from(format!("apps-row-{index}")))
+                        .w_full()
+                        .min_w_0()
+                        .context_menu(application_menu(MenuContext::of(
+                            cx.weak_entity(),
+                            index,
+                            app,
+                        )))
+                        .child(identity),
+                ),
+            )
             .child(sized(TableCell::new(), &COLUMNS[1]).child(stage))
             .child(sized(TableCell::new(), &COLUMNS[2]).child(muted(cv)))
             .child(sized(TableCell::new(), &COLUMNS[3]).child(muted(applied)))
@@ -291,7 +327,6 @@ impl Shell {
             .child(sized(TableCell::new(), &COLUMNS[5]).child(muted(touched)))
     }
 }
-
 
 #[cfg(test)]
 mod tests {

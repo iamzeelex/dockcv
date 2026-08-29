@@ -114,9 +114,7 @@ impl FieldId {
             | EduStart(_)
             | EduEnd(_)
             | EduUrl(_)
-            | EduHighlight(_, _) => {
-                SectionKind::Education
-            }
+            | EduHighlight(_, _) => SectionKind::Education,
             SkillName(_) | SkillKeyword(_, _) => SectionKind::Skills,
             CertName(_) | CertIssuer(_) | CertDate(_) | CertUrl(_) => SectionKind::Certificates,
             VolOrg(_) | VolPosition(_) | VolStart(_) | VolEnd(_) | VolHighlight(_, _) => {
@@ -250,8 +248,22 @@ impl FieldId {
             CustomEntrySubtitle(id, i) => {
                 &doc.custom_section(id)?.content.active().get(i)?.subtitle
             }
-            CustomEntryStart(id, i) => &doc.custom_section(id)?.content.active().get(i)?.start_date.text,
-            CustomEntryEnd(id, i) => &doc.custom_section(id)?.content.active().get(i)?.end_date.text,
+            CustomEntryStart(id, i) => {
+                &doc.custom_section(id)?
+                    .content
+                    .active()
+                    .get(i)?
+                    .start_date
+                    .text
+            }
+            CustomEntryEnd(id, i) => {
+                &doc.custom_section(id)?
+                    .content
+                    .active()
+                    .get(i)?
+                    .end_date
+                    .text
+            }
             CustomEntryUrl(id, i) => &doc.custom_section(id)?.content.active().get(i)?.url,
             CustomEntryHighlight(id, i, j) => doc
                 .custom_section(id)?
@@ -290,7 +302,12 @@ impl FieldId {
             EduStart(i) => &mut doc.education.active_mut().get_mut(i)?.start_date.text,
             EduEnd(i) => &mut doc.education.active_mut().get_mut(i)?.end_date.text,
             EduUrl(i) => &mut doc.education.active_mut().get_mut(i)?.url,
-            EduHighlight(i, j) => doc.education.active_mut().get_mut(i)?.highlights.get_mut(j)?,
+            EduHighlight(i, j) => doc
+                .education
+                .active_mut()
+                .get_mut(i)?
+                .highlights
+                .get_mut(j)?,
             SkillName(i) => &mut doc.skills.active_mut().get_mut(i)?.name,
             SkillKeyword(i, j) => doc.skills.active_mut().get_mut(i)?.keywords.get_mut(j)?,
             CertName(i) => &mut doc.certificates.active_mut().get_mut(i)?.name,
@@ -638,7 +655,10 @@ mod tests {
         );
 
         let id = FieldId::EduHighlight(0, 0);
-        assert_eq!(id.get(&doc).map(String::as_str), Some("University of Florida"));
+        assert_eq!(
+            id.get(&doc).map(String::as_str),
+            Some("University of Florida")
+        );
         assert!(
             FieldId::addressable(&doc).contains(&id),
             "the field must be enumerated, or the editor never draws it"
@@ -671,5 +691,4 @@ mod tests {
         *id.get_mut(&mut doc).expect("the preset exists") = "Backend, concise".into();
         assert_eq!(doc.presets[0].name, "Backend, concise");
     }
-
 }

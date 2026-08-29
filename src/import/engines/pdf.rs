@@ -213,7 +213,10 @@ mod tests {
     /// stream — is valid, which is the point: this is not corrupt input, it is
     /// ordinary input carrying a construct `pdf-extract` refuses.
     fn one_page_pdf(encoding: &str) -> Vec<u8> {
-        one_page_pdf_inner(encoding, b"BT /F1 24 Tf 72 720 Td (Sofiia Medvedenko) Tj ET")
+        one_page_pdf_inner(
+            encoding,
+            b"BT /F1 24 Tf 72 720 Td (Sofiia Medvedenko) Tj ET",
+        )
     }
 
     /// The same page with a content stream of the caller's choosing.

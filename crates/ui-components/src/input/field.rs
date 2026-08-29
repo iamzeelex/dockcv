@@ -55,7 +55,10 @@ pub struct TextFieldState {
 impl TextFieldState {
     /// A one-line field: Enter submits rather than inserting a newline.
     pub fn single_line(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        Self::wrap(cx.new(|cx| InputState::new(window, cx).submit_on_enter(true)), cx)
+        Self::wrap(
+            cx.new(|cx| InputState::new(window, cx).submit_on_enter(true)),
+            cx,
+        )
     }
 
     /// A prose field: Enter inserts a newline and long lines wrap.
@@ -223,7 +226,11 @@ impl RenderOnce for TextField {
                     .border_1()
                     .border_color(if focused { theme.accent } else { theme.border })
             })
-            .text_color(if self.disabled { theme.text_subtle } else { theme.text })
+            .text_color(if self.disabled {
+                theme.text_subtle
+            } else {
+                theme.text
+            })
             .child(input)
     }
 }

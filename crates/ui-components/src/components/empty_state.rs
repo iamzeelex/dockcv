@@ -19,9 +19,9 @@ use gpui::{
 };
 
 use crate::components::icon::{Icon, IconName};
-use gpui_component::Sizable as _;
 use crate::theme::ActiveTheme;
 use crate::typography::{StyledText, TextStyle};
+use gpui_component::Sizable as _;
 
 #[derive(IntoElement)]
 pub struct EmptyState {
@@ -76,9 +76,13 @@ impl RenderOnce for EmptyState {
             .icon
             // Off the icon ladder on purpose: this glyph is not labelling a
             // control, it is the illustration at the top of an empty screen.
-            .map(|name| div().mb_3().child(Icon::new(name)
-                .with_size(px(30.0))
-                .text_color(theme.text_subtle)));
+            .map(|name| {
+                div().mb_3().child(
+                    Icon::new(name)
+                        .with_size(px(30.0))
+                        .text_color(theme.text_subtle),
+                )
+            });
 
         let headline = div()
             .text_style(TextStyle::heading())

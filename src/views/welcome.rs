@@ -33,9 +33,7 @@
 use std::time::Duration;
 
 use gpui::prelude::*;
-use gpui::{
-    div, linear, px, Animation, AnimationExt, ClickEvent, Context, Div, IntoElement,
-};
+use gpui::{div, linear, px, Animation, AnimationExt, ClickEvent, Context, Div, IntoElement};
 
 use dockcv_ui_components::{Button, ButtonExt, StyledText, TextStyle, SANS};
 
@@ -120,7 +118,13 @@ fn sheet(theme: &Theme, depth: usize, window: (f32, f32), lines: usize) -> impl 
         .gap(px(5.0))
         // The same grey bars the gallery card draws on its thumbnail: what the
         // welcome screen shows is what a CV looks like in this app.
-        .child(div().h(px(5.0)).w(px(38.0)).rounded(px(2.0)).bg(theme.text_subtle))
+        .child(
+            div()
+                .h(px(5.0))
+                .w(px(38.0))
+                .rounded(px(2.0))
+                .bg(theme.text_subtle),
+        )
         .children((0..lines).map(|i| {
             let width = [56.0, 48.0, 62.0, 40.0][i % 4];
             div()
@@ -265,8 +269,14 @@ mod tests {
         let mut previous = 0.0;
         for i in 0..=100 {
             let value = step(i as f32 / 100.0, 0.2, 0.8);
-            assert!(value >= previous, "went backwards at {i}: {value} < {previous}");
-            assert!((0.0..=1.0).contains(&value), "left the range at {i}: {value}");
+            assert!(
+                value >= previous,
+                "went backwards at {i}: {value} < {previous}"
+            );
+            assert!(
+                (0.0..=1.0).contains(&value),
+                "left the range at {i}: {value}"
+            );
             previous = value;
         }
     }

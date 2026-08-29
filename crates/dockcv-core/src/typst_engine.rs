@@ -213,7 +213,7 @@ impl PageGeometry {
     /// page's `frame` are exactly what `typst-render` and `typst-pdf` paint
     /// from, so this reads the same layout the user sees, not a re-derived
     /// approximation of it.
-#[cfg(feature = "raster")]
+    #[cfg(feature = "raster")]
     fn measure(document: &PagedDocument) -> Self {
         let pages = document.pages();
         let page_count = pages.len();
@@ -308,8 +308,11 @@ fn frame_content_top(frame: &Frame) -> Abs {
                 pos.y + frame_content_top(&group.frame)
             }
             FrameItem::Tag(_) => continue,
-            FrameItem::Group(_) | FrameItem::Text(_) | FrameItem::Shape(..)
-            | FrameItem::Image(..) | FrameItem::Link(..) => pos.y,
+            FrameItem::Group(_)
+            | FrameItem::Text(_)
+            | FrameItem::Shape(..)
+            | FrameItem::Image(..)
+            | FrameItem::Link(..) => pos.y,
         };
         // Same guard as `frame_content_bottom`: a non-finite candidate would
         // win every `min` and make the whole page look like it starts nowhere.
@@ -1014,7 +1017,11 @@ mod font_tests {
     #[test]
     fn every_offered_font_is_registered_and_changes_the_render() {
         let engine = TypstEngine::new(String::new());
-        let families: Vec<String> = engine.book.families().map(|(n, _)| n.to_lowercase()).collect();
+        let families: Vec<String> = engine
+            .book
+            .families()
+            .map(|(n, _)| n.to_lowercase())
+            .collect();
 
         for font in DocumentFont::ALL {
             assert!(
@@ -1117,8 +1124,9 @@ mod font_tests {
             .expect("workspace root");
 
         let load = |relative: &str| {
-            let bytes = std::fs::read(root.join(relative))
-                .unwrap_or_else(|e| panic!("{relative} is missing ({e}) — run scripts/subset-fonts.sh"));
+            let bytes = std::fs::read(root.join(relative)).unwrap_or_else(|e| {
+                panic!("{relative} is missing ({e}) — run scripts/subset-fonts.sh")
+            });
             Font::new(Bytes::new(bytes), 0)
                 .unwrap_or_else(|| panic!("{relative} did not parse as a font"))
         };
@@ -1193,15 +1201,17 @@ mod font_tests {
                         },
                         ..LayoutSettings::default()
                     };
-                    let engine =
-                        TypstEngine::new(template::generate_with_layout(&resume, &layout));
+                    let engine = TypstEngine::new(template::generate_with_layout(&resume, &layout));
                     let (_, geometry) = engine.compile_to_pixels(1.0).expect("compiles");
 
                     for (what, value) in [
                         ("last_page_used_pt", geometry.last_page_used_pt),
                         ("page_height_pt", geometry.page_height_pt),
                         ("overflow_pt", geometry.overflow_pt),
-                        ("last_page_content_top_pt", geometry.last_page_content_top_pt),
+                        (
+                            "last_page_content_top_pt",
+                            geometry.last_page_content_top_pt,
+                        ),
                     ] {
                         assert!(
                             value.is_finite(),
@@ -1307,5 +1317,4 @@ mod vendored_package_tests {
             "the contact bar drew no more ink than an empty one: {bare} vs {with_icons}"
         );
     }
-
 }

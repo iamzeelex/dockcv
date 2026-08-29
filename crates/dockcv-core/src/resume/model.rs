@@ -526,7 +526,6 @@ impl Closure {
         }
     }
 
-
     /// The column a finished application belongs in.
     ///
     /// The board says *where*, the closure says *how it ended*, and those are
@@ -539,9 +538,7 @@ impl Closure {
             // There was an offer, so the card belongs where offers live —
             // a search that ended in a yes should not be filed under no.
             Closure::Accepted | Closure::Declined => ApplicationStatus::Offer,
-            Closure::Rejected | Closure::Ghosted | Closure::Withdrew => {
-                ApplicationStatus::Closed
-            }
+            Closure::Rejected | Closure::Ghosted | Closure::Withdrew => ApplicationStatus::Closed,
         }
     }
 }
@@ -700,7 +697,6 @@ impl Application {
     }
 }
 
-
 /// The application board: every company/role the user is tracking. Stored at
 /// `<vault>/applications.toml`, mirroring Diary and Library.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -721,7 +717,6 @@ impl Applications {
             .filter(|a| a.status() != ApplicationStatus::Closed)
             .count()
     }
-
 }
 
 /// The user's reusable block library — their "me", shared across every résumé
@@ -1076,8 +1071,7 @@ impl Margins {
     /// describe this page.
     pub fn is_uniform(&self) -> bool {
         const EPSILON: f32 = 0.01;
-        (self.x_mm - self.top_mm).abs() < EPSILON
-            && (self.x_mm - self.bottom_mm).abs() < EPSILON
+        (self.x_mm - self.top_mm).abs() < EPSILON && (self.x_mm - self.bottom_mm).abs() < EPSILON
     }
 }
 
@@ -2235,7 +2229,8 @@ impl ResumeDoc {
     /// `section`'s heading, with the document's values wherever it does not
     /// depart from them.
     pub fn headings_for(&self, section: SectionKind) -> HeadingLayout {
-        self.section_overrides(section).headings(self.layout.headings)
+        self.section_overrides(section)
+            .headings(self.layout.headings)
     }
 
     /// `section`'s dated entries, resolved the same way.
@@ -2496,7 +2491,10 @@ impl ResumeDoc {
         if section == SectionKind::Profile {
             return;
         }
-        match (hidden, self.hidden_sections.iter().position(|s| *s == section)) {
+        match (
+            hidden,
+            self.hidden_sections.iter().position(|s| *s == section),
+        ) {
             (true, None) => self.hidden_sections.push(section),
             (false, Some(i)) => {
                 self.hidden_sections.remove(i);
@@ -2515,7 +2513,8 @@ impl ResumeDoc {
     /// how many lines something occupies.
     pub fn variant_weight(&self, section: SectionKind, index: usize) -> usize {
         use SectionKind::*;
-        let text_len = |strings: Vec<&String>| -> usize { strings.iter().map(|s| s.chars().count()).sum() };
+        let text_len =
+            |strings: Vec<&String>| -> usize { strings.iter().map(|s| s.chars().count()).sum() };
         match section {
             Profile => self
                 .profile
@@ -2542,7 +2541,12 @@ impl ResumeDoc {
                 .education
                 .variants
                 .get(index)
-                .map(|v| v.data.iter().map(|e| e.institution.chars().count() + e.study_type.chars().count()).sum())
+                .map(|v| {
+                    v.data
+                        .iter()
+                        .map(|e| e.institution.chars().count() + e.study_type.chars().count())
+                        .sum()
+                })
                 .unwrap_or(0),
             Skills => self
                 .skills
@@ -2559,7 +2563,12 @@ impl ResumeDoc {
                 .certificates
                 .variants
                 .get(index)
-                .map(|v| v.data.iter().map(|c| c.name.chars().count() + c.issuer.chars().count()).sum())
+                .map(|v| {
+                    v.data
+                        .iter()
+                        .map(|c| c.name.chars().count() + c.issuer.chars().count())
+                        .sum()
+                })
                 .unwrap_or(0),
             Organizations => self
                 .volunteer
@@ -2568,7 +2577,9 @@ impl ResumeDoc {
                 .map(|v| {
                     v.data
                         .iter()
-                        .map(|o| o.position.chars().count() + text_len(o.highlights.iter().collect()))
+                        .map(|o| {
+                            o.position.chars().count() + text_len(o.highlights.iter().collect())
+                        })
                         .sum()
                 })
                 .unwrap_or(0),
@@ -2986,7 +2997,10 @@ mod custom_section_tests {
         let selection = doc.current_selection();
         let sections: Vec<SectionKind> = selection.iter().map(|(s, _)| *s).collect();
 
-        assert!(sections.contains(&SectionKind::Custom(id)), "got {sections:?}");
+        assert!(
+            sections.contains(&SectionKind::Custom(id)),
+            "got {sections:?}"
+        );
         assert_eq!(selection.len(), doc.sections().len());
     }
 
@@ -3067,8 +3081,14 @@ mod applications_tests {
             role: "Staff Engineer".into(),
             status_word: ApplicationStatus::Interviewing.word().into(),
             history: vec![
-                StageChange { at: "2026-06-02".into(), to: "applied".into() },
-                StageChange { at: "2026-06-18".into(), to: "interviewing".into() },
+                StageChange {
+                    at: "2026-06-02".into(),
+                    to: "applied".into(),
+                },
+                StageChange {
+                    at: "2026-06-18".into(),
+                    to: "interviewing".into(),
+                },
             ],
             rounds: vec![InterviewRound {
                 at: "2026-06-18".into(),
@@ -3136,8 +3156,7 @@ mod applications_tests {
     /// back to `Wishlist`, the board's own default column.
     #[test]
     fn unknown_status_falls_back_to_wishlist_rather_than_erroring() {
-        let toml_text =
-            "[[entries]]\ncompany = \"Acme\"\nrole = \"SWE\"\nstatus = \"ghosted\"\n";
+        let toml_text = "[[entries]]\ncompany = \"Acme\"\nrole = \"SWE\"\nstatus = \"ghosted\"\n";
         let apps: Applications =
             toml::from_str(toml_text).expect("a typo'd status must not fail the whole file");
         assert_eq!(apps.entries[0].status(), ApplicationStatus::Wishlist);
@@ -3157,8 +3176,16 @@ mod applications_tests {
         };
         let text = toml::to_string_pretty(&apps).expect("serializes");
         for absent in [
-            "created", "applied", "source_doc", "preset", "url", "notes", "next_step",
-            "compensation", "rejection_reason", "snapshots",
+            "created",
+            "applied",
+            "source_doc",
+            "preset",
+            "url",
+            "notes",
+            "next_step",
+            "compensation",
+            "rejection_reason",
+            "snapshots",
         ] {
             assert!(
                 !text.contains(absent),

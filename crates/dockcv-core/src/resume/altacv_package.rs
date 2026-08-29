@@ -11,6 +11,11 @@
 //! `#import "altacv/lib.typ"`.
 
 /// Package sources, keyed by the virtual path Typst asks for.
+// One line per file, deliberately, and `rustfmt` is told to leave it that
+// way: this is a manifest of what is vendored, and its value is that a
+// missing file is visible by scanning a column. Formatted, each entry becomes
+// three lines and the list stops reading as a list.
+#[rustfmt::skip]
 pub const SOURCES: &[(&str, &str)] = &[
     ("altacv/internal/dates.typ", include_str!("../../../../assets/typst/altacv/internal/dates.typ")),
     ("altacv/internal/defaults.typ", include_str!("../../../../assets/typst/altacv/internal/defaults.typ")),
@@ -45,6 +50,7 @@ pub const SOURCES: &[(&str, &str)] = &[
 /// The first sweep collected `.typ` and `.svg` and missed the TOML — a
 /// package's data files are as load-bearing as its code, and the omission
 /// showed up only as a compile error, not as a missing import.
+#[rustfmt::skip]
 pub const BYTES: &[(&str, &[u8])] = &[
     ("altacv/assets/avatar-placeholder.svg", include_bytes!("../../../../assets/typst/altacv/assets/avatar-placeholder.svg")),
     ("altacv/internal/labels-en.toml", include_bytes!("../../../../assets/typst/altacv/internal/labels-en.toml")),
@@ -59,7 +65,7 @@ pub const BYTES: &[(&str, &[u8])] = &[
     ("altacv/assets/icons/mic.svg", include_bytes!("../../../../assets/typst/altacv/assets/icons/mic.svg")),
     ("altacv/assets/icons/newspaper.svg", include_bytes!("../../../../assets/typst/altacv/assets/icons/newspaper.svg")),
     ("altacv/assets/icons/phone.svg", include_bytes!("../../../../assets/typst/altacv/assets/icons/phone.svg")),
-]; 
+];
 
 /// Look up a vendored source by the path Typst asked for.
 pub fn source(path: &str) -> Option<&'static str> {

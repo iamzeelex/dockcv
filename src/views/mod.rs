@@ -6,9 +6,9 @@ mod applications_card;
 mod applications_data;
 mod applications_detail;
 mod applications_drag;
+mod applications_funnel;
 mod applications_list;
 mod applications_menu;
-mod applications_funnel;
 mod applications_pin;
 mod applications_snapshot;
 mod confirm;
@@ -24,18 +24,18 @@ mod library_usage;
 mod preset_matrix;
 mod root;
 mod root_custom_sections;
+mod root_dates;
 mod root_highlights;
 mod root_layout_rail;
 mod root_layout_rows;
-mod root_preview_chrome;
 mod root_overlays;
+mod root_preview_chrome;
 mod root_section_chrome;
 mod root_section_drag;
 mod root_section_layout;
 mod root_section_rename;
 mod root_section_variants;
 mod root_sidebar;
-mod root_dates;
 mod root_undo;
 pub mod save_status;
 pub mod settings_window;
@@ -73,19 +73,49 @@ mod field_coverage {
         // The contract, spelled out: adding a variant without adding it here
         // fails, which is the moment to confirm a view draws it.
         const VARIANTS: [&str; 43] = [
-            "Name", "Label", "Summary", "Email", "Phone", "Location", "Url",
-            "ProfileNetwork", "ProfileUsername", "ProfileUrl",
-            "WorkName", "WorkPosition", "WorkLocation", "WorkStart", "WorkEnd",
-            "WorkSummary", "WorkHighlight",
-            "EduStudyType", "EduInstitution", "EduStart", "EduEnd", "EduUrl",
+            "Name",
+            "Label",
+            "Summary",
+            "Email",
+            "Phone",
+            "Location",
+            "Url",
+            "ProfileNetwork",
+            "ProfileUsername",
+            "ProfileUrl",
+            "WorkName",
+            "WorkPosition",
+            "WorkLocation",
+            "WorkStart",
+            "WorkEnd",
+            "WorkSummary",
+            "WorkHighlight",
+            "EduStudyType",
+            "EduInstitution",
+            "EduStart",
+            "EduEnd",
+            "EduUrl",
             "EduHighlight",
-            "SkillName", "SkillKeyword",
-            "CertName", "CertIssuer", "CertDate", "CertUrl",
-            "VolOrg", "VolPosition", "VolStart", "VolEnd", "VolHighlight",
-            "CustomSectionTitle", "CustomEntryTitle", "CustomEntrySubtitle",
-            "CustomEntryStart", "CustomEntryEnd", "CustomEntryUrl",
+            "SkillName",
+            "SkillKeyword",
+            "CertName",
+            "CertIssuer",
+            "CertDate",
+            "CertUrl",
+            "VolOrg",
+            "VolPosition",
+            "VolStart",
+            "VolEnd",
+            "VolHighlight",
+            "CustomSectionTitle",
+            "CustomEntryTitle",
+            "CustomEntrySubtitle",
+            "CustomEntryStart",
+            "CustomEntryEnd",
+            "CustomEntryUrl",
             "CustomEntryHighlight",
-            "VariantName", "PresetName",
+            "VariantName",
+            "PresetName",
             // (was: `PresetName` deliberately absent. It **is** addressable and no
             // view draws it: a preset is created as `Preset 2` in `root.rs` and
             // can never be renamed. Unlike E-42 the value is at least *visible*

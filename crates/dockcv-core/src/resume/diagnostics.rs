@@ -183,8 +183,8 @@ mod tests {
         // which is correct for a résumé and would make this test vacuous. What
         // is under test is the span→section attribution, so the source is what
         // has to be broken.
-        let source = template::generate(&resume)
-            .replace("Shipped a bracket", "Shipped a stray ] bracket");
+        let source =
+            template::generate(&resume).replace("Shipped a bracket", "Shipped a stray ] bracket");
         let engine = TypstEngine::new(source.clone());
         let attempt = engine.compile_with_diagnostics(1.0);
         assert!(

@@ -284,8 +284,7 @@ fn is_date_field(part: &str) -> bool {
             let lower = t.to_lowercase();
             MONTH_STEMS.iter().any(|m| lower.starts_with(m))
                 || matches!(lower.as_str(), "present" | "current" | "ongoing" | "to")
-                || (lower.len() <= 4
-                    && lower.chars().all(|c| c.is_ascii_digit() || c == 'x'))
+                || (lower.len() <= 4 && lower.chars().all(|c| c.is_ascii_digit() || c == 'x'))
         })
 }
 
@@ -336,7 +335,10 @@ impl EntryHeader {
             let whole = caps.get(0).expect("group 0 always matches");
             header.start = caps.get(1).map_or("", |m| m.as_str()).trim().to_string();
             header.end = caps.get(2).map_or("", |m| m.as_str()).trim().to_string();
-            let (before, after) = (rest[..whole.start()].to_string(), rest[whole.end()..].to_string());
+            let (before, after) = (
+                rest[..whole.start()].to_string(),
+                rest[whole.end()..].to_string(),
+            );
             // Anything after the dates is location-ish; a `|` may or may not
             // separate it.
             let tail = after.trim().trim_start_matches('|').trim();
@@ -395,7 +397,6 @@ impl EntryHeader {
         }
         header
     }
-
 }
 
 #[cfg(test)]
@@ -426,7 +427,11 @@ mod tests {
         let lines = logical_lines(raw, no_headings, has_dates);
 
         assert_eq!(lines.len(), 2, "{lines:#?}");
-        assert!(lines[0].text.ends_with("vectorized in NumPy."), "{:?}", lines[0].text);
+        assert!(
+            lines[0].text.ends_with("vectorized in NumPy."),
+            "{:?}",
+            lines[0].text
+        );
         assert!(lines.iter().all(|l| l.is_bullet()));
     }
 
@@ -476,12 +481,17 @@ mod tests {
 
         let texts: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
         assert!(
-            texts.iter().any(|t| t.ends_with("scholarship awarded for academic excellence")),
+            texts
+                .iter()
+                .any(|t| t.ends_with("scholarship awarded for academic excellence")),
             "{texts:#?}"
         );
         // A line that begins with a capital is a new item, not a wrap — the
         // institution must not be folded into the bullet above it.
-        assert!(texts.contains(&"Prestigious University, Iran"), "{texts:#?}");
+        assert!(
+            texts.contains(&"Prestigious University, Iran"),
+            "{texts:#?}"
+        );
         assert_eq!(texts.len(), 5, "{texts:#?}");
     }
 

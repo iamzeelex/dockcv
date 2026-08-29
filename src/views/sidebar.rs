@@ -250,70 +250,70 @@ impl Shell {
                     // `ListItem` hands its children to a block div.
                     .child(
                         div()
-                        .flex()
-                        .items_center()
-                        .gap(px(11.0))
-                        .child(
-                        div()
-                            .w(px(30.0))
-                            .h(px(30.0))
-                            .rounded_full()
                             .flex()
                             .items_center()
-                            .justify_center()
-                            .bg(linear_gradient(
-                                150.0,
-                                linear_color_stop(theme.accent, 0.0),
-                                linear_color_stop(theme.warning, 1.0),
-                            ))
-                            .text_color(theme.on_accent)
-                            .font_family(SANS)
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(px(13.0))
-                            .child(
-                                vault_name
-                                    .chars()
-                                    .next()
-                                    .unwrap_or('V')
-                                    .to_uppercase()
-                                    .to_string(),
-                            ),
-                    )
-                    // The folder, then where it is. `Vault ▾` said neither —
-                    // and the path is the answer to P-11 sitting on the screen
-                    // the user is on most.
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .line_height(gpui::relative(1.25))
+                            .gap(px(11.0))
                             .child(
                                 div()
+                                    .w(px(30.0))
+                                    .h(px(30.0))
+                                    .rounded_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .bg(linear_gradient(
+                                        150.0,
+                                        linear_color_stop(theme.accent, 0.0),
+                                        linear_color_stop(theme.warning, 1.0),
+                                    ))
+                                    .text_color(theme.on_accent)
                                     .font_family(SANS)
-                                    .text_size(px(13.5))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(theme.text)
-                                    .truncate()
-                                    .child(vault_name),
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_size(px(13.0))
+                                    .child(
+                                        vault_name
+                                            .chars()
+                                            .next()
+                                            .unwrap_or('V')
+                                            .to_uppercase()
+                                            .to_string(),
+                                    ),
                             )
+                            // The folder, then where it is. `Vault ▾` said neither —
+                            // and the path is the answer to P-11 sitting on the screen
+                            // the user is on most.
                             .child(
                                 div()
-                                    .font_family(MONO)
-                                    .text_size(px(11.0))
-                                    .text_color(theme.text_subtle)
-                                    .child(vault_path),
+                                    .flex_1()
+                                    .min_w_0()
+                                    .flex()
+                                    .flex_col()
+                                    .line_height(gpui::relative(1.25))
+                                    .child(
+                                        div()
+                                            .font_family(SANS)
+                                            .text_size(px(13.5))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(theme.text)
+                                            .truncate()
+                                            .child(vault_name),
+                                    )
+                                    .child(
+                                        div()
+                                            .font_family(MONO)
+                                            .text_size(px(11.0))
+                                            .text_color(theme.text_subtle)
+                                            .child(vault_path),
+                                    ),
+                            )
+                            // A real glyph, not a `▾` typed into the label: the
+                            // character rendered at the label's size in whichever font
+                            // happened to carry the codepoint.
+                            .child(
+                                Icon::new(IconName::ChevronDown)
+                                    .with_size(theme.icon_sm())
+                                    .text_color(theme.text_subtle),
                             ),
-                    )
-                    // A real glyph, not a `▾` typed into the label: the
-                    // character rendered at the label's size in whichever font
-                    // happened to carry the codepoint.
-                    .child(
-                        Icon::new(IconName::ChevronDown)
-                            .with_size(theme.icon_sm())
-                            .text_color(theme.text_subtle),
-                    ),
                     ),
             )
     }
@@ -604,13 +604,15 @@ impl Shell {
             // Settings opens a window (O-21), which is where macOS keeps it —
             // so the menu dispatches the same action `⌘,` does rather than
             // switching the pane behind the rail.
-            .child(item("menu-settings", IconName::Settings, "Settings").on_click(cx.listener(
-                |this, _: &ClickEvent, window, cx| {
-                    this.menu_open = false;
-                    window.dispatch_action(Box::new(crate::app::OpenSettings), cx);
-                    cx.notify();
-                },
-            )))
+            .child(
+                item("menu-settings", IconName::Settings, "Settings").on_click(cx.listener(
+                    |this, _: &ClickEvent, window, cx| {
+                        this.menu_open = false;
+                        window.dispatch_action(Box::new(crate::app::OpenSettings), cx);
+                        cx.notify();
+                    },
+                )),
+            )
     }
 }
 

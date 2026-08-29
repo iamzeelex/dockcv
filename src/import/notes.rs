@@ -386,8 +386,8 @@ mod tests {
     /// character — the failure that turns one bullet into nine "skills".
     #[test]
     fn a_skill_the_length_of_a_sentence_says_the_split_went_wrong() {
-        let sentence = "Designed and shipped the ingest service that now carries every profile"
-            .to_string();
+        let sentence =
+            "Designed and shipped the ingest service that now carries every profile".to_string();
         let longest = sentence.chars().count();
         let resume = Resume {
             skills: vec![SkillGroup {

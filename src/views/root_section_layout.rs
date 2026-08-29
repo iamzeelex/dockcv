@@ -17,9 +17,7 @@
 use gpui::prelude::*;
 use gpui::{div, AnyElement, App, Context, Entity, SharedString, WeakEntity, Window};
 
-use dockcv_ui_components::{
-    Button, ButtonExt, DropdownMenu, IconName, PopupMenu, PopupMenuItem,
-};
+use dockcv_ui_components::{Button, ButtonExt, DropdownMenu, IconName, PopupMenu, PopupMenuItem};
 
 use crate::resume::model::{
     BulletGlyph, Emphasis, HeaderAlign, HeadingCase, HeadingStyle, MetaOrder, MetaPosition,
@@ -64,7 +62,9 @@ impl Root {
                     })
                     .dropdown_menu(move |menu, window, cx| {
                         let root = root.clone();
-                        build_menu(menu, window, cx, section, overrides, heading, entries, &root)
+                        build_menu(
+                            menu, window, cx, section, overrides, heading, entries, &root,
+                        )
                     }),
             )
             .into_any_element()

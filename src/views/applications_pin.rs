@@ -25,7 +25,10 @@ use gpui::{
     Window,
 };
 
-use dockcv_ui_components::{ScrollableElement, Button, ListItem, ListItemExt, ButtonExt, TextField, TextFieldEvent, TextFieldState};
+use dockcv_ui_components::{
+    Button, ButtonExt, ListItem, ListItemExt, ScrollableElement, TextField, TextFieldEvent,
+    TextFieldState,
+};
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -101,10 +104,8 @@ impl Shell {
                     .filter(|p| p.to_lowercase().contains(&query))
                     .cloned()
                     .collect();
-                (!presets.is_empty()).then_some(super::applications_snapshot::PinGroup {
-                    presets,
-                    ..group
-                })
+                (!presets.is_empty())
+                    .then_some(super::applications_snapshot::PinGroup { presets, ..group })
             })
             .collect();
 
@@ -115,7 +116,9 @@ impl Shell {
                    indented: bool,
                    cx: &mut Context<Self>|
          -> AnyElement {
-            let pinned = current.as_ref().is_some_and(|(s, p)| *s == stem && *p == preset);
+            let pinned = current
+                .as_ref()
+                .is_some_and(|(s, p)| *s == stem && *p == preset);
             let click_stem = stem.clone();
             let click_preset = preset.clone();
             ListItem::new(SharedString::from(format!("pin-row-{stem}-{preset}")))

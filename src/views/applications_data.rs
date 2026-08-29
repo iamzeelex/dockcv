@@ -22,7 +22,6 @@ pub(super) fn plural(n: usize) -> &'static str {
     }
 }
 
-
 /// The preset chip (Applied) or the status chip (Interviewing/Offer) —
 /// mutually exclusive per column, per the design doc's per-column content
 /// table (§3). Wishlist and Rejected carry neither.
@@ -182,7 +181,6 @@ mod tests {
         assert_eq!(short_date("2026-07-12"), "Jul 12");
         assert_eq!(short_date("garbage"), "garbage");
     }
-
 
     #[test]
     fn next_step_caption_formats_with_and_without_a_time() {
@@ -344,8 +342,14 @@ pub(super) fn last_touched(app: &Application) -> &str {
     let mut latest = app.created.as_str();
     for candidate in [
         app.applied.as_deref().unwrap_or_default(),
-        app.snapshots.last().map(|s| s.date.as_str()).unwrap_or_default(),
-        app.history.last().map(|h| h.at.as_str()).unwrap_or_default(),
+        app.snapshots
+            .last()
+            .map(|s| s.date.as_str())
+            .unwrap_or_default(),
+        app.history
+            .last()
+            .map(|h| h.at.as_str())
+            .unwrap_or_default(),
         app.rounds.last().map(|r| r.at.as_str()).unwrap_or_default(),
     ] {
         if candidate > latest {
@@ -441,9 +445,15 @@ mod sort_tests {
 
     fn rows() -> Vec<(usize, Application)> {
         vec![
-            (0, app("Bramble Tech", "2026-03-01", ApplicationStatus::Applied)),
+            (
+                0,
+                app("Bramble Tech", "2026-03-01", ApplicationStatus::Applied),
+            ),
             (1, app("acme", "2026-05-20", ApplicationStatus::Offer)),
-            (2, app("Cardinal", "2026-01-09", ApplicationStatus::Interviewing)),
+            (
+                2,
+                app("Cardinal", "2026-01-09", ApplicationStatus::Interviewing),
+            ),
         ]
     }
 
@@ -477,8 +487,14 @@ mod sort_tests {
         };
         // Created oldest, sent newest — the two orders disagree on purpose.
         let mut rows = vec![
-            (0, sent("Early add, late send", "2026-01-01", Some("2026-06-01"))),
-            (1, sent("Late add, early send", "2026-05-01", Some("2026-05-02"))),
+            (
+                0,
+                sent("Early add, late send", "2026-01-01", Some("2026-06-01")),
+            ),
+            (
+                1,
+                sent("Late add, early send", "2026-05-01", Some("2026-05-02")),
+            ),
             (2, sent("Never sent", "2026-04-01", None)),
         ];
         sort_rows(&mut rows, ApplicationSort::Applied);

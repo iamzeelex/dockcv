@@ -17,9 +17,7 @@
 use gpui::prelude::*;
 use gpui::{div, px, Context, IntoElement, SharedString, Window};
 
-use dockcv_ui_components::{
-    Button, ButtonExt, DropdownMenu, Field, PopupMenuItem,
-};
+use dockcv_ui_components::{Button, ButtonExt, DropdownMenu, Field, PopupMenuItem};
 
 use crate::resume::edit::FieldId;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
@@ -128,12 +126,18 @@ impl Root {
                             // Each menu takes half the field, so the pair fills
                             // the same box a text input would and the two
                             // columns of the form still line up.
-                            .child(div().flex_1().min_w_0().child(
-                                self.month_menu(cx, field, value, floor),
-                            ))
-                            .child(div().flex_1().min_w_0().child(
-                                self.year_menu(cx, field, value, floor),
-                            )),
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(self.month_menu(cx, field, value, floor)),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(self.year_menu(cx, field, value, floor)),
+                            ),
                     )
                     // What is stored but not expressible stays on screen rather
                     // than being replaced by a placeholder that says "empty".
@@ -174,13 +178,11 @@ impl Root {
                         continue;
                     }
                     let root = root.clone();
-                    menu = menu.item(PopupMenuItem::new(*name).on_click(
-                        move |_ev, window, cx| {
-                            let _ = root.update(cx, |this, cx| {
-                                this.write_date(field, year, month, window, cx);
-                            });
-                        },
-                    ));
+                    menu = menu.item(PopupMenuItem::new(*name).on_click(move |_ev, window, cx| {
+                        let _ = root.update(cx, |this, cx| {
+                            this.write_date(field, year, month, window, cx);
+                        });
+                    }));
                 }
                 menu
             })
@@ -271,7 +273,10 @@ mod tests {
 
         let date = ResumeDate::new(format_date(2024, 8));
         let parsed = date.parse().expect("its own output must parse");
-        assert_eq!((parsed.year, parsed.month, parsed.day), (2024, Some(8), None));
+        assert_eq!(
+            (parsed.year, parsed.month, parsed.day),
+            (2024, Some(8), None)
+        );
         assert_eq!(date.display(DateFormat::Iso), "2024-08");
     }
 
@@ -315,8 +320,16 @@ mod tests {
         );
         assert!(last_year() >= 2024, "the year range must not be empty");
 
-        assert_eq!(first_month_in(2024, floor), 8, "the start's own year is floored");
-        assert_eq!(first_month_in(2025, floor), 1, "a later year is unconstrained");
+        assert_eq!(
+            first_month_in(2024, floor),
+            8,
+            "the start's own year is floored"
+        );
+        assert_eq!(
+            first_month_in(2025, floor),
+            1,
+            "a later year is unconstrained"
+        );
         assert_eq!(first_month_in(2024, None), 1, "no start means no floor");
     }
 

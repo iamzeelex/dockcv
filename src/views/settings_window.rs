@@ -21,7 +21,10 @@
 use gpui::prelude::*;
 use gpui::{div, px, App, ClickEvent, Context, IntoElement, SharedString, WeakEntity, Window};
 
-use dockcv_ui_components::{Button, ButtonExt, ButtonVariants, SettingField, SettingGroup, SettingItem, SettingPage, Settings};
+use dockcv_ui_components::{
+    Button, ButtonExt, ButtonVariants, SettingField, SettingGroup, SettingItem, SettingPage,
+    Settings,
+};
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle, Theme, ThemeMode};
 use crate::vault;
@@ -157,9 +160,7 @@ fn general_page(shell: &WeakEntity<Shell>) -> SettingPage {
                             .flex()
                             .items_center()
                             .gap_2()
-                            .children(
-                                ThemeMode::ALL.map(|mode| theme_chip(&for_theme, mode, cx)),
-                            )
+                            .children(ThemeMode::ALL.map(|mode| theme_chip(&for_theme, mode, cx)))
                             .into_any_element()
                     }),
                 )),
@@ -174,13 +175,19 @@ fn storage_page(shell: &WeakEntity<Shell>) -> SettingPage {
         .group(
             SettingGroup::new()
                 .title("Trash")
-                .description("Deleted CVs move to the vault's .trash folder; emptying it is permanent.")
+                .description(
+                    "Deleted CVs move to the vault's .trash folder; emptying it is permanent.",
+                )
                 .item(SettingItem::new(
                     "Maintenance",
                     SettingField::render(move |_o, _window, cx: &mut App| {
                         let count = for_buttons
                             .read_with(cx, |shell, _| {
-                                shell.vault.as_ref().map(|v| vault::trash_count(v)).unwrap_or(0)
+                                shell
+                                    .vault
+                                    .as_ref()
+                                    .map(|v| vault::trash_count(v))
+                                    .unwrap_or(0)
                             })
                             .unwrap_or(0);
                         div()

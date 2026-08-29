@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use gpui::Context;
 
-use crate::resume::model::{ApplicationStatus, Snapshot, SentCv};
+use crate::resume::model::{ApplicationStatus, SentCv, Snapshot};
 use crate::resume::template;
 use crate::typst_engine::TypstEngine;
 use crate::vault;
@@ -92,7 +92,11 @@ impl Shell {
             preset,
         });
         let already_sent = application.status() != ApplicationStatus::Wishlist;
-        save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
+        save_status::record(
+            cx,
+            "applications board",
+            vault::save_applications(&vault, &applications),
+        );
         cx.notify();
 
         // Pinning a CV to a card that has already been sent is the user
@@ -215,7 +219,11 @@ impl Shell {
                     preset,
                     file,
                 });
-                save_status::record(cx, "applications board", vault::save_applications(&vault, &applications));
+                save_status::record(
+                    cx,
+                    "applications board",
+                    vault::save_applications(&vault, &applications),
+                );
                 cx.notify();
             });
         })
@@ -289,8 +297,10 @@ mod tests {
         let bare = ResumeDoc::from_resume(Resume::default(), "Base");
         vault::save(&bare, &dir.join("draft-cv.toml")).expect("save");
 
-        let metas: Vec<vault::DocMeta> =
-            vault::load_all(&dir).into_iter().map(|(meta, _)| meta).collect();
+        let metas: Vec<vault::DocMeta> = vault::load_all(&dir)
+            .into_iter()
+            .map(|(meta, _)| meta)
+            .collect();
         let groups = pin_groups(&metas);
         let labels: Vec<&str> = groups.iter().map(|g| g.label.as_str()).collect();
 

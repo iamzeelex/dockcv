@@ -364,7 +364,10 @@ pub fn looks_like_degree(line: &str) -> bool {
         .split(|c: char| !c.is_alphanumeric())
         .find(|t| !t.is_empty())
         .unwrap_or_default();
-    matches!(first, "bsc" | "msc" | "md" | "meng" | "beng" | "bs" | "ba" | "ms" | "ma")
+    matches!(
+        first,
+        "bsc" | "msc" | "md" | "meng" | "beng" | "bs" | "ba" | "ms" | "ma"
+    )
 }
 
 /// Take a line as contact data, if that is what it is.
@@ -1302,9 +1305,20 @@ mod tests {
                    • Reached out on +1 415 555 0134 for the vendor escalation\n";
         let basics = classify_raw_text("PDF", raw).doc.profile.active().clone();
 
-        assert_eq!(basics.email, "s@example.com", "the contact block still reads");
-        assert_eq!(basics.url, "", "a vendor's site is not the user's: {:?}", basics.url);
-        assert_eq!(basics.phone, "", "someone else's number: {:?}", basics.phone);
+        assert_eq!(
+            basics.email, "s@example.com",
+            "the contact block still reads"
+        );
+        assert_eq!(
+            basics.url, "",
+            "a vendor's site is not the user's: {:?}",
+            basics.url
+        );
+        assert_eq!(
+            basics.phone, "",
+            "someone else's number: {:?}",
+            basics.phone
+        );
     }
 
     /// The exception the asymmetry buys. A two-column PDF interleaves its
@@ -1406,13 +1420,23 @@ mod tests {
                    BSc, Applied Mathematics and Computing, Odesa I.I.Mechnikov National University 2019 – 2023\n\
                    Numerical methods, optimization and control theory, machine learning\n\
                    Completed while working full-time\n";
-        let edu = classify_raw_text("PDF", raw).doc.education.active().to_vec();
+        let edu = classify_raw_text("PDF", raw)
+            .doc
+            .education
+            .active()
+            .to_vec();
 
         assert_eq!(edu.len(), 2, "{edu:#?}");
         assert!(edu[0].study_type.starts_with("Graduate coursework"));
-        assert_eq!(edu[0].institution, "Universitat Autònoma de Barcelona (UAB)");
+        assert_eq!(
+            edu[0].institution,
+            "Universitat Autònoma de Barcelona (UAB)"
+        );
         assert_eq!(edu[0].start_date.text, "2025");
-        assert_eq!(edu[1].institution, "Odesa I.I.Mechnikov National University");
+        assert_eq!(
+            edu[1].institution,
+            "Odesa I.I.Mechnikov National University"
+        );
         // The coursework line and the note under it are kept, not dropped.
         assert_eq!(edu[1].highlights.len(), 2, "{:#?}", edu[1]);
     }
@@ -1435,14 +1459,21 @@ mod tests {
         let doc = classify_raw_text("PDF", raw).doc;
 
         assert_eq!(doc.work.active().len(), 1);
-        assert_eq!(doc.work.active()[0].highlights.len(), 1, "projects leaked into the job");
+        assert_eq!(
+            doc.work.active()[0].highlights.len(),
+            1,
+            "projects leaked into the job"
+        );
         assert_eq!(doc.custom_sections.len(), 1, "{:#?}", doc.custom_sections);
         let projects = &doc.custom_sections[0];
         assert_eq!(projects.title, "Projects");
         // The author's line is kept whole — see the branch's comment: the same
         // punctuation carries a name-and-description in one CV and a single job
         // title in the next, and splitting cut the second in half.
-        assert_eq!(projects.content.active()[0].title, "pymolt, Python Migration Tool");
+        assert_eq!(
+            projects.content.active()[0].title,
+            "pymolt, Python Migration Tool"
+        );
         assert_eq!(projects.content.active()[0].start_date.text, "2026");
     }
 
@@ -1452,7 +1483,13 @@ mod tests {
     /// real template, into Education.
     #[test]
     fn headings_the_model_has_no_field_for_are_still_sections() {
-        for heading in ["Interests", "Languages", "Publications", "Awards", "References"] {
+        for heading in [
+            "Interests",
+            "Languages",
+            "Publications",
+            "Awards",
+            "References",
+        ] {
             assert!(is_section_header(heading), "{heading} should be a heading");
             assert_eq!(
                 classify_header(heading),
@@ -1486,11 +1523,17 @@ mod tests {
     /// was rendering as ORGANIZATIONS.
     #[test]
     fn a_heading_that_is_a_name_outranks_one_that_merely_contains_a_name() {
-        assert_eq!(classify_header("Activities and Interests"), SectionKind::Unknown);
+        assert_eq!(
+            classify_header("Activities and Interests"),
+            SectionKind::Unknown
+        );
         assert_eq!(classify_header("Activities"), SectionKind::Volunteer);
         // The substring path still reads a heading that carries extra words.
         assert_eq!(classify_header("Skills & Abilities"), SectionKind::Skills);
-        assert_eq!(classify_header("WORK EXPERIENCE 2019–2024"), SectionKind::Work);
+        assert_eq!(
+            classify_header("WORK EXPERIENCE 2019–2024"),
+            SectionKind::Work
+        );
     }
 
     /// A name in two families is a tie the ranking cannot break, and the
@@ -1514,7 +1557,10 @@ mod tests {
     #[test]
     fn only_a_shouted_heading_is_recased() {
         assert_eq!(title_case("PROJECTS"), "Projects");
-        assert_eq!(title_case("Activities and Interests"), "Activities and Interests");
+        assert_eq!(
+            title_case("Activities and Interests"),
+            "Activities and Interests"
+        );
     }
 
     /// Templates print the school above the degree and the degree above the
@@ -1527,11 +1573,18 @@ mod tests {
                    Master of Engineering, Petroleum Engineering 2009 – 2011\n\
                    University of Calgary, Alberta\n\
                    GPA: 3.72/4.00\n";
-        let edu = classify_raw_text("PDF", raw).doc.education.active().to_vec();
+        let edu = classify_raw_text("PDF", raw)
+            .doc
+            .education
+            .active()
+            .to_vec();
 
         assert_eq!(edu.len(), 1, "{edu:#?}");
         // The field of study stays with the degree — it is not a school.
-        assert_eq!(edu[0].study_type, "Master of Engineering, Petroleum Engineering");
+        assert_eq!(
+            edu[0].study_type,
+            "Master of Engineering, Petroleum Engineering"
+        );
         assert_eq!(edu[0].institution, "University of Calgary, Alberta");
         assert_eq!(edu[0].highlights, vec!["GPA: 3.72/4.00"]);
     }
@@ -1568,7 +1621,11 @@ mod tests {
         let edu = doc.education.active();
 
         assert_eq!(edu.len(), 1, "{edu:#?}");
-        assert_eq!(edu[0].highlights.len(), 1, "the projects leaked into the degree");
+        assert_eq!(
+            edu[0].highlights.len(),
+            1,
+            "the projects leaked into the degree"
+        );
         assert_eq!(doc.custom_sections.len(), 1, "{:#?}", doc.custom_sections);
         let projects = &doc.custom_sections[0];
         assert_eq!(projects.title, "Graduate Projects");
@@ -1611,10 +1668,17 @@ mod tests {
         let imported = classify_raw_text("DOCX", raw);
         let basics = imported.doc.profile.active();
 
-        assert_eq!(basics.name, "Dr. Amelia Evelyn", "the name must survive the block");
+        assert_eq!(
+            basics.name, "Dr. Amelia Evelyn",
+            "the name must survive the block"
+        );
         assert_eq!(basics.email, "someone@example.com");
         assert!(!basics.phone.is_empty(), "phone should be read");
-        assert!(basics.url.contains("excellentwebsite"), "got {:?}", basics.url);
+        assert!(
+            basics.url.contains("excellentwebsite"),
+            "got {:?}",
+            basics.url
+        );
         assert!(
             imported.doc.custom_sections.is_empty(),
             "contact is not a section: {:#?}",
@@ -1686,8 +1750,14 @@ mod tests {
         let urls: Vec<&str> = std::iter::once(basics.url.as_str())
             .chain(basics.profiles.iter().map(|p| p.url.as_str()))
             .collect();
-        assert!(urls.iter().any(|u| u.contains("linkedin.com")), "got {urls:?}");
-        assert!(urls.iter().any(|u| u.contains("zeelex.me/")), "got {urls:?}");
+        assert!(
+            urls.iter().any(|u| u.contains("linkedin.com")),
+            "got {urls:?}"
+        );
+        assert!(
+            urls.iter().any(|u| u.contains("zeelex.me/")),
+            "got {urls:?}"
+        );
 
         // The heart of it: contact data must not be reported as dropped. The
         // email in particular was both parsed *and* listed as lost.
@@ -1713,7 +1783,12 @@ mod tests {
         let imported = classify_raw_text("PDF", raw);
         let skills = imported.doc.skills.active();
 
-        assert_eq!(skills.len(), 2, "got {:?}", skills.iter().map(|s| &s.name).collect::<Vec<_>>());
+        assert_eq!(
+            skills.len(),
+            2,
+            "got {:?}",
+            skills.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
         assert_eq!(skills[0].name, "Programming Languages");
         assert_eq!(skills[1].name, "Mathematical Modeling & HPC");
         // The wrapped fragment joined the group above rather than starting one.
@@ -1723,7 +1798,10 @@ mod tests {
             skills[1].keywords
         );
         // Multi-word skills stay whole.
-        assert!(skills[1].keywords.iter().any(|k| k == "Optimization & Control Theory"));
+        assert!(skills[1]
+            .keywords
+            .iter()
+            .any(|k| k == "Optimization & Control Theory"));
     }
 
     #[test]

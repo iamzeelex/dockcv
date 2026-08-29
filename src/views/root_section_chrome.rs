@@ -71,10 +71,7 @@ impl Root {
     /// trimming to do, and a permanent "this could be shorter" badge on a
     /// document that is already fine is nagging, not information.
     pub(super) fn trim_candidate_for(&self, section: SectionKind) -> Option<TrimCandidate> {
-        let overflows = self
-            .geometry
-            .as_ref()
-            .is_some_and(|g| g.overflow_pt > 0.0);
+        let overflows = self.geometry.as_ref().is_some_and(|g| g.overflow_pt > 0.0);
         if !overflows {
             return None;
         }

@@ -7,7 +7,10 @@ use gpui::{
 };
 
 use super::root_preview_chrome::{MAX_ZOOM_PCT, MIN_ZOOM_PCT};
-use dockcv_ui_components::{ScrollableElement, CHROME_HEIGHT, Button, ListItem, ListItemExt, ButtonExt, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, TextField, SANS};
+use dockcv_ui_components::{
+    Button, ButtonExt, DropdownMenu, Icon, IconName, ListItem, ListItemExt, PopupMenuItem,
+    ScrollableElement, Sizable, TextField, CHROME_HEIGHT, SANS,
+};
 
 use crate::resume::model::SectionKind;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
@@ -461,7 +464,11 @@ impl Root {
                 .rounded_full()
                 .border_1()
                 .border_color(if selected { theme.accent } else { theme.border })
-                .text_color(if selected { theme.text } else { theme.text_muted })
+                .text_color(if selected {
+                    theme.text
+                } else {
+                    theme.text_muted
+                })
                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                     if let Some(sheet) = this.capture_sheet.as_mut() {
                         sheet.role = value.clone();
@@ -698,10 +705,7 @@ impl Root {
             // C2: the layout rail floats over the canvas rather than taking a
             // column, so opening it does not re-centre the page you opened it
             // to measure. See `root_layout_rail.rs` for that ruling (O-1).
-            .children(
-                self.layout_rail_open
-                    .then(|| self.render_layout_rail(cx)),
-            )
+            .children(self.layout_rail_open.then(|| self.render_layout_rail(cx)))
             .child(self.render_preview_toolbar(cx))
     }
 
@@ -730,8 +734,8 @@ impl Root {
                     }
                     let _ = root.update(cx, |this, cx| {
                         // `delta` is a fraction: 0.1 means "10% larger".
-                        this.zoom_pct = (this.zoom_pct * (1.0 + event.delta))
-                            .clamp(MIN_ZOOM_PCT, MAX_ZOOM_PCT);
+                        this.zoom_pct =
+                            (this.zoom_pct * (1.0 + event.delta)).clamp(MIN_ZOOM_PCT, MAX_ZOOM_PCT);
                         cx.notify();
                         if event.phase == TouchPhase::Ended {
                             this.schedule_recompile(window, cx);

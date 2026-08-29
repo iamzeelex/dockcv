@@ -19,15 +19,15 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, Entity, SharedString, Subscription, Window};
 
-use dockcv_ui_components::{ScrollableElement, 
-    Button, ButtonExt, Disableable, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, TextField,
-    TextFieldEvent, TextFieldState,
+use dockcv_ui_components::{
+    Button, ButtonExt, Disableable, DropdownMenu, Icon, IconName, PopupMenuItem, ScrollableElement,
+    Sizable, TextField, TextFieldEvent, TextFieldState,
 };
 
+use super::save_status;
 use crate::resume::model::{Application, ApplicationStatus, Closure, InterviewRound, NextStep};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
-use super::save_status;
 
 use super::applications_card::column_tint;
 use super::applications_data::{short_date, status_title};
@@ -162,7 +162,11 @@ impl Shell {
 
     /// Put the cursor in Company, so a card started from the board opens
     /// ready to be named rather than ready to be looked at.
-    pub(super) fn focus_application_company(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn focus_application_company(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(detail) = self.applications_detail.as_ref() {
             detail
                 .company
@@ -482,14 +486,9 @@ impl Shell {
                             // file spells it rather than guessed at.
                             None => change.to.clone(),
                         }))
-                        .child(
-                            div()
-                                .text_color(theme.text_muted)
-                                .child(SharedString::from(format!(
-                                    "from {}",
-                                    status_title(app.stage_before(i))
-                                ))),
-                        )
+                        .child(div().text_color(theme.text_muted).child(SharedString::from(
+                            format!("from {}", status_title(app.stage_before(i))),
+                        )))
                 }))
         });
 
@@ -533,7 +532,9 @@ impl Shell {
                                 .flex_col()
                                 .gap(px(5.0))
                                 .child(label("Next step"))
-                                .child(TextField::new(&detail.next_label).placeholder("Final panel"))
+                                .child(
+                                    TextField::new(&detail.next_label).placeholder("Final panel"),
+                                )
                                 .child(
                                     div()
                                         .flex()
@@ -544,12 +545,9 @@ impl Shell {
                                                     .placeholder("2026-08-25"),
                                             ),
                                         )
-                                        .child(
-                                            div().w(px(96.0)).child(
-                                                TextField::new(&detail.next_time)
-                                                    .placeholder("14:00"),
-                                            ),
-                                        ),
+                                        .child(div().w(px(96.0)).child(
+                                            TextField::new(&detail.next_time).placeholder("14:00"),
+                                        )),
                                 ),
                         )
                         .child(self.rounds_block(cx, detail.index, app))
@@ -766,11 +764,7 @@ impl Shell {
                                     .checked(current == Some(closure))
                                     .on_click(move |_ev, _window, cx| {
                                         let _ = root.update(cx, |this, cx| {
-                                            this.set_application_closure(
-                                                index,
-                                                Some(closure),
-                                                cx,
-                                            );
+                                            this.set_application_closure(index, Some(closure), cx);
                                         });
                                     }),
                             );
@@ -843,7 +837,10 @@ mod tests {
     #[test]
     fn an_empty_closure_note_is_absent_rather_than_blank() {
         assert_eq!(none_if_empty(String::new()), None);
-        assert_eq!(none_if_empty("role filled".into()), Some("role filled".into()));
+        assert_eq!(
+            none_if_empty("role filled".into()),
+            Some("role filled".into())
+        );
     }
 }
 

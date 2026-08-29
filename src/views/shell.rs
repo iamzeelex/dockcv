@@ -19,9 +19,7 @@ use dockcv_ui_components::{TextFieldEvent, TextFieldState};
 
 use crate::config;
 use crate::render::{self, Rendered};
-use crate::resume::model::{
-    DiaryEntry, ResumeDoc, SectionKind,
-};
+use crate::resume::model::{DiaryEntry, ResumeDoc, SectionKind};
 use crate::resume::template;
 use crate::theme::ActiveTheme;
 use crate::theme::ThemeMode;
@@ -29,16 +27,16 @@ use crate::typst_engine::TypstEngine;
 use crate::vault;
 
 use super::applications_data::{ApplicationSort, ApplicationsView};
+use super::applications_pin::PinPick;
+use super::confirm;
 use super::diary_capture::DiaryPaste;
 use super::diary_use::DiaryUse;
+use super::import_flow::ImportStep;
 use super::library::LibrarySort;
-use super::applications_pin::PinPick;
 use super::library_edit::LibraryEdit;
 use super::library_link::PushReview;
-use super::confirm;
 use super::save_status;
 use super::vault_cache::VaultCache;
-use super::import_flow::ImportStep;
 use super::{EditorEvent, Root};
 
 /// Pixels-per-point for gallery thumbnails (small + cheap).
@@ -264,10 +262,11 @@ impl Shell {
 
         if self.diary_search.is_none() {
             let field = cx.new(|cx| TextFieldState::single_line(window, cx));
-            self.input_subscriptions.push(cx.subscribe(
-                &field,
-                |_this, _field, _event: &TextFieldEvent, cx| cx.notify(),
-            ));
+            self.input_subscriptions.push(
+                cx.subscribe(&field, |_this, _field, _event: &TextFieldEvent, cx| {
+                    cx.notify()
+                }),
+            );
             self.diary_search = Some(field);
         }
 
@@ -320,7 +319,6 @@ impl Shell {
             );
             self.applications_search = Some(search);
         }
-
     }
 
     /// The gallery's current search query, lowercased and trimmed.
@@ -503,7 +501,7 @@ impl Shell {
                     role: self.diary_role.clone(),
                     tags,
                     confidential: false,
-                used_in: Vec::new(),
+                    used_in: Vec::new(),
                     // Typed straight into the Diary — no document was open.
                     source_doc: None,
                 },
@@ -652,7 +650,10 @@ impl Shell {
     pub fn go_to(&mut self, screen: VaultScreen, cx: &mut Context<Self>) {
         // Not from Welcome or Setup: there is no vault yet, and the rail those
         // chords belong to is not on screen.
-        if matches!(self.screen, Screen::Opening | Screen::Welcome | Screen::Setup) {
+        if matches!(
+            self.screen,
+            Screen::Opening | Screen::Welcome | Screen::Setup
+        ) {
             return;
         }
         if let Screen::Editor(editor) = &self.screen {
@@ -791,8 +792,8 @@ impl Shell {
             // `FieldId::PresetName` has been addressable since presets existed
             // and reaching past it would leave the variant dead, which is how
             // a field ends up in the model and nowhere else (E-42).
-            if let Some(slot) = crate::resume::edit::FieldId::PresetName(rename.idx)
-                .get_mut(&mut pm.doc)
+            if let Some(slot) =
+                crate::resume::edit::FieldId::PresetName(rename.idx).get_mut(&mut pm.doc)
             {
                 *slot = value;
             }
@@ -1056,8 +1057,7 @@ impl Shell {
                 match vault::vault_shape(&dir) {
                     vault::VaultShape::Unrecognized { stray_toml } => {
                         let detail = if stray_toml == 0 {
-                            "Nothing in it looks like a CV, a block library or a diary."
-                                .to_string()
+                            "Nothing in it looks like a CV, a block library or a diary.".to_string()
                         } else {
                             format!(
                                 "It holds {stray_toml} .toml file{} and none of them is a CV. \
@@ -1472,10 +1472,7 @@ mod clone_url_tests {
             repo_name("git@github.com:zeelex/my-cvault").as_deref(),
             Some("my-cvault")
         );
-        assert_eq!(
-            repo_name("https://example.com/cv/").as_deref(),
-            Some("cv")
-        );
+        assert_eq!(repo_name("https://example.com/cv/").as_deref(), Some("cv"));
     }
 
     /// A name that would climb out of the folder the user picked is refused

@@ -44,42 +44,42 @@ pub use gpui_component::{
     // to be complete — the moment a surface needs a titled group it should not
     // have to reach past this crate for one — but nothing renders it today.
     group_box::{GroupBox, GroupBoxVariant},
-    // The editor's two panes. A fixed 392px column was one guess at how much
-    // room a CV's fields need, and it was wrong for every document that has a
-    // long summary or a long employer name.
-    resizable::{h_resizable, resizable_panel, ResizableState},
-    // The Settings **window** (O-21). The page component brings its own nav
-    // column and a search box, which is what a settings window wants and what
-    // a pane inside the vault rail could not have had.
-    setting::{SettingField, SettingGroup, SettingItem, SettingPage, Settings},
     kbd::Kbd,
+    label::Label,
     // The row. Left-aligned, hoverable, selectable — the three things a nav
     // entry and a list row need and a `Button` cannot give, because its label
     // sits in an inner `justify_center` flex no caller can reach.
     list::ListItem,
-    label::Label,
     // Menus. `PopupMenu` is what the gallery card's `···` opens; `ContextMenu`
     // is the right-click variant. Both need `gpui_component::init`, which
     // `crate::init` already calls.
     menu::{ContextMenu, ContextMenuExt, ContextMenuState, DropdownMenu, PopupMenu, PopupMenuItem},
+    // The editor's two panes. A fixed 392px column was one guess at how much
+    // room a CV's fields need, and it was wrong for every document that has a
+    // long summary or a long employer name.
+    resizable::{h_resizable, resizable_panel, ResizableState},
     // Scrollbars. `ScrollableElement::overflow_y_scrollbar` is a drop-in for
     // GPUI's `overflow_y_scroll` that keeps the same element as the scroll
     // container and overlays a scrollbar, owning the `ScrollHandle` itself —
     // which is what makes it usable from this app's twenty render helpers,
     // none of which takes a `&mut Window` to hang one on. Before this the app
     // had twenty-two scrollable regions and no scrollbar anywhere.
-    scroll::{Scrollbar, ScrollbarAxis, ScrollbarShow, ScrollableElement},
+    scroll::{ScrollableElement, Scrollbar, ScrollbarAxis, ScrollbarShow},
     separator::Separator,
-    // The one animated element in the product: the import wizard's parsing
-    // step, which is the only place a user waits on work. It used to draw a
-    // `⟳` character that never turned — a spinner that does not spin says the
-    // application has hung.
-    spinner::Spinner,
+    // The Settings **window** (O-21). The page component brings its own nav
+    // column and a search box, which is what a settings window wants and what
+    // a pane inside the vault rail could not have had.
+    setting::{SettingField, SettingGroup, SettingItem, SettingPage, Settings},
     // The layout rail's Margins and Text-scale controls (C2). `SliderState`
     // is an `Entity` the owning view holds, and it reports movement as
     // `SliderEvent` — the view subscribes and writes the value into the
     // document, which is what makes the change apply to the preview live.
     slider::{Slider, SliderEvent, SliderState},
+    // The one animated element in the product: the import wizard's parsing
+    // step, which is the only place a user waits on work. It used to draw a
+    // `⟳` character that never turned — a spinner that does not spin says the
+    // application has hung.
+    spinner::Spinner,
     switch::Switch,
     // The Applications list view. This is upstream's *compositional* table —
     // stateless rows and cells — not `DataTable`, which virtualizes and owns

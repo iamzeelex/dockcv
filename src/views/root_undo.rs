@@ -97,7 +97,6 @@ impl Root {
         self.schedule_recompile(window, cx);
         self.schedule_save(cx);
     }
-
 }
 
 // No `can_undo` / `can_redo` here yet, deliberately. They would be three lines
@@ -144,7 +143,8 @@ mod tests {
             "the newest step must survive"
         );
         assert_eq!(
-            stack.first().unwrap().profile.active().name, "step 5",
+            stack.first().unwrap().profile.active().name,
+            "step 5",
             "the oldest five are the ones that went"
         );
     }

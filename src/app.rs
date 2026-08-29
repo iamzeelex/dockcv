@@ -330,7 +330,14 @@ fn show_about(cx: &mut App) {
 fn show_notices(cx: &mut App) {
     let bundled = std::env::current_exe()
         .ok()
-        .and_then(|exe| Some(exe.parent()?.parent()?.join("Resources").join("THIRD-PARTY-NOTICES.md")))
+        .and_then(|exe| {
+            Some(
+                exe.parent()?
+                    .parent()?
+                    .join("Resources")
+                    .join("THIRD-PARTY-NOTICES.md"),
+            )
+        })
         .filter(|path| path.exists());
 
     // The repo copy, for `cargo run` — where there is no bundle to read from.
@@ -358,17 +365,17 @@ fn open_settings_window(cx: &mut App) {
         return;
     };
     if let Some(handle) = existing {
-        if handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
+        if handle
+            .update(cx, |_, window, _| window.activate_window())
+            .is_ok()
+        {
             return;
         }
     }
 
     // Weak on the way *into* the Settings window: it edits the running Shell
     // and must never be what keeps it alive.
-    let Some(shell) = cx
-        .try_global::<AppWindows>()
-        .map(|w| w.shell.downgrade())
-    else {
+    let Some(shell) = cx.try_global::<AppWindows>().map(|w| w.shell.downgrade()) else {
         return;
     };
     let bounds = Bounds::centered(None, size(px(720.), px(520.)), cx);

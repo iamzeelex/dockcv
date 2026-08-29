@@ -497,7 +497,11 @@ impl Root {
             // scope for D-9's model-only task.
             Profile | Custom(_) => {}
         }
-        save_status::record(cx, "library", vault::save_library(&self.vault_dir, &self.library));
+        save_status::record(
+            cx,
+            "library",
+            vault::save_library(&self.vault_dir, &self.library),
+        );
         cx.notify();
     }
 
@@ -827,8 +831,8 @@ impl Root {
         // is bought with nothing. The first edit of a session has no
         // measurement yet and takes the draft, which is also the compile most
         // likely to be slow: nothing is cached.
-        let skip_draft = crisp_scale <= draft_scale + 0.01
-            || self.last_crisp.is_some_and(|d| d <= FRAME_BUDGET);
+        let skip_draft =
+            crisp_scale <= draft_scale + 0.01 || self.last_crisp.is_some_and(|d| d <= FRAME_BUDGET);
 
         let engine = self.engine.clone();
         let executor = cx.background_executor().clone();
@@ -989,7 +993,9 @@ impl Root {
                 });
                 match &outcome {
                     Ok(()) => log::info!("exported PDF to {}", path.display()),
-                    Err(message) => log::error!("PDF export to {} failed: {message}", path.display()),
+                    Err(message) => {
+                        log::error!("PDF export to {} failed: {message}", path.display())
+                    }
                 }
                 if let Err(message) = outcome {
                     this.compile_state = CompileState::Error {
@@ -1427,18 +1433,18 @@ impl Render for Root {
                 // window edge. This wrapper is what makes `size_full()` mean
                 // "the space left over".
                 div().flex_1().min_h_0().flex().child(
-                h_resizable("editor-panes")
-                    .child(
-                        resizable_panel()
-                            .flex_none()
-                            .size(px(392.0))
-                            // Below ~320 the two-column form collapses to one
-                            // useful column; above ~680 the preview stops being
-                            // a preview.
-                            .size_range(px(320.0)..px(680.0))
-                            .child(self.render_sidebar(cx)),
-                    )
-                    .child(resizable_panel().child(self.render_preview(cx))),
+                    h_resizable("editor-panes")
+                        .child(
+                            resizable_panel()
+                                .flex_none()
+                                .size(px(392.0))
+                                // Below ~320 the two-column form collapses to one
+                                // useful column; above ~680 the preview stops being
+                                // a preview.
+                                .size_range(px(320.0)..px(680.0))
+                                .child(self.render_sidebar(cx)),
+                        )
+                        .child(resizable_panel().child(self.render_preview(cx))),
                 ),
             )
             .children(
@@ -1593,6 +1599,9 @@ mod draft_policy_tests {
         assert!(skips_draft(1.0, None));
         assert!(skips_draft(1.0, Some(Duration::from_secs(1))));
         // And the ceiling is still the ceiling.
-        assert!(!skips_draft(MAX_RENDER_SCALE, Some(Duration::from_millis(40))));
+        assert!(!skips_draft(
+            MAX_RENDER_SCALE,
+            Some(Duration::from_millis(40))
+        ));
     }
 }

@@ -126,7 +126,6 @@ pub trait ButtonExt {
     fn chip_dashed(self, theme: &Theme) -> Self;
 }
 
-
 /// One rung of the ladder: everything a role decides that is not colour.
 ///
 /// A `const` table rather than a `match` buried in each role, so
@@ -180,18 +179,15 @@ impl Rung {
 pub mod rung {
     use super::{metrics, px, Rung, Size};
 
-    pub const ACTION_PRIMARY: Rung =
-        Rung::new(Size::Small, metrics::CONTROL_LG, px(16.0)).medium();
+    pub const ACTION_PRIMARY: Rung = Rung::new(Size::Small, metrics::CONTROL_LG, px(16.0)).medium();
     pub const ACTION_SECONDARY: Rung =
         Rung::new(Size::Small, metrics::CONTROL_LG, px(16.0)).medium();
     pub const TOOLBAR_PRIMARY: Rung =
         Rung::new(Size::Small, metrics::CONTROL_MD, px(14.0)).medium();
     pub const TOOLBAR: Rung = Rung::new(Size::Small, metrics::CONTROL_MD, px(12.0));
     pub const SELECTOR: Rung = Rung::new(Size::Small, metrics::CONTROL_MD, px(11.0));
-    pub const SELECTOR_INLINE: Rung =
-        Rung::new(Size::XSmall, metrics::CONTROL_XS, px(8.0)).tight();
-    pub const ICON_ONLY: Rung =
-        Rung::new(Size::XSmall, metrics::CONTROL_SM, px(0.0)).tight();
+    pub const SELECTOR_INLINE: Rung = Rung::new(Size::XSmall, metrics::CONTROL_XS, px(8.0)).tight();
+    pub const ICON_ONLY: Rung = Rung::new(Size::XSmall, metrics::CONTROL_SM, px(0.0)).tight();
     pub const QUIET: Rung = Rung::new(Size::Small, metrics::CONTROL_SM, px(6.0)).tight();
     pub const CHIP: Rung = Rung::new(Size::XSmall, metrics::CONTROL_XS, px(10.0)).tight();
 
@@ -288,9 +284,7 @@ impl ButtonExt for Button {
             .border_color(theme.border)
             .text_color(theme.text_subtle)
     }
-
 }
-
 
 /// The one row shape, on the element that can actually draw one.
 ///

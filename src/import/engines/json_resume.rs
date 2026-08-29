@@ -421,11 +421,7 @@ impl JsonResume {
         // something that did not survive. An array that was there and produced
         // nothing is a defect; a section the résumé simply does not have is not.
         for (present, part, empty) in [
-            (
-                had_work,
-                Part::Work,
-                imported.doc.work.active().is_empty(),
-            ),
+            (had_work, Part::Work, imported.doc.work.active().is_empty()),
             (
                 had_education,
                 Part::Education,
@@ -562,10 +558,7 @@ mod tests {
     #[test]
     fn a_location_object_becomes_the_line_a_cv_prints() {
         let imported = import(SPEC_SHAPED).expect("parses");
-        assert_eq!(
-            imported.doc.profile.active().location,
-            "Berlin, Berlin, DE"
-        );
+        assert_eq!(imported.doc.profile.active().location, "Berlin, Berlin, DE");
     }
 
     /// `studyType` and `area` are two halves of the line ours prints as one.
@@ -588,7 +581,10 @@ mod tests {
             .iter()
             .map(|s| s.title.clone())
             .collect();
-        assert_eq!(titles, vec!["Projects", "Awards", "Publications", "Languages"]);
+        assert_eq!(
+            titles,
+            vec!["Projects", "Awards", "Publications", "Languages"]
+        );
     }
 
     /// US-01: what the file carried and DockCV cannot hold is *named*.
@@ -596,12 +592,18 @@ mod tests {
     fn what_has_nowhere_to_go_is_reported_rather_than_dropped() {
         let imported = import(SPEC_SHAPED).expect("parses");
         assert!(
-            imported.unplaced.iter().any(|l| l.starts_with("interests:")),
+            imported
+                .unplaced
+                .iter()
+                .any(|l| l.starts_with("interests:")),
             "{:?}",
             imported.unplaced
         );
         assert!(
-            imported.unplaced.iter().any(|l| l.starts_with("references:")),
+            imported
+                .unplaced
+                .iter()
+                .any(|l| l.starts_with("references:")),
             "{:?}",
             imported.unplaced
         );

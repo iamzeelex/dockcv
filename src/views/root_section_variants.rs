@@ -19,7 +19,10 @@ use gpui::{
     Window,
 };
 
-use dockcv_ui_components::{Button, ButtonExt, DockIcon, Field, Icon, IconName, Sizable, TextField, TextFieldEvent, TextFieldState, SANS};
+use dockcv_ui_components::{
+    Button, ButtonExt, DockIcon, Field, Icon, IconName, Sizable, TextField, TextFieldEvent,
+    TextFieldState, SANS,
+};
 
 use crate::resume::edit::FieldId;
 use crate::resume::model::SectionKind;
@@ -131,17 +134,15 @@ impl Root {
                     // codebase uses: the pen sits inside the pill's own click
                     // region, and without it the press reaches the pill too.
                     div().occlude().child(
-                        Button::new(SharedString::from(format!(
-                            "var-rename-btn-{section:?}"
-                        )))
-                        .icon_only()
-                        .icon(DockIcon::Pen)
-                        .text_color(theme.on_accent)
-                        .tooltip("Rename this variant")
-                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                            cx.stop_propagation();
-                            this.start_variant_rename(section, window, cx);
-                        })),
+                        Button::new(SharedString::from(format!("var-rename-btn-{section:?}")))
+                            .icon_only()
+                            .icon(DockIcon::Pen)
+                            .text_color(theme.on_accent)
+                            .tooltip("Rename this variant")
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                cx.stop_propagation();
+                                this.start_variant_rename(section, window, cx);
+                            })),
                     ),
                 );
             }

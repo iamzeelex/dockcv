@@ -43,7 +43,12 @@ fn hex(color: Hsla) -> String {
     let rgba: Rgba = color.into();
     let byte = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
     if rgba.a >= 0.999 {
-        format!("#{:02x}{:02x}{:02x}", byte(rgba.r), byte(rgba.g), byte(rgba.b))
+        format!(
+            "#{:02x}{:02x}{:02x}",
+            byte(rgba.r),
+            byte(rgba.g),
+            byte(rgba.b)
+        )
     } else {
         format!(
             "#{:02x}{:02x}{:02x}{:02x}",
@@ -79,7 +84,6 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("drag.border", theme.accent),
         ("drop_target.background", theme.selected),
         ("skeleton.background", theme.hover),
-
         // --- muted / secondary surfaces ---
         ("muted.background", theme.hover),
         ("muted.foreground", theme.text_subtle),
@@ -99,7 +103,6 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("group_box.background", theme.elevated),
         ("group_box.foreground", theme.text),
         ("group_box.title.foreground", theme.text_muted),
-
         // --- elevation ladder ---
         ("popover.background", theme.elevated),
         ("popover.foreground", theme.text),
@@ -115,7 +118,6 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("sidebar.primary.background", theme.accent),
         ("sidebar.primary.foreground", theme.on_accent),
         ("tiles.background", theme.background),
-
         // --- accent family ---
         ("primary.background", theme.accent),
         ("primary.hover.background", theme.accent_hover),
@@ -127,7 +129,6 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("progress.bar.background", theme.accent),
         ("slider.background", theme.accent),
         ("slider.thumb.background", theme.on_accent),
-
         // --- buttons ---
         ("button.background", theme.elevated),
         ("button.hover.background", theme.hover),
@@ -157,7 +158,6 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("button.info.hover.background", theme.accent_hover),
         ("button.info.active.background", theme.accent_hover),
         ("button.info.foreground", theme.on_accent),
-
         // --- status ---
         ("danger.background", theme.danger),
         ("danger.hover.background", theme.danger),
@@ -175,7 +175,6 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("info.hover.background", theme.accent_hover),
         ("info.active.background", theme.accent_hover),
         ("info.foreground", theme.on_accent),
-
         // --- lists and tables ---
         ("list.background", theme.surface),
         ("list.hover.background", theme.hover),
@@ -195,7 +194,6 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("table.row.border", theme.border),
         ("description_list.label.background", theme.elevated),
         ("description_list.label.foreground", theme.text_muted),
-
         // --- tabs ---
         ("tab.background", theme.surface),
         ("tab.foreground", theme.text_muted),
@@ -203,7 +201,6 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("tab.active.foreground", theme.text),
         ("tab_bar.background", theme.background),
         ("tab_bar.segmented.background", theme.elevated),
-
         // --- upstream's base ramp ---
         //
         // Not decoration: `Avatar` derives its monogram colour from
@@ -223,14 +220,12 @@ fn slate_colors(theme: &Theme) -> Vec<(&'static str, Hsla)> {
         ("base.yellow.light", theme.warning),
         ("base.magenta", theme.accent),
         ("base.magenta.light", theme.accent_hover),
-
         // --- controls ---
         ("switch.background", theme.hover),
         ("switch.thumb.background", theme.text_muted),
         ("scrollbar.background", theme.background),
         ("scrollbar.thumb.background", theme.border_strong),
         ("scrollbar.thumb.hover.background", theme.text_subtle),
-
     ]
 }
 

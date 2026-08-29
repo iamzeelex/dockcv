@@ -8,15 +8,13 @@
 //! 3. 3-Column Table Grid (`Section | Preset A | Preset B`) with clean cell agreement vs amber-highlighted diff cells (`border-left: 2px solid theme.warning` + translucent amber background).
 
 use gpui::prelude::*;
-use gpui::{
-    div, px, ClickEvent, Context, Div, Entity, FontWeight, SharedString, Subscription,
-};
+use gpui::{div, px, ClickEvent, Context, Div, Entity, FontWeight, SharedString, Subscription};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use dockcv_ui_components::{ScrollableElement, 
-    Button, ButtonExt, ButtonVariants, DockIcon, Icon, IconName, Sizable, TextField,
-    TextFieldState, CHROME_HEIGHT, MONO, SANS,
+use dockcv_ui_components::{
+    Button, ButtonExt, ButtonVariants, DockIcon, Icon, IconName, ScrollableElement, Sizable,
+    TextField, TextFieldState, CHROME_HEIGHT, MONO, SANS,
 };
 
 use crate::resume::model::{ResumeDoc, SectionKind};
@@ -65,11 +63,7 @@ impl PresetMatrix {
     /// The left pill: the preset's name, or the live input while it is being
     /// renamed. The pen beside it is the same trigger the editor puts on a
     /// section header — one gesture for renaming anything the user named.
-    pub fn render_preset_a_pill(
-        &self,
-        cx: &mut Context<Shell>,
-        name: String,
-    ) -> impl IntoElement {
+    pub fn render_preset_a_pill(&self, cx: &mut Context<Shell>, name: String) -> impl IntoElement {
         let renaming = self
             .renaming_preset
             .as_ref()
@@ -171,7 +165,13 @@ impl PresetMatrix {
     fn variant_detail(&self, section: SectionKind, variant_name: &str) -> Option<String> {
         match section {
             SectionKind::Profile => {
-                if let Some(v) = self.doc.profile.variants.iter().find(|v| v.name == variant_name) {
+                if let Some(v) = self
+                    .doc
+                    .profile
+                    .variants
+                    .iter()
+                    .find(|v| v.name == variant_name)
+                {
                     let lines = v.data.summary.lines().count();
                     Some(format!("· {lines} lines"))
                 } else {
@@ -179,7 +179,13 @@ impl PresetMatrix {
                 }
             }
             SectionKind::Work => {
-                if let Some(v) = self.doc.work.variants.iter().find(|v| v.name == variant_name) {
+                if let Some(v) = self
+                    .doc
+                    .work
+                    .variants
+                    .iter()
+                    .find(|v| v.name == variant_name)
+                {
                     let count = v.data.len();
                     Some(format!("· {count} roles"))
                 } else {
@@ -187,7 +193,13 @@ impl PresetMatrix {
                 }
             }
             SectionKind::Education => {
-                if let Some(v) = self.doc.education.variants.iter().find(|v| v.name == variant_name) {
+                if let Some(v) = self
+                    .doc
+                    .education
+                    .variants
+                    .iter()
+                    .find(|v| v.name == variant_name)
+                {
                     let count = v.data.len();
                     Some(format!("· {count} entries"))
                 } else {
@@ -195,7 +207,13 @@ impl PresetMatrix {
                 }
             }
             SectionKind::Skills => {
-                if let Some(v) = self.doc.skills.variants.iter().find(|v| v.name == variant_name) {
+                if let Some(v) = self
+                    .doc
+                    .skills
+                    .variants
+                    .iter()
+                    .find(|v| v.name == variant_name)
+                {
                     let count = v.data.len();
                     Some(format!("· {count} groups"))
                 } else {
@@ -445,9 +463,7 @@ impl PresetMatrix {
             let is_diff = hidden_a != hidden_b || sel_b.as_ref().is_some_and(|b| b != &sel_a);
 
             let detail_a = self.variant_detail(section, &sel_a);
-            let detail_b = sel_b
-                .as_ref()
-                .and_then(|b| self.variant_detail(section, b));
+            let detail_b = sel_b.as_ref().and_then(|b| self.variant_detail(section, b));
 
             // A preset that names no variant for this section pins nothing
             // here — it is not the design's `— hidden —`, which is section

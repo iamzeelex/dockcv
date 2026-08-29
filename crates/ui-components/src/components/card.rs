@@ -121,7 +121,8 @@ impl Card {
     }
 
     pub fn children(mut self, children: impl IntoIterator<Item = impl IntoElement>) -> Self {
-        self.children.extend(children.into_iter().map(|c| c.into_any_element()));
+        self.children
+            .extend(children.into_iter().map(|c| c.into_any_element()));
         self
     }
 }
@@ -176,16 +177,21 @@ impl RenderOnce for Card {
         let (bg, border_color): (Hsla, Option<Hsla>) = match self.variant {
             CardVariant::Surface => (
                 theme.surface,
-                if self.border { Some(theme.border) } else { None },
+                if self.border {
+                    Some(theme.border)
+                } else {
+                    None
+                },
             ),
             CardVariant::Elevated => (
                 theme.elevated,
-                if self.border { Some(theme.border) } else { None },
+                if self.border {
+                    Some(theme.border)
+                } else {
+                    None
+                },
             ),
-            CardVariant::Outline => (
-                gpui::Hsla::transparent_black(),
-                Some(theme.border),
-            ),
+            CardVariant::Outline => (gpui::Hsla::transparent_black(), Some(theme.border)),
         };
 
         let mut el = div()
@@ -197,9 +203,7 @@ impl RenderOnce for Card {
             .rounded(theme.radius_lg())
             .bg(bg)
             .when(self.full_width, |el| el.w_full())
-            .when_some(border_color, |el, color| {
-                el.border_1().border_color(color)
-            });
+            .when_some(border_color, |el, color| el.border_1().border_color(color));
         // `refine`, never assignment: the lines above set the card's own padding,
         // radius, fill and border *into* the same `StyleRefinement`, so `*style =
         // caller` would throw all of it away and render a bare box. Refining

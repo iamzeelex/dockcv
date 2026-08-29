@@ -21,10 +21,13 @@ use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
 use super::save_status;
-use dockcv_ui_components::{ScrollableElement, Button, ButtonExt, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, Tag, TextField};
+use dockcv_ui_components::{
+    Button, ButtonExt, DropdownMenu, Icon, IconName, PopupMenuItem, ScrollableElement, Sizable,
+    Tag, TextField,
+};
 
-use super::confirm;
 use super::applications_data::plural;
+use super::confirm;
 use super::library_usage::UsageIndex;
 use super::shell::{remove_at, Screen, Shell};
 
@@ -148,12 +151,16 @@ impl LibrarySort {
 fn sort_cards(cards: &mut [BlockCard], uses: &dyn Fn(usize) -> usize, sort: LibrarySort) {
     match sort {
         LibrarySort::Added => cards.sort_by_key(|c| c.index),
-        LibrarySort::MostUsed => {
-            cards.sort_by(|a, b| uses(b.index).cmp(&uses(a.index)).then(a.index.cmp(&b.index)))
-        }
-        LibrarySort::LeastUsed => {
-            cards.sort_by(|a, b| uses(a.index).cmp(&uses(b.index)).then(a.index.cmp(&b.index)))
-        }
+        LibrarySort::MostUsed => cards.sort_by(|a, b| {
+            uses(b.index)
+                .cmp(&uses(a.index))
+                .then(a.index.cmp(&b.index))
+        }),
+        LibrarySort::LeastUsed => cards.sort_by(|a, b| {
+            uses(a.index)
+                .cmp(&uses(b.index))
+                .then(a.index.cmp(&b.index))
+        }),
     }
 }
 
@@ -195,7 +202,10 @@ fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
             .map(|(index, e)| BlockCard {
                 index,
                 title: e.study_type.clone(),
-                subtitle: join_em(&e.institution, &date_range(&e.start_date.text, &e.end_date.text)),
+                subtitle: join_em(
+                    &e.institution,
+                    &date_range(&e.start_date.text, &e.end_date.text),
+                ),
                 body: String::new(),
                 keywords: Vec::new(),
                 hidden_text: e.highlights.clone(),
@@ -234,7 +244,10 @@ fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
             .map(|(index, v)| BlockCard {
                 index,
                 title: v.position.clone(),
-                subtitle: join_em(&v.organization, &date_range(&v.start_date.text, &v.end_date.text)),
+                subtitle: join_em(
+                    &v.organization,
+                    &date_range(&v.start_date.text, &v.end_date.text),
+                ),
                 body: v.highlights.first().cloned().unwrap_or_default(),
                 keywords: Vec::new(),
                 hidden_text: v.highlights.clone(),
@@ -457,11 +470,14 @@ impl Shell {
                     .text_color(theme.text_subtle),
             )
             .child(
-                div().flex_1().min_w_0().children(
-                    self.library_search
-                        .as_ref()
-                        .map(|state| TextField::new(state).seamless().placeholder("Search blocks…")),
-                ),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .children(self.library_search.as_ref().map(|state| {
+                        TextField::new(state)
+                            .seamless()
+                            .placeholder("Search blocks…")
+                    })),
             )
     }
 
@@ -526,9 +542,19 @@ impl Shell {
         counts: &[(SectionKind, &str, usize)],
         total: usize,
     ) -> impl IntoElement {
-        let mut row = div().flex().flex_wrap().items_center().gap_2().child(
-            self.filter_chip(cx, "libfilter-all", "All", total, self.library_filter.is_none(), None),
-        );
+        let mut row = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .child(self.filter_chip(
+                cx,
+                "libfilter-all",
+                "All",
+                total,
+                self.library_filter.is_none(),
+                None,
+            ));
         for &(section, title, count) in counts {
             if count == 0 {
                 continue;
@@ -620,21 +646,13 @@ impl Shell {
                     })),
             );
 
-        div()
-            .flex()
-            .flex_col()
-            .child(header)
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(12.0))
-                    .children(
-                        cards
-                            .into_iter()
-                            .map(|card| self.block_card(cx, section, card, usage)),
-                    ),
-            )
+        div().flex().flex_col().child(header).child(
+            div().flex().flex_wrap().gap(px(12.0)).children(
+                cards
+                    .into_iter()
+                    .map(|card| self.block_card(cx, section, card, usage)),
+            ),
+        )
     }
 
     fn block_card(
@@ -647,7 +665,9 @@ impl Shell {
         let theme = *cx.theme();
         let index = card.index;
         let shell = cx.weak_entity();
-        let used_in = usage.documents_for(self.cache.library(), section, index).to_vec();
+        let used_in = usage
+            .documents_for(self.cache.library(), section, index)
+            .to_vec();
         // Every document in the vault, as somewhere this block could go.
         let destinations: Vec<(String, std::path::PathBuf)> = self
             .cache
@@ -703,8 +723,8 @@ impl Shell {
                                 },
                             ))
                             .separator()
-                            .item(PopupMenuItem::new("Delete").on_click(
-                                move |_ev, window, cx| {
+                            .item(
+                                PopupMenuItem::new("Delete").on_click(move |_ev, window, cx| {
                                     let _ = shell.update(cx, |_this, cx| {
                                         confirm::destructive(
                                             "Delete this block from your library?".into(),
@@ -722,8 +742,8 @@ impl Shell {
                                             },
                                         );
                                     });
-                                },
-                            ))
+                                }),
+                            )
                         }),
                 ),
             )
@@ -779,18 +799,16 @@ impl Shell {
                                 for (label, path) in &destinations {
                                     let shell = shell.clone();
                                     let path = path.clone();
-                                    menu = menu.item(
-                                        PopupMenuItem::new(label.clone()).on_click(
-                                            move |_ev, _window, cx| {
-                                                let path = path.clone();
-                                                let _ = shell.update(cx, |this, cx| {
-                                                    this.copy_block_into_document(
-                                                        section, index, &path, cx,
-                                                    );
-                                                });
-                                            },
-                                        ),
-                                    );
+                                    menu = menu.item(PopupMenuItem::new(label.clone()).on_click(
+                                        move |_ev, _window, cx| {
+                                            let path = path.clone();
+                                            let _ = shell.update(cx, |this, cx| {
+                                                this.copy_block_into_document(
+                                                    section, index, &path, cx,
+                                                );
+                                            });
+                                        },
+                                    ));
                                 }
                                 menu
                             })
@@ -829,7 +847,10 @@ impl Shell {
         let label = if tailored == 0 {
             format!("used in {count} CV{}", plural(count))
         } else {
-            format!("used in {count} CV{} \u{b7} {tailored} tailored", plural(count))
+            format!(
+                "used in {count} CV{} \u{b7} {tailored} tailored",
+                plural(count)
+            )
         };
         let shell = cx.weak_entity();
         Button::new(SharedString::from(format!(
@@ -854,12 +875,10 @@ impl Shell {
                 } else {
                     format!("Open {}", reference.label)
                 };
-                menu = menu.item(PopupMenuItem::new(entry).on_click(
-                    move |_ev, _window, cx| {
-                        let stem = stem.clone();
-                        let _ = shell.update(cx, |this, cx| this.open_doc_by_stem(&stem, cx));
-                    },
-                ));
+                menu = menu.item(PopupMenuItem::new(entry).on_click(move |_ev, _window, cx| {
+                    let stem = stem.clone();
+                    let _ = shell.update(cx, |this, cx| this.open_doc_by_stem(&stem, cx));
+                }));
             }
             menu
         })
@@ -1091,4 +1110,3 @@ impl Shell {
         cx.notify();
     }
 }
-

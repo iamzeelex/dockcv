@@ -64,7 +64,11 @@ fn norm(s: &str) -> String {
 /// Join identity parts with a separator no field can contain, so
 /// `("ab", "c")` and `("a", "bc")` never collide.
 fn key(parts: &[&str]) -> Identity {
-    parts.iter().map(|p| norm(p)).collect::<Vec<_>>().join("\u{1f}")
+    parts
+        .iter()
+        .map(|p| norm(p))
+        .collect::<Vec<_>>()
+        .join("\u{1f}")
 }
 
 fn work_key(w: &Work) -> Identity {
@@ -203,10 +207,9 @@ pub(super) fn replace_matching(
     }
 
     match section {
-        SectionKind::Work => library
-            .work
-            .get(index)
-            .map_or(0, |block| overwrite(&mut doc.work, work_key, identity, block)),
+        SectionKind::Work => library.work.get(index).map_or(0, |block| {
+            overwrite(&mut doc.work, work_key, identity, block)
+        }),
         SectionKind::Education => library.education.get(index).map_or(0, |block| {
             overwrite(&mut doc.education, education_key, identity, block)
         }),
@@ -340,12 +343,7 @@ impl UsageIndex {
     }
 
     /// How many documents use this block.
-    pub(super) fn count_for(
-        &self,
-        library: &Library,
-        section: SectionKind,
-        index: usize,
-    ) -> usize {
+    pub(super) fn count_for(&self, library: &Library, section: SectionKind, index: usize) -> usize {
         self.documents_for(library, section, index).len()
     }
 
@@ -420,11 +418,14 @@ mod tests {
         let b = doc_with(vec![block.clone()]);
         let c = doc_with(vec![work("Other Co", "SWE", "2019-01", "Something else")]);
 
-        let index = UsageIndex::build(&library, vec![
-            (&meta("cv-a", "Sofiia"), &a),
-            (&meta("cv-b", "Sofiia"), &b),
-            (&meta("cv-c", "Sofiia"), &c),
-        ]);
+        let index = UsageIndex::build(
+            &library,
+            vec![
+                (&meta("cv-a", "Sofiia"), &a),
+                (&meta("cv-b", "Sofiia"), &b),
+                (&meta("cv-c", "Sofiia"), &c),
+            ],
+        );
 
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 2);
         let stems: Vec<&str> = index
@@ -571,7 +572,10 @@ mod tests {
 
         let found = index.documents_for(&library, SectionKind::Work, 0);
         assert_eq!(found.len(), 2);
-        assert!(!found[0].diverged, "an identical copy has not been tailored");
+        assert!(
+            !found[0].diverged,
+            "an identical copy has not been tailored"
+        );
         assert!(found[1].diverged, "a reworded copy has");
     }
 
@@ -663,6 +667,8 @@ mod tests {
         };
         let index = UsageIndex::build(&library, Vec::new());
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 0);
-        assert!(index.documents_for(&library, SectionKind::Work, 0).is_empty());
+        assert!(index
+            .documents_for(&library, SectionKind::Work, 0)
+            .is_empty());
     }
 }
