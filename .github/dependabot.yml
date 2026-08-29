@@ -1,0 +1,37 @@
+# Dependency updates. Weekly rather than daily: this is a small project with one
+# maintainer, and a pull request nobody reads on Tuesday is not security, it is
+# noise that trains you to ignore the label.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
+      include: scope
+    # gpui and gpui_platform are pinned by Cargo.lock rather than by the
+    # manifests, and moving them is a procedure with a trap in it — see
+    # CONTRIBUTING.md and .claude/agents/dependency-warden.md. A bot cannot run
+    # that procedure, and a bot's pull request against these would be a
+    # resolution failure at best.
+    ignore:
+      - dependency-name: gpui
+      - dependency-name: gpui_platform
+      - dependency-name: gpui-component
+      - dependency-name: gpui-component-assets
+    groups:
+      # One pull request for the routine bumps rather than five.
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"

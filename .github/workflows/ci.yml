@@ -21,6 +21,34 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
+  # A pull request's title becomes the squash-merge commit subject, so it is the
+  # line that ends up in the history and, from there, in a changelog. Checked
+  # with a regex rather than a third-party action: this is fifteen characters of
+  # pattern, and a marketplace action is a supply-chain dependency with write
+  # access to the repository it runs in.
+  pr-title:
+    name: Pull request title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conventional Commits
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        shell: bash
+        run: |
+          # The pattern lives in a variable: bash treats an inline `\(` inside
+          # [[ =~ ]] as a literal parenthesis, which quietly rejects every
+          # scoped title. Verified against both shapes before it went in.
+          RE='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9 ,/-]+\))?!?: .+'
+          if [[ "$TITLE" =~ $RE ]]; then
+            echo "ok: $TITLE"
+          else
+            echo "::error::The title should read like 'fix(import): read single-column CSVs'." >&2
+            echo "Got: $TITLE" >&2
+            echo "Types: feat fix docs style refactor perf test build ci chore revert" >&2
+            exit 1
+          fi
+
   version-check:
     name: Version & Changelog Integrity
     runs-on: ubuntu-latest

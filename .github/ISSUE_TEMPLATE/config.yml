@@ -1,0 +1,10 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/iamzeelex/dockcv/security/advisories/new
+    about: >
+      Report privately instead. A public issue about a vulnerability is a
+      working exploit with a title.
+  - name: How something works
+    url: https://github.com/iamzeelex/dockcv/blob/main/README.md
+    about: The README covers the vault, updates, privacy and the first launch.

@@ -1,0 +1,78 @@
+name: Bug report
+description: Something behaved wrongly, crashed, or lost work.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The log is the single most useful thing you
+        can attach: it records what the app did and never what you wrote — no CV
+        text, no diary entries, and your home folder appears as `~` rather than
+        under your account name. **Settings ▸ Storage** opens it.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+      placeholder: |
+        I changed the margins on a two-page CV and the preview went blank.
+        Reopening the document brought it back.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to get there
+      description: >
+        Step by step, from opening the app. If you could not reproduce it a
+        second time, say so — an unreproducible bug with a log is still worth
+        having.
+      placeholder: |
+        1. Open a CV with two pages
+        2. Toolbar ▸ Layout
+        3. Drag the margin slider to the far left
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Settings ▸ Storage ▸ About, or the first line of the log.
+      placeholder: DockCV 0.2.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Windows
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >
+        The relevant part, or the whole file if you are not sure which part that
+        is. Look it over before pasting — it should contain no document text,
+        and if it does, that is itself a bug worth reporting.
+      render: text
+
+  - type: checkboxes
+    id: data
+    attributes:
+      label: Before you post
+      options:
+        - label: >
+            I have removed anything I would not want public. Issues here are
+            visible to everyone.
+          required: true

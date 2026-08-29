@@ -1,0 +1,40 @@
+name: Feature request
+description: Something DockCV should do and does not.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DockCV is opinionated, and a few things are missing on purpose rather
+        than by omission — the vault is plain text and unencrypted, documents are
+        never linked to each other, and no number reaches a CV unless a person
+        typed it somewhere. A request that runs into one of those will get an
+        explanation rather than a patch, which is worth knowing before you spend
+        time writing it up.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >
+        The situation, not the feature. "I apply in two languages and maintain
+        two documents by hand" tells us more than "add multilingual support",
+        because it leaves room for an answer nobody had thought of.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: How you handle it now
+      description: What you do today, and where that falls down.
+    validations:
+      required: true
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: What you imagine
+      description: >
+        Optional. If you have a shape in mind, describe it — but the problem
+        above is the part that matters.

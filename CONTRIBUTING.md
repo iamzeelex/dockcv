@@ -145,9 +145,27 @@ New dependencies need a sentence explaining themselves in the pull request.
 Several versions in the tree are pinned to unify with GPUI's own — check before
 bumping `image`, `smallvec` or anything `typst`.
 
-Commit messages: a short imperative subject, then a body that says what was
-wrong and why this is the fix. The history is meant to be readable a year later
-by someone who was not here.
+## Branches, commits and pull requests
+
+Branch names are `type/short-description` — `fix/single-column-csv`,
+`feat/language-axis`, `docs/readme`. Nothing enforces it; it just makes a list of
+branches readable.
+
+Commit subjects follow [Conventional Commits](https://www.conventionalcommits.org):
+`type(scope): summary in the imperative`. The types are `feat`, `fix`, `docs`,
+`style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore` and `revert`; the
+scope is optional and lowercase. **Pull request titles are checked against the
+same pattern** in CI, because a squash merge turns the title into the commit
+subject, and that subject is what a changelog is later written from.
+
+The body is where the work is. Say what was wrong, why this is the fix, and what
+you decided against — a year from now that paragraph will be the only surviving
+evidence of why the code looks like this. Several commits in this history are
+longer than the diff they explain, and none of them has been regretted.
+
+Open the pull request against `main`. The template asks what you ran; please
+answer it honestly, including the part about having used the running application,
+since no test in this repository can see a screen.
 
 ## Packaging and releases
 
@@ -170,13 +188,19 @@ manifest, runs the tests and creates the tag; pushing the tag is what starts the
 build. GitHub Actions then produces the macOS bundle, the two portable archives
 and the small file the update check reads.
 
-## Reporting a bug
+## Reporting a bug or a vulnerability
 
 Attach the log. It is at `~/Library/Logs/DockCV/dockcv.log`, opens from
 **Settings ▸ Storage**, and records what the app did without recording anything
 you wrote. Say which build you are on — the version is in **Settings ▸ Storage ▸
 About** — and, if the problem involves a specific document, whether the TOML
 still opens in a text editor.
+
+Anything with a security dimension goes through the **Security** tab's private
+reporting form instead — [SECURITY.md](SECURITY.md) says what is in scope and
+what is a documented trade-off rather than a hole. [The code of
+conduct](CODE_OF_CONDUCT.md) is short and applies everywhere this project
+talks.
 
 ## If you work with Claude Code
 
