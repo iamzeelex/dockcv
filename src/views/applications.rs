@@ -1,7 +1,7 @@
 //! Applications screen — the board that tracks a role from wishlist to offer,
 //! each card pinned to the exact CV preset that was sent for it.
 //!
-//! Design row: `.design/rows/row_applications_new_surface.txt`,
+//! From the mockup's applications row,
 //! the applications spec. Renders the **main pane only** — the rail
 //! is shared chrome mounted by `Shell::with_rail`, same as every other vault
 //! screen.

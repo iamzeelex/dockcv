@@ -1,6 +1,6 @@
 //! First-run import flow & "+ New CV" chooser ("Starting from what you have").
 //!
-//! Design mockup: `.design/DockCV-Refresh.html` (lines 1296–1368).
+//! From the mockup's first-run import row.
 //!
 //! Implements:
 //! 1. `Step 1 · bring a document`: a drop zone, a file browser trigger, and

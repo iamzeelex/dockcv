@@ -1,6 +1,6 @@
 //! Preset Matrix Screen (US-02 / P-01): Section × Variant grid and two-preset diff view.
 //!
-//! Design mockup: `.design/DockCV-Refresh.html` (lines 1373–1430).
+//! From the mockup's preset-matrix row.
 //!
 //! Features:
 //! 1. Header Toolbar with a `<person_name> / Presets` breadcrumb and `+ Save current as new preset` action.

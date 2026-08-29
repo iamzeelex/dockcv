@@ -1,6 +1,6 @@
 //! Library screen — the reusable block pool, "your building set".
 //!
-//! Design row: `.design/rows/row_the_library.txt`. This renders the **main
+//! From the mockup's library row. This renders the **main
 //! pane only**: the nav rail around it is shared chrome mounted by
 //! `Shell::with_rail`, because the design draws Library as one tab of the
 //! vault window rather than a page you navigate away to.

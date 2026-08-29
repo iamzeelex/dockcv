@@ -75,16 +75,14 @@ src/
     save_status.rs  one banner for every failed vault read or write
     confirm.rs      the alert in front of anything that cannot be undone
 crates/ui-components/  reusable widgets + theme tokens (own crate, no app deps)
-.design/               the design source of truth (see below)
 .research/             read-only reference checkouts — never edit, never import
 ```
 
 ### Screens are tabs, not pages
 
-Every design row for a vault screen opens with the same `@@ sidebar` block: Gallery,
-Library, Diary, Applications and Settings are **one window with the rail always up**, and
-only the main pane changes. `Shell::with_rail` (`views/sidebar.rs`) mounts that chrome
-once, around whichever pane is showing.
+Gallery, Library, Diary, Applications and Settings are **one window with the rail
+always up**; only the main pane changes. `Shell::with_rail` (`views/sidebar.rs`) mounts
+that chrome once, around whichever pane is showing.
 
 Two rules follow, and both were violated by screens written before this was settled:
 
@@ -107,38 +105,22 @@ lacks. It must **not** know about résumés, vaults, or Typst — if a widget ne
 
 ---
 
-## The design source of truth
+## Where the design came from
 
-`.design/DockCV-Refresh.html` is the imported Claude Design mockup — 13 screens, exact
-colors, spacing, copy. It is **208 KB; never read it whole.**
+The first pass was built from an imported Claude Design mockup of thirteen screens —
+exact colours, spacing and copy. It did its job and is no longer carried by the
+repository: **the application is the reference now.** Read the running app and the
+tokens in `crates/ui-components`, not a picture of an older version of it.
 
-Upstream (re-import with the `DesignSync` tool, project `c623b888-fbc7-4e6c-ac01-9e5f26a6d08e`):
-<https://claude.ai/design/p/c623b888-fbc7-4e6c-ac01-9e5f26a6d08e?file=DockCV+Refresh.dc.html>
+Two things survive from that period and still bind. Screens have a settled shape (the
+rail, the panes, the editor's own titlebar), described above. And the copy in the
+mockup was written with care — where an existing screen's wording looks odd, it is
+usually deliberate, so change it as a decision rather than as tidying.
 
-- Text digests, one file per screen: `.design/rows/*.txt` — read these first.
-- To get exact pixel/color values for one screen, slice the HTML by its
-  `<!-- ROW: … -->` marker (see the `design-spec` agent) and read only that slice.
-- `support.js` from the design project is the Claude Design React rendering harness.
-  It contains **no design intent** and is deliberately not vendored.
-
-Screens present in the mockup:
-
-| Row marker | Status in code |
-|---|---|
-| `THE FRONT DOOR — CVs GALLERY` | exists (`views/gallery.rs`), restyled |
-| `THE EDITOR` | exists (`views/root*.rs`), restyled |
-| `THE LIBRARY` | exists (`views/library.rs`), restyled |
-| `THE DIARY` | exists (`views/diary.rs`), restyled |
-| `APPLICATIONS — NEW SURFACE` | exists (`views/applications*.rs`); no PDF snapshot capture yet |
-| `FIRST-RUN IMPORT` | exists (`import/` engines + `views/import_flow.rs` wizard) |
-| `PRESET MATRIX` | exists (`views/preset_matrix.rs`), editable; no `— hidden —` until O-13 |
-| `EDITING A LINKED BLOCK` | **not built** |
-| `DIARY -> CV IN ONE MOVE` | partial (`root.rs::render_diary_overlay`) |
-| `TYPST CONTROLS + OVERFLOW` | exists (`views/root_layout_rail.rs`): layout rail, zoom, page count, overflow chip |
-| `VAULT, BACKUP & HISTORY` | partial (`shell.rs::render_settings`) |
-| `LANGUAGE AS A VARIANT AXIS` | **not built** |
-| `EXPORT NAMING + HISTORY` | **not built** |
-| `AI — RETRIEVAL, NOT GENERATION` (6 surfaces) | **not built** |
+Screens the mockup drew that are still unbuilt: a language axis beside the variant
+axis, export naming with a history of what was sent, and the six AI surfaces. The
+first two are ordinary work. The third is blocked on a product question, not on
+engineering.
 
 ---
 
@@ -216,9 +198,12 @@ Every component gets a doc comment saying what it is and one usage line.
 - A **preset** is a *named set of variant selections* — `Vec<(SectionKind, String)>`.
   It has no content of its own. This is the answer to the review's open question 1, and
   the Preset Matrix screen renders exactly this: section × variant.
-- A **library block** is a copy pool today. The design requires an explicit
-  `Linked` / `Detached` status per block with a visible blast radius before save
-  (US-03). Do not add a silent third behaviour.
+- A **library block is a copy**, and that answer is now load-bearing rather than
+  provisional: a document has to stay a self-contained file that opens on a machine
+  which never had your library. What US-03 required, and what shipped, is that every
+  path which changes copies elsewhere says so first — `library_link.rs` names the CVs,
+  marks the ones that reworded the block, and writes nothing without a click. Do not
+  add a silent third behaviour, and do not turn a copy into a reference.
 - **Nothing in the model may be a float or an unnamed tuple where a struct fits.**
   TOML is the wire format; field order matters for readability (see the `Versioned`
   comment about `active` before `variants`).
@@ -248,7 +233,11 @@ Every component gets a doc comment saying what it is and one usage line.
 
 ## Working style
 
-Opus plans and reviews; granular, well-specified units go to worker agents (see
-`.claude/agents/`). A worker task must name: the file(s), the design row, the tokens to
-use, and the verify command. If a task can't be specified that tightly, it isn't ready
-to delegate.
+Opus plans and reviews; granular, well-specified units go to worker agents. A task
+worth delegating names the files to touch, the tokens or components to use, what is out
+of scope, and the command that proves it worked. If it cannot be written that tightly,
+it is not ready to hand over.
+
+`.claude/agents/release-manager.md` is the one agent the repository carries, because
+cutting a release is a checklist and a checklist is exactly what should not live in
+somebody's head.

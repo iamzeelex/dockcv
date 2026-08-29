@@ -1,6 +1,6 @@
 //! Diary screen — the running journal of wins, "catch them before you forget".
 //!
-//! Design row: `.design/rows/row_the_diary.txt`. Renders the **main pane
+//! From the mockup's diary row. Renders the **main pane
 //! only**; the rail around it is mounted by `Shell::with_rail`, and the rail's
 //! `Roles` facet — which belongs to this screen alone — lives in `sidebar.rs`.
 //!

@@ -16,3 +16,14 @@
 # the repository because it is a private workbench: what a contributor needs is
 # in README.md and CONTRIBUTING.md, and what is still open belongs in issues.
 /docs/
+
+# The imported design mockup that the first pass was built from. It did its
+# job; the application is the reference now. Kept on disk, and available to
+# anyone who wants to redesign the thing — just not carried by the repository.
+/.design/
+
+# Working agents for this codebase, which are notes to one maintainer rather
+# than something a contributor needs. The release manager is the exception: it
+# is the release procedure written down in a form that can be run.
+/.claude/agents/*
+!/.claude/agents/release-manager.md
