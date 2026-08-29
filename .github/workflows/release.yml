@@ -1,5 +1,7 @@
 name: Release Build & Publish
 
+# Fires on a version tag. The tag is the instruction to publish; everything
+# below refuses to publish something that disagrees with it.
 on:
   push:
     tags:
@@ -9,22 +11,90 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-release:
-    name: Build Release Binary
+  # A tag says what version this is. The manifest and the changelog say it
+  # too, and the three drifted apart once already — the app reported 0.1.0
+  # while the changelog announced 0.2.0 — so the release stops before it
+  # builds anything if they still disagree.
+  verify-version:
+    name: Tag, manifest and changelog agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - name: Manifest matches CHANGELOG
+        run: bash scripts/release.sh --check
+      - name: …and the tag matches the manifest
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          MANIFEST="$(cargo metadata --format-version 1 --no-deps \
+            | python3 -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="dockcv"))')"
+          if [[ "$TAG" != "$MANIFEST" ]]; then
+            echo "tag v$TAG does not match manifest version $MANIFEST" >&2
+            exit 1
+          fi
+          echo "releasing $MANIFEST"
+
+  # macOS gets the real thing: scripts/bundle.sh is what produces a .app a
+  # person can double-click — Info.plist, icon, and the licence notices that
+  # THIRD-PARTY-NOTICES.md and the OFL both require to travel with the
+  # binary. The workflow used to tar up the bare executable instead, which is
+  # not an application on this platform and carried none of those files.
+  macos:
+    name: macOS bundle
+    needs: verify-version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+
+      # The icon is rasterised from assets/icon.svg. Without it bundle.sh
+      # carries on and ships the generic application icon, which is not
+      # something a release should do quietly.
+      - name: Install librsvg (app icon)
+        run: brew install librsvg
+
+      - name: Build DockCV.app and the disk image
+        run: ./scripts/bundle.sh --dmg
+
+      # Named for what it is. The bundle is ad-hoc signed and not notarised
+      # (no Apple Developer ID), so HOW-TO-OPEN.txt ships beside it as the
+      # text for the download page — it is the difference between a first
+      # launch someone can get through and one they give up on.
+      - name: Name the artifacts
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCH="$(lipo -archs dist/DockCV.app/Contents/MacOS/dockcv | tr ' ' '-')"
+          mv "dist/DockCV-$VERSION.dmg" "dist/DockCV-$VERSION-macos-$ARCH.dmg"
+          echo "artifact=dist/DockCV-$VERSION-macos-$ARCH.dmg" >> "$GITHUB_ENV"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.artifact }}
+            dist/HOW-TO-OPEN.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Linux and Windows are build-checked but untested (CLAUDE.md), so they ship
+  # as an archive of the binary rather than as an installer that would imply
+  # more support than exists. The licence files go in regardless: they are a
+  # condition of distributing the binary, not a nicety.
+  portable:
+    name: ${{ matrix.label }}
+    needs: verify-version
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            artifact_name: dockcv-macos.tar.gz
-            binary_name: dockcv
           - os: ubuntu-latest
-            artifact_name: dockcv-linux.tar.gz
-            binary_name: dockcv
+            label: Linux archive
+            binary: dockcv
           - os: windows-latest
-            artifact_name: dockcv-windows.zip
-            binary_name: dockcv.exe
-
+            label: Windows archive
+            binary: dockcv.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -44,25 +114,38 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
 
+      # --locked, because the whole gpui pinning story rests on Cargo.lock
+      # (see THIRD_PARTY.md): a free resolve here would publish a build
+      # against a gpui no test ever ran on.
       - name: Build Release
-        run: cargo build --release --workspace
+        run: cargo build --release --locked --workspace
 
-      - name: Package Artifact (Unix)
+      - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
-          cd target/release
-          tar -czvf "../../${{ matrix.artifact_name }}" ${{ matrix.binary_name }}
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGE="dockcv-$VERSION-linux-x86_64"
+          mkdir "$STAGE"
+          cp "target/release/${{ matrix.binary }}" "$STAGE/"
+          cp LICENSE LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES.md "$STAGE/"
+          tar -czf "$STAGE.tar.gz" "$STAGE"
+          echo "artifact=$STAGE.tar.gz" >> "$GITHUB_ENV"
 
-      - name: Package Artifact (Windows)
+      - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "target/release/${{ matrix.binary_name }}" -DestinationPath "${{ matrix.artifact_name }}"
+          $version = $env:GITHUB_REF_NAME -replace '^v',''
+          $stage = "dockcv-$version-windows-x86_64"
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item "target/release/${{ matrix.binary }}" $stage
+          Copy-Item LICENSE,LICENSE-MIT,LICENSE-APACHE,THIRD-PARTY-NOTICES.md $stage
+          Compress-Archive -Path $stage -DestinationPath "$stage.zip"
+          "artifact=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Upload Release Artifacts
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.artifact_name }}
+          files: ${{ env.artifact }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

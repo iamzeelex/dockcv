@@ -192,9 +192,9 @@ Opening DockCV the first time
 
 Built for: $ARCH_LINE
 
-This build is signed, but not notarised by Apple — notarisation needs a paid
-Apple Developer account. macOS therefore asks before running it once, and
-never again.
+This build carries an ad-hoc signature: a valid signature with no Apple
+Developer account behind it, because notarisation needs a paid one. macOS
+therefore cannot name the developer, and asks you once before running it.
 
   1. Drag DockCV to your Applications folder.
   2. Double-click it. macOS will refuse and say it cannot verify the

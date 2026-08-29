@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-08-25
+### Added
+- **Reused blocks answer for themselves (US-03)**: saving a library block that other
+  CVs hold a copy of now opens a dialog naming exactly which ones, marking those that
+  reworded it, and offering to push the new wording into the ones you tick. Copies that
+  were tailored start unticked. Library cards report `used in 3 CVs · 1 tailored`.
+
+### Fixed
+- **Version reporting**: the workspace manifest said `0.1.0` while the changelog
+  announced `0.2.0`, so the app misreported itself in Settings ▸ About. The release
+  guard now compares the manifest against the changelog's newest entry in both
+  directions instead of merely checking that an entry exists.
+- **Releases are an application again**: the macOS release job builds `DockCV.app` and a
+  disk image through `scripts/bundle.sh` — with the icon, `Info.plist` and the licence
+  notices that must travel with the binary — instead of publishing a bare executable.
+  Every platform now builds `--locked`, and a tag that disagrees with the manifest stops
+  the release before it builds.
+
+## [0.2.0] - 2026-08-29
 
 ### Added
 - **JSON Resume Importer**: Added support for importing résumés in JSON Resume standard format (`src/import/engines/json_resume.rs`).

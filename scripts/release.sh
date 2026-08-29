@@ -21,6 +21,19 @@ get_current_version() {
     | python3 -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="dockcv"))'
 }
 
+# The newest *released* entry in the changelog — the first `## [x.y.z]`, which
+# skips `## [Unreleased]` because that heading carries no digits.
+#
+# Asked for as a value rather than grepped for as a presence: a check that only
+# asks "does an entry for the manifest version exist?" is blind in the
+# direction the project actually drifted. The manifest sat at 0.1.0 while the
+# changelog announced 0.2.0, and the guard stayed green the whole time,
+# because 0.1.0's own entry was still there further down the file.
+latest_changelog_version() {
+  grep -m1 -E '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$CHANGELOG" \
+    | sed -E 's/^## \[([^]]+)\].*/\1/'
+}
+
 CURRENT_VERSION="$(get_current_version)"
 
 if [[ $# -eq 0 ]]; then
@@ -31,17 +44,29 @@ fi
 
 if [[ "$1" == "--check" ]]; then
   echo "==> Verifying version consistency for DockCV ($CURRENT_VERSION)..."
-  
-  if ! grep -q "## \[$CURRENT_VERSION\]" "$CHANGELOG"; then
-    echo "ERROR: CHANGELOG.md is missing an entry for current version [$CURRENT_VERSION]." >&2
+
+  CHANGELOG_VERSION="$(latest_changelog_version)"
+
+  if [[ -z "$CHANGELOG_VERSION" ]]; then
+    echo "ERROR: CHANGELOG.md has no released version entry at all." >&2
+    echo "       Expected a heading of the form '## [$CURRENT_VERSION] - <date>'." >&2
     exit 1
   fi
 
-  echo "==> Running cargo check & test..."
-  cargo check --workspace
-  cargo test --workspace
+  # Equality in both directions. A manifest ahead of the changelog ships a
+  # build nobody can read the notes for; a changelog ahead of the manifest
+  # ships a build that misreports itself in Settings > About and to anything
+  # comparing versions.
+  if [[ "$CHANGELOG_VERSION" != "$CURRENT_VERSION" ]]; then
+    echo "ERROR: version mismatch." >&2
+    echo "       Cargo.toml says   $CURRENT_VERSION" >&2
+    echo "       CHANGELOG.md says $CHANGELOG_VERSION (newest released entry)" >&2
+    echo "       Bump the manifest with scripts/release.sh <version>, or move" >&2
+    echo "       the unreleased notes back under '## [Unreleased]'." >&2
+    exit 1
+  fi
 
-  echo "SUCCESS: Version $CURRENT_VERSION is consistent and all tests pass."
+  echo "SUCCESS: Cargo.toml and CHANGELOG.md both say $CURRENT_VERSION."
   exit 0
 fi
 
@@ -57,10 +82,13 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
-# 2. Check if CHANGELOG.md has an entry for NEW_VERSION
-if ! grep -q "## \[$NEW_VERSION\]" "$CHANGELOG"; then
-  echo "ERROR: CHANGELOG.md does not contain an entry for '## [$NEW_VERSION]'." >&2
-  echo "Please update CHANGELOG.md with release notes before releasing." >&2
+# 2. The changelog must already lead with the version being released — not
+#    merely mention it somewhere, or the notes for an older release would
+#    satisfy the gate.
+CHANGELOG_VERSION="$(latest_changelog_version)"
+if [[ "$CHANGELOG_VERSION" != "$NEW_VERSION" ]]; then
+  echo "ERROR: CHANGELOG.md's newest released entry is '${CHANGELOG_VERSION:-none}', not '$NEW_VERSION'." >&2
+  echo "Please add release notes under '## [$NEW_VERSION] - $(date +%Y-%m-%d)' before releasing." >&2
   exit 1
 fi
 
