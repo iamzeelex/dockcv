@@ -207,9 +207,10 @@ therefore cannot name the developer, and asks you once before running it.
 What it needs
 -------------
 
-macOS 11 or newer, on the architecture named above. Nothing else: DockCV makes
-no network connections at all, and everything it stores is plain TOML in a
-folder you choose.
+macOS 11 or newer, on the architecture named above. Nothing else: everything
+DockCV stores is plain TOML in a folder you choose, and it needs no network to
+do any of its work. The one request it can make is an update check, which is
+off until you turn it on in Settings and never downloads anything by itself.
 
 If something is wrong
 ---------------------

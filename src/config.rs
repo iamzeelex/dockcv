@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::theme::ThemeMode;
+use crate::update::Channel;
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Config {
@@ -24,6 +25,36 @@ pub struct Config {
     /// copied to another machine.
     #[serde(default)]
     pub library_helper_dismissed: bool,
+    /// How often DockCV may ask whether a newer version exists — by word, so
+    /// the file stays readable and says what it does.
+    ///
+    /// Absent means [`Channel::Manual`]: the button works, nothing runs on its
+    /// own. Somebody who never opens Settings never makes a network request
+    /// they did not press a button for (US-10, `update.rs`).
+    #[serde(default)]
+    pub update_check: String,
+    /// `YYYY-MM-DD` of the last completed check, so the weekly one knows
+    /// whether it is due. A date and not a timestamp: the question is "was it
+    /// this week", and a clock reading is more about the user than the answer
+    /// needs.
+    #[serde(default)]
+    pub update_last_checked: String,
+    /// A version the user chose to skip. Suppresses the banner for that one
+    /// release and nothing else — the next one is announced normally.
+    #[serde(default)]
+    pub update_skipped: String,
+    /// Whether the one-time offer to turn the weekly check on has been
+    /// answered. Asked once, in a line, never again — a first-run modal about
+    /// updates is exactly the interruption this product exists not to be.
+    #[serde(default)]
+    pub update_asked: bool,
+}
+
+impl Config {
+    /// The channel this config selects, defaulting safely.
+    pub fn update_channel(&self) -> Channel {
+        Channel::from_word(&self.update_check)
+    }
 }
 
 fn config_dir() -> PathBuf {
@@ -72,5 +103,39 @@ pub fn set_theme(mode: ThemeMode) {
 pub fn dismiss_library_helper() {
     let mut config = load();
     config.library_helper_dismissed = true;
+    save(&config);
+}
+
+/// Convenience: record the update channel and persist.
+pub fn set_update_channel(channel: Channel) {
+    let mut config = load();
+    config.update_check = channel.word().to_string();
+    // Asking again after the setting has been touched would be asking someone
+    // to answer a question they have just answered more precisely.
+    config.update_asked = true;
+    save(&config);
+}
+
+/// Convenience: remember that a check completed today, and what it found.
+///
+/// The date is written whether or not there was anything new — the weekly
+/// check is about how often we ask, not about how often the answer changes.
+pub fn record_update_check(today: &str) {
+    let mut config = load();
+    config.update_last_checked = today.to_string();
+    save(&config);
+}
+
+/// Convenience: never mention this particular version again.
+pub fn skip_update(version: &str) {
+    let mut config = load();
+    config.update_skipped = version.to_string();
+    save(&config);
+}
+
+/// Convenience: the one-time offer has been answered, either way.
+pub fn mark_update_asked() {
+    let mut config = load();
+    config.update_asked = true;
     save(&config);
 }

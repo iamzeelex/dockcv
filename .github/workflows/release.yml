@@ -35,6 +35,38 @@ jobs:
           fi
           echo "releasing $MANIFEST"
 
+  # The file the app's update check reads, published as an asset of the
+  # release it describes. A static file rather than the GitHub API: the API is
+  # rate limited, shaped by someone else, and answers with far more than is
+  # being asked. This answers exactly the question, and `update.rs` needs no
+  # credentials, no headers and no query string to ask it.
+  #
+  # Its own job, so the feed does not depend on a platform build succeeding —
+  # and it carries nothing but three strings, none of them about anybody.
+  feed:
+    name: Version feed
+    needs: verify-version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write latest.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cat > latest.json <<JSON
+          {
+            "version": "$VERSION",
+            "published": "$(date -u +%Y-%m-%d)",
+            "page": "${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          }
+          JSON
+          cat latest.json
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: latest.json
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # macOS gets the real thing: scripts/bundle.sh is what produces a .app a
   # person can double-click — Info.plist, icon, and the licence notices that
   # THIRD-PARTY-NOTICES.md and the OFL both require to travel with the

@@ -4,7 +4,9 @@ A local-first résumé workbench: a native desktop app built with
 [GPUI](https://www.gpui.rs/) — the GPU-accelerated UI framework from the
 [Zed](https://github.com/zed-industries/zed) editor — with an **in-process
 Typst compiler** driving a live paper preview. No cloud, no Electron, no web
-view, and **no network request at runtime**.
+view, and **no network request you did not ask for**: the app is fully
+functional with the network off, and the one request it can make — an update
+check that is off until you turn it on — is described under *Updates* below.
 
 Your CVs live in a *vault*: a plain folder of human-readable TOML files, one per
 document, that you can open in any text editor, sync with iCloud or Dropbox, and
@@ -98,7 +100,7 @@ The log records what the app did — vault opened, import outcome, export, every
 failed read or write, and any panic with its backtrace — and never what the
 user wrote. No field values, no bullets, no diary entries; the home directory
 is rewritten to `~` so the log does not carry an account name either. It is a
-local file and nothing sends it anywhere: DockCV makes no network calls at all.
+local file and nothing sends it anywhere.
 
 `DOCKCV_LOG` sets the level for DockCV's own crates (default `info`),
 `DOCKCV_LOG_DEPS` for everything else (default `warn`, which is what keeps
@@ -107,6 +109,27 @@ GPUI's chatter out of an ordinary session):
 ```bash
 DOCKCV_LOG=debug cargo run
 ```
+
+## Updates
+
+DockCV never updates itself and never downloads anything on its own.
+
+**Settings ▸ General ▸ Updates** offers three states — `Never`, `When I ask`
+(the default) and `Weekly`. Until you change it, the only request that can
+happen is the one you make by pressing *Check now*.
+
+A check is a single `GET` of a small static file attached to the newest
+release. It carries no query string, no identifier and not even the version
+being compared — the comparison happens locally. The request is made by the
+system's `curl` rather than by an HTTP client compiled into the binary, so the
+capability is a visible subprocess and no TLS stack ships inside the app. When
+a newer version exists, one line appears in the rail with a link that opens the
+release page in your browser; installing is a download you make, the same way
+you installed it the first time.
+
+The app is not self-updating on purpose. Replacing your own binary safely needs
+a signature to verify the replacement against, and DockCV has no Apple
+Developer ID — a self-updater without one is a hole with a progress bar.
 
 ## Dependency pinning
 

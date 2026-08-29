@@ -17,6 +17,7 @@ mod import;
 mod logging;
 mod render;
 mod theme;
+mod update;
 mod vault;
 mod views;
 

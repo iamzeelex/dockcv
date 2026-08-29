@@ -26,7 +26,9 @@ use dockcv_ui_components::{
     Settings,
 };
 
+use crate::config;
 use crate::theme::{ActiveTheme, StyledText, TextStyle, Theme, ThemeMode};
+use crate::update::Channel;
 use crate::vault;
 
 use super::shell::Shell;
@@ -70,6 +72,33 @@ fn theme_chip(shell: &WeakEntity<Shell>, mode: ThemeMode, cx: &mut App) -> impl 
                 .border_color(preview.accent),
         )
         .child(mode.label())
+}
+
+/// How often DockCV may ask whether a newer version exists.
+///
+/// Three chips rather than a switch, because "off" and "only when I ask" are
+/// genuinely different answers and a switch can only hold two. The wording is
+/// the user's side of it — `When I ask`, not `manual`.
+fn update_chip(shell: &WeakEntity<Shell>, channel: Channel, cx: &mut App) -> impl IntoElement {
+    let theme = *cx.theme();
+    let active = config::load().update_channel() == channel;
+    let shell = shell.clone();
+
+    Button::new(SharedString::from(format!("update-{}", channel.word())))
+        .chip(active, &theme)
+        .h(theme.control_md())
+        .when(active, |el| el.border_1().border_color(theme.accent))
+        .on_click(move |_: &ClickEvent, _window, cx| {
+            config::set_update_channel(channel);
+            let _ = shell.update(cx, |shell, cx| {
+                shell.update.offer_pending = false;
+                if channel == Channel::Weekly {
+                    shell.check_for_update(true, cx);
+                }
+                cx.notify();
+            });
+        })
+        .child(channel.label())
 }
 
 fn action_button(
@@ -125,6 +154,8 @@ impl Render for SettingsWindow {
 fn general_page(shell: &WeakEntity<Shell>) -> SettingPage {
     let for_vault = shell.clone();
     let for_theme = shell.clone();
+    let for_updates = shell.clone();
+    let for_check = shell.clone();
 
     SettingPage::new("General")
         .description("Where your work lives, and how the app looks.")
@@ -146,6 +177,70 @@ fn general_page(shell: &WeakEntity<Shell>) -> SettingPage {
                             .flatten()
                             .unwrap_or_else(|| "—".to_string());
                         readout(path, true, cx).into_any_element()
+                    }),
+                )),
+        )
+        .group(
+            SettingGroup::new()
+                .title("Updates")
+                .description(
+                    "DockCV needs no network to work and makes no other request. A check \
+                     asks github.com for a version number \u{2014} it sends nothing about \
+                     you, not even the version it is comparing, and never downloads or \
+                     installs anything by itself.",
+                )
+                .item(SettingItem::new(
+                    "Check",
+                    SettingField::render(move |_o, _window, cx: &mut App| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .children(
+                                Channel::ALL.map(|channel| update_chip(&for_updates, channel, cx)),
+                            )
+                            .into_any_element()
+                    }),
+                ))
+                .item(SettingItem::new(
+                    "Now",
+                    SettingField::render(move |_o, _window, cx: &mut App| {
+                        let shell = for_check.clone();
+                        let (checking, last) = shell
+                            .read_with(cx, |shell, _| shell.update.checking)
+                            .map(|checking| (checking, config::load().update_last_checked))
+                            .unwrap_or((false, String::new()));
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                Button::new("settings-check-updates")
+                                    .toolbar()
+                                    .on_click(move |_: &ClickEvent, _window, cx| {
+                                        let _ = shell.update(cx, |shell, cx| {
+                                            shell.check_for_update(true, cx)
+                                        });
+                                    })
+                                    .child(if checking {
+                                        "Checking\u{2026}".to_string()
+                                    } else {
+                                        "Check now".to_string()
+                                    }),
+                            )
+                            // The answer appears in the rail, where it can be
+                            // acted on; this row only says when it last ran,
+                            // which is the question a settings screen is for.
+                            .child(readout(
+                                if last.is_empty() {
+                                    "never checked".to_string()
+                                } else {
+                                    format!("last checked {last}")
+                                },
+                                true,
+                                cx,
+                            ))
+                            .into_any_element()
                     }),
                 )),
         )

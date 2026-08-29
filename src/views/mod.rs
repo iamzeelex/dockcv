@@ -42,6 +42,7 @@ pub mod settings_window;
 mod setup;
 mod shell;
 mod sidebar;
+mod update_notice;
 mod vault_cache;
 mod welcome;
 

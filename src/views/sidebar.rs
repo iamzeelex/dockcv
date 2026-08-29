@@ -230,6 +230,9 @@ impl Shell {
             .children(active_diary.then(|| self.render_roles_facet(cx)).flatten())
             .children(self.render_recent(cx))
             .child(div().flex_1())
+            // Above the vault row, below everything that is navigation: the
+            // rail's chrome is where the app is allowed to talk about itself.
+            .children(self.render_update_notice(cx))
             // Vault row → opens the menu.
             .child(
                 ListItem::new("user-row")

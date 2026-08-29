@@ -36,6 +36,7 @@ use super::library::LibrarySort;
 use super::library_edit::LibraryEdit;
 use super::library_link::PushReview;
 use super::save_status;
+use super::update_notice::UpdateState;
 use super::vault_cache::VaultCache;
 use super::{EditorEvent, Root};
 
@@ -110,6 +111,8 @@ pub struct Shell {
     /// The "which CVs should take this?" dialog, open only just after a
     /// library block that other documents copy was saved (US-03).
     pub(super) library_push: Option<PushReview>,
+    /// What the rail has to say about versions this session (`update_notice`).
+    pub(super) update: UpdateState,
     /// The open "which CV did you send?" picker.
     pub(super) pin_pick: Option<PinPick>,
     /// Mirror of `config.library_helper_dismissed`, read once at startup.
@@ -209,6 +212,7 @@ impl Shell {
             library_sort: LibrarySort::default(),
             library_edit: None,
             library_push: None,
+            update: UpdateState::default(),
             pin_pick: None,
             library_helper_dismissed,
             diary_draft: None,
@@ -1163,6 +1167,15 @@ impl Render for Shell {
         // frame — and it does nothing at all unless the directory moved.
         let revision = save_status::vault_revision(cx);
         self.cache.refresh(self.vault.as_deref(), revision);
+        // The update settings, read once a launch, and the weekly check if it
+        // is due. Not on the pre-vault screens: somebody's first thirty
+        // seconds with this app are not the moment to mention versions of it.
+        if !matches!(
+            self.screen,
+            Screen::Opening | Screen::Welcome | Screen::Setup
+        ) {
+            self.start_update_checks(cx);
+        }
         if matches!(self.screen, Screen::Gallery) {
             self.ensure_thumbnails(cx);
         }

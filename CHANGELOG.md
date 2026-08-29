@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reworded it, and offering to push the new wording into the ones you tick. Copies that
   were tailored start unticked. Library cards report `used in 3 CVs · 1 tailored`.
 
+- **Update checks, off by default**: Settings ▸ General ▸ Updates offers `Never`,
+  `When I ask` (the default) and `Weekly`. A check is one request for a static file
+  and sends nothing about the user — not even the version being compared, which is
+  compared locally. It is made by the system's `curl`, so no HTTP client is compiled
+  into the app. Nothing is ever downloaded or installed automatically: a newer version
+  appears as one line in the rail with a link that opens the release page.
+
 ### Fixed
 - **Version reporting**: the workspace manifest said `0.1.0` while the changelog
   announced `0.2.0`, so the app misreported itself in Settings ▸ About. The release
