@@ -19,6 +19,7 @@ mod gallery;
 pub mod import_flow;
 mod library;
 mod library_edit;
+mod library_link;
 mod library_usage;
 mod preset_matrix;
 mod root;

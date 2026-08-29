@@ -46,7 +46,7 @@
 use std::collections::BTreeMap;
 
 use crate::resume::model::{
-    Certificate, Education, Library, ResumeDoc, SectionKind, SkillGroup, Volunteer, Work,
+    Certificate, Education, Library, ResumeDoc, SectionKind, SkillGroup, Versioned, Volunteer, Work,
 };
 use crate::vault::DocMeta;
 
@@ -97,46 +97,129 @@ fn volunteer_key(v: &Volunteer) -> Identity {
     key(&[&v.organization, &v.position])
 }
 
-/// Every identity a document contains, for one section.
+/// Every identity a document contains for one section, paired with a
+/// fingerprint of the entry it came from.
 ///
 /// Reads **every variant**, not just the active one: a block tailored into a
 /// variant that is not currently selected is still in use by that document, and
 /// counting only the active variant would make the number swing every time a
 /// preset was applied.
-fn identities_in(doc: &ResumeDoc, section: SectionKind) -> Vec<Identity> {
+///
+/// The fingerprint is `Debug` rather than a `PartialEq` derive on the five
+/// block shapes. The question it answers is "would the library's version of
+/// this block change this copy if it were pushed" — which is every field at
+/// once, including the ones identity deliberately ignores. It is compared and
+/// thrown away, never stored, so its exact spelling is nobody's contract.
+fn entries_in(doc: &ResumeDoc, section: SectionKind) -> Vec<(Identity, String)> {
+    fn collect<T: std::fmt::Debug>(
+        pool: &Versioned<Vec<T>>,
+        key: impl Fn(&T) -> Identity,
+    ) -> Vec<(Identity, String)> {
+        pool.variants
+            .iter()
+            .flat_map(|variant| variant.data.iter())
+            .map(|entry| (key(entry), format!("{entry:?}")))
+            .collect()
+    }
+
     match section {
-        SectionKind::Work => doc
-            .work
-            .variants
-            .iter()
-            .flat_map(|v| v.data.iter().map(work_key))
-            .collect(),
-        SectionKind::Education => doc
-            .education
-            .variants
-            .iter()
-            .flat_map(|v| v.data.iter().map(education_key))
-            .collect(),
-        SectionKind::Skills => doc
-            .skills
-            .variants
-            .iter()
-            .flat_map(|v| v.data.iter().map(skills_key))
-            .collect(),
-        SectionKind::Certificates => doc
-            .certificates
-            .variants
-            .iter()
-            .flat_map(|v| v.data.iter().map(certificate_key))
-            .collect(),
-        SectionKind::Organizations => doc
-            .volunteer
-            .variants
-            .iter()
-            .flat_map(|v| v.data.iter().map(volunteer_key))
-            .collect(),
+        SectionKind::Work => collect(&doc.work, work_key),
+        SectionKind::Education => collect(&doc.education, education_key),
+        SectionKind::Skills => collect(&doc.skills, skills_key),
+        SectionKind::Certificates => collect(&doc.certificates, certificate_key),
+        SectionKind::Organizations => collect(&doc.volunteer, volunteer_key),
         // No pool for these, so nothing to match.
         SectionKind::Profile | SectionKind::Custom(_) => Vec::new(),
+    }
+}
+
+/// Identity → fingerprint, for every block the library holds.
+fn library_fingerprints(library: &Library) -> BTreeMap<Identity, String> {
+    let mut map = BTreeMap::new();
+    for (identity, fingerprint) in library
+        .work
+        .iter()
+        .map(|b| (work_key(b), format!("{b:?}")))
+        .chain(
+            library
+                .education
+                .iter()
+                .map(|b| (education_key(b), format!("{b:?}"))),
+        )
+        .chain(
+            library
+                .skills
+                .iter()
+                .map(|b| (skills_key(b), format!("{b:?}"))),
+        )
+        .chain(
+            library
+                .certificates
+                .iter()
+                .map(|b| (certificate_key(b), format!("{b:?}"))),
+        )
+        .chain(
+            library
+                .volunteer
+                .iter()
+                .map(|b| (volunteer_key(b), format!("{b:?}"))),
+        )
+    {
+        map.insert(identity, fingerprint);
+    }
+    map
+}
+
+/// Overwrite every copy of `identity` in `doc` with the library's block, in
+/// every variant that holds one. Returns how many copies were rewritten.
+///
+/// The identity is passed in rather than taken from the block because the two
+/// differ in exactly the case this exists for: the user has just edited the
+/// block, possibly its identifying fields, and the copies still carry the old
+/// identity. The radius is measured before the edit; this is what writes it.
+pub(super) fn replace_matching(
+    doc: &mut ResumeDoc,
+    section: SectionKind,
+    identity: &str,
+    library: &Library,
+    index: usize,
+) -> usize {
+    fn overwrite<T: Clone>(
+        pool: &mut Versioned<Vec<T>>,
+        key: impl Fn(&T) -> Identity,
+        identity: &str,
+        block: &T,
+    ) -> usize {
+        let mut rewritten = 0;
+        for variant in &mut pool.variants {
+            for entry in variant.data.iter_mut() {
+                if key(entry) == identity {
+                    *entry = block.clone();
+                    rewritten += 1;
+                }
+            }
+        }
+        rewritten
+    }
+
+    match section {
+        SectionKind::Work => library
+            .work
+            .get(index)
+            .map_or(0, |block| overwrite(&mut doc.work, work_key, identity, block)),
+        SectionKind::Education => library.education.get(index).map_or(0, |block| {
+            overwrite(&mut doc.education, education_key, identity, block)
+        }),
+        SectionKind::Skills => library.skills.get(index).map_or(0, |block| {
+            overwrite(&mut doc.skills, skills_key, identity, block)
+        }),
+        SectionKind::Certificates => library.certificates.get(index).map_or(0, |block| {
+            overwrite(&mut doc.certificates, certificate_key, identity, block)
+        }),
+        SectionKind::Organizations => library.volunteer.get(index).map_or(0, |block| {
+            overwrite(&mut doc.volunteer, volunteer_key, identity, block)
+        }),
+        SectionKind::Profile | SectionKind::Custom(_) => 0,
     }
 }
 
@@ -177,22 +260,36 @@ pub(super) struct DocumentRef {
     /// What to call it on screen: the person's name when the file has one,
     /// else the stem.
     pub label: String,
+    /// Whether this document's copy has been tailored away from the library's
+    /// version — the same block, different words.
+    ///
+    /// This is the whole point of a copy pool and the reason a push is a
+    /// question rather than a button: tailoring a bullet for one company is
+    /// what the product is for, and overwriting it is the one thing a user
+    /// would never forgive being done quietly (US-03, P-02).
+    pub diverged: bool,
 }
 
 impl UsageIndex {
     /// Walk the vault once. `docs` is the cache's metadata (for names) paired
     /// with the parsed document; an unreadable document contributes nothing
     /// rather than being counted as empty.
-    pub(super) fn build<'a>(docs: impl IntoIterator<Item = (&'a DocMeta, &'a ResumeDoc)>) -> Self {
+    ///
+    /// The library is needed as well as the documents, because the same pass
+    /// answers both questions the card asks: *where* is this block, and does
+    /// what is there still say what the library says.
+    pub(super) fn build<'a>(
+        library: &Library,
+        docs: impl IntoIterator<Item = (&'a DocMeta, &'a ResumeDoc)>,
+    ) -> Self {
+        let fingerprints = library_fingerprints(library);
         let mut by_identity: BTreeMap<Identity, Vec<DocumentRef>> = BTreeMap::new();
         for (meta, doc) in docs {
-            let reference = DocumentRef {
-                stem: meta.stem.clone(),
-                label: if meta.name.trim().is_empty() {
-                    meta.stem.clone()
-                } else {
-                    meta.name.clone()
-                },
+            let stem = meta.stem.clone();
+            let label = if meta.name.trim().is_empty() {
+                meta.stem.clone()
+            } else {
+                meta.name.clone()
             };
             for section in [
                 SectionKind::Work,
@@ -201,14 +298,27 @@ impl UsageIndex {
                 SectionKind::Certificates,
                 SectionKind::Organizations,
             ] {
-                for identity in identities_in(doc, section) {
+                for (identity, fingerprint) in entries_in(doc, section) {
+                    // An entry matching nothing in the library is just content
+                    // this document happens to hold; only blocks the pool
+                    // actually offers have a radius to report.
+                    let Some(from_library) = fingerprints.get(&identity) else {
+                        continue;
+                    };
+                    let diverged = &fingerprint != from_library;
                     let entry = by_identity.entry(identity).or_default();
                     // One document counts once for one block however many
                     // variants of it hold a copy — "used in 3 CVs" is about
                     // documents, and a document that tailored the same block
-                    // into two variants has not used it twice.
-                    if !entry.iter().any(|d| d.stem == reference.stem) {
-                        entry.push(reference.clone());
+                    // into two variants has not used it twice. It has diverged
+                    // if *any* of those copies has.
+                    match entry.iter_mut().find(|d| d.stem == stem) {
+                        Some(existing) => existing.diverged |= diverged,
+                        None => entry.push(DocumentRef {
+                            stem: stem.clone(),
+                            label: label.clone(),
+                            diverged,
+                        }),
                     }
                 }
             }
@@ -310,7 +420,7 @@ mod tests {
         let b = doc_with(vec![block.clone()]);
         let c = doc_with(vec![work("Other Co", "SWE", "2019-01", "Something else")]);
 
-        let index = UsageIndex::build(vec![
+        let index = UsageIndex::build(&library, vec![
             (&meta("cv-a", "Sofiia"), &a),
             (&meta("cv-b", "Sofiia"), &b),
             (&meta("cv-c", "Sofiia"), &c),
@@ -341,7 +451,7 @@ mod tests {
         tailored.summary = "Rewritten for this employer".into();
         let doc = doc_with(vec![tailored]);
 
-        let index = UsageIndex::build(vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 1);
     }
 
@@ -354,7 +464,7 @@ mod tests {
         };
         let doc = doc_with(vec![work("Acme Corp", "Staff SWE", "2022-01", "x")]);
 
-        let index = UsageIndex::build(vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 0);
     }
 
@@ -375,7 +485,7 @@ mod tests {
         doc.work.variants[1].data = vec![block];
         doc.set_active_variant(SectionKind::Work, 0);
 
-        let index = UsageIndex::build(vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 1);
     }
 
@@ -388,7 +498,7 @@ mod tests {
         };
         let doc = doc_with(vec![work("  acme corp ", "SENIOR SWE", "2022-01", "y")]);
 
-        let index = UsageIndex::build(vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 1);
     }
 
@@ -413,7 +523,7 @@ mod tests {
             "Base",
         );
 
-        let index = UsageIndex::build(vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
         assert_eq!(index.count_for(&library, SectionKind::Skills, 0), 1);
     }
 
@@ -430,10 +540,117 @@ mod tests {
 
         let a = doc_with(vec![one.clone(), two.clone()]);
         let b = doc_with(vec![one.clone()]);
-        let index = UsageIndex::build(vec![(&meta("a", "S"), &a), (&meta("b", "S"), &b)]);
+        let index = UsageIndex::build(&library, vec![(&meta("a", "S"), &a), (&meta("b", "S"), &b)]);
 
         // `one` in two documents, `two` in one.
         assert_eq!(index.total_reuses(&library), 3);
+    }
+
+    /// The count survives tailoring; the *flag* is what notices it. Both are
+    /// needed: reach is the count, consequence is the flag (US-03).
+    #[test]
+    fn a_reworded_copy_is_reported_as_tailored() {
+        let block = work("Acme Corp", "Senior SWE", "2022-01", "Cut p99 in half");
+        let library = Library {
+            work: vec![block.clone()],
+            ..Default::default()
+        };
+
+        let untouched = doc_with(vec![block.clone()]);
+        let mut reworded = block.clone();
+        reworded.highlights = vec!["Halved p99 latency on the orders service".into()];
+        let tailored = doc_with(vec![reworded]);
+
+        let index = UsageIndex::build(
+            &library,
+            vec![
+                (&meta("cv-a", "Sofiia"), &untouched),
+                (&meta("cv-b", "Sofiia"), &tailored),
+            ],
+        );
+
+        let found = index.documents_for(&library, SectionKind::Work, 0);
+        assert_eq!(found.len(), 2);
+        assert!(!found[0].diverged, "an identical copy has not been tailored");
+        assert!(found[1].diverged, "a reworded copy has");
+    }
+
+    /// One document, two variants, one of them reworded: the document has
+    /// diverged. Anything else would let a push overwrite a tailored variant
+    /// while the dialog said the copy was untouched.
+    #[test]
+    fn one_tailored_variant_makes_the_whole_document_tailored() {
+        let block = work("Acme Corp", "Senior SWE", "2022-01", "Cut p99 in half");
+        let library = Library {
+            work: vec![block.clone()],
+            ..Default::default()
+        };
+
+        let mut doc = doc_with(vec![block.clone()]);
+        doc.add_variant(SectionKind::Work);
+        let mut reworded = block;
+        reworded.summary = "Rewritten for this employer".into();
+        doc.work.variants[1].data = vec![reworded];
+
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
+        let found = index.documents_for(&library, SectionKind::Work, 0);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].diverged);
+    }
+
+    /// A push writes into every variant holding a copy, not just the active
+    /// one — the same rule the count already follows.
+    #[test]
+    fn a_push_rewrites_every_variant_that_holds_the_block() {
+        let block = work("Acme Corp", "Senior SWE", "2022-01", "Old wording");
+        let mut doc = doc_with(vec![block.clone()]);
+        doc.add_variant(SectionKind::Work);
+        doc.work.variants[1].data = vec![block.clone()];
+
+        let identity = work_key(&block);
+        let mut updated = block.clone();
+        updated.highlights = vec!["New wording".into()];
+        let library = Library {
+            work: vec![updated],
+            ..Default::default()
+        };
+
+        let rewritten = replace_matching(&mut doc, SectionKind::Work, &identity, &library, 0);
+        assert_eq!(rewritten, 2);
+        for variant in &doc.work.variants {
+            assert_eq!(variant.data[0].highlights, vec!["New wording".to_string()]);
+        }
+    }
+
+    /// The identity is passed in, not derived from the edited block — which is
+    /// the only reason a renamed employer can still find its own copies. Derive
+    /// it from the new block instead and this push silently does nothing.
+    #[test]
+    fn a_push_still_finds_copies_after_the_employer_was_renamed() {
+        let before = work("Acme Corp", "Senior SWE", "2022-01", "x");
+        let mut doc = doc_with(vec![before.clone()]);
+
+        let identity = work_key(&before);
+        let mut renamed = before;
+        renamed.name = "Acme Corporation".into();
+        let library = Library {
+            work: vec![renamed],
+            ..Default::default()
+        };
+
+        let rewritten = replace_matching(&mut doc, SectionKind::Work, &identity, &library, 0);
+        assert_eq!(rewritten, 1);
+        assert_eq!(doc.work.variants[0].data[0].name, "Acme Corporation");
+    }
+
+    /// Entries a document holds that the library does not offer are nobody's
+    /// business here — the index reports on blocks, not on content.
+    #[test]
+    fn content_the_library_does_not_hold_is_not_indexed() {
+        let library = Library::default();
+        let doc = doc_with(vec![work("Acme Corp", "Senior SWE", "2022-01", "x")]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
+        assert_eq!(index.total_reuses(&library), 0);
     }
 
     /// A block nobody has placed reports zero rather than being absent — the
@@ -444,7 +661,7 @@ mod tests {
             work: vec![work("Nowhere Ltd", "Intern", "2015-01", "x")],
             ..Default::default()
         };
-        let index = UsageIndex::build(Vec::new());
+        let index = UsageIndex::build(&library, Vec::new());
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 0);
         assert!(index.documents_for(&library, SectionKind::Work, 0).is_empty());
     }

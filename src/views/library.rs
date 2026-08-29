@@ -251,7 +251,7 @@ impl Shell {
         // Once per render, not once per card: asking each card to walk every
         // document would be the per-frame work this codebase has already been
         // bitten by once.
-        let usage = UsageIndex::build(self.cache.readable_documents());
+        let usage = UsageIndex::build(self.cache.library(), self.cache.readable_documents());
 
         // Counts describe the whole library, never the filtered view — same
         // rule the gallery header follows.
@@ -329,6 +329,7 @@ impl Shell {
                     .child(body),
             )
             .children(self.render_library_edit_sheet(cx))
+            .children(self.render_library_push_sheet(cx))
     }
 
     /// Title, block count, search and the "New block" menu.
@@ -819,6 +820,17 @@ impl Shell {
         }
 
         let count = used_in.len();
+        // The second number is the one that answers "what happens if I edit
+        // this": a tailored copy is one the CV reworded, and the one a push
+        // would overwrite. Without it the card reports reach and stays silent
+        // about consequence — which is the P-02 silence this feature exists to
+        // break. A block nobody has touched says nothing extra.
+        let tailored = used_in.iter().filter(|d| d.diverged).count();
+        let label = if tailored == 0 {
+            format!("used in {count} CV{}", plural(count))
+        } else {
+            format!("used in {count} CV{} \u{b7} {tailored} tailored", plural(count))
+        };
         let shell = cx.weak_entity();
         Button::new(SharedString::from(format!(
             "libused-{}",
@@ -829,20 +841,25 @@ impl Shell {
                 .join("-")
         )))
         .selector_inline()
-        .label(format!("used in {count} CV{}", plural(count)))
+        .label(label)
         .tooltip("Show which CVs")
         .dropdown_menu(move |mut menu, _window, _cx| {
             for reference in &used_in {
                 let shell = shell.clone();
                 let stem = reference.stem.clone();
-                menu = menu.item(
-                    PopupMenuItem::new(format!("Open {}", reference.label)).on_click(
-                        move |_ev, _window, cx| {
-                            let stem = stem.clone();
-                            let _ = shell.update(cx, |this, cx| this.open_doc_by_stem(&stem, cx));
-                        },
-                    ),
-                );
+                // Named on the row rather than counted only in the summary:
+                // the useful question is *which* CV said it differently.
+                let entry = if reference.diverged {
+                    format!("Open {} \u{2014} tailored there", reference.label)
+                } else {
+                    format!("Open {}", reference.label)
+                };
+                menu = menu.item(PopupMenuItem::new(entry).on_click(
+                    move |_ev, _window, cx| {
+                        let stem = stem.clone();
+                        let _ = shell.update(cx, |this, cx| this.open_doc_by_stem(&stem, cx));
+                    },
+                ));
             }
             menu
         })

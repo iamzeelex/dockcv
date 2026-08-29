@@ -34,6 +34,7 @@ use super::diary_use::DiaryUse;
 use super::library::LibrarySort;
 use super::applications_pin::PinPick;
 use super::library_edit::LibraryEdit;
+use super::library_link::PushReview;
 use super::confirm;
 use super::save_status;
 use super::vault_cache::VaultCache;
@@ -108,6 +109,9 @@ pub struct Shell {
     pub(super) library_sort: LibrarySort,
     /// The open block form — new when its index is `None`, otherwise an edit.
     pub(super) library_edit: Option<LibraryEdit>,
+    /// The "which CVs should take this?" dialog, open only just after a
+    /// library block that other documents copy was saved (US-03).
+    pub(super) library_push: Option<PushReview>,
     /// The open "which CV did you send?" picker.
     pub(super) pin_pick: Option<PinPick>,
     /// Mirror of `config.library_helper_dismissed`, read once at startup.
@@ -206,6 +210,7 @@ impl Shell {
             library_filter: None,
             library_sort: LibrarySort::default(),
             library_edit: None,
+            library_push: None,
             pin_pick: None,
             library_helper_dismissed,
             diary_draft: None,

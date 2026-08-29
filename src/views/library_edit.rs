@@ -217,6 +217,39 @@ pub(super) fn values_of(
 /// Returns `false` when there is nothing worth storing — every field blank —
 /// so the caller can decline to write rather than adding an empty card, which
 /// is the bug this whole module exists to fix.
+/// The identity of the block at `index`, as [`super::library_usage`] computes
+/// it — the handle that still finds the copies after the block itself changes.
+fn library_link_identity(library: &Library, section: SectionKind, index: usize) -> Option<String> {
+    super::library_usage::block_identity(library, section, index)
+}
+
+/// Every field of a block, as one comparable string. Used only to ask whether
+/// a save changed anything; see the note on fingerprints in `library_usage`.
+fn block_fingerprint(library: &Library, section: SectionKind, index: usize) -> Option<String> {
+    match section {
+        SectionKind::Work => library.work.get(index).map(|b| format!("{b:?}")),
+        SectionKind::Education => library.education.get(index).map(|b| format!("{b:?}")),
+        SectionKind::Skills => library.skills.get(index).map(|b| format!("{b:?}")),
+        SectionKind::Certificates => library.certificates.get(index).map(|b| format!("{b:?}")),
+        SectionKind::Organizations => library.volunteer.get(index).map(|b| format!("{b:?}")),
+        SectionKind::Profile | SectionKind::Custom(_) => None,
+    }
+}
+
+/// What to call the block in the push dialog: the user's own words for it,
+/// never the section's generic noun when there is something better.
+fn block_title(library: &Library, section: SectionKind, index: usize) -> Option<String> {
+    let title = match section {
+        SectionKind::Work => library.work.get(index).map(|b| b.position.clone()),
+        SectionKind::Education => library.education.get(index).map(|b| b.study_type.clone()),
+        SectionKind::Skills => library.skills.get(index).map(|b| b.name.clone()),
+        SectionKind::Certificates => library.certificates.get(index).map(|b| b.name.clone()),
+        SectionKind::Organizations => library.volunteer.get(index).map(|b| b.position.clone()),
+        SectionKind::Profile | SectionKind::Custom(_) => None,
+    }?;
+    (!title.trim().is_empty()).then_some(title)
+}
+
 pub(super) fn apply(
     library: &mut Library,
     section: SectionKind,
@@ -405,12 +438,44 @@ impl Shell {
         let (section, index) = (form.section, form.index);
 
         let mut library = vault::load_library(&vault);
+
+        // Everything the push offer needs is read here, *before* the edit
+        // lands: the identity the copies out there still carry, and which of
+        // those copies had already been reworded. Both are questions about the
+        // block as it was, and neither can be asked once it has been
+        // overwritten (US-03).
+        let radius = index.and_then(|index| {
+            let identity = library_link_identity(&library, section, index)?;
+            let before = block_fingerprint(&library, section, index)?;
+            let targets = super::library_link::targets_for(
+                &library,
+                self.cache.readable_documents(),
+                section,
+                index,
+            );
+            (!targets.is_empty()).then_some((index, identity, before, targets))
+        });
+
         // An all-blank form writes nothing — the sheet keeps Save disabled for
         // that case, and this is the guard behind the guard.
         if apply(&mut library, section, index, &values) {
             save_status::record(cx, "library", vault::save_library(&vault, &library));
         }
         self.library_edit = None;
+
+        // Only offer the push when the save actually changed the block. An
+        // edit sheet opened and closed unchanged — or one that only corrected
+        // whitespace — has nothing to propagate, and a dialog about it would
+        // be noise on a no-op.
+        if let Some((index, identity, before, targets)) = radius {
+            let changed = block_fingerprint(&library, section, index)
+                .is_some_and(|after| after != before);
+            if changed {
+                let title = block_title(&library, section, index)
+                    .unwrap_or_else(|| block_noun(section).to_string());
+                self.open_push_review(section, index, identity, title, targets, cx);
+            }
+        }
         cx.notify();
     }
 
@@ -432,10 +497,14 @@ impl Shell {
             ),
             // The question an edit raises, answered before it is asked — and
             // the same answer the delete dialog gives, for the same reason.
+            // Half of this used to be the whole answer to P-02. It still is
+            // the default — a block is a source to copy from — but saving now
+            // *offers* to carry the change into the CVs that hold a copy, and
+            // a subtitle that denied that would be describing the old app.
             Some(_) => (
                 format!("Edit {}", block_noun(form.section)),
-                "CVs you already built keep their copy: a library block is a \
-                 source to copy from, not a link.",
+                "CVs you already built keep their copy. If any of them hold \
+                 this block, saving asks whether they should take the change.",
             ),
         };
 
