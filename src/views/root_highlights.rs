@@ -7,7 +7,7 @@
 //!
 //! It replaced a per-row-labelled version (`Highlight 1`, `Skill 2`, …) whose
 //! numbers named nothing the eye could not already count. C-5
-//! (`docs/design/editor-comfort.md`) scoped that change to the built-in
+//! (the editor-comfort notes) scoped that change to the built-in
 //! sections' highlights, which left Skills' keywords and a custom section's
 //! highlights on the old shape — two visual languages in one panel, which is
 //! worse than either. They use this too.
@@ -24,7 +24,7 @@ use super::root_sidebar::FIELD_LABEL_LINE_HEIGHT;
 use super::Root;
 
 impl Root {
-    /// C-5 (`docs/design/editor-comfort.md`): a "Highlights" list — one label
+    /// C-5 (the editor-comfort notes): a "Highlights" list — one label
     /// above a stack of bullet rows, each a small glyph, the input and the
     /// remove control together on the input's own line. Replaces giving
     /// every highlight its own `Highlight 1`, `Highlight 2`… labelled row:

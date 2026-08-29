@@ -3,8 +3,8 @@
 //! ## The promise this had to fit inside
 //!
 //! DockCV makes no network request during ordinary work, and that is not a
-//! marketing line: US-10's acceptance criteria say *«ни одного внешнего
-//! запроса при обычной работе»*. Read it exactly — **ordinary work**. A check
+//! marketing line: US-10's acceptance criteria ask for no external request
+//! *during ordinary work*. That last phrase is doing the work. A check
 //! the user switched on, and can switch off, is not ordinary work; a silent
 //! one at launch would be.
 //!
@@ -45,14 +45,14 @@ use std::process::Command;
 /// A release *asset* rather than the GitHub API on purpose — the API is rate
 /// limited, shaped by someone else, and answers with far more than is being
 /// asked. This answers exactly the question.
-pub const FEED: &str = "https://github.com/zeelex/dockcv/releases/latest/download/latest.json";
+pub const FEED: &str = "https://github.com/iamzeelex/dockcv/releases/latest/download/latest.json";
 
 /// Where a person goes to get DockCV.
 ///
 /// Named once so that every route out of this feature — the button after a
 /// successful check, and the one offered when a check fails — cannot end up
 /// pointing at two different places.
-pub const DOWNLOADS: &str = "https://github.com/zeelex/dockcv/releases";
+pub const DOWNLOADS: &str = "https://github.com/iamzeelex/dockcv/releases";
 
 /// Seconds before a check gives up. Short: nobody is waiting on this, and a
 /// hanging check that never resolves is worse than one that says it failed.
@@ -317,7 +317,7 @@ mod tests {
     fn a_release_is_read_from_the_feed() {
         let release = parse(
             r#"{"version":"0.3.0","published":"2026-09-04",
-                "page":"https://github.com/zeelex/dockcv/releases/tag/v0.3.0"}"#,
+                "page":"https://github.com/iamzeelex/dockcv/releases/tag/v0.3.0"}"#,
         )
         .expect("well-formed feed");
         assert_eq!(release.version, "0.3.0");

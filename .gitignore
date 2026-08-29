@@ -10,3 +10,9 @@
 
 # Release scaffolding output.
 /dist/
+
+# Planning material — the product review, the roadmap, the per-screen specs and
+# the decisions ledger. Kept on disk because the work still leans on it, out of
+# the repository because it is a private workbench: what a contributor needs is
+# in README.md and CONTRIBUTING.md, and what is still open belongs in issues.
+/docs/

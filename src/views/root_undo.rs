@@ -102,7 +102,7 @@ impl Root {
 // No `can_undo` / `can_redo` here yet, deliberately. They would be three lines
 // and they would be dead: the only door into this is the keybinding, and a
 // toolbar affordance means adding a control the editor's design row does not
-// draw (`docs/design/editor.md` §3) — a product decision, not a wiring one.
+// draw (the editor spec §3) — a product decision, not a wiring one.
 // Writing them now and marking them `#[allow(dead_code)]` is exactly the habit
 // that put 32 of those in this tree.
 

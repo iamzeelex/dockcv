@@ -15,7 +15,7 @@
 //! `"  skills: ("`, …) and reports which one precedes a given offset. It is
 //! *not* a real span→section map — see this module's doc on
 //! [`attribute_section`] for exactly how it can be wrong, and
-//! `docs/design/typst-controls.md` §7/§9 for the hook (per-section markers or
+//! the Typst-controls spec §7/§9 for the hook (per-section markers or
 //! a line-range table emitted alongside the source) that would replace it
 //! with a real one.
 //!

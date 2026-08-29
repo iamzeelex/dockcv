@@ -518,7 +518,7 @@ impl TypstEngine {
     /// joining compiler diagnostics on failure.
     ///
     /// Alongside the merged pixmap (which is what the preview displays — one
-    /// image, not per-page virtualization; see `docs/research/gpui-pdf-architecture.md`
+    /// image, not per-page virtualization; see the PDF-architecture notes
     /// §3) this returns [`PageGeometry`] measured from the same laid-out
     /// pages, before that per-page structure is flattened away.
     #[cfg(feature = "raster")]
@@ -1074,7 +1074,7 @@ mod font_tests {
     /// family's coverage *changes*, which is the thing that would otherwise
     /// happen quietly during a font bump. What to do about Newsreader — drop
     /// it from the picker, mark it in the UI, or accept it — is L-11 in
-    /// `docs/OPEN.md`.
+    /// the decisions ledger.
     /// The browser ships subsetted faces (`scripts/subset-fonts.sh`) — 557 KB
     /// instead of 3574 KB, which is the largest saving available in a module a
     /// visitor downloads. A subset trades weight for coverage, and Typst
@@ -1253,7 +1253,7 @@ mod font_tests {
                 covers(font),
                 expected,
                 "Cyrillic coverage of `{}` changed — update this test and L-11 \
-                 in docs/OPEN.md, do not just flip the expectation",
+                 in the decisions ledger, do not just flip the expectation",
                 font.label()
             );
         }

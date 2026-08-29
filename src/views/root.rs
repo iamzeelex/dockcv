@@ -193,7 +193,7 @@ pub enum EditorEvent {
 /// frame stays on screen exactly as before; this only tracks what to *say*
 /// about the most recent attempt.
 ///
-/// The design doc's warning-styled banner with `Jump to section →` (`docs/design/typst-controls.md`)
+/// The design doc's warning-styled banner with `Jump to section →` (the Typst-controls spec)
 /// is a separate, later task — this type carries what that UI needs
 /// ([`CompileMessage`]'s severity and optional section), it just isn't
 /// rendered here.
@@ -287,7 +287,7 @@ pub struct Root {
     /// The preset last applied (or saved) from the toolbar's preset menu, for
     /// display only (`Preset  <name>  ▾`) — `ResumeDoc` has no notion of a
     /// "current" preset (a preset is just a named selection, per
-    /// `docs/design/editor.md` §9), so this is ephemeral view state, not
+    /// the editor spec §9), so this is ephemeral view state, not
     /// persisted with the document.
     pub(super) active_preset: Option<usize>,
     /// Preview rasters replaced by a newer one, waiting to be released.
@@ -322,7 +322,7 @@ pub struct Root {
 
     /// Preview zoom, in percent. **Ephemeral view state**, deliberately not
     /// stored with the document: how close you are looking is not a property
-    /// of the CV (`docs/design/typst-controls.md` §8).
+    /// of the CV (the Typst-controls spec §8).
     /// Percent, continuous rather than one of the steps: a trackpad pinch
     /// reports a fractional delta and snapping it to the nearest step on every
     /// frame would make the gesture stutter. `+`/`-` still land exactly on a
@@ -1045,7 +1045,7 @@ impl Root {
     /// Every message from the most recent failed compile, joined into one
     /// string — feeds `render_preview`'s existing plain-text error box. The
     /// design doc's warning-styled banner with section attribution and a
-    /// "Jump to section →" action (`docs/design/typst-controls.md`) is a
+    /// "Jump to section →" action (the Typst-controls spec) is a
     /// separate, later task; this just keeps the current display correct
     /// under the new state shape.
     pub(super) fn compile_error_text(&self) -> Option<String> {

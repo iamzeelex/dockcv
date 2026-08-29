@@ -1,9 +1,9 @@
-//! The per-section variant timeline (`docs/design/editor.md` §3 "Variant
+//! The per-section variant timeline (the editor spec §3 "Variant
 //! switcher") — split out of `root_sidebar.rs` to keep that file under the
 //! ~800-line house limit, same reasoning as `root_section_rename.rs`/
 //! `root_section_drag.rs`.
 //!
-//! Renaming the active variant (`docs/design/editor-comfort.md` C-2) copies
+//! Renaming the active variant (the editor-comfort notes C-2) copies
 //! the gesture the editor already uses for a section heading
 //! (`root_section_rename.rs`) and the one the Preset Matrix already uses for
 //! its left pill (`shell.rs::start_preset_rename`): the active chip alone

@@ -1,8 +1,8 @@
 //! `Use in a CV →` — turning a logged win into a bullet of a specific CV.
 //!
 //! The review calls this the most valuable transition in the product and the
-//! one drawn as a promise rather than a flow (P-05, US-06): *«Куда именно? В
-//! какой CV, в какую секцию, в какой вариант?»*. The mockup puts the link on
+//! one drawn as a promise rather than a flow (P-05, US-06). Into which CV,
+//! under which section, in which variant? The mockup puts the link on
 //! every diary entry; nothing was behind it. What existed went the other way —
 //! `root.rs::insert_diary_highlight` pulls an entry in from **inside** an open
 //! editor — which means the diary itself was a write-only box: you could log
@@ -13,8 +13,8 @@
 //!
 //! ## Two things it deliberately does not do
 //!
-//! **It does not rewrite the text.** US-06 asks for the wording "предлагается
-//! переписанным в CV-формат", and turning *"finally fixed the p99 thing that's
+//! **It does not rewrite the text.** US-06 asks for the entry to arrive
+//! already phrased as a CV bullet, and turning *"finally fixed the p99 thing that's
 //! been haunting us"* into a résumé bullet is a language task — the AI layer's,
 //! under review (§5.1, M5). What it does instead is put the diary's own words
 //! in an editable box and let the author do it, which is honest work rather

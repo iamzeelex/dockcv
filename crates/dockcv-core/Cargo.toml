@@ -2,7 +2,7 @@
 #
 # Split out of the binary so it can be compiled and tested without a window —
 # and, as it turns out, without an operating system: this crate builds for
-# `wasm32-unknown-unknown` and runs there (`docs/research/wasm-web-demo.md`).
+# `wasm32-unknown-unknown` and runs there (the browser-demo notes).
 #
 # The rule that keeps it that way: **no GPUI, no filesystem, no clock, no
 # environment.** `render.rs` (pixels → `gpui::RenderImage`) and `vault.rs`
@@ -55,7 +55,7 @@ pdf = ["dep:typst-pdf"]
 # For builds with `fallback-fonts` off, which is where Libertinus normally
 # comes from and which is also the *default* `DocumentFont`: without it a
 # browser build would silently set the default face as something else, the same
-# silent substitution `docs/OPEN.md` L-11 is about.
+# silent substitution the decisions ledger L-11 is about.
 #
 # **Additive, and it has to be.** The first version of this replaced the
 # document font list rather than adding to it, which is not what a Cargo

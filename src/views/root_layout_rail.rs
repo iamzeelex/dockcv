@@ -1,7 +1,7 @@
 //! The layout rail (C2, review US-07 / P-06): page size, margins and text
 //! scale, beside the preview, applying live.
 //!
-//! Spec: `docs/design/typst-controls.md`. This closes the gap that row names —
+//! Spec: the Typst-controls spec. This closes the gap that row names —
 //! "Typst is your advantage and you're hiding it". `LayoutSettings` has been on
 //! `ResumeDoc` since C1, round-tripping through TOML and driving the Typst
 //! preamble; until now **no view read it**, so A4 versus Letter could not be

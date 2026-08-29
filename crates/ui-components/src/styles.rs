@@ -4,7 +4,7 @@
 //! call sites: five different label sizes (12, 12, 13, 14 and 16px — the last
 //! because upstream's `button_text_size` maps `Size::Medium` to `text_base`,
 //! which is `rems(1.0)` against an un-overridden 16px rem), five radii, and six
-//! ways of dressing the same dropdown trigger. `docs/design/component-audit.md`
+//! ways of dressing the same dropdown trigger. the component audit
 //! has the census.
 //!
 //! The rule that replaces it: **a view never sizes a button.** It picks the role
@@ -295,7 +295,7 @@ impl ButtonExt for Button {
 /// `ListItem` brings hover, `Selectable::selected`, `Disableable` and a click
 /// handler; what it does not bring is a focus ring or `Role::Button`, because it
 /// is a `Stateful<Div>` underneath. That gap is real and is recorded in
-/// `docs/design/component-audit.md`.
+/// the component audit.
 pub trait ListItemExt {
     /// A selectable row inside a panel, a sheet or the nav rail.
     ///

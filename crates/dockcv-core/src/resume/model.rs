@@ -119,7 +119,7 @@ pub struct Volunteer {
 }
 
 // ---------------------------------------------------------------------------
-// Custom sections (D-9, `docs/ROADMAP.md`)
+// Custom sections (D-9, the roadmap)
 // ---------------------------------------------------------------------------
 //
 // The six built-in sections above each have a shape suited to their content
@@ -233,10 +233,10 @@ pub struct DiaryEntry {
     ///
     /// US-36, and the reason it is P0: the persona may work at a bank, a
     /// hospital or a government body, where the *fact* of a win is fine and the
-    /// wording around it is not — "утечка ПДн у клиента ACME" is a real diary
-    /// entry and an unemployable CV bullet. The story's rule is that a
-    /// confidential entry is "**никогда** не предлагается в CV дословно —
-    /// только как абстрагированная метрика".
+    /// wording around it is not. *"Personal-data leak at client ACME"* is a
+    /// real diary entry and an unemployable CV bullet. The story's rule is
+    /// blunt: a confidential entry is **never** offered to a CV verbatim, only
+    /// as an abstracted metric.
     ///
     /// The internal wording stays here, in the diary, which is the whole point:
     /// you keep the record you need for a performance review and a different,
@@ -269,7 +269,7 @@ pub struct DiaryEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Applications (roadmap D4, `docs/user-review.md` US-04/US-05, P-03/P-04)
+// Applications (roadmap D4, the product review US-04/US-05, P-03/P-04)
 // ---------------------------------------------------------------------------
 //
 // A board, not a tracker: `Rejected` is a first-class column, not something
@@ -850,7 +850,7 @@ fn is_zero(value: &u32) -> bool {
 /// Identifies a section for variant operations (switch/add/remove/rename).
 ///
 /// `Custom(CustomSectionId)` is the *only* extension point for user-added
-/// sections (D-9, `docs/ROADMAP.md`) — deliberately one new variant rather
+/// sections (D-9, the roadmap) — deliberately one new variant rather
 /// than an open enum. `SectionKind` is `Copy + Hash`, is a `HashMap` key
 /// (`views/preset_matrix.rs`), and is embedded in `FieldId` (also `Copy`), so
 /// a `String` cannot live in it; the id is `Copy` for the same reason, and
@@ -1042,7 +1042,7 @@ impl DocumentFont {
 /// Page margins, in millimeters. Kept as the three edges the original
 /// `PREAMBLE` hard-coded (`x` symmetric left/right, `top`, `bottom`) rather
 /// than collapsed to one uniform value: a single Margins slider is a
-/// plausible *UI* simplification over this (see `docs/design/typst-controls.md`
+/// plausible *UI* simplification over this (see the Typst-controls spec
 /// §10, left open there), but the stored shape keeps a vault written before
 /// this field existed rendering with the exact same margins it always had.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -1934,7 +1934,7 @@ pub struct LayoutSettings {
     pub sizes: TypeSizes,
     /// Body text size as a percentage of the template's base size (10pt).
     /// 100 is the old hard-coded default; the layout rail's own readout
-    /// (`docs/design/typst-controls.md` — "107%") is this same unit.
+    /// (the Typst-controls spec — "107%") is this same unit.
     pub text_scale_pct: u16,
     /// Paragraph leading, as an em multiple of the (scaled) text size.
     /// Matches the old hard-coded `#set par(leading: 0.62em)`.
@@ -1963,7 +1963,7 @@ impl Default for LayoutSettings {
 impl LayoutSettings {
     /// Text scale bounds: below 50% a résumé is unreadable, above 200% it
     /// cannot hold a page of content — the same "a setting the user cannot
-    /// get wrong" reasoning `docs/design/typst-controls.md` asks for.
+    /// get wrong" reasoning the Typst-controls spec asks for.
     /// What the **layout rail's** sliders offer, which is deliberately much
     /// narrower than the clamps below.
     ///
@@ -2052,7 +2052,7 @@ pub struct ResumeDoc {
     ///
     /// Page size in particular is not cosmetic: an EU application wants A4, a
     /// US one wants Letter, and the same person applies to both — this is a
-    /// property of the CV, not an app-wide preference (`docs/user-review.md`
+    /// property of the CV, not an app-wide preference (the product review
     /// §1, US-07). `#[serde(default)]` reproduces exactly the values
     /// `resume/template.rs`'s old hard-coded `PREAMBLE` used, so a document
     /// written before this field existed renders unchanged.

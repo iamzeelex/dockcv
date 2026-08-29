@@ -1,11 +1,11 @@
 //! What happens to the CVs that already hold a copy of a block you just edited.
 //!
 //! This is US-03, and the review states the requirement as a question the
-//! product may not duck: *«Что произойдёт с тремя CV, если я изменю
-//! переиспользованный блок?»* — copy or link? P-02 is explicit that either
-//! answer is acceptable and silence is not: *«Если ссылка — нужен варнинг
-//! „изменится в 3 CV“ и возможность отвязать. Если копия — нужно „протолкнуть
-//! изменение в остальные“. Промолчать нельзя.»*
+//! product may not duck: what happens to three CVs if I change a block they
+//! share? Copy or link? P-02 is explicit that either answer is acceptable and
+//! that silence is not. If it is a link, there has to be a warning naming the
+//! three and a way to detach. If it is a copy, there has to be a way to push
+//! the change into the rest. Saying nothing is not on the list.
 //!
 //! ## The answer, said out loud
 //!
@@ -31,7 +31,7 @@
 //! What *is* real, and is what the user actually needs to know before editing,
 //! is whether those copies still say what the library says. So the card carries
 //! the derived truth — `2 in sync · 1 tailored` — and the push dialog carries
-//! it per document. Recorded as a deliberate deviation in `docs/OPEN.md`.
+//! it per document. Recorded as a deliberate deviation in the decisions ledger.
 //!
 //! ## Tailored copies are protected by default
 //!

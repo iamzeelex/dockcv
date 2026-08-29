@@ -4,9 +4,12 @@ Local-first résumé workbench. Native desktop app, Rust + [GPUI](https://www.gp
 (Zed's GPU UI framework), with an **in-process Typst compiler** driving a live paper
 preview. No cloud, no Electron, no web view.
 
-The product bet is stated in `docs/user-review.md`: the moat is not the model and not
-the typography — it is *the user's own data* (diary of wins, block library with
-provenance, application outcomes). Everything below serves that.
+The product bet: the moat is not the model and not the typography — it is *the user's
+own data* (diary of wins, block library with provenance, application outcomes).
+Everything below serves that. The review that argues the case, the roadmap and the
+per-screen specs are planning material and live outside this repository; work in
+progress is tracked in issues. Comments here cite them by their shorthand — `US-nn`
+for a user story, `P-nn` for a review finding, `L-nn` for a known limitation.
 
 ---
 
@@ -73,7 +76,6 @@ src/
     confirm.rs      the alert in front of anything that cannot be undone
 crates/ui-components/  reusable widgets + theme tokens (own crate, no app deps)
 .design/               the design source of truth (see below)
-docs/                  user review, roadmap, per-screen specs
 .research/             read-only reference checkouts — never edit, never import
 ```
 
@@ -93,7 +95,7 @@ Two rules follow, and both were violated by screens written before this was sett
    for one move.
 
 Outside the chrome, deliberately: Welcome and Setup (no vault yet), the Editor (its own
-46px titlebar, `docs/design/editor.md` §3) and the Preset Matrix (scoped to one document,
+46px titlebar, editor spec §3) and the Preset Matrix (scoped to one document,
 drawn with a `‹ <document> / Presets` breadcrumb).
 
 ### Crate boundary

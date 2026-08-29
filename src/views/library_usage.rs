@@ -1,8 +1,8 @@
 //! Where each library block is actually used, derived from the vault.
 //!
 //! The mockup's block card carries `used in 3 CVs`, and the review calls that
-//! line out by name as one of the things worth keeping (L-03): *«сразу видно,
-//! какие формулировки заслужили место, а какие мертвы»*. It was never built,
+//! line out by name as one of the things worth keeping (L-03) — at a glance
+//! you see which formulations earned their place and which are dead. It was never built,
 //! because nothing in the model records it — and the honest reason not to fake
 //! it is US-14: never put a number about the user's own corpus on screen unless
 //! it traces to something real.

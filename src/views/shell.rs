@@ -1187,7 +1187,7 @@ impl Render for Shell {
         // draws a back control any more: the rail *is* the way back.
         //
         // Outside the chrome: Welcome/Setup (pre-vault, full-bleed), the
-        // Editor (its own 46px titlebar, `docs/design/editor.md` §3) and the
+        // Editor (its own 46px titlebar, the editor spec §3) and the
         // Preset Matrix (document-scoped, reached from a document and drawn
         // with a breadcrumb rather than the rail — see its own design row).
         let body = match &self.screen {
@@ -1436,11 +1436,11 @@ mod clone_url_tests {
     #[test]
     fn ordinary_repository_addresses_are_accepted() {
         for url in [
-            "https://github.com/zeelex/dockcv.git",
-            "https://github.com/zeelex/dockcv",
+            "https://github.com/iamzeelex/dockcv.git",
+            "https://github.com/iamzeelex/dockcv",
             "http://git.internal.example/cv.git",
-            "git@github.com:zeelex/dockcv.git",
-            "ssh://git@github.com/zeelex/dockcv.git",
+            "git@github.com:iamzeelex/dockcv.git",
+            "ssh://git@github.com/iamzeelex/dockcv.git",
             "git://git.example.org/cv.git",
             "file:///Users/me/backups/cvault.git",
         ] {
@@ -1478,7 +1478,7 @@ mod clone_url_tests {
     #[test]
     fn the_folder_name_comes_from_the_last_segment() {
         assert_eq!(
-            repo_name("https://github.com/zeelex/dockcv.git").as_deref(),
+            repo_name("https://github.com/iamzeelex/dockcv.git").as_deref(),
             Some("dockcv")
         );
         assert_eq!(

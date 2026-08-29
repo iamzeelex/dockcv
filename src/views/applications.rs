@@ -2,7 +2,7 @@
 //! each card pinned to the exact CV preset that was sent for it.
 //!
 //! Design row: `.design/rows/row_applications_new_surface.txt`,
-//! `docs/design/applications.md`. Renders the **main pane only** — the rail
+//! the applications spec. Renders the **main pane only** — the rail
 //! is shared chrome mounted by `Shell::with_rail`, same as every other vault
 //! screen.
 //!
@@ -11,7 +11,7 @@
 //! a separate task; the snapshot *line* still renders once
 //! `Application::snapshots` holds one) and **`★ N wins attached`** (needs a
 //! stable `DiaryEntry` id that does not exist yet). Both are called out in
-//! `docs/design/applications.md` §9/§10 as gaps in the underlying data, not
+//! the applications spec §9/§10 as gaps in the underlying data, not
 //! rendering choices.
 //!
 //! The Board/List toggle is drawn per the mockup, but only `Board` is real:

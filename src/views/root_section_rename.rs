@@ -1,5 +1,5 @@
-//! Section-header rename (both built-in and custom sections, `docs/design/
-//! editor.md` §3 anatomy, §10 open question on the rename field's home).
+//! Section-header rename, for built-in and custom sections alike (the editor
+//! spec §3 anatomy, §10 open question on where the rename field belongs).
 //!
 //! `ResumeDoc::set_section_title` already knows the model split — a built-in
 //! section gets a printed-heading override that a blank name clears back to

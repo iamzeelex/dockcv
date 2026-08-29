@@ -165,7 +165,7 @@ impl Part {
 
 /// A "keyword" past this length is a sentence that got split on the wrong
 /// character. Chosen well above the longest real one — `Kubernetes (CKA)`,
-/// `Distributed Systems`, `Постановка задач` — and well below a bullet.
+/// `Distributed Systems`, `Stakeholder management` — and well below a bullet.
 const KEYWORD_IS_A_SENTENCE: usize = 60;
 
 /// Read the document that came out and report what is odd about it.

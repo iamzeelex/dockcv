@@ -106,7 +106,7 @@ fn join_em(a: &str, b: &str) -> String {
 
 /// How the blocks inside each section group are ordered.
 ///
-/// US-20 asks for "сортировка библиотеки по «давно не использовалось»" — and
+/// US-20 asks to be able to sort the library by what has gone unused — and
 /// that is exactly what the usage index makes answerable. A pool you cannot
 /// sort by use is a pool you cannot prune: the formulations that have earned
 /// their place and the ones that never did look identical.
@@ -817,8 +817,8 @@ impl Shell {
     }
 
     /// `used in 3 CVs`, and clicking it says **which** — the reverse
-    /// navigation the review asks for by name (P-02: «на карточке есть
-    /// `Reuse ▾`, но нет обратного действия — показать, где используется»).
+    /// navigation the review asks for by name (P-02: the card offers
+    /// `Reuse ▾` and no way back — nothing says where a block already is).
     ///
     /// A block nobody has placed says so out loud rather than drawing `0`: the
     /// useful reading of this line is "is this formulation earning its keep",

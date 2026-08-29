@@ -5,15 +5,15 @@
 //! keep a diary by hand** — they already write a weekly status to their
 //! manager, and asking them to write it twice is how a diary dies. So: a box
 //! that takes a status email, standup notes, a retro, a self-review draft, and
-//! splits it into candidates. *«работает в любой профессии и не требует ни
-//! одной интеграции»*.
+//! splits it into candidates. The story's own test for it: works in any
+//! profession, and needs no integration with anything.
 //!
 //! **No model, and none needed.** The story is often read as an AI feature —
-//! it is filed under `Diary / ИИ` — but the mechanical half is the half that
+//! it is filed under the AI section — but the mechanical half is the half that
 //! matters: a status report is already a list of things you did, one per line
 //! or one per paragraph. Splitting it is text processing, and the person is the
-//! one who decides what counts (US-12: *«Да / Нет / Поправить, ничего не
-//! попадает в дневник без моего Да»*). A model would improve the wording, not
+//! one who decides what counts. US-12 spells the loop out: yes, no, or edit,
+//! and nothing reaches the diary without a yes. A model would improve the wording, not
 //! the mechanism, and it can be added later behind the same triage queue.
 //!
 //! ## What counts as one candidate
@@ -33,7 +33,7 @@
 //! click and a win silently dropped costs the feature its point.
 //!
 //! Every candidate carries the **verbatim source** it came from, which US-12
-//! requires (*«каждый черновик показывает источник со ссылкой/цитатой»*) and
+//! requires — every draft shows where it came from — and
 //! which is also the only way to check the split did not mangle anything.
 
 use crate::import::layout::{starts_with_bullet, without_bullet};
@@ -223,7 +223,7 @@ pub(super) struct DiaryPaste {
 
 /// One candidate awaiting a yes, a no, or an edit.
 pub(super) struct PendingCandidate {
-    /// Editable — this is US-12's "Поправить".
+    /// Editable — this is US-12's third option, the one between yes and no.
     pub text: Entity<TextFieldState>,
     /// The verbatim source, shown and never edited.
     pub quote: SharedString,

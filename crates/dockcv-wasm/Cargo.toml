@@ -6,7 +6,7 @@
 # one crate down.
 #
 # Not published, and not a stable API. `ResumeDoc` still has open questions in
-# `docs/OPEN.md` (D2, the language axis, L-5); versioning this before the model
+# the decisions ledger (D2, the language axis, L-5); versioning this before the model
 # settles would make every one of them somebody else's breaking change.
 [package]
 name = "dockcv-wasm"

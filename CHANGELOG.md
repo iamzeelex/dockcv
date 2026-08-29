@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shows it in Finder, and names the path, so a problem can be looked into without
   knowing where macOS keeps application logs.
 
+### Changed
+- **The repository moved** to `github.com/iamzeelex/dockcv`; the update check and its
+  download link follow it.
+- **README rewritten for people who want to use DockCV** rather than compile it, with
+  everything a contributor needs moved to a new `CONTRIBUTING.md`. Planning material
+  (the product review, roadmap, per-screen specs and decisions ledger) is no longer
+  published; open work belongs in issues.
+
 ### Fixed
 - **Version reporting**: the workspace manifest said `0.1.0` while the changelog
   announced `0.2.0`, so the app misreported itself in Settings ▸ About. The release

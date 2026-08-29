@@ -1,4 +1,4 @@
-//! Sidebar section and field form rendering for `Root` (`docs/design/editor.md` §3,
+//! Sidebar section and field form rendering for `Root` (the editor spec §3,
 //! section anatomy). Built-in sections live here; a custom section's own anatomy
 //! (D-9) is in `root_custom_sections.rs`, which reuses the `card`/`field`/
 //! `entry_header`/`add_button` building blocks defined below.
@@ -17,7 +17,7 @@ use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use super::Root;
 
-/// C-1 (`docs/design/editor-comfort.md`): upstream's `Field` label inherits
+/// C-1 (the editor-comfort notes): upstream's `Field` label inherits
 /// `TextStyle::label()`'s 1.45 leading — generous for a heading, wasteful for
 /// a one-word field label that never wraps. Tightened at the call site, not
 /// in the shared type scale: the 12px `label` step itself is untouched, only
@@ -485,7 +485,7 @@ impl Root {
     /// the caller's instead of merging — has since been fixed and is covered by
     /// `caller_style_refines_the_card_defaults_rather_than_replacing_them`, so
     /// what is left is ordinary conversion work rather than a blocker. It is
-    /// tracked with the rest of it in `docs/design/component-audit.md` (C-1).
+    /// tracked with the rest of it in the component audit (C-1).
     pub(super) fn card(
         &self,
         cx: &mut Context<Self>,
@@ -499,7 +499,7 @@ impl Root {
         let expanded = self.expanded.contains(&section);
         let title: SharedString = title.into();
         // Keyboard navigation cursor (`FocusNextSection`/`FocusPrevSection`,
-        // `docs/design/editor.md`'s "Discoverability"/P-17): the same accent
+        // the editor spec's "Discoverability"/P-17): the same accent
         // border a focused `TextField` draws, borrowed here since the mockup
         // never drew a keyboard-focus state for a section card.
         let keyboard_focused = self.focused_section == section;

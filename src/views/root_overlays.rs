@@ -1,4 +1,4 @@
-//! Toolbar and overlay rendering for `Root` (`docs/design/editor.md` §3–§8).
+//! Toolbar and overlay rendering for `Root` (the editor spec §3–§8).
 
 use gpui::prelude::*;
 use gpui::{
@@ -759,6 +759,6 @@ impl Root {
     // floating pill under the document — visual noise that looks like a broken
     // control, which is the same complaint as review P-09. It comes back with
     // the zoom controls (US-07) and the page counter (US-08), both specced in
-    // `docs/design/typst-controls.md`; `PageGeometry::page_count` is already
+    // the Typst-controls spec; `PageGeometry::page_count` is already
     // available for the latter.
 }

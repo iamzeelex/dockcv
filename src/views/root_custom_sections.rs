@@ -1,5 +1,5 @@
-//! Custom-section rendering for `Root` (`docs/ROADMAP.md` D-9,
-//! `docs/design/editor.md` §3 section anatomy). A custom section shares the
+//! Custom-section rendering for `Root` (the roadmap D-9,
+//! the editor spec §3 section anatomy). A custom section shares the
 //! built-ins' card anatomy — drag handle, collapse/expand, per-section
 //! variant switcher, entry count (`root_sidebar.rs::card`) — but its entries
 //! are one generic `CustomEntry` shape rather than a section-specific one,

@@ -1,5 +1,5 @@
 //! The nav rail — shared chrome for Gallery, Library, Diary, Applications and
-//! Settings (`docs/design/gallery.md` §3a). Every one of those screens wears
+//! Settings (the gallery spec §3a). Every one of those screens wears
 //! the same wordmark + nav + vault row, so [`Shell::with_rail`] mounts it once
 //! around whichever main pane is showing rather than each screen mounting its
 //! own.

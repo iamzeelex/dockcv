@@ -32,7 +32,7 @@
 //! taste. The design mockup's own muted greys do not clear it (`#5d6573`
 //! measures 2.55:1 on `hover`); dates, counts and `updated 3w ago` live in
 //! exactly that token, so the mockup values are corrected here rather than
-//! reproduced. See P-16 in `docs/user-review.md`.
+//! reproduced. See P-16 in the product review.
 
 pub mod bridge;
 pub mod tint;
@@ -287,7 +287,7 @@ impl Theme {
     //
     // Before this existed the codebase carried **ten** corner radii (2, 5, 6, 7,
     // 8, 9, 10, 11, 12, 9999) for what are conceptually four shapes, because
-    // every screen picked its own number. See `docs/design/component-audit.md`.
+    // every screen picked its own number. See the component audit.
 
     /// Chips, tags, inline badges, the smallest hit targets.
     pub const fn radius_sm(&self) -> gpui::Pixels {

@@ -1,4 +1,4 @@
-//! Gallery screen rendering for `Shell` (`docs/design/gallery.md` §3).
+//! Gallery screen rendering for `Shell` (the gallery spec §3).
 //!
 //! The nav rail is shared chrome and lives in `sidebar.rs`; this file only
 //! owns the main pane — header, search, doc grid, and the "new CV" flow.
@@ -39,7 +39,7 @@ impl Shell {
             // No counts under the title. The document total is the number of
             // cards directly beneath it and the preset total is the sum of the
             // named chips on those cards — neither changes what the user does
-            // next. See the number rule in `docs/design/component-audit.md`.
+            // next. See the number rule in the component audit.
             .child(
                 div()
                     .text_style(TextStyle::title())

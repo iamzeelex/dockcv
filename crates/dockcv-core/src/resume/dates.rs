@@ -19,7 +19,7 @@
 //!
 //! Ambiguous numeric forms. `01/02/2022` is the first of February to half the
 //! world and the second of January to the other half, and this persona works
-//! across both (`docs/user-review.md` §1). Guessing would silently move a job
+//! across both (the product review §1). Guessing would silently move a job
 //! by a month; the honest answer is to leave it as text and print it as
 //! written.
 
