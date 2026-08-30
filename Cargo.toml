@@ -92,7 +92,7 @@ dockcv-core = { path = "crates/dockcv-core", features = ["fixtures"] }
 # `wasm_js`) so this resolves to the identical build already in the graph and
 # adds no crates: lopdf's default features would drag in chrono, jiff, rayon
 # and time.
-lopdf = { version = "0.42", default-features = false, features = ["wasm_js"] }
+lopdf = { version = "0.44", default-features = false, features = ["wasm_js"] }
 
 [profile.dev]
 # GPUI's dependency tree is large; optimizing deps keeps the dev binary usable
