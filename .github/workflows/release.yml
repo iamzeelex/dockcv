@@ -25,7 +25,7 @@ jobs:
     name: Tag, manifest and changelog agree
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - name: Manifest matches CHANGELOG
@@ -68,7 +68,7 @@ jobs:
           JSON
           cat latest.json
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: latest.json
           generate_release_notes: true
@@ -87,7 +87,7 @@ jobs:
     needs: verify-version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       # No build cache here, deliberately. This job ran out of disk while
       # `hdiutil` was writing the image, and a restored cache is another copy
@@ -121,7 +121,7 @@ jobs:
           mv "dist/DockCV-$VERSION.dmg" "dist/DockCV-$VERSION-macos-$ARCH.dmg"
           echo "artifact=dist/DockCV-$VERSION-macos-$ARCH.dmg" >> "$GITHUB_ENV"
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             ${{ env.artifact }}
@@ -151,7 +151,7 @@ jobs:
             binary: dockcv.exe
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux Dependencies
         if: runner.os == 'Linux'
@@ -198,7 +198,7 @@ jobs:
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
           "artifact=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.artifact }}
           generate_release_notes: true
