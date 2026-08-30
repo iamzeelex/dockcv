@@ -25,7 +25,7 @@ jobs:
     name: Tag, manifest and changelog agree
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - name: Manifest matches CHANGELOG
@@ -87,7 +87,7 @@ jobs:
     needs: verify-version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       # No build cache here, deliberately. This job ran out of disk while
       # `hdiutil` was writing the image, and a restored cache is another copy
@@ -151,7 +151,7 @@ jobs:
             binary: dockcv.exe
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux Dependencies
         if: runner.os == 'Linux'
