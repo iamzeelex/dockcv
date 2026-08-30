@@ -68,7 +68,7 @@ jobs:
           JSON
           cat latest.json
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: latest.json
           generate_release_notes: true
@@ -121,7 +121,7 @@ jobs:
           mv "dist/DockCV-$VERSION.dmg" "dist/DockCV-$VERSION-macos-$ARCH.dmg"
           echo "artifact=dist/DockCV-$VERSION-macos-$ARCH.dmg" >> "$GITHUB_ENV"
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             ${{ env.artifact }}
@@ -198,7 +198,7 @@ jobs:
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
           "artifact=$stage.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.artifact }}
           generate_release_notes: true
