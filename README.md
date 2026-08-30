@@ -12,18 +12,12 @@ typesetter underneath that renders the page as you type.
 
 [dockcv.zeelex.me](https://dockcv.zeelex.me) · [Downloads](https://github.com/iamzeelex/dockcv/releases)
 
-<!--
-  SCREENSHOTS — add the files, then delete this comment and uncomment below.
-  Four are enough, in the order below: the editor with its live preview
-  first, since that is the thing to see; then the gallery, the preset
-  matrix and the applications board. 1600px wide, dark palette, and a
-  vault with real-looking content rather than Lorem ipsum.
-
-  ![The editor, with the page rendering as you type](assets/screenshots/editor.png)
-  ![Every CV in the vault](assets/screenshots/gallery.png)
-  ![Presets: section by variant](assets/screenshots/presets.png)
-  ![Applications, from wishlist to answer](assets/screenshots/applications.png)
--->
+![Every CV in the vault](assets/screenshots/gallery.png)
+![The editor, with real-time Typst preview](assets/screenshots/editor.png)
+![Preset matrix: side-by-side section variant comparison](assets/screenshots/presets.png)
+![Applications board: tracking from wishlist to offer](assets/screenshots/applications.png)
+![Block library: reusable work experience & skill blocks](assets/screenshots/library.png)
+![The diary: wins captured when they happen, not remembered in March](assets/screenshots/diary.png)
 
 ## What it does
 

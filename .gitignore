@@ -29,3 +29,7 @@
 !/.claude/agents/release-manager.md
 !/.claude/agents/dependency-warden.md
 !/.claude/agents/import-forensics.md
+
+# Scratch space for demo material — a sample vault, capture scripts, whatever
+# a screenshot needed that day. Useful locally, not part of the product.
+/tools/
