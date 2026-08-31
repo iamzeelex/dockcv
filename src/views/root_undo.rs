@@ -93,6 +93,7 @@ impl Root {
         // makes the restored values appear in the boxes rather than only in
         // the preview.
         self.fields_stale = true;
+        self.focus_handle.focus(window, cx);
         cx.notify();
         self.schedule_recompile(window, cx);
         self.schedule_save(cx);
@@ -191,5 +192,29 @@ mod tests {
 
         assert!(undo_stack.is_empty());
         assert!(!redo_stack.is_empty());
+    }
+
+    #[test]
+    fn session_history_round_trips_across_views() {
+        let mut session_store: std::collections::HashMap<
+            std::path::PathBuf,
+            (Vec<ResumeDoc>, Vec<ResumeDoc>),
+        > = std::collections::HashMap::new();
+
+        let doc_path = std::path::PathBuf::from("/vault/resume.toml");
+        let undo_stack = vec![doc_named("Initial"), doc_named("Step 1")];
+        let redo_stack = vec![doc_named("Redo 1")];
+
+        // "Exit editor" -> store in session
+        session_store.insert(doc_path.clone(), (undo_stack.clone(), redo_stack.clone()));
+
+        // "Reopen editor" -> restore from session
+        let (restored_undo, restored_redo) = session_store.get(&doc_path).cloned().unwrap();
+        assert_eq!(restored_undo.len(), 2);
+        assert_eq!(restored_redo.len(), 1);
+        assert_eq!(
+            restored_undo.last().unwrap().profile.active().name,
+            "Step 1"
+        );
     }
 }

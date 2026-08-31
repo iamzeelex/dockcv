@@ -162,6 +162,8 @@ pub struct Shell {
     /// Shared engine for generating thumbnails (fonts load once).
     pub(super) thumb_engine: Option<Arc<Mutex<TypstEngine>>>,
     pub(super) thumb_task: Option<Task<()>>,
+    /// Structural history stacks (undo, redo) per document path for the session.
+    pub(super) undo_histories: HashMap<PathBuf, (Vec<ResumeDoc>, Vec<ResumeDoc>)>,
     /// The document currently open in the editor (to invalidate its thumbnail
     /// when we return).
     pub(super) editing_path: Option<PathBuf>,
@@ -231,6 +233,7 @@ impl Shell {
             thumbnails: HashMap::new(),
             thumb_engine: None,
             thumb_task: None,
+            undo_histories: HashMap::new(),
             editing_path: None,
             cache: VaultCache::default(),
         }
@@ -609,8 +612,16 @@ impl Shell {
         };
         save_status::clear_open_failure(cx);
 
+        let history = self.undo_histories.get(&doc_path).cloned();
         self.editing_path = Some(doc_path.clone());
-        let editor = cx.new(move |cx| Root::new(doc_path, doc, cx));
+        let editor = cx.new(move |cx| {
+            let mut root = Root::new(doc_path, doc, cx);
+            if let Some((undo, redo)) = history {
+                root.undo_stack = undo;
+                root.redo_stack = redo;
+            }
+            root
+        });
         cx.subscribe(&editor, |this, editor, event, cx| match event {
             EditorEvent::BackToGallery => {
                 // Flush before leaving, exactly as the matrix arm below does.
@@ -684,6 +695,15 @@ impl Shell {
     /// A CV is kilobytes of TOML — this is one small write, not a reason to
     /// build a handshake.
     pub(super) fn flush_editor(&mut self, editor: &Entity<Root>, cx: &mut Context<Self>) {
+        let (path, undo, redo) = {
+            let root = editor.read(cx);
+            (
+                root.doc_path.clone(),
+                root.undo_stack.clone(),
+                root.redo_stack.clone(),
+            )
+        };
+        self.undo_histories.insert(path, (undo, redo));
         // Two statements, not one: `record` needs `cx` mutably and `read` holds
         // it immutably, and `flush_save` returning an owned `Result` is what
         // lets the first borrow end before the second begins.

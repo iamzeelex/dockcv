@@ -1070,6 +1070,7 @@ impl Root {
         if self.fields_stale {
             self.fields.clear();
             self.fields_stale = false;
+            self.focus_handle.focus(window, cx);
         }
 
         let wanted = FieldId::addressable(&self.doc);
@@ -1399,6 +1400,7 @@ impl Render for Root {
 
         if !self.initialized {
             self.initialized = true;
+            self.focus_handle.focus(window, cx);
             self.recompile_now(window);
         }
         self.sync_fields(window, cx);
