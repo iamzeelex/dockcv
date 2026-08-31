@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-31
+
+### Added
+- **Undo and redo toolbar buttons**, complete with disabled states when no
+  history is available and tooltips showing their keyboard shortcuts.
+
+### Fixed
+- Choosing **Edit ▸ Undo** or **Edit ▸ Redo** from the system menu bar now
+  works when no text field is focused, dispatching document-level undo instead
+  of being silently ignored.
+- Structural undo and redo history now survives closing and reopening a
+  document during the same session.
+- Document-level undo and redo restore focus back to the editor window, so
+  repeated `Cmd+Z` shortcuts continue working without requiring a manual click
+  first.
+
 ## [0.2.0] - 2026-08-29
 
 The first release anyone outside the project can use. Everything below happened
