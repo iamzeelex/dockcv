@@ -8,15 +8,15 @@ use gpui::{
 
 use super::root_preview_chrome::{MAX_ZOOM_PCT, MIN_ZOOM_PCT};
 use dockcv_ui_components::{
-    Button, ButtonExt, DropdownMenu, Icon, IconName, ListItem, ListItemExt, PopupMenuItem,
-    ScrollableElement, Sizable, TextField, CHROME_HEIGHT, SANS,
+    lucide, Button, ButtonExt, Disableable, DropdownMenu, Icon, IconName, ListItem, ListItemExt,
+    PopupMenuItem, ScrollableElement, Sizable, TextField, CHROME_HEIGHT, SANS,
 };
 
 use crate::resume::model::SectionKind;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
-use super::root::{ExportPdf, NextPreset, OpenCapture, EDITOR_CONTEXT};
+use super::root::{ExportPdf, NextPreset, OpenCapture, RedoDocument, UndoDocument, EDITOR_CONTEXT};
 use super::{EditorEvent, Root};
 
 impl Root {
@@ -125,6 +125,34 @@ impl Root {
                     )
                     .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                         this.open_capture_sheet(window, cx);
+                    })),
+            )
+            .child(
+                Button::new("undo")
+                    .icon_only()
+                    .icon(lucide("undo"))
+                    .disabled(!self.can_undo())
+                    .tooltip_with_action(
+                        "Undo last structural change",
+                        &UndoDocument,
+                        Some(EDITOR_CONTEXT),
+                    )
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.undo_document(window, cx);
+                    })),
+            )
+            .child(
+                Button::new("redo")
+                    .icon_only()
+                    .icon(lucide("redo"))
+                    .disabled(!self.can_redo())
+                    .tooltip_with_action(
+                        "Redo last structural change",
+                        &RedoDocument,
+                        Some(EDITOR_CONTEXT),
+                    )
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.redo_document(window, cx);
                     })),
             )
             .child(

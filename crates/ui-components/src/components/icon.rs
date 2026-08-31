@@ -76,7 +76,7 @@ pub fn lucide(stem: &'static str) -> Icon {
 /// The Lucide stems reached through [`lucide`]. Listed so the test can prove
 /// each one resolves; a typo would otherwise show up as a blank control.
 #[cfg_attr(not(test), allow(dead_code))]
-const LUCIDE_BY_NAME: &[&str] = &["undo"];
+const LUCIDE_BY_NAME: &[&str] = &["undo", "redo"];
 
 macro_rules! dock_icons {
     ($($variant:ident => $stem:literal),* $(,)?) => {

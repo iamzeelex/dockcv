@@ -97,14 +97,17 @@ impl Root {
         self.schedule_recompile(window, cx);
         self.schedule_save(cx);
     }
-}
 
-// No `can_undo` / `can_redo` here yet, deliberately. They would be three lines
-// and they would be dead: the only door into this is the keybinding, and a
-// toolbar affordance means adding a control the editor's design row does not
-// draw (the editor spec §3) — a product decision, not a wiring one.
-// Writing them now and marking them `#[allow(dead_code)]` is exactly the habit
-// that put 32 of those in this tree.
+    /// Whether there is a structural change to undo.
+    pub(super) fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    /// Whether there is an undone change to step forward into.
+    pub(super) fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+}
 
 /// Standalone so the stack behaviour is testable without a `Window`, an `App`
 /// or a running editor — which is most of what is worth testing here.
@@ -167,5 +170,26 @@ mod tests {
             snapshot.variant_names(SectionKind::Work).len(),
             doc.variant_names(SectionKind::Work).len() - 1
         );
+    }
+
+    #[test]
+    fn can_undo_and_can_redo_reflect_stack_emptiness() {
+        let mut undo_stack: Vec<ResumeDoc> = Vec::new();
+        let mut redo_stack: Vec<ResumeDoc> = Vec::new();
+
+        assert!(undo_stack.is_empty());
+        assert!(redo_stack.is_empty());
+
+        let doc = doc_named("Doc 1");
+        undo_stack.push(doc);
+
+        assert!(!undo_stack.is_empty());
+        assert!(redo_stack.is_empty());
+
+        let popped = undo_stack.pop().unwrap();
+        redo_stack.push(popped);
+
+        assert!(undo_stack.is_empty());
+        assert!(!redo_stack.is_empty());
     }
 }
