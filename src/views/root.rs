@@ -1328,6 +1328,24 @@ impl Root {
         self.redo_document(window, cx);
     }
 
+    pub(super) fn on_input_undo(
+        &mut self,
+        _: &dockcv_ui_components::input::Undo,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.undo_document(window, cx);
+    }
+
+    pub(super) fn on_input_redo(
+        &mut self,
+        _: &dockcv_ui_components::input::Redo,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.redo_document(window, cx);
+    }
+
     pub(super) fn on_export_pdf_action(
         &mut self,
         _: &ExportPdf,
@@ -1403,6 +1421,8 @@ impl Render for Root {
             .on_action(cx.listener(Self::on_focus_prev_field))
             .on_action(cx.listener(Self::on_undo_document))
             .on_action(cx.listener(Self::on_redo_document))
+            .on_action(cx.listener(Self::on_input_undo))
+            .on_action(cx.listener(Self::on_input_redo))
             .on_action(cx.listener(Self::on_export_pdf_action))
             .on_action(cx.listener(Self::on_open_capture_action))
             .on_action(cx.listener(Self::on_close_overlay))
