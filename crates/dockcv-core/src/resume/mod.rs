@@ -6,5 +6,8 @@ pub mod altacv_package;
 pub mod dates;
 pub mod diagnostics;
 pub mod edit;
+pub mod export_text;
 pub mod model;
 pub mod template;
+
+pub use export_text::{export_plain_text, export_plain_text_with_date_format};

@@ -161,6 +161,11 @@ pub struct CustomEntry {
 pub struct CustomSectionId(u32);
 
 impl CustomSectionId {
+    /// Create an id from a raw number (for tests and deserialization).
+    pub const fn from_u32(id: u32) -> Self {
+        Self(id)
+    }
+
     /// The number behind the id, for the one job that needs it: naming the
     /// section in the generated Typst (`custom7`). Nothing else should care
     /// what an id *is*.
