@@ -1777,6 +1777,7 @@ name = "dockcv-core"
 version = "0.2.1"
 dependencies = [
  "comemo",
+ "docx-rs",
  "serde",
  "toml 0.8.23",
  "typst",

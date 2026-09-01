@@ -6,10 +6,14 @@ pub mod altacv_package;
 pub mod dates;
 pub mod diagnostics;
 pub mod edit;
+#[cfg(feature = "docx")]
+pub mod export_docx;
 pub mod export_markdown;
 pub mod export_text;
 pub mod model;
 pub mod template;
 
+#[cfg(feature = "docx")]
+pub use export_docx::{export_docx, export_docx_with_date_format};
 pub use export_markdown::{export_markdown, export_markdown_with_date_format};
 pub use export_text::{export_plain_text, export_plain_text_with_date_format};
