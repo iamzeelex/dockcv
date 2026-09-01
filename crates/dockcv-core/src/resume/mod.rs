@@ -8,8 +8,10 @@ pub mod diagnostics;
 pub mod edit;
 pub mod export_markdown;
 pub mod export_text;
+pub mod export_typst;
 pub mod model;
 pub mod template;
 
 pub use export_markdown::{export_markdown, export_markdown_with_date_format};
 pub use export_text::{export_plain_text, export_plain_text_with_date_format};
+pub use export_typst::{export_typst, export_typst_with_layout};
