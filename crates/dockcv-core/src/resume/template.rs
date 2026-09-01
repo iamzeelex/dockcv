@@ -490,6 +490,7 @@ pub fn generate_for(doc: &ResumeDoc) -> String {
 /// and this is where that gets caught, not as a Typst compile error.
 pub fn generate_with_layout(resume: &Resume, layout: &LayoutSettings) -> String {
     let mut out = String::with_capacity(8192);
+    document_metadata_into(&mut out, resume);
     page_setup_into(&mut out, &layout.sanitized());
     no_heading_into(&mut out, resume);
     section_layout_into(&mut out, resume, &layout.sanitized());
@@ -499,6 +500,32 @@ pub fn generate_with_layout(resume: &Resume, layout: &LayoutSettings) -> String 
     resume_to_dict_into(&mut out, resume, layout.date_format);
     out.push_str("\n#render-cv(cv)\n");
     out
+}
+
+/// Set PDF document metadata (Task A12).
+///
+/// Internal preset names, variant names, vault paths and private notes must NEVER
+/// leak into exported document metadata.
+fn document_metadata_into(out: &mut String, resume: &Resume) {
+    let name = resume.basics.name.trim();
+    let label = resume.basics.label.trim();
+    let title = if !name.is_empty() && !label.is_empty() {
+        format!("{name} - {label}")
+    } else if !name.is_empty() {
+        format!("Resume - {name}")
+    } else {
+        "Resume".to_string()
+    };
+    let clean_title = title.replace('\\', "\\\\").replace('"', "\\\"");
+    let clean_author = name.replace('\\', "\\\\").replace('"', "\\\"");
+    if clean_author.is_empty() {
+        let _ = writeln!(out, "#set document(title: \"{clean_title}\")");
+    } else {
+        let _ = writeln!(
+            out,
+            "#set document(title: \"{clean_title}\", author: \"{clean_author}\")"
+        );
+    }
 }
 
 /// The sections that print no heading, as renderer keys.
@@ -2608,5 +2635,41 @@ mod date_format_tests {
             neutralize(r"C:\#1 @user [test] $100"),
             r"C:\\\#1 \@user \[test\] \$100"
         );
+    }
+
+    /// Task A12: Document metadata is set cleanly and never leaks internal preset names,
+    /// variant names or private vault state.
+    #[test]
+    fn pdf_metadata_provenance_stays_clean_and_never_leaks_presets() {
+        use crate::resume::model::{Basics, Preset};
+        let resume = Resume {
+            basics: Basics {
+                name: "Alexey Belochenko".into(),
+                label: "Principal Systems Architect".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let doc = ResumeDoc {
+            presets: vec![
+                Preset {
+                    name: "FAANG · concise".into(),
+                    selection: vec![],
+                    hidden: vec![],
+                },
+                Preset {
+                    name: "Startup · long".into(),
+                    selection: vec![],
+                    hidden: vec![],
+                },
+            ],
+            ..ResumeDoc::from_resume(resume.clone(), "Base")
+        };
+
+        let typst_source = generate_for(&doc);
+        assert!(typst_source.contains(r#"#set document(title: "Alexey Belochenko - Principal Systems Architect", author: "Alexey Belochenko")"#));
+        assert!(!typst_source.contains("FAANG"));
+        assert!(!typst_source.contains("concise"));
+        assert!(!typst_source.contains("Startup"));
     }
 }
