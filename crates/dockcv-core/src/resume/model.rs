@@ -2203,6 +2203,34 @@ pub fn sanitize_filename_stem(s: &str) -> String {
     }
 }
 
+/// Disambiguate a file path if a file already exists at `path` by appending ` (1)`, ` (2)`, etc.
+/// If `path` does not exist on disk, it is returned unchanged (Task A10).
+pub fn disambiguate_filename(path: &std::path::Path) -> std::path::PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let file_stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document");
+    let extension = path.extension().and_then(|s| s.to_str());
+
+    for i in 1..=10000 {
+        let candidate_filename = match extension {
+            Some(ext) if !ext.is_empty() => format!("{file_stem} ({i}).{ext}"),
+            _ => format!("{file_stem} ({i})"),
+        };
+        let candidate_path = parent.join(candidate_filename);
+        if !candidate_path.exists() {
+            return candidate_path;
+        }
+    }
+
+    path.to_path_buf()
+}
+
 /// A resume with every section independently versioned, plus document-wide
 /// presets over those variants.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -3498,6 +3526,29 @@ mod applications_tests {
         assert_eq!(sanitize_filename_stem("My/Resume:2026*?.pdf"), "My-Resume-2026.pdf");
         assert_eq!(sanitize_filename_stem("   ---   "), "CV");
         assert_eq!(sanitize_filename_stem(""), "CV");
+    }
+
+    #[test]
+    fn disambiguate_filename_resolves_collisions() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!("dockcv_test_{nanos}"));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let base_file = temp_dir.join("Resume.pdf");
+        assert_eq!(disambiguate_filename(&base_file), base_file);
+
+        std::fs::write(&base_file, b"content 0").unwrap();
+        let disambiguated_1 = disambiguate_filename(&base_file);
+        assert_eq!(disambiguated_1, temp_dir.join("Resume (1).pdf"));
+
+        std::fs::write(&disambiguated_1, b"content 1").unwrap();
+        let disambiguated_2 = disambiguate_filename(&base_file);
+        assert_eq!(disambiguated_2, temp_dir.join("Resume (2).pdf"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
 
