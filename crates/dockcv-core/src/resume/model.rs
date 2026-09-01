@@ -2037,23 +2037,17 @@ impl LayoutSettings {
 /// Settings controlling how the document is named upon export (Task A1).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportSettings {
-    /// Pattern for the export filename (without extension).
-    ///
-    /// Available tokens:
-    /// - `{name}`: Person's name from profile
-    /// - `{role}` / `{label}`: Job title / subtitle
-    /// - `{preset}`: Currently active preset name
-    /// - `{company}`: Target company name (when exporting from an application)
-    /// - `{variant}`: Active variant name
-    /// - `{date}`: Current date YYYY-MM-DD
     #[serde(default = "ExportSettings::default_pattern")]
     pub filename_pattern: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_destination: Option<std::path::PathBuf>,
 }
 
 impl Default for ExportSettings {
     fn default() -> Self {
         Self {
             filename_pattern: Self::default_pattern(),
+            last_destination: None,
         }
     }
 }
@@ -2067,7 +2061,8 @@ impl ExportSettings {
 
     /// Whether the export settings match the default state.
     pub fn is_default(&self) -> bool {
-        self.filename_pattern.trim() == Self::DEFAULT_PATTERN || self.filename_pattern.trim().is_empty()
+        (self.filename_pattern.trim() == Self::DEFAULT_PATTERN || self.filename_pattern.trim().is_empty())
+            && self.last_destination.is_none()
     }
 
     /// Preset filename patterns offered in the layout rail.
@@ -2229,6 +2224,31 @@ pub fn disambiguate_filename(path: &std::path::Path) -> std::path::PathBuf {
     }
 
     path.to_path_buf()
+}
+
+/// Open the native file manager and select/reveal the specified file (Task A11).
+pub fn reveal_in_file_manager(path: &std::path::Path) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", path.display()))
+            .spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if let Some(parent) = path.parent() {
+            let _ = std::process::Command::new("xdg-open")
+                .arg(parent)
+                .spawn();
+        }
+    }
 }
 
 /// A resume with every section independently versioned, plus document-wide
@@ -3495,6 +3515,7 @@ mod applications_tests {
         // When company is present
         let custom_settings = ExportSettings {
             filename_pattern: "{name} - {role} - {company}".into(),
+            ..Default::default()
         };
         let stem2 = custom_settings.resolve_filename(
             "Alexey Belochenko",
@@ -3509,6 +3530,7 @@ mod applications_tests {
         // When tokens are missing, separators do not linger
         let pattern_with_all = ExportSettings {
             filename_pattern: "{name} - {company} - {role} - {preset}".into(),
+            ..Default::default()
         };
         let stem3 = pattern_with_all.resolve_filename(
             "Alexey Belochenko",

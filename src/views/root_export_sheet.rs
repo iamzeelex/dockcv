@@ -403,7 +403,12 @@ impl Root {
 
         let stem = export_doc.export_filename_stem(preset_name, None);
         let suggested = format!("{stem}.{}", format.extension());
-        let dir = vault::user_home_dir();
+        let dir = self
+            .doc
+            .export
+            .last_destination
+            .clone()
+            .unwrap_or_else(vault::user_home_dir);
 
         self.close_export_sheet(cx);
 
@@ -455,8 +460,13 @@ impl Root {
                 })
                 .await;
 
-            let _ = this.update(cx, |_this, _cx| match &outcome {
-                Ok(()) => log::info!("exported {} to {}", format.short_name(), path.display()),
+            let _ = this.update(cx, |this, _cx| match &outcome {
+                Ok(()) => {
+                    log::info!("exported {} to {}", format.short_name(), path.display());
+                    if let Some(parent) = path.parent() {
+                        this.doc.export.last_destination = Some(parent.to_path_buf());
+                    }
+                }
                 Err(err) => {
                     log::error!("export to {} failed: {err}", path.display());
                 }
