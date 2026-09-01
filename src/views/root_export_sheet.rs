@@ -10,6 +10,7 @@ use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
 use super::root::Root;
+use super::save_status;
 
 /// Supported export formats in DockCV.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -393,7 +394,7 @@ impl Root {
     ) {
         let preset_name = preset_index
             .and_then(|idx| self.doc.presets.get(idx))
-            .map(|p| p.name.as_str());
+            .map(|p| p.name.clone());
 
         // Clone doc and apply preset if one is selected
         let mut export_doc = self.doc.clone();
@@ -401,7 +402,7 @@ impl Root {
             export_doc.apply_preset(idx);
         }
 
-        let stem = export_doc.export_filename_stem(preset_name, None);
+        let stem = export_doc.export_filename_stem(preset_name.as_deref(), None);
         let suggested = format!("{stem}.{}", format.extension());
         let dir = self
             .doc
@@ -460,12 +461,17 @@ impl Root {
                 })
                 .await;
 
-            let _ = this.update(cx, |this, _cx| match &outcome {
+            let preset_title = preset_name.unwrap_or_else(|| "Default".to_string());
+            let _ = this.update(cx, |this, cx| match &outcome {
                 Ok(()) => {
                     log::info!("exported {} to {}", format.short_name(), path.display());
+                    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+                    this.doc.record_export(timestamp, format.short_name(), preset_title, path.clone());
                     if let Some(parent) = path.parent() {
                         this.doc.export.last_destination = Some(parent.to_path_buf());
                     }
+                    save_status::record(cx, "document", vault::save(&this.doc, &this.doc_path));
+                    cx.notify();
                 }
                 Err(err) => {
                     log::error!("export to {} failed: {err}", path.display());

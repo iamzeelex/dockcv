@@ -533,6 +533,92 @@ impl Root {
             )
     }
 
+    pub(super) fn export_history_rows(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = *cx.theme();
+        if self.doc.export_history.is_empty() {
+            return div()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .child("No exports recorded yet.")
+                .into_any_element();
+        }
+
+        let mut list = div().flex().flex_col().gap(px(6.0));
+
+        // Show up to the last 5 exports (most recent first)
+        for record in self.doc.export_history.iter().rev().take(5) {
+            let exists = record.path.exists();
+            let file_name = record
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("document");
+            let path_clone = record.path.clone();
+
+            list = list.child(
+                div()
+                    .p_2()
+                    .rounded(theme.radius_sm())
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(theme.accent)
+                                    .child(format!("{} · {}", record.format, record.preset)),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(10.0))
+                                    .text_color(theme.text_muted)
+                                    .child(record.timestamp.clone()),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap(px(4.0))
+                            .child(
+                                div()
+                                    .text_size(px(11.5))
+                                    .text_color(if exists { theme.text } else { theme.text_muted })
+                                    .child(file_name.to_string()),
+                            )
+                            .child(if exists {
+                                Button::new(SharedString::from(format!("reveal-{}", record.timestamp)))
+                                    .quiet()
+                                    .text_xs()
+                                    .label("Reveal")
+                                    .on_click(move |_ev, _window, _cx| {
+                                        crate::resume::reveal_in_file_manager(&path_clone);
+                                    })
+                                    .into_any_element()
+                            } else {
+                                div()
+                                    .text_size(px(10.5))
+                                    .text_color(theme.danger)
+                                    .child("(moved or deleted)")
+                                    .into_any_element()
+                            }),
+                    ),
+            );
+        }
+
+        list.into_any_element()
+    }
+
     pub(super) fn page_size_row(
         &self,
         cx: &mut Context<Self>,

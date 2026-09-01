@@ -2136,6 +2136,19 @@ impl ExportSettings {
     }
 }
 
+/// A record of an exported file (Task A5).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportRecord {
+    /// Timestamp when exported (e.g. ISO date or formatted string).
+    pub timestamp: String,
+    /// Format identifier (e.g. "PDF", "DOCX", "Plain Text", etc.).
+    pub format: String,
+    /// The preset name at that moment.
+    pub preset: String,
+    /// Destination path written to on disk.
+    pub path: std::path::PathBuf,
+}
+
 fn remove_token_with_separators(s: &str, token: &str) -> String {
     let t = format!("{{{token}}}");
     if !s.contains(&t) {
@@ -2324,6 +2337,9 @@ pub struct ResumeDoc {
     /// the editor relies on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub section_overrides: Vec<(SectionKind, SectionOverrides)>,
+    /// History of exports for this document (Task A5).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub export_history: Vec<ExportRecord>,
 }
 
 impl ResumeDoc {
@@ -2358,6 +2374,22 @@ impl ResumeDoc {
                 })
                 .collect()
         }
+    }
+
+    /// Record an export event in this document's history (Task A5).
+    pub fn record_export(
+        &mut self,
+        timestamp: impl Into<String>,
+        format: impl Into<String>,
+        preset: impl Into<String>,
+        path: std::path::PathBuf,
+    ) {
+        self.export_history.push(ExportRecord {
+            timestamp: timestamp.into(),
+            format: format.into(),
+            preset: preset.into(),
+            path,
+        });
     }
 
     /// Every section, in the order they ship in. [`ResumeDoc::sections`] is what
@@ -2536,6 +2568,7 @@ impl ResumeDoc {
             custom_sections: Vec::new(),
             hidden_sections: Vec::new(),
             section_overrides: Vec::new(),
+            export_history: Vec::new(),
         }
     }
 
@@ -3620,6 +3653,30 @@ mod applications_tests {
         assert_eq!(stems.len(), 2);
         assert_eq!(stems[0], ("Concise".to_string(), "Alexey Belochenko - Principal Systems Architect - Concise".to_string()));
         assert_eq!(stems[1], ("Extended".to_string(), "Alexey Belochenko - Principal Systems Architect - Extended".to_string()));
+    }
+
+    #[test]
+    fn record_export_tracks_entries_and_serializes_to_toml() {
+        let mut doc = ResumeDoc::default();
+        assert!(doc.export_history.is_empty());
+
+        doc.record_export(
+            "2026-09-01 17:30:00",
+            "PDF",
+            "Concise",
+            std::path::PathBuf::from("/tmp/Alexey Belochenko - Principal Systems Architect - Concise.pdf"),
+        );
+        assert_eq!(doc.export_history.len(), 1);
+        assert_eq!(doc.export_history[0].format, "PDF");
+        assert_eq!(doc.export_history[0].preset, "Concise");
+
+        let serialized = toml::to_string(&doc).unwrap();
+        assert!(serialized.contains("export_history"));
+        assert!(serialized.contains("Concise"));
+
+        let deserialized: ResumeDoc = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.export_history.len(), 1);
+        assert_eq!(deserialized.export_history[0].path, doc.export_history[0].path);
     }
 }
 

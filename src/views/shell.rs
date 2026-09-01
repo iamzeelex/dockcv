@@ -893,6 +893,15 @@ impl Shell {
                             target_dir.display()
                         );
                         if let Screen::PresetMatrix(ref mut pm) = this.screen {
+                            let timestamp =
+                                chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+                            let preset_names: Vec<String> =
+                                pm.doc.presets.iter().map(|p| p.name.clone()).collect();
+                            for name in preset_names {
+                                let stem = pm.doc.export_filename_stem(Some(&name), None);
+                                let base_path = target_dir.join(format!("{stem}.pdf"));
+                                pm.doc.record_export(&timestamp, "PDF", &name, base_path);
+                            }
                             pm.doc.export.last_destination = Some(target_dir.clone());
                             let _ = vault::save(&pm.doc, &pm.path);
                         }
