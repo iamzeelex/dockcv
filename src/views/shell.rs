@@ -848,6 +848,65 @@ impl Shell {
         cx.notify();
     }
 
+    /// Export all presets of the current document to PDF in a chosen folder (Task A4).
+    pub(super) fn export_all_matrix_presets(&mut self, cx: &mut Context<Self>) {
+        let Screen::PresetMatrix(ref mut pm) = self.screen else {
+            return;
+        };
+        let doc = pm.doc.clone();
+        let receiver = cx.prompt_for_paths(pick_dir());
+        let executor = cx.background_executor().clone();
+
+        cx.spawn(async move |this, cx| {
+            let Some(target_dir) = first_path(receiver.await) else {
+                return; // cancelled or dialog error
+            };
+
+            let dir_for_write = target_dir.clone();
+            let outcome = executor
+                .spawn(async move {
+                    let mut exported_count = 0;
+                    for (i, preset) in doc.presets.iter().enumerate() {
+                        let mut preset_doc = doc.clone();
+                        preset_doc.apply_preset(i);
+                        let stem = preset_doc.export_filename_stem(Some(&preset.name), None);
+                        let base_path = dir_for_write.join(format!("{stem}.pdf"));
+                        let target_path = crate::resume::disambiguate_filename(&base_path);
+
+                        let source = crate::resume::template::generate_for(&preset_doc);
+                        let engine = TypstEngine::new(source);
+                        let pdf_bytes = engine.compile_to_pdf()?;
+                        std::fs::write(&target_path, pdf_bytes).map_err(|e| {
+                            format!("write to {} failed: {e}", target_path.display())
+                        })?;
+                        exported_count += 1;
+                    }
+                    Ok::<usize, String>(exported_count)
+                })
+                .await;
+
+            let _ = this.update(cx, |this, cx| {
+                match &outcome {
+                    Ok(count) => {
+                        log::info!(
+                            "successfully exported {count} presets to {}",
+                            target_dir.display()
+                        );
+                        if let Screen::PresetMatrix(ref mut pm) = this.screen {
+                            pm.doc.export.last_destination = Some(target_dir.clone());
+                            let _ = vault::save(&pm.doc, &pm.path);
+                        }
+                    }
+                    Err(err) => {
+                        log::error!("batch export failed: {err}");
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// Move one matrix cell to the next variant that section has, and pin it
     /// in the preset that column shows.
     ///

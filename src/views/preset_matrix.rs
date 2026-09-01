@@ -320,14 +320,30 @@ impl PresetMatrix {
                     ),
             )
             .child(
-                Button::new("save-new-preset-btn")
-                    .quiet()
-                    .text_color(theme.accent)
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        this.save_matrix_as_preset(cx);
-                    }))
-                    .icon(IconName::Plus)
-                    .child("Save current as new preset"),
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        Button::new("export-all-presets-btn")
+                            .toolbar()
+                            .icon(IconName::ArrowDown)
+                            .tooltip("Export every preset to PDF into a folder")
+                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                this.export_all_matrix_presets(cx);
+                            }))
+                            .child("Export all presets"),
+                    )
+                    .child(
+                        Button::new("save-new-preset-btn")
+                            .quiet()
+                            .text_color(theme.accent)
+                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                this.save_matrix_as_preset(cx);
+                            }))
+                            .icon(IconName::Plus)
+                            .child("Save current as new preset"),
+                    ),
             );
 
         // Comparing Bar matching mockup lines 1394-1402

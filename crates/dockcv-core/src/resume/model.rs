@@ -2343,6 +2343,23 @@ impl ResumeDoc {
             .resolve_filename(name, role, preset, company_val, variant, date)
     }
 
+    /// Resolve export stems for every preset in this document (Task A4).
+    /// Returns a list of `(preset_name, filename_stem)`.
+    pub fn export_all_stems(&self) -> Vec<(String, String)> {
+        if self.presets.is_empty() {
+            let stem = self.export_filename_stem(None, None);
+            vec![("Default".to_string(), stem)]
+        } else {
+            self.presets
+                .iter()
+                .map(|p| {
+                    let stem = self.export_filename_stem(Some(&p.name), None);
+                    (p.name.clone(), stem)
+                })
+                .collect()
+        }
+    }
+
     /// Every section, in the order they ship in. [`ResumeDoc::sections`] is what
     /// screens should iterate — it honours the user's own order.
     pub const SECTIONS: [SectionKind; 6] = [
@@ -3571,6 +3588,38 @@ mod applications_tests {
         assert_eq!(disambiguated_2, temp_dir.join("Resume (2).pdf"));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn export_all_stems_generates_named_list_for_every_preset() {
+        let resume = Resume {
+            basics: Basics {
+                name: "Alexey Belochenko".into(),
+                label: "Principal Systems Architect".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let doc = ResumeDoc {
+            presets: vec![
+                Preset {
+                    name: "Concise".into(),
+                    selection: vec![],
+                    hidden: vec![],
+                },
+                Preset {
+                    name: "Extended".into(),
+                    selection: vec![],
+                    hidden: vec![],
+                },
+            ],
+            ..ResumeDoc::from_resume(resume, "Base")
+        };
+
+        let stems = doc.export_all_stems();
+        assert_eq!(stems.len(), 2);
+        assert_eq!(stems[0], ("Concise".to_string(), "Alexey Belochenko - Principal Systems Architect - Concise".to_string()));
+        assert_eq!(stems[1], ("Extended".to_string(), "Alexey Belochenko - Principal Systems Architect - Extended".to_string()));
     }
 }
 
