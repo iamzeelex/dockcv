@@ -250,6 +250,15 @@ impl Root {
                                                 .child(self.skills_rows(cx, layout.skills)),
                                         )
                                 })
+                                .item(|item| {
+                                    item.title(self.rail_group_title(cx, "Export"))
+                                        .open(open == 5)
+                                        .child(
+                                            div().pt(px(4.0)).child(
+                                                self.filename_pattern_row(cx),
+                                            ),
+                                        )
+                                })
                                 .on_toggle_click(move |open, _window, cx| {
                                     // `multiple(false)` means at most one index.
                                     // An empty slice is the group closing itself,

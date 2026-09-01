@@ -19,9 +19,9 @@ use dockcv_ui_components::{
 
 use crate::resume::model::{
     BulletGlyph, CategoryMark, ContactLayout, DateFormat, DocumentFont, Emphasis, EntryLayout,
-    HeaderAlign, HeaderLayout, HeadingCase, HeadingLayout, HeadingStyle, LayoutSettings, MetaOrder,
-    MetaPosition, PageSize, ResumeDoc, RowSpacing, SkillSeparator, SkillsLayout, SkillsStyle,
-    TypeSizes,
+    ExportSettings, HeaderAlign, HeaderLayout, HeadingCase, HeadingLayout, HeadingStyle,
+    LayoutSettings, MetaOrder, MetaPosition, PageSize, ResumeDoc, RowSpacing, SkillSeparator,
+    SkillsLayout, SkillsStyle, TypeSizes,
 };
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -478,6 +478,58 @@ impl Root {
                         }
                         menu
                     }),
+            )
+    }
+
+    /// Row for configuring the export filename pattern (Task A1).
+    pub(super) fn filename_pattern_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let root = cx.weak_entity();
+        let preset_name = self
+            .active_preset
+            .and_then(|idx| self.doc.presets.get(idx))
+            .map(|p| p.name.as_str());
+        let example_name = format!("{}.pdf", self.doc.export_filename_stem(preset_name, None));
+
+        let current_pattern = &self.doc.export.filename_pattern;
+        let active_label = ExportSettings::PRESETS
+            .iter()
+            .find(|(_, pat)| *pat == current_pattern.as_str())
+            .map(|(lbl, _)| *lbl)
+            .unwrap_or("Custom pattern");
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(7.0))
+            .child(self.rail_label(cx, "Filename pattern"))
+            .child(
+                Button::new("layout-filename-pattern")
+                    .selector_inline()
+                    .w_full()
+                    .label(active_label)
+                    .tooltip("Pattern used for naming exported files.")
+                    .dropdown_menu(move |mut menu, _window, _cx| {
+                        for (label, pattern) in ExportSettings::PRESETS {
+                            let root = root.clone();
+                            let pattern_str = pattern.to_string();
+                            menu = menu.item(
+                                PopupMenuItem::new(*label).on_click(move |_ev, window, cx| {
+                                    let pattern_to_set = pattern_str.clone();
+                                    let _ = root.update(cx, |this, cx| {
+                                        this.doc.export.filename_pattern = pattern_to_set;
+                                        this.after_layout_change(window, cx);
+                                    });
+                                }),
+                            );
+                        }
+                        menu
+                    }),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().text_muted)
+                    .child(format!("Example: {example_name}")),
             )
     }
 

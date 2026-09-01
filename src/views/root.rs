@@ -946,21 +946,11 @@ impl Root {
     }
 
     pub(super) fn export_pdf(&mut self, cx: &mut Context<Self>) {
-        let raw_name = self.doc.profile.active().name.trim();
-        let base = if raw_name.is_empty() {
-            "cv".to_string()
-        } else {
-            raw_name
-                .chars()
-                .map(|c| {
-                    if matches!(c, '/' | '\\' | ':') {
-                        '-'
-                    } else {
-                        c
-                    }
-                })
-                .collect()
-        };
+        let preset_name = self
+            .active_preset
+            .and_then(|idx| self.doc.presets.get(idx))
+            .map(|p| p.name.as_str());
+        let base = self.doc.export_filename_stem(preset_name, None);
         let suggested = format!("{base}.pdf");
         let dir = vault::user_home_dir();
 

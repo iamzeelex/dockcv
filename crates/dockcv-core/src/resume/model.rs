@@ -2034,6 +2034,175 @@ impl LayoutSettings {
     }
 }
 
+/// Settings controlling how the document is named upon export (Task A1).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportSettings {
+    /// Pattern for the export filename (without extension).
+    ///
+    /// Available tokens:
+    /// - `{name}`: Person's name from profile
+    /// - `{role}` / `{label}`: Job title / subtitle
+    /// - `{preset}`: Currently active preset name
+    /// - `{company}`: Target company name (when exporting from an application)
+    /// - `{variant}`: Active variant name
+    /// - `{date}`: Current date YYYY-MM-DD
+    #[serde(default = "ExportSettings::default_pattern")]
+    pub filename_pattern: String,
+}
+
+impl Default for ExportSettings {
+    fn default() -> Self {
+        Self {
+            filename_pattern: Self::default_pattern(),
+        }
+    }
+}
+
+impl ExportSettings {
+    pub const DEFAULT_PATTERN: &'static str = "{name} - {role} - {preset}";
+
+    pub fn default_pattern() -> String {
+        Self::DEFAULT_PATTERN.to_string()
+    }
+
+    /// Whether the export settings match the default state.
+    pub fn is_default(&self) -> bool {
+        self.filename_pattern.trim() == Self::DEFAULT_PATTERN || self.filename_pattern.trim().is_empty()
+    }
+
+    /// Preset filename patterns offered in the layout rail.
+    pub const PRESETS: &'static [(&'static str, &'static str)] = &[
+        ("Name · Role · Preset", "{name} - {role} - {preset}"),
+        ("Name · Role · Company", "{name} - {role} - {company}"),
+        ("Name · Role", "{name} - {role}"),
+        ("Name · Preset", "{name} - {preset}"),
+        ("Name · Date", "{name} - {date}"),
+        ("Name only", "{name}"),
+    ];
+
+    /// Resolve tokens in the pattern and sanitize the resulting filename stem.
+    pub fn resolve_filename(
+        &self,
+        name: &str,
+        role: &str,
+        preset: &str,
+        company: &str,
+        variant: &str,
+        date: &str,
+    ) -> String {
+        let pattern = if self.filename_pattern.trim().is_empty() {
+            Self::DEFAULT_PATTERN
+        } else {
+            self.filename_pattern.as_str()
+        };
+
+        let mut result = pattern.to_string();
+
+        let clean_company = company.trim();
+        if clean_company.is_empty() {
+            result = remove_token_with_separators(&result, "company");
+        } else {
+            result = result.replace("{company}", clean_company);
+        }
+
+        let clean_preset = preset.trim();
+        if clean_preset.is_empty() {
+            result = remove_token_with_separators(&result, "preset");
+        } else {
+            result = result.replace("{preset}", clean_preset);
+        }
+
+        let clean_role = role.trim();
+        if clean_role.is_empty() {
+            result = remove_token_with_separators(&result, "role");
+            result = remove_token_with_separators(&result, "label");
+        } else {
+            result = result.replace("{role}", clean_role).replace("{label}", clean_role);
+        }
+
+        let clean_variant = variant.trim();
+        if clean_variant.is_empty() {
+            result = remove_token_with_separators(&result, "variant");
+        } else {
+            result = result.replace("{variant}", clean_variant);
+        }
+
+        let clean_date = date.trim();
+        if clean_date.is_empty() {
+            result = remove_token_with_separators(&result, "date");
+        } else {
+            result = result.replace("{date}", clean_date);
+        }
+
+        let name_val = if name.trim().is_empty() { "CV" } else { name.trim() };
+        result = result.replace("{name}", name_val);
+
+        sanitize_filename_stem(&result)
+    }
+}
+
+fn remove_token_with_separators(s: &str, token: &str) -> String {
+    let t = format!("{{{token}}}");
+    if !s.contains(&t) {
+        return s.to_string();
+    }
+    let patterns = [
+        format!(" - {t}"),
+        format!("{t} - "),
+        format!(" – {t}"),
+        format!("{t} – "),
+        format!(" · {t}"),
+        format!("{t} · "),
+        format!("_{t}"),
+        format!("{t}_"),
+        format!(" {t}"),
+        format!("{t} "),
+        t,
+    ];
+    let mut cur = s.to_string();
+    for pat in &patterns {
+        cur = cur.replace(pat, "");
+    }
+    cur
+}
+
+/// Sanitize a filename stem to remove illegal filesystem characters and collapse spaces/dashes.
+pub fn sanitize_filename_stem(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+
+    for c in s.chars() {
+        if matches!(
+            c,
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0'..='\x1f' | '\x7f'
+        ) {
+            out.push('-');
+        } else {
+            out.push(c);
+        }
+    }
+
+    let mut cleaned = out;
+    for _ in 0..10 {
+        let prev = cleaned.clone();
+        cleaned = cleaned
+            .replace(" - - ", " - ")
+            .replace("--", "-")
+            .replace("  ", " ")
+            .replace("-.", ".")
+            .replace(" .", ".");
+        if cleaned == prev {
+            break;
+        }
+    }
+
+    let trimmed = cleaned.trim().trim_matches(&['-', '_', ' '][..]);
+    if trimmed.is_empty() {
+        "CV".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 /// A resume with every section independently versioned, plus document-wide
 /// presets over those variants.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -2063,6 +2232,9 @@ pub struct ResumeDoc {
     /// written before this field existed renders unchanged.
     #[serde(default)]
     pub layout: LayoutSettings,
+    /// Export naming pattern settings (Task A1).
+    #[serde(default, skip_serializing_if = "ExportSettings::is_default")]
+    pub export: ExportSettings,
     /// Id to hand out to the *next* custom section added (D-9) — a
     /// monotonically increasing counter, never rewound, so a deleted
     /// section's id is never reissued. Declared before `custom_sections`
@@ -2107,6 +2279,22 @@ pub struct ResumeDoc {
 }
 
 impl ResumeDoc {
+    /// Resolve the filename stem (without extension) for exporting under the given context.
+    pub fn export_filename_stem(
+        &self,
+        preset_name: Option<&str>,
+        company: Option<&str>,
+    ) -> String {
+        let name = &self.profile.active().name;
+        let role = &self.profile.active().label;
+        let preset = preset_name.unwrap_or("");
+        let company_val = company.unwrap_or("");
+        let variant = "";
+        let date = "";
+        self.export
+            .resolve_filename(name, role, preset, company_val, variant, date)
+    }
+
     /// Every section, in the order they ship in. [`ResumeDoc::sections`] is what
     /// screens should iterate — it honours the user's own order.
     pub const SECTIONS: [SectionKind; 6] = [
@@ -2278,6 +2466,7 @@ impl ResumeDoc {
             section_order: Vec::new(),
             section_titles: Vec::new(),
             layout: LayoutSettings::default(),
+            export: ExportSettings::default(),
             next_custom_section_id: 0,
             custom_sections: Vec::new(),
             hidden_sections: Vec::new(),
@@ -3260,6 +3449,55 @@ mod applications_tests {
                             document = \"resume\"\npreset = \"FAANG · concise\"\n";
         let apps: Applications = toml::from_str(hand_written).expect("loads");
         assert_eq!(apps.entries[0].furthest(), ApplicationStatus::Offer);
+    }
+
+    #[test]
+    fn export_filename_pattern_resolves_cleanly() {
+        let settings = ExportSettings::default();
+        let stem = settings.resolve_filename(
+            "Alexey Belochenko",
+            "Principal Systems Architect",
+            "Backend",
+            "",
+            "",
+            "2026-08-31",
+        );
+        assert_eq!(stem, "Alexey Belochenko - Principal Systems Architect - Backend");
+
+        // When company is present
+        let custom_settings = ExportSettings {
+            filename_pattern: "{name} - {role} - {company}".into(),
+        };
+        let stem2 = custom_settings.resolve_filename(
+            "Alexey Belochenko",
+            "Staff SWE",
+            "",
+            "Acme Corp / Tech",
+            "",
+            "",
+        );
+        assert_eq!(stem2, "Alexey Belochenko - Staff SWE - Acme Corp - Tech");
+
+        // When tokens are missing, separators do not linger
+        let pattern_with_all = ExportSettings {
+            filename_pattern: "{name} - {company} - {role} - {preset}".into(),
+        };
+        let stem3 = pattern_with_all.resolve_filename(
+            "Alexey Belochenko",
+            "",
+            "Concise",
+            "",
+            "",
+            "",
+        );
+        assert_eq!(stem3, "Alexey Belochenko - Concise");
+    }
+
+    #[test]
+    fn export_filename_sanitizer_removes_illegal_characters() {
+        assert_eq!(sanitize_filename_stem("My/Resume:2026*?.pdf"), "My-Resume-2026.pdf");
+        assert_eq!(sanitize_filename_stem("   ---   "), "CV");
+        assert_eq!(sanitize_filename_stem(""), "CV");
     }
 }
 

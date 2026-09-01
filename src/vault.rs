@@ -1651,4 +1651,34 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    /// Task A1: export filename settings round-trip cleanly through TOML,
+    /// and documents without an explicit [export] section deserialize with defaults.
+    #[test]
+    fn export_settings_round_trip_and_defaults() {
+        let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
+        let doc = ResumeDoc::from_resume(resume, "Base");
+
+        // Without modification, default is skipped in serialization
+        let text = super::to_toml(&doc).expect("serialize");
+        assert!(!text.contains("export"));
+
+        let loaded: ResumeDoc = toml::from_str(&text).expect("deserialize default");
+        assert_eq!(
+            loaded.export.filename_pattern,
+            crate::resume::model::ExportSettings::DEFAULT_PATTERN
+        );
+
+        // With custom pattern, it serializes and reloads
+        let mut custom = doc;
+        custom.export.filename_pattern = "{name} - {role} - {company}".into();
+        let text2 = super::to_toml(&custom).expect("serialize custom");
+        assert!(text2.contains("filename_pattern = \"{name} - {role} - {company}\""));
+
+        let loaded2: ResumeDoc = toml::from_str(&text2).expect("deserialize custom");
+        assert_eq!(
+            loaded2.export.filename_pattern,
+            "{name} - {role} - {company}"
+        );
+    }
 }
