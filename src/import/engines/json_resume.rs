@@ -625,4 +625,28 @@ mod tests {
         let imported = import(r#"{"basics":{"name":"Leo Vaicer"}}"#).expect("a name is a resume");
         assert_eq!(imported.doc.profile.active().name, "Leo Vaicer");
     }
+
+    /// Task A6: exporting a composed resume as JSON Resume and importing it
+    /// back through the engine preserves the core fields without loss.
+    #[test]
+    fn export_round_trips_through_importer() {
+        use dockcv_core::resume::export_json_resume;
+
+        let initial = import(SPEC_SHAPED).expect("parses spec-shaped sample");
+        let composed = initial.doc.compose();
+
+        let exported_json = export_json_resume(&composed).expect("exports valid json");
+        let round_tripped = import(&exported_json).expect("re-imports exported json");
+
+        let p_orig = initial.doc.profile.active();
+        let p_rt = round_tripped.doc.profile.active();
+        assert_eq!(p_rt.name, p_orig.name);
+        assert_eq!(p_rt.label, p_orig.label);
+        assert_eq!(p_rt.email, p_orig.email);
+
+        assert_eq!(round_tripped.doc.work.active().len(), initial.doc.work.active().len());
+        assert_eq!(round_tripped.doc.education.active().len(), initial.doc.education.active().len());
+        assert_eq!(round_tripped.doc.skills.active().len(), initial.doc.skills.active().len());
+        assert_eq!(round_tripped.doc.certificates.active().len(), initial.doc.certificates.active().len());
+    }
 }
