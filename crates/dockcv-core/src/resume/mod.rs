@@ -13,6 +13,7 @@ pub mod export_markdown;
 pub mod export_text;
 pub mod export_typst;
 pub mod export_walk;
+pub mod export_wrap;
 pub mod model;
 pub mod template;
 

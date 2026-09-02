@@ -3,6 +3,11 @@
 //! A deterministic walk of the document in reading order: header first, then
 //! each section in resolved `section_order`, hard-wrapped at 72 columns, with
 //! no fancy glyphs or box-drawing characters.
+//!
+//! The wrapping itself is [`super::export_wrap`], which measures columns
+//! rather than bytes and finds break opportunities in scripts that do not
+//! separate words with spaces. This is the format an ATS is most likely to
+//! read cleanly, and a CV is as often in Russian or Japanese as in English.
 
 use std::fmt::Write as _;
 
@@ -10,6 +15,7 @@ use super::dates::DateFormat;
 use super::export_walk::{
     format_date_range, is_section_empty, ordered_sections, resolve_section_title,
 };
+use super::export_wrap;
 use super::model::{
     Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
     SkillGroup, Volunteer, Work,
@@ -363,48 +369,17 @@ pub fn strip_typst_markup(input: &str) -> String {
     out
 }
 
+/// A bullet, hard-wrapped with its continuation lines hanging under the text
+/// rather than under the marker.
 fn write_bullet(out: &mut String, text: &str) {
-    let prefix = "  * ";
-    let hanging_indent = 4;
-    write_wrapped_with_prefix(out, text, prefix, hanging_indent);
+    export_wrap::wrap_into(out, text, "  * ", 4, WRAP_WIDTH);
 }
 
+/// A paragraph, hard-wrapped, with `first_indent` spaces on its first line and
+/// `rest_indent` on the rest.
 fn write_wrapped(out: &mut String, text: &str, first_indent: usize, rest_indent: usize) {
     let first_prefix = " ".repeat(first_indent);
-    write_wrapped_with_prefix(out, text, &first_prefix, rest_indent);
-}
-
-fn write_wrapped_with_prefix(out: &mut String, text: &str, first_prefix: &str, rest_indent: usize) {
-    let words: Vec<&str> = text.split_whitespace().collect();
-    if words.is_empty() {
-        return;
-    }
-
-    let rest_prefix = " ".repeat(rest_indent);
-    let mut current_line = String::from(first_prefix);
-
-    for word in words {
-        let line_len_with_word = if current_line.trim().is_empty() {
-            current_line.len() + word.len()
-        } else {
-            current_line.len() + 1 + word.len()
-        };
-
-        if line_len_with_word > WRAP_WIDTH && !current_line.trim().is_empty() {
-            let _ = writeln!(out, "{current_line}");
-            current_line = rest_prefix.clone();
-            current_line.push_str(word);
-        } else {
-            if !current_line.trim().is_empty() {
-                current_line.push(' ');
-            }
-            current_line.push_str(word);
-        }
-    }
-
-    if !current_line.trim().is_empty() {
-        let _ = writeln!(out, "{current_line}");
-    }
+    export_wrap::wrap_into(out, text, &first_prefix, rest_indent, WRAP_WIDTH);
 }
 
 #[cfg(test)]
@@ -428,14 +403,43 @@ mod tests {
         assert!(exported.contains("ORGANIZATIONS"));
         assert!(exported.contains("PUBLICATIONS"));
 
-        // Verify that no line exceeds WRAP_WIDTH
+        assert_within_the_column(&exported);
+    }
+
+    /// The same document in Russian and Japanese. Byte length would put the
+    /// first at roughly half the column and the second at a third of it, so
+    /// this is the test that fails if the wrapping ever goes back to counting
+    /// bytes — and it checks the whole emitter, not just the wrapper.
+    #[test]
+    fn a_cv_that_is_not_in_english_still_fits_the_column() {
+        let mut resume = sample_resume();
+        resume.basics.name = "Альберт Эйнштейн".into();
+        resume.basics.label = "Ведущий системный архитектор".into();
+        resume.basics.summary = "Опытный системный инженер, специализирующийся на распределённых \
+             хранилищах данных и высоконагруженных системах."
+            .into();
+        resume.work[0].highlights = vec![
+            "Спроектировал журнал фиксации, обрабатывающий пятьдесят миллионов \
+             операций в секунду с задержкой p99 менее одной миллисекунды."
+                .into(),
+            "分散ストレージシステムの設計と実装を担当し、毎秒五千万件の書き込みを処理する\
+             高性能なコミットログを構築しました。"
+                .into(),
+        ];
+
+        let exported = export_plain_text(&resume);
+        assert!(exported.contains("Альберт Эйнштейн"));
+        assert!(exported.contains("Спроектировал"));
+        assert_within_the_column(&exported);
+    }
+
+    #[track_caller]
+    fn assert_within_the_column(exported: &str) {
         for (i, line) in exported.lines().enumerate() {
+            let columns = crate::resume::export_wrap::width(line);
             assert!(
-                line.len() <= WRAP_WIDTH,
-                "Line {i} exceeds wrap width ({}/{}): {:?}",
-                line.len(),
-                WRAP_WIDTH,
-                line
+                columns <= WRAP_WIDTH,
+                "line {i} is {columns} columns wide, over {WRAP_WIDTH}: {line:?}"
             );
         }
     }

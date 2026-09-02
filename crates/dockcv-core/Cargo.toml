@@ -75,6 +75,16 @@ typst-assets = "0.15"
 typst-svg = { version = "0.15", optional = true }
 docx-rs = { version = "0.4", optional = true }
 comemo = "0.5"
+# Wrapping plain text to a column, for CVs in any script (`export_wrap.rs`).
+# All three are already compiled into every build — `icu_segmenter` and
+# `unicode-segmentation` arrive under `typst-layout` and `hayagriva`, and
+# `unicode-width` under gpui — so naming them here buys correct wrapping at
+# no cost in build size. `icu_segmenter` in particular is the same line
+# breaker `typst-layout` breaks the page with, which is why the text export
+# and the PDF agree about where a line may end.
+icu_segmenter = "2"
+unicode-segmentation = "1"
+unicode-width = "0.2"
 serde = { version = "1.0.228", features = ["derive"] }
 # JSON Resume is the format that makes the no-lock-in claim checkable by a
 # stranger, so its writer is not behind a feature: a build that cannot emit it
