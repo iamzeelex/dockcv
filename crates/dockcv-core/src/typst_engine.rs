@@ -866,7 +866,7 @@ mod line_advance_tests {
     #[test]
     fn the_line_advance_is_measured_from_the_page_and_follows_text_scale() {
         let mut resume = Resume::default();
-        resume.basics.name = "Sofiia Medvedenko".into();
+        resume.basics.name = "Albert Einstein".into();
         resume.work = (0..6)
             .map(|i| Work {
                 position: format!("Engineer {i}"),
@@ -907,7 +907,7 @@ mod line_advance_tests {
     #[test]
     fn the_top_margin_is_not_counted_as_overflow() {
         let mut resume = Resume::default();
-        resume.basics.name = "Sofiia Medvedenko".into();
+        resume.basics.name = "Albert Einstein".into();
         // Just enough to push a little content onto a second page.
         resume.work = (0..26)
             .map(|i| Work {
@@ -968,7 +968,7 @@ mod page_break_tests {
     #[test]
     fn the_gap_between_pages_is_transparent_and_the_pages_are_not() {
         let mut resume = Resume::default();
-        resume.basics.name = "Sofiia Medvedenko".into();
+        resume.basics.name = "Albert Einstein".into();
         // Enough content to certainly spill onto a second page.
         resume.work = (0..40)
             .map(|i| Work {

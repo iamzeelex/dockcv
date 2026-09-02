@@ -490,6 +490,7 @@ pub fn generate_for(doc: &ResumeDoc) -> String {
 /// and this is where that gets caught, not as a Typst compile error.
 pub fn generate_with_layout(resume: &Resume, layout: &LayoutSettings) -> String {
     let mut out = String::with_capacity(8192);
+    document_metadata_into(&mut out, resume);
     page_setup_into(&mut out, &layout.sanitized());
     no_heading_into(&mut out, resume);
     section_layout_into(&mut out, resume, &layout.sanitized());
@@ -499,6 +500,32 @@ pub fn generate_with_layout(resume: &Resume, layout: &LayoutSettings) -> String 
     resume_to_dict_into(&mut out, resume, layout.date_format);
     out.push_str("\n#render-cv(cv)\n");
     out
+}
+
+/// The document metadata every export carries.
+///
+/// Internal preset names, variant names, vault paths and private notes must NEVER
+/// leak into exported document metadata.
+fn document_metadata_into(out: &mut String, resume: &Resume) {
+    let name = resume.basics.name.trim();
+    let label = resume.basics.label.trim();
+    let title = if !name.is_empty() && !label.is_empty() {
+        format!("{name} - {label}")
+    } else if !name.is_empty() {
+        format!("Resume - {name}")
+    } else {
+        "Resume".to_string()
+    };
+    let clean_title = title.replace('\\', "\\\\").replace('"', "\\\"");
+    let clean_author = name.replace('\\', "\\\\").replace('"', "\\\"");
+    if clean_author.is_empty() {
+        let _ = writeln!(out, "#set document(title: \"{clean_title}\")");
+    } else {
+        let _ = writeln!(
+            out,
+            "#set document(title: \"{clean_title}\", author: \"{clean_author}\")"
+        );
+    }
 }
 
 /// The sections that print no heading, as renderer keys.
@@ -962,7 +989,7 @@ fn field(out: &mut String, indent: usize, key: &str, value: &str) {
 ///
 /// Content blocks keep emphasis live (`*bold*`, `_italic_`) because authors do
 /// write it. What they never mean is the *referencing* and *executing* syntax:
-/// `hi@zeelex.me` is an email, not `@label`; `C#` is a language, not code mode;
+/// `albert@example.com` is an email, not `@label`; `C#` is a language, not code mode;
 /// `$2M ARR` is a number, not math. Each of those parses, fails, and takes the
 /// whole document down with it — so a real bullet loses a hypothetical
 /// `#emph[..]` rather than the user losing their preview. `[`/`]` close the
@@ -1102,7 +1129,7 @@ mod tests {
 
         let resume = Resume {
             basics: Basics {
-                name: "Sofiia Medvedenko".into(),
+                name: "Albert Einstein".into(),
                 summary: "Backend engineer with eight years of experience.".into(),
                 ..Default::default()
             },
@@ -1537,7 +1564,7 @@ mod tests {
 
         let resume = Resume {
             basics: Basics {
-                name: "Sofiia Medvedenko".into(),
+                name: "Albert Einstein".into(),
                 label: "Staff Engineer".into(),
                 location: "Barcelona, Spain".into(),
                 email: "s@example.com".into(),
@@ -1653,7 +1680,7 @@ mod tests {
 
         let resume = Resume {
             basics: Basics {
-                name: "Sofiia Medvedenko".into(),
+                name: "Albert Einstein".into(),
                 label: "Staff Engineer".into(),
                 ..Default::default()
             },
@@ -2013,7 +2040,7 @@ mod tests {
     /// the page actually changed. A4 is 297mm tall and Letter 279.4mm, so a real
     /// compile must report measurably different page heights.
     /// The bug this guards: a bullet carrying the CV's own email compiled to
-    /// `label <zeelex.mecritical> does not exist`, because Typst reads `@x` as a
+    /// `label <example.comcritical> does not exist`, because Typst reads `@x` as a
     /// reference. `C#` fails the same way through code mode. Asserting on the
     /// generated source would not have caught it — only the compiler knows.
     #[test]
@@ -2025,7 +2052,7 @@ mod tests {
             work: vec![Work {
                 position: "Engineer".into(),
                 highlights: vec![
-                    "Reachable at hi@zeelex.me for critical incidents".into(),
+                    "Reachable at albert@example.com for critical incidents".into(),
                     "Ported the C# service and its #tags to Rust".into(),
                     "Cut latency [p99] by 40%".into(),
                 ],
@@ -2395,7 +2422,7 @@ mod section_order_tests {
         // "last" collapse to the same place and a positional bug is invisible.
         let seeded = || Resume {
             basics: crate::resume::model::Basics {
-                name: "Sofiia Medvedenko".into(),
+                name: "Albert Einstein".into(),
                 ..Default::default()
             },
             work: vec![crate::resume::model::Work {
@@ -2608,5 +2635,107 @@ mod date_format_tests {
             neutralize(r"C:\#1 @user [test] $100"),
             r"C:\\\#1 \@user \[test\] \$100"
         );
+    }
+
+    /// A preset name in a recruiter's document properties is an embarrassment
+    /// we would have built ourselves, so this checks the produced **file**, not
+    /// the source we hoped would produce it. The file-to-preset mapping lives in
+    /// export history, inside the vault, where it is ours.
+    #[cfg(feature = "pdf")]
+    #[test]
+    fn no_exported_pdf_carries_a_preset_or_variant_name() {
+        use crate::resume::model::{Basics, Preset, SectionKind};
+        use crate::typst_engine::TypstEngine;
+
+        let resume = Resume {
+            basics: Basics {
+                name: "Albert Einstein".into(),
+                label: "Principal Systems Architect".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut doc = ResumeDoc::from_resume(resume, "Base");
+        // Variant and preset names a person would actually type, and would
+        // certainly not want sent: the point is that neither can reach the file.
+        doc.profile.variants[0].name = "FAANG rewrite".into();
+        doc.presets = vec![
+            Preset {
+                name: "FAANG · concise".into(),
+                selection: vec![(SectionKind::Profile, "FAANG rewrite".into())],
+                hidden: vec![SectionKind::Organizations],
+            },
+            Preset {
+                name: "Startup · long".into(),
+                selection: vec![],
+                hidden: vec![],
+            },
+        ];
+
+        let source = generate_for(&doc);
+        let pdf = TypstEngine::new(source)
+            .compile_to_pdf()
+            .expect("the document compiles");
+        let bytes = String::from_utf8_lossy(&pdf);
+
+        for secret in [
+            "FAANG", "concise", "Startup", "rewrite", "preset", "variant",
+        ] {
+            assert!(
+                !bytes.contains(secret),
+                "{secret:?} reached the exported PDF"
+            );
+        }
+
+        // And the two fields we *do* set are exactly the two we meant to set.
+        assert!(bytes.contains("Albert Einstein - Principal Systems Architect"));
+        assert!(bytes.contains("/Author"));
+        assert!(bytes.contains("/Title"));
+        assert!(
+            !bytes.contains("/Keywords") && !bytes.contains("/Subject"),
+            "a metadata field nobody decided on is being written"
+        );
+    }
+
+    /// The source is where the leak would start, so it is worth pinning too —
+    /// and it is the only half a build without the PDF writer can check.
+    #[test]
+    fn document_metadata_names_the_person_and_nothing_else() {
+        use crate::resume::model::Basics;
+
+        let with_both = Resume {
+            basics: Basics {
+                name: "Albert Einstein".into(),
+                label: "Principal Systems Architect".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut out = String::new();
+        document_metadata_into(&mut out, &with_both);
+        assert_eq!(
+            out.trim(),
+            r#"#set document(title: "Albert Einstein - Principal Systems Architect", author: "Albert Einstein")"#
+        );
+
+        // A quote in a name is a Typst string literal ending early, which is a
+        // compile error rather than a wrong title — so it gets escaped.
+        let quoted = Resume {
+            basics: Basics {
+                name: r#"Ann "Nan" O'Neil"#.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut out = String::new();
+        document_metadata_into(&mut out, &quoted);
+        assert!(out.contains(r#"\"Nan\""#), "{out}");
+
+        // An empty document still gets a title, and no author at all rather
+        // than an empty one.
+        let mut out = String::new();
+        document_metadata_into(&mut out, &Resume::default());
+        assert_eq!(out.trim(), r#"#set document(title: "Resume")"#);
+        assert!(!out.contains("author"));
     }
 }

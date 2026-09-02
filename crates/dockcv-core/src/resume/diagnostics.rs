@@ -227,7 +227,7 @@ mod tests {
         // all-empty one now emits `(:)` (see `template.rs`'s empty-document
         // test), and section attribution is only meaningful for a section
         // that exists.
-        resume.basics.name = "Sofiia Medvedenko".into();
+        resume.basics.name = "Albert Einstein".into();
         resume.work.push(Work::default());
         resume.education.push(Default::default());
         resume.skills.push(Default::default());
@@ -257,7 +257,7 @@ mod tests {
         // all-empty one now emits `(:)` (see `template.rs`'s empty-document
         // test), and section attribution is only meaningful for a section
         // that exists.
-        resume.basics.name = "Sofiia Medvedenko".into();
+        resume.basics.name = "Albert Einstein".into();
         resume.work.push(Work::default());
         resume.education.push(Default::default());
         let source = template::generate(&resume);

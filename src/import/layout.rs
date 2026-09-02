@@ -116,7 +116,7 @@ fn measure_of(lines: &[&str]) -> usize {
 /// independent one: headings, entry headers, names and list items all begin
 /// with a capital. Starting lowercase means the sentence began further up.
 /// A continuation is **prose**, so it carries a space and no address. Without
-/// that guard the rule swallowed a contact block: `hi@zeelex.me` begins with a
+/// that guard the rule swallowed a contact block: `albert@example.com` begins with a
 /// lowercase letter and was folded into the line naming the city above it.
 fn starts_mid_sentence(line: &str) -> bool {
     line.chars()
@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn a_sentence_that_ends_at_the_margin_is_not_continued() {
         let raw = "R&D venture on autonomous high-altitude airships and hybrid energy propulsion. At WebSummit 2021.\n\
-                   https://elliscope.zeelex.me\n";
+                   https://elliscope.example.com\n";
         let lines = logical_lines(raw, no_headings, has_dates);
         assert_eq!(lines.len(), 2, "{lines:#?}");
     }

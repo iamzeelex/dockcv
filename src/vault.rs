@@ -1037,12 +1037,12 @@ mod tests {
 
         // And the new field round-trips when it is set.
         let mut with_source = diary;
-        with_source.entries[0].source_doc = Some("sofiia-senior-swe".into());
+        with_source.entries[0].source_doc = Some("albert-senior-swe".into());
         let text = toml::to_string_pretty(&with_source).expect("serializes");
         let back: Diary = toml::from_str(&text).expect("round-trips");
         assert_eq!(
             back.entries[0].source_doc.as_deref(),
-            Some("sofiia-senior-swe")
+            Some("albert-senior-swe")
         );
     }
 
@@ -1064,12 +1064,12 @@ mod tests {
 
         // …and it round-trips once a win actually goes into a CV.
         let mut promoted = diary;
-        promoted.entries[0].used_in = vec!["sofiia-senior-swe".into(), "sofiia-em".into()];
+        promoted.entries[0].used_in = vec!["albert-senior-swe".into(), "albert-em".into()];
         let text = toml::to_string_pretty(&promoted).expect("serializes");
         let back: Diary = toml::from_str(&text).expect("round-trips");
         assert_eq!(
             back.entries[0].used_in,
-            vec!["sofiia-senior-swe", "sofiia-em"]
+            vec!["albert-senior-swe", "albert-em"]
         );
     }
 
@@ -1471,7 +1471,7 @@ mod tests {
             role: "Staff Engineer".into(),
             status_word: ApplicationStatus::Interviewing.word().into(),
             sent_as: Some(crate::resume::model::SentCv {
-                document: "sofiia-senior-swe".into(),
+                document: "albert-senior-swe".into(),
                 preset: "FAANG · concise".into(),
             }),
             ..Default::default()
@@ -1650,5 +1650,109 @@ mod tests {
         assert_eq!(reloaded.sections().last(), Some(&SectionKind::Custom(id)));
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A 0.2.0 vault has no `[export]` table and no export history, and both
+    /// have to arrive as defaults rather than as a parse error — and a document
+    /// that has never been exported must not start writing either of them, so a
+    /// vault written by this branch still opens on `main`.
+    #[test]
+    fn export_settings_and_history_round_trip_and_stay_out_of_untouched_files() {
+        use crate::resume::model::ExportSettings;
+        use std::path::PathBuf;
+
+        let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
+        let doc = ResumeDoc::from_resume(resume, "Base");
+
+        let text = super::to_toml(&doc).expect("serialize");
+        assert!(
+            !text.contains("[export]") && !text.contains("filename_pattern"),
+            "an untouched document grew an export table:\n{text}"
+        );
+        assert!(!text.contains("export_history"));
+
+        let loaded: ResumeDoc = toml::from_str(&text).expect("deserialize default");
+        assert_eq!(
+            loaded.export.filename_pattern,
+            ExportSettings::DEFAULT_PATTERN
+        );
+        assert!(loaded.export.last_destination.is_none());
+        assert!(loaded.export_history.is_empty());
+
+        // Once set, every field survives the trip in both directions.
+        let mut used = doc;
+        used.export.filename_pattern = "{name} - {role} - {company}".into();
+        used.export.last_destination = Some(PathBuf::from("/Users/someone/Documents/CVs"));
+        used.record_export(
+            "2026-09-01",
+            "17:30",
+            "PDF",
+            "Concise",
+            PathBuf::from("/Users/someone/Documents/CVs/Ann Lee - SRE - Concise.pdf"),
+        );
+
+        let text = super::to_toml(&used).expect("serialize custom");
+        let back: ResumeDoc = toml::from_str(&text).expect("deserialize custom");
+        assert_eq!(back.export, used.export);
+        assert_eq!(back.export_history, used.export_history);
+
+        // And the same file with the new tables stripped back out — which is
+        // what a 0.2.0 vault is — still opens, with defaults in their place.
+        let downgraded: String = text
+            .lines()
+            .take_while(|l| !l.starts_with("[export") && !l.starts_with("[[export"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let old: ResumeDoc =
+            toml::from_str(&downgraded).expect("a document without the export tables still parses");
+        assert_eq!(old.export, ExportSettings::default());
+        assert!(old.export_history.is_empty());
+    }
+
+    /// The exact block that failed to open: an export history written before
+    /// `timestamp` became `date` plus `time`.
+    ///
+    /// Splitting a stored field is a schema change like any other, and this is
+    /// the test that was missing when it was made — the shape existed only in
+    /// development vaults, which is to say in somebody's real documents.
+    #[test]
+    fn an_export_history_written_before_the_date_split_still_opens() {
+        let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
+        let doc = ResumeDoc::from_resume(resume, "Base");
+        let mut text = super::to_toml(&doc).expect("serialize");
+        text.push_str(
+            r#"
+[[export_history]]
+timestamp = "2026-09-01 23:47"
+format = "PDF"
+preset = "EM"
+path = "/Users/someone/Downloads/Ann Lee - Engineering Manager - EM.pdf"
+
+[[export_history]]
+timestamp = "2026-08-14"
+format = "Word"
+preset = "Concise"
+path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
+"#,
+        );
+
+        let loaded: ResumeDoc = toml::from_str(&text).expect("a pre-split history still opens");
+        assert_eq!(loaded.export_history.len(), 2);
+
+        // The moment is kept, not defaulted away to a blank date.
+        assert_eq!(loaded.export_history[0].date, "2026-09-01");
+        assert_eq!(loaded.export_history[0].time, "23:47");
+        assert_eq!(loaded.export_history[0].preset, "EM");
+
+        // A blob with no time in it keeps its date and admits it has no time,
+        // rather than inventing one.
+        assert_eq!(loaded.export_history[1].date, "2026-08-14");
+        assert_eq!(loaded.export_history[1].time, "");
+
+        // And it is written back in the new shape, so the old one dies out.
+        let rewritten = super::to_toml(&loaded).expect("serialize");
+        assert!(!rewritten.contains("timestamp"));
+        assert!(rewritten.contains("date = \"2026-09-01\""));
+        assert!(rewritten.contains("time = \"23:47\""));
     }
 }

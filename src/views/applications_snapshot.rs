@@ -271,7 +271,7 @@ mod tests {
         let mut with_presets = ResumeDoc::from_resume(
             Resume {
                 basics: crate::resume::model::Basics {
-                    name: "Sofiia Medvedenko".into(),
+                    name: "Albert Einstein".into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -290,7 +290,7 @@ mod tests {
                 hidden: Vec::new(),
             },
         ];
-        vault::save(&with_presets, &dir.join("sofiia-senior-swe.toml")).expect("save");
+        vault::save(&with_presets, &dir.join("albert-senior-swe.toml")).expect("save");
 
         // No presets, and no person name either — the label must fall back to
         // the file stem rather than rendering an empty menu item.
@@ -307,9 +307,9 @@ mod tests {
         assert_eq!(groups.len(), 2, "one row per document, got {labels:?}");
         let named = groups
             .iter()
-            .find(|g| g.stem == "sofiia-senior-swe")
+            .find(|g| g.stem == "albert-senior-swe")
             .expect("named");
-        assert_eq!(named.label, "Sofiia Medvedenko");
+        assert_eq!(named.label, "Albert Einstein");
         assert_eq!(named.presets, vec!["FAANG · concise", "Infra-heavy"]);
 
         // A document with no presets is still offerable, labelled by its file

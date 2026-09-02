@@ -125,14 +125,14 @@ mod tests {
         let path = dir.join("resume.json");
         std::fs::write(
             &path,
-            br#"{"basics":{"name":"Sofiia Medvedenko","location":{"city":"Berlin"}},
+            br#"{"basics":{"name":"Albert Einstein","location":{"city":"Berlin"}},
                  "work":[{"name":"Acme","position":"Staff Engineer","startDate":"2021-01"}]}"#,
         )
         .expect("write");
 
         let imported = super::import_file(&path).expect("a JSON Resume imports");
         assert_eq!(imported.format_name, "JSON Resume");
-        assert_eq!(imported.doc.profile.active().name, "Sofiia Medvedenko");
+        assert_eq!(imported.doc.profile.active().name, "Albert Einstein");
         assert_eq!(imported.doc.profile.active().location, "Berlin");
         assert_eq!(imported.doc.work.active().len(), 1);
 

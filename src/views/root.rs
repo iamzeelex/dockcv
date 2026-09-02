@@ -271,6 +271,9 @@ pub struct Root {
     /// `TextFieldState` needs a `Window`, which the click handler that opens
     /// this has, same as `Root::fields`).
     pub(super) capture_sheet: Option<CaptureSheet>,
+    /// The export sheet overlay (`root_export_sheet.rs`): `Some` while the user
+    /// is choosing a format and a preset. One at a time, like `capture_sheet`.
+    pub(super) export_sheet: Option<super::root_export_sheet::ExportSheetState>,
     /// The section header's rename control (`root_section_rename.rs`): `Some`
     /// while a section's printed heading is being edited inline. One at a
     /// time, and not part of `Root::fields` — it never addresses a `FieldId`,
@@ -397,6 +400,7 @@ impl Root {
             diary,
             diary_picker: None,
             capture_sheet: None,
+            export_sheet: None,
             renaming_section: None,
             renaming_variant: None,
             active_preset: None,
@@ -576,7 +580,7 @@ impl Root {
     // --- diary quick-capture (D-7, design doc §8) ---
 
     /// The document's identity as shown in the titlebar breadcrumb
-    /// (`Sofiia — Senior SWE`) — reused by the capture sheet so the user can
+    /// (`Albert — Senior SWE`) — reused by the capture sheet so the user can
     /// see which document a captured entry will be linked to.
     /// The document's own name — its file stem, which is what a document is
     /// called under File-over-App and the only thing that distinguishes two
@@ -905,7 +909,7 @@ impl Root {
     pub(super) fn export_pdf_checked(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let sources = self.confidential_sources();
         if sources.is_empty() {
-            self.export_pdf(cx);
+            self.open_export_sheet(window, cx);
             return;
         }
 
@@ -941,75 +945,8 @@ impl Root {
             "Export anyway",
             window,
             cx,
-            |this, _window, cx| this.export_pdf(cx),
+            |this, window, cx| this.open_export_sheet(window, cx),
         );
-    }
-
-    pub(super) fn export_pdf(&mut self, cx: &mut Context<Self>) {
-        let raw_name = self.doc.profile.active().name.trim();
-        let base = if raw_name.is_empty() {
-            "cv".to_string()
-        } else {
-            raw_name
-                .chars()
-                .map(|c| {
-                    if matches!(c, '/' | '\\' | ':') {
-                        '-'
-                    } else {
-                        c
-                    }
-                })
-                .collect()
-        };
-        let suggested = format!("{base}.pdf");
-        let dir = vault::user_home_dir();
-
-        let receiver = cx.prompt_for_new_path(&dir, Some(&suggested));
-        let engine = self.engine.clone();
-        let source = template::generate_for(&self.doc);
-        let executor = cx.background_executor().clone();
-
-        cx.spawn(async move |this, cx| {
-            let path = match receiver.await {
-                Ok(Ok(Some(path))) => path,
-                _ => return, // cancelled or dialog error
-            };
-            let result = executor
-                .spawn(async move {
-                    let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
-                    engine.set_source(source);
-                    engine.compile_to_pdf()
-                })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                // A successful export says nothing about the preview's own
-                // compile status, so — unlike the old shared `error`
-                // field — success here no longer clobbers a real, unrelated
-                // compile error still on screen. A failure reuses the same
-                // error surface `render_preview` already draws, since export
-                // and compile failures share that one banner slot today.
-                let outcome = result.and_then(|bytes| {
-                    std::fs::write(&path, bytes).map_err(|e| format!("write failed: {e}"))
-                });
-                match &outcome {
-                    Ok(()) => log::info!("exported PDF to {}", path.display()),
-                    Err(message) => {
-                        log::error!("PDF export to {} failed: {message}", path.display())
-                    }
-                }
-                if let Err(message) = outcome {
-                    this.compile_state = CompileState::Error {
-                        messages: vec![CompileMessage {
-                            severity: Severity::Error,
-                            section: None,
-                            text: format!("Couldn't export PDF: {message}."),
-                        }],
-                    };
-                }
-                cx.notify();
-            });
-        })
-        .detach();
     }
 
     /// Store a freshly rendered page (freeing the previous GPU texture) and
@@ -1481,6 +1418,11 @@ impl Render for Root {
                 self.capture_sheet
                     .is_some()
                     .then(|| self.render_capture_sheet(cx)),
+            )
+            .children(
+                self.export_sheet
+                    .is_some()
+                    .then(|| self.render_export_sheet(cx)),
             )
     }
 }

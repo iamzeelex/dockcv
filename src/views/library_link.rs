@@ -352,7 +352,7 @@ mod tests {
         DocMeta {
             path: std::path::PathBuf::from(format!("{stem}.toml")),
             stem: stem.into(),
-            name: "Sofiia".into(),
+            name: "Albert".into(),
             label: String::new(),
             presets: 0,
             preset_names: Vec::new(),

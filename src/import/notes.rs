@@ -278,7 +278,7 @@ mod tests {
     fn a_clean_document_produces_no_notes_at_all() {
         let resume = Resume {
             basics: crate::resume::model::Basics {
-                name: "Sofiia Medvedenko".into(),
+                name: "Albert Einstein".into(),
                 email: "s@example.com".into(),
                 ..Default::default()
             },

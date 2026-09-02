@@ -629,7 +629,11 @@ impl Root {
         }))
     }
 
-    fn rail_label(&self, cx: &mut Context<Self>, text: &'static str) -> impl IntoElement {
+    pub(super) fn rail_label(
+        &self,
+        cx: &mut Context<Self>,
+        text: &'static str,
+    ) -> impl IntoElement {
         div()
             .text_style(TextStyle::label())
             .text_color(cx.theme().text_muted)

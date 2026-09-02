@@ -398,11 +398,11 @@ mod tests {
         };
         let lines = read(
             Paragraph::new().add_hyperlink(link),
-            &[("rId7", "https://linkedin.com/in/sofiia")],
+            &[("rId7", "https://linkedin.com/in/aeinstein")],
         );
         assert_eq!(
             texts(&lines),
-            vec!["LinkedIn https://linkedin.com/in/sofiia"]
+            vec!["LinkedIn https://linkedin.com/in/aeinstein"]
         );
     }
 

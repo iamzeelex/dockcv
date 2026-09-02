@@ -167,7 +167,7 @@ mod tests {
         // exporter would.
         let mut content = String::new();
         for (row, (left, right)) in [
-            ("Sofiia Medvedenko", "EXPERIENCE"),
+            ("Albert Einstein", "EXPERIENCE"),
             ("s@example.com", "Staff Engineer, Acme"),
             ("Berlin", "Cut p99 latency in half"),
         ]
@@ -185,7 +185,7 @@ mod tests {
 
         // Every piece survives — nothing is dropped by the column layout.
         for fragment in [
-            "Sofiia Medvedenko",
+            "Albert Einstein",
             "s@example.com",
             "EXPERIENCE",
             "Staff Engineer, Acme",
@@ -197,7 +197,7 @@ mod tests {
         // …but the sidebar and the body are interleaved, because that is the
         // order they were written in. A person's email lands between two lines
         // of their work history. This is the limitation, stated:
-        let name_at = text.find("Sofiia Medvedenko").expect("name");
+        let name_at = text.find("Albert Einstein").expect("name");
         let heading_at = text.find("EXPERIENCE").expect("heading");
         let email_at = text.find("s@example.com").expect("email");
         assert!(
@@ -213,10 +213,7 @@ mod tests {
     /// stream — is valid, which is the point: this is not corrupt input, it is
     /// ordinary input carrying a construct `pdf-extract` refuses.
     fn one_page_pdf(encoding: &str) -> Vec<u8> {
-        one_page_pdf_inner(
-            encoding,
-            b"BT /F1 24 Tf 72 720 Td (Sofiia Medvedenko) Tj ET",
-        )
+        one_page_pdf_inner(encoding, b"BT /F1 24 Tf 72 720 Td (Albert Einstein) Tj ET")
     }
 
     /// The same page with a content stream of the caller's choosing.
@@ -275,7 +272,7 @@ mod tests {
         assert!(
             extract_text(&sane)
                 .expect("an ordinary encoding still extracts")
-                .contains("Sofiia"),
+                .contains("Albert"),
             "the fixture itself must be a readable PDF, or this test proves nothing"
         );
 

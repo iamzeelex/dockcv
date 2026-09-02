@@ -1777,7 +1777,10 @@ name = "dockcv-core"
 version = "0.2.1"
 dependencies = [
  "comemo",
+ "docx-rs",
+ "icu_segmenter",
  "serde",
+ "serde_json",
  "toml 0.8.23",
  "typst",
  "typst-assets",
@@ -1785,6 +1788,8 @@ dependencies = [
  "typst-pdf",
  "typst-render",
  "typst-svg",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

@@ -158,9 +158,9 @@ impl Root {
             .child(
                 Button::new("export-pdf")
                     .toolbar_primary()
-                    .label("Export PDF")
+                    .label("Export")
                     .tooltip_with_action(
-                        "Export the composed document to PDF",
+                        "Export the document (PDF, Word, Text, Markdown, JSON, Typst)",
                         &ExportPdf,
                         Some(EDITOR_CONTEXT),
                     )

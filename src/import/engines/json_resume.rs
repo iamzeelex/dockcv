@@ -495,11 +495,11 @@ mod tests {
     /// The exact document that used to import as a CV named `{`.
     const SPEC_SHAPED: &str = r#"{
       "basics": {
-        "name": "Sofiia Medvedenko",
+        "name": "Albert Einstein",
         "label": "Staff Engineer",
         "email": "s@example.com",
         "phone": "+49 30 123456",
-        "url": "https://sofiia.dev",
+        "url": "https://einstein.example",
         "summary": "Builds data platforms.",
         "location": { "city": "Berlin", "region": "Berlin", "countryCode": "DE" },
         "profiles": [{ "network": "GitHub", "username": "sm", "url": "https://github.com/sm" }]
@@ -538,7 +538,7 @@ mod tests {
         let imported = import(SPEC_SHAPED).expect("a JSON Resume is recognised");
         let basics = imported.doc.profile.active();
 
-        assert_eq!(basics.name, "Sofiia Medvedenko");
+        assert_eq!(basics.name, "Albert Einstein");
         assert_eq!(basics.email, "s@example.com");
         assert_eq!(basics.phone, "+49 30 123456");
         assert_eq!(basics.label, "Staff Engineer");
@@ -622,7 +622,117 @@ mod tests {
     /// The minimum a résumé needs to be one: a name and nothing else.
     #[test]
     fn a_name_alone_is_enough() {
-        let imported = import(r#"{"basics":{"name":"Leo Vaicer"}}"#).expect("a name is a resume");
-        assert_eq!(imported.doc.profile.active().name, "Leo Vaicer");
+        let imported = import(r#"{"basics":{"name":"Marie Curie"}}"#).expect("a name is a resume");
+        assert_eq!(imported.doc.profile.active().name, "Marie Curie");
+    }
+
+    /// We own both ends, so a lossy field is a failing test here rather than a
+    /// bug report from someone whose CV lost its dates.
+    ///
+    /// The assertions walk the fields the *importer* reads, which is the list
+    /// that matters: an importer field with no writer behind it is exactly the
+    /// hole a stranger falls into when they take their data out and put it back.
+    #[test]
+    fn export_round_trips_every_field_the_importer_reads() {
+        use dockcv_core::resume::export_json_resume;
+
+        let initial = import(SPEC_SHAPED).expect("parses spec-shaped sample");
+        let composed = initial.doc.compose();
+
+        let exported_json = export_json_resume(&composed).expect("exports valid json");
+        let back = import(&exported_json).expect("re-imports exported json");
+
+        let before = initial.doc.profile.active();
+        let after = back.doc.profile.active();
+        assert_eq!(after.name, before.name);
+        assert_eq!(after.label, before.label);
+        assert_eq!(after.email, before.email);
+        assert_eq!(after.phone, before.phone);
+        assert_eq!(after.url, before.url);
+        assert_eq!(after.summary, before.summary);
+        assert_eq!(after.location, before.location);
+        assert_eq!(after.profiles.len(), before.profiles.len());
+        for (b, a) in before.profiles.iter().zip(&after.profiles) {
+            assert_eq!(a.network, b.network);
+            assert_eq!(a.username, b.username);
+            assert_eq!(a.url, b.url);
+        }
+
+        // Dates are the field a lossy exporter drops first, and the one whose
+        // loss a reader notices last.
+        let (jobs_before, jobs_after) = (initial.doc.work.active(), back.doc.work.active());
+        assert_eq!(jobs_after.len(), jobs_before.len());
+        for (b, a) in jobs_before.iter().zip(jobs_after) {
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.position, b.position);
+            assert_eq!(a.start_date.text, b.start_date.text, "job start date");
+            assert_eq!(a.end_date.text, b.end_date.text, "job end date");
+            assert_eq!(a.summary, b.summary);
+            assert_eq!(a.highlights, b.highlights);
+        }
+
+        let (edu_before, edu_after) = (initial.doc.education.active(), back.doc.education.active());
+        assert_eq!(edu_after.len(), edu_before.len());
+        for (b, a) in edu_before.iter().zip(edu_after) {
+            assert_eq!(a.institution, b.institution);
+            assert_eq!(a.study_type, b.study_type);
+            assert_eq!(a.start_date.text, b.start_date.text, "education start date");
+            assert_eq!(a.end_date.text, b.end_date.text, "education end date");
+        }
+
+        let (skills_before, skills_after) = (initial.doc.skills.active(), back.doc.skills.active());
+        assert_eq!(skills_after.len(), skills_before.len());
+        for (b, a) in skills_before.iter().zip(skills_after) {
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.keywords, b.keywords);
+        }
+
+        let (cert_before, cert_after) = (
+            initial.doc.certificates.active(),
+            back.doc.certificates.active(),
+        );
+        assert_eq!(cert_after.len(), cert_before.len());
+        for (b, a) in cert_before.iter().zip(cert_after) {
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.issuer, b.issuer);
+            assert_eq!(a.date.text, b.date.text, "certificate date");
+        }
+
+        let (vol_before, vol_after) = (initial.doc.volunteer.active(), back.doc.volunteer.active());
+        assert_eq!(vol_after.len(), vol_before.len());
+        for (b, a) in vol_before.iter().zip(vol_after) {
+            assert_eq!(a.organization, b.organization);
+            assert_eq!(a.position, b.position);
+            assert_eq!(a.start_date.text, b.start_date.text, "volunteer start date");
+        }
+
+        // `projects`, `awards`, `publications` and `languages` arrive as custom
+        // sections; each has to leave through the array it came from and come
+        // back under the same heading, or a whole section of the CV vanishes on
+        // the way out and back.
+        let titles = |doc: &dockcv_core::resume::model::ResumeDoc| {
+            let mut t: Vec<String> = doc
+                .custom_sections
+                .iter()
+                .map(|s| s.title.clone())
+                .collect();
+            t.sort();
+            t
+        };
+        assert_eq!(titles(&back.doc), titles(&initial.doc));
+        for section in &initial.doc.custom_sections {
+            let same = back
+                .doc
+                .custom_sections
+                .iter()
+                .find(|s| s.title == section.title)
+                .unwrap_or_else(|| panic!("{:?} did not survive the round trip", section.title));
+            assert_eq!(
+                same.content.active().len(),
+                section.content.active().len(),
+                "{:?} lost entries",
+                section.title
+            );
+        }
     }
 }

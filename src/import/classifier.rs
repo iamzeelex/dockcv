@@ -704,7 +704,7 @@ fn clean_bullet(line: &str) -> &str {
 /// lossy and the recovery is a guess, however good.
 pub fn classify_raw_text(format_name: &str, raw_text: &str) -> ImportedDoc {
     // A running page header lands in the text layer glued to the line above it
-    // (`…atmospheric profiles.Leo Vaicerhi@zeelex.me`), so strip it before
+    // (`…atmospheric profiles.Marie Curiealbert@example.com`), so strip it before
     // anything else looks at a line. Blank lines are kept: the layout pass
     // below reads them.
     let email = get_email_regex()
@@ -1179,7 +1179,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
     if resume.basics.name.is_empty() && !first_lines.is_empty() {
         // Exporters commonly put the name and the professional title on one
         // line, separated by a run of spaces rather than punctuation —
-        // `Leo Vaicer  Systems & Data Engineer`. Splitting on that run
+        // `Marie Curie  Systems & Data Engineer`. Splitting on that run
         // recovers both; without it the title became part of the name and the
         // person's own CV greeted them with it fused.
         match first_lines[0].split_once("  ") {
@@ -1295,7 +1295,7 @@ mod tests {
     /// person's own website and a number in a bullet became their phone.
     #[test]
     fn a_url_in_a_bullet_is_not_the_persons_own_website() {
-        let raw = "Sofiia Medvedenko\n\
+        let raw = "Albert Einstein\n\
                    Staff Engineer\n\
                    s@example.com\n\
                    \n\
@@ -1327,7 +1327,7 @@ mod tests {
     /// strong enough claim of identity to take from anywhere; a URL is not.
     #[test]
     fn an_email_below_the_first_heading_is_still_the_persons_own() {
-        let raw = "Sofiia Medvedenko\n\
+        let raw = "Albert Einstein\n\
                    EXPERIENCE\n\
                    s@example.com\n\
                    Staff Engineer, Acme  Jan 2021 – Present\n\
@@ -1347,8 +1347,8 @@ mod tests {
     /// details it was protecting.
     #[test]
     fn the_contact_block_still_gives_up_all_three() {
-        let raw = "Sofiia Medvedenko\n\
-                   s@example.com · +49 30 555 0134 · https://sofiia.dev\n\
+        let raw = "Albert Einstein\n\
+                   s@example.com · +49 30 555 0134 · https://einstein.example\n\
                    \n\
                    EXPERIENCE\n\
                    Staff Engineer, Acme  Jan 2021 – Present\n";
@@ -1356,7 +1356,7 @@ mod tests {
 
         assert_eq!(basics.email, "s@example.com");
         assert_eq!(basics.phone, "+49 30 555 0134");
-        assert_eq!(basics.url, "https://sofiia.dev");
+        assert_eq!(basics.url, "https://einstein.example");
     }
 
     /// A template that gives contact details their own heading puts them below
@@ -1364,36 +1364,36 @@ mod tests {
     /// at it.
     #[test]
     fn an_explicit_contact_section_is_part_of_the_region() {
-        let raw = "Sofiia Medvedenko\n\
+        let raw = "Albert Einstein\n\
                    \n\
                    EXPERIENCE\n\
                    Staff Engineer, Acme  Jan 2021 – Present\n\
                    • Shipped it on https://vendor.example\n\
                    \n\
                    CONTACT\n\
-                   https://sofiia.dev\n";
+                   https://einstein.example\n";
         let basics = classify_raw_text("PDF", raw).doc.profile.active().clone();
-        assert_eq!(basics.url, "https://sofiia.dev");
+        assert_eq!(basics.url, "https://einstein.example");
     }
 
     /// A page break inside a paragraph glues the running header onto the line
     /// above it, so the bullet arrived as
-    /// `…atmospheric profiles.Leo Vaicerhi@zeelex.me`. The same name and email
+    /// `…atmospheric profiles.Marie Curiealbert@example.com`. The same name and email
     /// stand alone in the contact block and must survive untouched.
     #[test]
     fn a_running_page_header_is_stripped_out_of_the_bullet_it_bled_into() {
-        let raw = "Leo Vaicer  Systems & Data Engineer\n\
-                   hi@zeelex.me\n\
+        let raw = "Marie Curie  Systems & Data Engineer\n\
+                   albert@example.com\n\
                    \n\
                    EXPERIENCE\n\
                    Software Developer\n\
-                   • Built a pipeline for atmospheric profiles.Leo Vaicerhi@zeelex.me\n\
+                   • Built a pipeline for atmospheric profiles.Marie Curiealbert@example.com\n\
                    • Shipped the ingest service.\n";
         let imported = classify_raw_text("PDF", raw);
         let basics = imported.doc.profile.active();
 
-        assert_eq!(basics.name, "Leo Vaicer");
-        assert_eq!(basics.email, "hi@zeelex.me");
+        assert_eq!(basics.name, "Marie Curie");
+        assert_eq!(basics.email, "albert@example.com");
 
         let work = imported.doc.work.active();
         let bullets: Vec<&str> = work
@@ -1728,12 +1728,12 @@ mod tests {
     /// is a defect that shipped and was visible on the review screen.
     #[test]
     fn a_real_contact_block_is_read_rather_than_reported_as_lost() {
-        let raw = "Leo Vaicer  Systems & Data Engineer\n\
-                   For legal purpose: Oleksii Belochenko\n\
+        let raw = "Marie Curie  Systems & Data Engineer\n\
+                   For legal purpose: Albert Einstein\n\
                    Calgary, Canada\n\
-                   hi@zeelex.me\n\
-                   https://www.linkedin.com/in/zeelexes\n\
-                   https://www.zeelex.me/\n\
+                   albert@example.com\n\
+                   https://www.linkedin.com/in/aeinstein\n\
+                   https://www.example.com/\n\
                    \n\
                    PROFILE\n\
                    Systems & Data Engineer with an applied mathematics background.\n";
@@ -1741,9 +1741,9 @@ mod tests {
         let basics = imported.doc.profile.active();
 
         // The name and the title shared one line, split by a run of spaces.
-        assert_eq!(basics.name, "Leo Vaicer");
+        assert_eq!(basics.name, "Marie Curie");
         assert_eq!(basics.label, "Systems & Data Engineer");
-        assert_eq!(basics.email, "hi@zeelex.me");
+        assert_eq!(basics.email, "albert@example.com");
         assert_eq!(basics.location, "Calgary, Canada");
 
         // Both URLs are kept, one as the primary and one as a profile.
@@ -1755,7 +1755,7 @@ mod tests {
             "got {urls:?}"
         );
         assert!(
-            urls.iter().any(|u| u.contains("zeelex.me/")),
+            urls.iter().any(|u| u.contains("example.com/")),
             "got {urls:?}"
         );
 

@@ -19,6 +19,7 @@ use dockcv_ui_components::{TextFieldEvent, TextFieldState};
 
 use crate::config;
 use crate::render::{self, Rendered};
+use crate::resume::export_names::{plan_batch, OnCollision};
 use crate::resume::model::{DiaryEntry, ResumeDoc, SectionKind};
 use crate::resume::template;
 use crate::theme::ActiveTheme;
@@ -35,6 +36,7 @@ use super::import_flow::ImportStep;
 use super::library::LibrarySort;
 use super::library_edit::LibraryEdit;
 use super::library_link::PushReview;
+use super::preset_matrix_export::BatchExportSheet;
 use super::save_status;
 use super::update_notice::UpdateState;
 use super::vault_cache::VaultCache;
@@ -80,6 +82,9 @@ pub(super) enum Screen {
 
 pub struct Shell {
     pub(super) screen: Screen,
+    /// The batch export sheet (`preset_matrix_export.rs`): `Some` between
+    /// choosing a folder and confirming the list of files it will receive.
+    pub(super) batch_export: Option<super::preset_matrix_export::BatchExportSheet>,
     /// The active vault directory once chosen.
     pub(super) vault: Option<PathBuf>,
     /// Which document the gallery is renaming inline, if any.
@@ -200,6 +205,7 @@ impl Shell {
         .detach();
 
         Self {
+            batch_export: None,
             screen: Screen::Opening,
             vault: None,
             renaming_doc: None,
@@ -848,6 +854,131 @@ impl Shell {
         cx.notify();
     }
 
+    /// Step one of exporting every preset: choose the folder, then show what
+    /// would be written into it.
+    ///
+    /// The folder comes first because a collision is a fact about a folder —
+    /// there is no honest list of filenames to show until one is picked.
+    pub(super) fn export_all_matrix_presets(&mut self, cx: &mut Context<Self>) {
+        let Screen::PresetMatrix(pm) = &self.screen else {
+            return;
+        };
+        if pm.doc.presets.is_empty() {
+            save_status::record(
+                cx,
+                "export",
+                Err("This document has no presets yet, so there is nothing to export.".to_string()),
+            );
+            return;
+        }
+        let receiver = cx.prompt_for_paths(pick_dir());
+
+        cx.spawn(async move |this, cx| {
+            let Some(folder) = first_path(receiver.await) else {
+                return; // cancelled or dialog error
+            };
+            let _ = this.update(cx, |this, cx| {
+                let Screen::PresetMatrix(pm) = &this.screen else {
+                    return;
+                };
+                // `KeepBoth` is the default because it is the answer that
+                // cannot lose somebody's file. Replacing is available, and it
+                // is a thing the user has to say.
+                let plan = plan_batch(
+                    &pm.doc,
+                    &folder,
+                    "pdf",
+                    &super::root_export_sheet::today(),
+                    OnCollision::KeepBoth,
+                );
+                this.batch_export = Some(BatchExportSheet {
+                    folder,
+                    on_collision: OnCollision::KeepBoth,
+                    plan,
+                    writing: false,
+                });
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Step two: write the files the sheet listed, and only those.
+    ///
+    /// The compile happens off the main thread and returns the paths it actually
+    /// wrote, which is the only thing export history may record — a history that
+    /// points at a name a collision pushed aside is worse than none.
+    pub(super) fn run_batch_export(&mut self, cx: &mut Context<Self>) {
+        let Screen::PresetMatrix(pm) = &self.screen else {
+            return;
+        };
+        let Some(sheet) = &mut self.batch_export else {
+            return;
+        };
+        if sheet.writing {
+            return;
+        }
+        sheet.writing = true;
+        let doc = pm.doc.clone();
+        let folder = sheet.folder.clone();
+        let plan = sheet.plan.clone();
+        let executor = cx.background_executor().clone();
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let outcome = executor
+                .spawn(async move {
+                    let mut written: Vec<(String, PathBuf)> = Vec::new();
+                    for step in &plan {
+                        let mut preset_doc = doc.clone();
+                        preset_doc.apply_preset(step.preset_index);
+                        let source = crate::resume::template::generate_for(&preset_doc);
+                        let pdf_bytes = TypstEngine::new(source).compile_to_pdf()?;
+                        std::fs::write(&step.destination.target, pdf_bytes).map_err(|e| {
+                            format!("write to {} failed: {e}", step.destination.target.display())
+                        })?;
+                        written.push((step.preset.clone(), step.destination.target.clone()));
+                    }
+                    Ok::<Vec<(String, PathBuf)>, String>(written)
+                })
+                .await;
+
+            let _ = this.update(cx, |this, cx| {
+                this.batch_export = None;
+                match outcome {
+                    Ok(written) => {
+                        log::info!("exported {} presets to {}", written.len(), folder.display());
+                        if let Screen::PresetMatrix(pm) = &mut this.screen {
+                            let now = chrono::Local::now();
+                            let date = now.format("%Y-%m-%d").to_string();
+                            let time = now.format("%H:%M").to_string();
+                            for (preset, path) in &written {
+                                pm.doc
+                                    .record_export(&date, &time, "PDF", preset, path.clone());
+                            }
+                            pm.doc.export.last_destination = Some(folder.clone());
+                            let result = vault::save(&pm.doc, &pm.path);
+                            save_status::record(cx, "document", result);
+                        }
+                    }
+                    Err(message) => {
+                        // Some presets may already be on disk. Say so, rather
+                        // than leaving a half-written folder and a silent log.
+                        //
+                        // The sheet closes on the way out either way: after a
+                        // partial write its list is a description of a folder
+                        // that no longer exists, and asking again re-plans
+                        // against what is actually there now.
+                        log::error!("batch export to {} failed: {message}", folder.display());
+                        save_status::record(cx, "export", Err(message));
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// Move one matrix cell to the next variant that section has, and pin it
     /// in the preset that column shows.
     ///
@@ -1264,6 +1395,13 @@ impl Render for Shell {
             .bg(cx.theme().background)
             .text_color(cx.theme().text)
             .child(body)
+            // Over the matrix, and above the body so the list of files it is
+            // about is behind it rather than beside it.
+            .children(
+                self.batch_export
+                    .is_some()
+                    .then(|| self.render_batch_export_sheet(cx)),
+            )
             // Drawn once, here, rather than per screen — this is the outermost
             // element in the app, so one call covers the gallery, the library,
             // the diary, the board, the matrix *and* the editor.
@@ -1272,7 +1410,7 @@ impl Render for Shell {
 }
 
 /// Options for a single-folder picker.
-fn pick_dir() -> PathPromptOptions {
+pub(super) fn pick_dir() -> PathPromptOptions {
     PathPromptOptions {
         files: false,
         directories: true,
@@ -1502,7 +1640,7 @@ mod clone_url_tests {
             Some("dockcv")
         );
         assert_eq!(
-            repo_name("git@github.com:zeelex/my-cvault").as_deref(),
+            repo_name("git@github.com:aeinstein/my-cvault").as_deref(),
             Some("my-cvault")
         );
         assert_eq!(repo_name("https://example.com/cv/").as_deref(), Some("cv"));
