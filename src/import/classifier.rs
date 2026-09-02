@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::sync::OnceLock;
 
 use crate::import::layout;
-use crate::import::model::ImportedDoc;
+use crate::import::model::{ImportedDoc, Unplaced};
 use crate::import::notes::{Note, Part};
 use crate::resume::model::{
     Certificate, CustomEntry, Education, NetworkProfile, Resume, ResumeDoc, SkillGroup, Volunteer,
@@ -950,7 +950,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 } else if first_lines.len() < 3 {
                     first_lines.push(line);
                 } else {
-                    unplaced.push(line.to_string());
+                    unplaced.push(Unplaced::line_only(line));
                 }
             }
             SectionKind::Contact => {
@@ -959,7 +959,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 // the top of the document, and a second reading would overwrite
                 // it with whatever the block happened to start with.
                 if !absorb_contact(line, &mut resume) {
-                    unplaced.push(line.to_string());
+                    unplaced.push(Unplaced::line_only(line));
                 }
             }
             SectionKind::Summary => {
@@ -1761,7 +1761,7 @@ mod tests {
 
         // The heart of it: contact data must not be reported as dropped. The
         // email in particular was both parsed *and* listed as lost.
-        for line in &imported.unplaced {
+        for line in imported.unplaced.iter().map(Unplaced::line) {
             assert!(
                 !line.contains('@') && !line.contains("http"),
                 "contact line reported as unplaced: {line}"

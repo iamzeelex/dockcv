@@ -658,6 +658,7 @@ impl Shell {
                 .child(import_flow::render_step2_review_split(
                     cx,
                     imported,
+                    self.import_section_name.as_ref(),
                     |this, cx| {
                         this.import_step = ImportStep::Step1Drop;
                         cx.notify();
@@ -668,6 +669,23 @@ impl Shell {
                             this.create_doc(doc, "imported", cx);
                             this.gallery_creating = false;
                             this.import_step = ImportStep::Step1Drop;
+                        }
+                    },
+                    // Adopting mutates the *pending* import, not a document on
+                    // disk: nothing has been created yet, and Undo import still
+                    // throws the whole thing away. The section is simply there
+                    // when Continue writes the file.
+                    |this, heading, items, cx| {
+                        if let ImportStep::Step2Review { imported } = &mut this.import_step {
+                            let created = crate::import::model::adopt_as_section(
+                                &mut imported.doc,
+                                &heading,
+                                &items,
+                            );
+                            if created > 0 {
+                                imported.unplaced.retain(|left| !items.contains(left));
+                            }
+                            cx.notify();
                         }
                     },
                 )),

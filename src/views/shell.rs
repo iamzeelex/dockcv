@@ -107,6 +107,13 @@ pub struct Shell {
     /// than separate pages, a query typed on one screen would otherwise stay
     /// live and silently filter the other when the user tabbed across.
     pub(super) library_search: Option<Entity<TextFieldState>>,
+    /// What to call the section built from lines the importer could not place.
+    ///
+    /// An unstructured leftover has no label to propose — a line from a contact
+    /// block is just a line — so the person names it. Lazily built here with
+    /// the other inputs, for the same reason they are: a `TextFieldState` needs
+    /// a `Window`, and `ImportStep` is set from places that have none.
+    pub(super) import_section_name: Option<Entity<TextFieldState>>,
     /// Library filter chip in force; `None` is the design's `All`.
     pub(super) library_filter: Option<SectionKind>,
     /// How blocks are ordered inside each section group.
@@ -216,6 +223,7 @@ impl Shell {
             setup_error: None,
             search: None,
             library_search: None,
+            import_section_name: None,
             library_filter: None,
             library_sort: LibrarySort::default(),
             library_edit: None,
@@ -281,6 +289,17 @@ impl Shell {
                 }),
             );
             self.diary_search = Some(field);
+        }
+
+        if self.import_section_name.is_none() {
+            let field = cx.new(|cx| TextFieldState::single_line(window, cx));
+            field.update(cx, |field, cx| field.seed("Notes", window, cx));
+            self.input_subscriptions.push(
+                cx.subscribe(&field, |_this, _field, _event: &TextFieldEvent, cx| {
+                    cx.notify()
+                }),
+            );
+            self.import_section_name = Some(field);
         }
 
         if self.library_search.is_none() {

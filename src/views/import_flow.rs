@@ -14,14 +14,18 @@
 //!    "Needs review"), 1-click "Undo import" back to Step 1, and
 //!    "Looks good — continue" to enter the editor.
 
+use std::rc::Rc;
+
 use gpui::prelude::*;
-use gpui::{div, px, ClickEvent, Context, FontWeight, IntoElement, SharedString};
+use gpui::{div, px, ClickEvent, Context, Entity, FontWeight, IntoElement, SharedString};
 
 use dockcv_ui_components::{
     lucide, Button, ButtonExt, Card, DockIcon, Icon, IconName, ScrollableElement, Sizable, Spinner,
+    TextFieldState,
 };
 
-use crate::import::model::ImportedDoc;
+use super::import_unplaced::AdoptHandler;
+use crate::import::model::{ImportedDoc, Unplaced};
 use crate::import::notes::Part;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -437,79 +441,15 @@ pub fn render_parsing_step<V: 'static>(cx: &mut Context<V>, filename: &str) -> i
         )
 }
 
-/// What the importer read and had nowhere to put.
-///
-/// This is the requirement US-01 is actually about — "everything not understood
-/// is flagged, not silently dropped" — and until now nothing rendered
-/// `ImportedDoc::unplaced` at all: the importer computed it and threw it away,
-/// so a CV could lose paragraphs on the way in with no trace. Shown verbatim,
-/// because a summary of what was lost is not evidence of what was lost.
-fn render_unplaced<V: 'static>(
-    cx: &mut Context<V>,
-    imported: &ImportedDoc,
-) -> Option<impl IntoElement> {
-    if imported.unplaced.is_empty() {
-        return None;
-    }
-    let theme = *cx.theme();
-    let count = imported.unplaced.len();
-    // Long tails are common in a scanned PDF; show enough to judge by and say
-    // how many are behind it rather than pretending the list is complete.
-    const SHOWN: usize = 12;
-    let shown: Vec<String> = imported.unplaced.iter().take(SHOWN).cloned().collect();
-    let hidden = count.saturating_sub(shown.len());
-
-    Some(
-        div()
-            .mt(px(6.0))
-            .p(px(12.0))
-            .rounded(theme.radius_md())
-            .bg(theme.surface)
-            .border_1()
-            .border_color(theme.warning)
-            .flex()
-            .flex_col()
-            .gap(px(6.0))
-            .child(
-                div()
-                    .text_style(TextStyle::label())
-                    .text_color(theme.warning)
-                    .child(format!(
-                        "{count} thing{} came in that DockCV has nowhere for",
-                        if count == 1 { "" } else { "s" }
-                    )),
-            )
-            .child(
-                div()
-                    .text_style(TextStyle::label())
-                    .text_color(theme.text_muted)
-                    .child(
-                        "They were read from your file and are not in the imported CV. Copy \
-                         anything worth keeping before you continue, or undo the import and bring \
-                         the file in another format.",
-                    ),
-            )
-            .children(shown.into_iter().map(|line| {
-                div()
-                    .text_style(TextStyle::meta())
-                    .text_color(theme.text_subtle)
-                    .child(line)
-            }))
-            .children((hidden > 0).then(|| {
-                div()
-                    .text_style(TextStyle::meta())
-                    .text_color(theme.text_subtle)
-                    .child(format!("…and {hidden} more"))
-            })),
-    )
-}
-
 pub fn render_step2_review_split<V: 'static>(
     cx: &mut Context<V>,
     imported: &ImportedDoc,
+    name_field: Option<&Entity<TextFieldState>>,
     on_undo: impl Fn(&mut V, &mut Context<V>) + 'static,
     on_continue: impl Fn(&mut V, &mut Context<V>) + 'static,
+    on_adopt: impl Fn(&mut V, String, Vec<Unplaced>, &mut Context<V>) + 'static,
 ) -> impl IntoElement {
+    let on_adopt: AdoptHandler<V> = Rc::new(on_adopt);
     let theme = *cx.theme();
     let items = SectionReviewItem::from_imported(imported);
     let flagged_count = items.iter().filter(|i| i.needs_review).count();
@@ -684,7 +624,12 @@ pub fn render_step2_review_split<V: 'static>(
                             )
                         })
                 }))
-                .children(render_unplaced(cx, imported)),
+                .children(super::import_unplaced::render_unplaced(
+                    cx,
+                    imported,
+                    name_field,
+                    on_adopt.clone(),
+                )),
         )
         // Bottom Action Bar. Both decisions, side by side: this is the last
         // screen before a document exists, and the two things a person can do
