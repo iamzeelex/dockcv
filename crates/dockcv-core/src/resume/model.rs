@@ -2189,6 +2189,7 @@ impl ExportSettings {
 /// share is the shape of the fields they have in common, so the two read the
 /// same in TOML and on screen.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "ExportRecordWire")]
 pub struct ExportRecord {
     /// ISO date (YYYY-MM-DD), spelled as [`Snapshot::date`] and
     /// [`NextStep::date`] spell it: sortable as a string, and readable by
@@ -2207,6 +2208,53 @@ pub struct ExportRecord {
     /// Where it was written. Absolute, and quite possibly gone: the rail says so
     /// rather than pretending, which is the point of keeping the path at all.
     pub path: std::path::PathBuf,
+}
+
+/// [`ExportRecord`] as it may be found on disk, including the shape it had
+/// before the date and the time were separate fields.
+///
+/// The one-blob `timestamp` never reached a tagged release, only a vault
+/// written while 0.3.0 was being built — but "only a development vault" is
+/// still somebody's real documents, and a document that will not open is the
+/// failure this project's storage rules exist to prevent. Splitting the blob
+/// keeps the moment rather than defaulting it away to a blank date.
+#[derive(Deserialize)]
+struct ExportRecordWire {
+    #[serde(default)]
+    date: String,
+    #[serde(default)]
+    time: String,
+    /// The pre-split spelling: `"2026-09-01 23:47"`. Read, never written.
+    #[serde(default)]
+    timestamp: Option<String>,
+    #[serde(default)]
+    format: String,
+    #[serde(default)]
+    preset: String,
+    path: std::path::PathBuf,
+}
+
+impl From<ExportRecordWire> for ExportRecord {
+    fn from(wire: ExportRecordWire) -> Self {
+        let (date, time) = match (wire.date.is_empty(), wire.timestamp) {
+            // A blob to split. Anything after the first space is the time; a
+            // blob with no space in it was a date, so the time is simply
+            // unknown rather than invented.
+            (true, Some(blob)) => match blob.split_once(' ') {
+                Some((date, time)) => (date.trim().to_string(), time.trim().to_string()),
+                None => (blob.trim().to_string(), String::new()),
+            },
+            (_, _) => (wire.date, wire.time),
+        };
+
+        Self {
+            date,
+            time,
+            format: wire.format,
+            preset: wire.preset,
+            path: wire.path,
+        }
+    }
 }
 
 /// How many exports one document remembers.

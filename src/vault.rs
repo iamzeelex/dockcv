@@ -1708,4 +1708,51 @@ mod tests {
         assert_eq!(old.export, ExportSettings::default());
         assert!(old.export_history.is_empty());
     }
+
+    /// The exact block that failed to open: an export history written before
+    /// `timestamp` became `date` plus `time`.
+    ///
+    /// Splitting a stored field is a schema change like any other, and this is
+    /// the test that was missing when it was made — the shape existed only in
+    /// development vaults, which is to say in somebody's real documents.
+    #[test]
+    fn an_export_history_written_before_the_date_split_still_opens() {
+        let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
+        let doc = ResumeDoc::from_resume(resume, "Base");
+        let mut text = super::to_toml(&doc).expect("serialize");
+        text.push_str(
+            r#"
+[[export_history]]
+timestamp = "2026-09-01 23:47"
+format = "PDF"
+preset = "EM"
+path = "/Users/someone/Downloads/Ann Lee - Engineering Manager - EM.pdf"
+
+[[export_history]]
+timestamp = "2026-08-14"
+format = "Word"
+preset = "Concise"
+path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
+"#,
+        );
+
+        let loaded: ResumeDoc = toml::from_str(&text).expect("a pre-split history still opens");
+        assert_eq!(loaded.export_history.len(), 2);
+
+        // The moment is kept, not defaulted away to a blank date.
+        assert_eq!(loaded.export_history[0].date, "2026-09-01");
+        assert_eq!(loaded.export_history[0].time, "23:47");
+        assert_eq!(loaded.export_history[0].preset, "EM");
+
+        // A blob with no time in it keeps its date and admits it has no time,
+        // rather than inventing one.
+        assert_eq!(loaded.export_history[1].date, "2026-08-14");
+        assert_eq!(loaded.export_history[1].time, "");
+
+        // And it is written back in the new shape, so the old one dies out.
+        let rewritten = super::to_toml(&loaded).expect("serialize");
+        assert!(!rewritten.contains("timestamp"));
+        assert!(rewritten.contains("date = \"2026-09-01\""));
+        assert!(rewritten.contains("time = \"23:47\""));
+    }
 }
