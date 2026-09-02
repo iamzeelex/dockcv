@@ -2177,17 +2177,45 @@ impl ExportSettings {
 /// The answer to "which file did I actually send in July" for a CV that never
 /// became an application card — and the only place a preset name is allowed to
 /// sit beside a filename, because this is inside the vault and the file is not.
+///
+/// Deliberately *not* a [`Snapshot`], though the two are the same idea one level
+/// apart. A snapshot is a copy the vault keeps: `file` names it inside
+/// `<vault>/snapshots/`, and the bytes are ours for as long as the vault exists.
+/// An export is a record of a file we handed over, at a path the user chose,
+/// which we do not own and cannot promise is still there. Bending one into the
+/// other would mean a `version` nobody increments and a `file` that is sometimes
+/// a name and sometimes an absolute path — and it would put the applications
+/// board's guarantee at the mercy of a folder somebody emptied. What they do
+/// share is the shape of the fields they have in common, so the two read the
+/// same in TOML and on screen.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportRecord {
-    /// Timestamp when exported (e.g. ISO date or formatted string).
-    pub timestamp: String,
-    /// Format identifier (e.g. "PDF", "DOCX", "Plain Text", etc.).
+    /// ISO date (YYYY-MM-DD), spelled as [`Snapshot::date`] and
+    /// [`NextStep::date`] spell it: sortable as a string, and readable by
+    /// somebody who opens the TOML.
+    pub date: String,
+    /// 24h `17:30`. Separate from the date, as in [`NextStep`] — two exports of
+    /// one document on one afternoon are told apart by the time, and a single
+    /// blob would have to be parsed to sort or to display.
+    #[serde(default)]
+    pub time: String,
+    /// Format identifier as the user saw it: `PDF`, `Word`, `Markdown`.
     pub format: String,
-    /// The preset name at that moment.
+    /// The preset name at that moment. A label recording history, not a lookup
+    /// key — the preset itself may be renamed or deleted later.
     pub preset: String,
-    /// Destination path written to on disk.
+    /// Where it was written. Absolute, and quite possibly gone: the rail says so
+    /// rather than pretending, which is the point of keeping the path at all.
     pub path: std::path::PathBuf,
 }
+
+/// How many exports one document remembers.
+///
+/// A document's TOML *is* the product, so the history cannot grow without end;
+/// fifty is well past the point where the oldest rows name paths that no longer
+/// exist. Re-exporting to the same path does not consume one of the fifty — see
+/// [`ResumeDoc::record_export`].
+pub const MAX_EXPORT_HISTORY: usize = 50;
 
 fn remove_token_with_separators(s: &str, token: &str) -> String {
     let t = format!("{{{token}}}");
@@ -2316,20 +2344,32 @@ impl ResumeDoc {
         })
     }
 
-    /// Append one export to this document's history.
+    /// Record one export, newest last.
+    ///
+    /// Exporting twice to the same path is one file, not two facts: the second
+    /// write replaced the first on disk, and a history that lists both is
+    /// describing a file that no longer exists beside one that does. So a path
+    /// already in the history is replaced rather than appended, which also keeps
+    /// the list short for the common case of re-exporting the same CV all week.
     pub fn record_export(
         &mut self,
-        timestamp: impl Into<String>,
+        date: impl Into<String>,
+        time: impl Into<String>,
         format: impl Into<String>,
         preset: impl Into<String>,
         path: std::path::PathBuf,
     ) {
+        self.export_history.retain(|record| record.path != path);
         self.export_history.push(ExportRecord {
-            timestamp: timestamp.into(),
+            date: date.into(),
+            time: time.into(),
             format: format.into(),
             preset: preset.into(),
             path,
         });
+        // Oldest first, so the drop takes the ones least likely to still exist.
+        let overflow = self.export_history.len().saturating_sub(MAX_EXPORT_HISTORY);
+        self.export_history.drain(..overflow);
     }
 
     /// Every section, in the order they ship in. [`ResumeDoc::sections`] is what
@@ -3642,27 +3682,72 @@ mod applications_tests {
         let mut doc = ResumeDoc::default();
         assert!(doc.export_history.is_empty());
 
-        doc.record_export(
-            "2026-09-01 17:30:00",
-            "PDF",
-            "Concise",
-            std::path::PathBuf::from(
-                "/tmp/Albert Einstein - Principal Systems Architect - Concise.pdf",
-            ),
-        );
+        let concise = std::path::PathBuf::from("/tmp/Albert Einstein - Concise.pdf");
+        doc.record_export("2026-09-02", "17:30", "PDF", "Concise", concise.clone());
         assert_eq!(doc.export_history.len(), 1);
         assert_eq!(doc.export_history[0].format, "PDF");
         assert_eq!(doc.export_history[0].preset, "Concise");
+        assert_eq!(doc.export_history[0].date, "2026-09-02");
+        assert_eq!(doc.export_history[0].time, "17:30");
 
-        let serialized = toml::to_string(&doc).unwrap();
+        let serialized = toml::to_string(&doc).expect("serializes");
         assert!(serialized.contains("export_history"));
         assert!(serialized.contains("Concise"));
 
-        let deserialized: ResumeDoc = toml::from_str(&serialized).unwrap();
-        assert_eq!(deserialized.export_history.len(), 1);
+        let deserialized: ResumeDoc = toml::from_str(&serialized).expect("round-trips");
+        assert_eq!(deserialized.export_history, doc.export_history);
+    }
+
+    /// Exporting twice to one path is one file, not two facts: the second write
+    /// replaced the first on disk, and listing both describes a file that is no
+    /// longer there beside one that is.
+    #[test]
+    fn re_exporting_to_the_same_path_updates_the_row_rather_than_adding_one() {
+        let mut doc = ResumeDoc::default();
+        let path = std::path::PathBuf::from("/tmp/Albert Einstein - Concise.pdf");
+
+        doc.record_export("2026-09-01", "09:00", "PDF", "Concise", path.clone());
+        doc.record_export("2026-09-02", "17:30", "PDF", "Extended", path.clone());
+
+        assert_eq!(doc.export_history.len(), 1);
+        assert_eq!(doc.export_history[0].date, "2026-09-02");
+        assert_eq!(doc.export_history[0].preset, "Extended");
+
+        // A different path is a different file and keeps its own row.
+        doc.record_export(
+            "2026-09-02",
+            "17:31",
+            "Word",
+            "Concise",
+            std::path::PathBuf::from("/tmp/Albert Einstein - Concise.docx"),
+        );
+        assert_eq!(doc.export_history.len(), 2);
+    }
+
+    /// A document's TOML is the product, so the history has a ceiling — and the
+    /// rows it drops are the oldest, which are the ones whose paths are least
+    /// likely to still exist.
+    #[test]
+    fn export_history_stops_growing_and_drops_the_oldest_first() {
+        let mut doc = ResumeDoc::default();
+        for i in 0..MAX_EXPORT_HISTORY + 10 {
+            doc.record_export(
+                "2026-09-02",
+                "17:30",
+                "PDF",
+                "Concise",
+                std::path::PathBuf::from(format!("/tmp/cv-{i}.pdf")),
+            );
+        }
+
+        assert_eq!(doc.export_history.len(), MAX_EXPORT_HISTORY);
         assert_eq!(
-            deserialized.export_history[0].path,
-            doc.export_history[0].path
+            doc.export_history[0].path,
+            std::path::PathBuf::from("/tmp/cv-10.pdf")
+        );
+        assert_eq!(
+            doc.export_history[MAX_EXPORT_HISTORY - 1].path,
+            std::path::PathBuf::from(format!("/tmp/cv-{}.pdf", MAX_EXPORT_HISTORY + 9))
         );
     }
 }

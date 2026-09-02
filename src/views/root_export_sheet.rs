@@ -6,20 +6,21 @@
 //! to section by section, the filename and the folder are all on screen before
 //! anything is written, and cancelling writes nothing (P-08, US-18).
 
+use std::path::PathBuf;
+
 use gpui::prelude::*;
 use gpui::{
-    div, px, AnyElement, ClickEvent, Context, FontWeight, IntoElement, SharedString, Window,
+    div, px, AnyElement, ClickEvent, Context, Entity, FontWeight, IntoElement, SharedString, Window,
 };
 
-use dockcv_ui_components::{Button, ButtonExt, Card, IconName, Sizable};
+use dockcv_ui_components::{Button, ButtonExt, Card, IconName, Sizable, TextField, TextFieldState};
 
-use crate::resume::diagnostics::CompileMessage;
+use crate::resume::export_names::{resolve_destination, Destination, OnCollision};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
-use crate::typst_engine::Severity;
 use crate::vault;
 
-use super::root::{CompileState, Root};
-use super::save_status;
+use super::root::Root;
+use super::shell::pick_dir;
 
 /// Supported export formats in DockCV.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -100,7 +101,7 @@ impl ExportFormat {
 
 /// What the sheet calls "no preset" — and what export history records for it,
 /// so the chip the user clicked and the row they read back say the same thing.
-const CURRENT_VIEW: &str = "Current view";
+pub(super) const CURRENT_VIEW: &str = "Current view";
 
 /// The `{date}` token, in the only form that sorts correctly in Finder.
 pub(super) fn today() -> String {
@@ -108,27 +109,56 @@ pub(super) fn today() -> String {
 }
 
 /// State of the open Export Sheet.
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportSheetState {
     pub format: ExportFormat,
     pub preset_index: Option<usize>,
-}
-
-impl Default for ExportSheetState {
-    fn default() -> Self {
-        Self {
-            format: ExportFormat::Pdf,
-            preset_index: None,
-        }
-    }
+    /// Where the file goes. The native dialog is now only reached through
+    /// "Change…", which is A9's rule: the dialog is for the folder, and the
+    /// name is decided here where the user can see what it collides with.
+    pub folder: PathBuf,
+    /// The filename stem, editable. This is A10's third answer — "edit the
+    /// name" — and it is the only place in the app a one-off name can be typed
+    /// without changing the document's pattern.
+    pub stem: Entity<TextFieldState>,
+    /// What the pattern last produced. The field is re-seeded from the pattern
+    /// when the format or preset changes, but only while it still holds this —
+    /// once the user has typed their own name, changing the preset must not
+    /// take it away from them.
+    pub seeded: String,
+    /// What to do if that name is taken.
+    pub on_collision: OnCollision,
 }
 
 impl Root {
     /// Open the export sheet overlay.
-    pub(super) fn open_export_sheet(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    ///
+    /// Building the filename field needs a `Window`, which the toolbar's
+    /// `Export` handler has — the same reason `open_capture_sheet` takes one.
+    pub(super) fn open_export_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let preset_name = self
+            .active_preset
+            .and_then(|idx| self.doc.presets.get(idx))
+            .map(|p| p.name.clone());
+        let seeded = self
+            .doc
+            .export_filename_stem(preset_name.as_deref(), None, &today());
+        let stem = cx.new(|cx| TextFieldState::single_line(window, cx));
+        stem.update(cx, |field, cx| field.seed(seeded.clone(), window, cx));
+
         self.export_sheet = Some(ExportSheetState {
             format: ExportFormat::Pdf,
             preset_index: self.active_preset,
+            folder: self
+                .doc
+                .export
+                .last_destination
+                .clone()
+                .unwrap_or_else(vault::user_home_dir),
+            stem,
+            seeded,
+            // The answer that cannot lose somebody's file, until they say
+            // otherwise about a name they can see.
+            on_collision: OnCollision::KeepBoth,
         });
         cx.notify();
     }
@@ -137,6 +167,69 @@ impl Root {
     pub(super) fn close_export_sheet(&mut self, cx: &mut Context<Self>) {
         self.export_sheet = None;
         cx.notify();
+    }
+
+    /// Re-derive the filename after the format or the preset changed — but only
+    /// while the field still holds what the pattern last put there. A name the
+    /// user typed is theirs, and switching preset must not take it back.
+    fn reseed_export_name(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(sheet) = &self.export_sheet else {
+            return;
+        };
+        if sheet.stem.read(cx).value(cx).as_ref() != sheet.seeded {
+            return;
+        }
+        let preset_name = sheet
+            .preset_index
+            .and_then(|idx| self.doc.presets.get(idx))
+            .map(|p| p.name.clone());
+        let seeded = self
+            .doc
+            .export_filename_stem(preset_name.as_deref(), None, &today());
+        let field = sheet.stem.clone();
+        field.update(cx, |field, cx| field.seed(seeded.clone(), window, cx));
+        if let Some(sheet) = self.export_sheet.as_mut() {
+            sheet.seeded = seeded;
+        }
+        cx.notify();
+    }
+
+    /// Ask for a different folder. The native dialog's one remaining job.
+    pub(super) fn change_export_folder(&mut self, cx: &mut Context<Self>) {
+        let Some(sheet) = &self.export_sheet else {
+            return;
+        };
+        let receiver = cx.prompt_for_paths(pick_dir());
+        let current = sheet.folder.clone();
+
+        cx.spawn(async move |this, cx| {
+            let folder = match receiver.await {
+                Ok(Ok(Some(mut paths))) if !paths.is_empty() => paths.remove(0),
+                _ => return, // cancelled or dialog error: keep the folder we had
+            };
+            if folder == current {
+                return;
+            }
+            let _ = this.update(cx, |this, cx| {
+                if let Some(sheet) = this.export_sheet.as_mut() {
+                    sheet.folder = folder;
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Where the current name, format and folder would put the file — and what
+    /// is already there.
+    pub(super) fn export_destination(&self, cx: &Context<Self>) -> Option<Destination> {
+        let sheet = self.export_sheet.as_ref()?;
+        let typed = sheet.stem.read(cx).value(cx);
+        let stem = crate::resume::export_names::sanitize_filename_stem(typed.as_ref());
+        let proposed = sheet
+            .folder
+            .join(format!("{stem}.{}", sheet.format.extension()));
+        Some(resolve_destination(proposed, sheet.on_collision, &[]))
     }
 
     /// What a preset resolves to, section by section: `(title, variant, hidden)`.
@@ -176,18 +269,19 @@ impl Root {
         let active_format = sheet.format;
         let selected_preset = sheet.preset_index;
 
-        let preset_name = selected_preset
-            .and_then(|idx| self.doc.presets.get(idx))
-            .map(|p| p.name.as_str());
-        let stem = self.doc.export_filename_stem(preset_name, None, &today());
-        let preview_filename = format!("{stem}.{}", active_format.extension());
         let resolution = self.preset_resolution(selected_preset);
-        let destination = self
-            .doc
-            .export
-            .last_destination
-            .clone()
-            .unwrap_or_else(vault::user_home_dir);
+        let folder = sheet.folder.clone();
+        let name_field = sheet.stem.clone();
+        let on_collision = sheet.on_collision;
+        let destination = self.export_destination(cx);
+        let collides = destination.as_ref().is_some_and(|d| d.collides);
+        let final_name = destination
+            .as_ref()
+            .and_then(|d| d.target.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let overwrites = destination.as_ref().is_some_and(|d| d.overwrites());
 
         // 2-column grid of format cards
         let half = ExportFormat::ALL.len() / 2;
@@ -302,10 +396,13 @@ impl Root {
                     idx.map(|i| i.to_string()).unwrap_or_else(|| "none".into())
                 )))
                 .chip(is_selected, &theme)
-                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     if let Some(s) = this.export_sheet.as_mut() {
                         s.preset_index = idx;
                     }
+                    // The pattern may name the preset, so the filename follows
+                    // the chip — unless the user has typed one of their own.
+                    this.reseed_export_name(window, cx);
                     cx.notify();
                 }))
                 .child(name)
@@ -419,28 +516,134 @@ impl Root {
                                                 variant
                                             }),
                                     )
-                            }))
+                            })),
+                    )
+                    // The name, editable. A10's third answer is a field rather
+                    // than a button: "edit the name" is not a mode to enter, it
+                    // is the name sitting there waiting to be typed over.
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.0))
                             .child(
                                 div()
-                                    .mt(px(6.0))
-                                    .pt(px(6.0))
-                                    .border_t_1()
-                                    .border_color(theme.border)
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_style(TextStyle::label())
+                                            .text_color(theme.text_subtle)
+                                            .child("Name"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_style(TextStyle::meta())
+                                            .text_color(theme.text_muted)
+                                            .child(format!(".{}", active_format.extension())),
+                                    ),
+                            )
+                            .child(TextField::new(&name_field).small()),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.0))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_style(TextStyle::label())
+                                            .text_color(theme.text_subtle)
+                                            .child("Folder"),
+                                    )
+                                    .child(
+                                        Button::new("export-change-folder")
+                                            .quiet()
+                                            .text_xs()
+                                            .label("Change…")
+                                            .on_click(cx.listener(
+                                                |this, _: &ClickEvent, _window, cx| {
+                                                    this.change_export_folder(cx);
+                                                },
+                                            )),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_style(TextStyle::code())
+                                    .text_color(theme.text_muted)
+                                    .truncate()
+                                    .child(folder.display().to_string()),
+                            ),
+                    )
+                    // Only asked when there is something to answer.
+                    .children(collides.then(|| {
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.0))
+                            .p_3()
+                            .rounded(theme.radius_md())
+                            .bg(theme.selected)
+                            .border_1()
+                            .border_color(if overwrites {
+                                theme.danger
+                            } else {
+                                theme.warning
+                            })
+                            .child(
+                                div()
+                                    .text_style(TextStyle::body())
+                                    .text_color(theme.text)
+                                    .child("That name is already taken in this folder."),
+                            )
+                            .child(div().flex().gap(px(6.0)).children(
+                                [OnCollision::KeepBoth, OnCollision::Replace].map(|policy| {
+                                    let (id, label) = match policy {
+                                        OnCollision::KeepBoth => ("export-keep-both", "Keep both"),
+                                        OnCollision::Replace => ("export-replace", "Replace"),
+                                    };
+                                    Button::new(SharedString::from(id))
+                                        .chip(on_collision == policy, &theme)
+                                        .on_click(cx.listener(
+                                            move |this, _: &ClickEvent, _window, cx| {
+                                                if let Some(sheet) = this.export_sheet.as_mut() {
+                                                    sheet.on_collision = policy;
+                                                }
+                                                cx.notify();
+                                            },
+                                        ))
+                                        .child(label)
+                                }),
+                            ))
+                    }))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.0))
+                            .p_3()
+                            .rounded(theme.radius_md())
+                            .bg(theme.surface)
+                            .border_1()
+                            .border_color(theme.border)
+                            .child(
+                                div()
                                     .text_style(TextStyle::eyebrow())
                                     .text_color(theme.text_muted)
-                                    .child("Writes"),
+                                    .child(if overwrites { "Replaces" } else { "Writes" }),
                             )
                             .child(
                                 div()
                                     .text_style(TextStyle::code())
-                                    .text_color(theme.text)
-                                    .child(preview_filename),
-                            )
-                            .child(
-                                div()
-                                    .text_style(TextStyle::code())
-                                    .text_color(theme.text_muted)
-                                    .child(format!("in {}", destination.display())),
+                                    .text_color(if overwrites { theme.danger } else { theme.text })
+                                    .child(final_name),
                             ),
                     )
                     .child(
@@ -463,7 +666,7 @@ impl Root {
                                     .label(format!("Export {}", active_format.short_name()))
                                     .on_click(cx.listener(
                                         move |this, _: &ClickEvent, _window, cx| {
-                                            this.perform_export(active_format, selected_preset, cx);
+                                            this.perform_export(cx);
                                         },
                                     )),
                             ),
@@ -480,129 +683,5 @@ impl Root {
             .bg(theme.scrim)
             .child(panel)
             .into_any_element()
-    }
-
-    /// Dispatch the actual export to the file dialog and filesystem.
-    pub(super) fn perform_export(
-        &mut self,
-        format: ExportFormat,
-        preset_index: Option<usize>,
-        cx: &mut Context<Self>,
-    ) {
-        let preset_name = preset_index
-            .and_then(|idx| self.doc.presets.get(idx))
-            .map(|p| p.name.clone());
-
-        // Clone doc and apply preset if one is selected
-        let mut export_doc = self.doc.clone();
-        if let Some(idx) = preset_index {
-            export_doc.apply_preset(idx);
-        }
-
-        let stem = export_doc.export_filename_stem(preset_name.as_deref(), None, &today());
-        let suggested = format!("{stem}.{}", format.extension());
-        let dir = self
-            .doc
-            .export
-            .last_destination
-            .clone()
-            .unwrap_or_else(vault::user_home_dir);
-
-        self.close_export_sheet(cx);
-
-        let receiver = cx.prompt_for_new_path(&dir, Some(&suggested));
-        let engine = self.engine.clone();
-        let executor = cx.background_executor().clone();
-
-        cx.spawn(async move |this, cx| {
-            let path = match receiver.await {
-                Ok(Ok(Some(path))) => path,
-                _ => return, // cancelled or dialog error
-            };
-
-            let write_path = path.clone();
-            let outcome = executor
-                .spawn(async move {
-                    let composed = export_doc.compose();
-                    match format {
-                        ExportFormat::Pdf => {
-                            let source = crate::resume::template::generate_for(&export_doc);
-                            let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
-                            engine.set_source(source);
-                            let pdf_bytes = engine.compile_to_pdf()?;
-                            std::fs::write(&write_path, pdf_bytes)
-                                .map_err(|e| format!("write failed: {e}"))
-                        }
-                        ExportFormat::Docx => {
-                            let bytes = crate::resume::export_docx(&composed)
-                                .map_err(|e| format!("DOCX generation failed: {e}"))?;
-                            std::fs::write(&write_path, bytes)
-                                .map_err(|e| format!("write failed: {e}"))
-                        }
-                        ExportFormat::PlainText => {
-                            let text = crate::resume::export_plain_text(&composed);
-                            std::fs::write(&write_path, text.as_bytes())
-                                .map_err(|e| format!("write failed: {e}"))
-                        }
-                        ExportFormat::Markdown => {
-                            let md = crate::resume::export_markdown(&composed);
-                            std::fs::write(&write_path, md.as_bytes())
-                                .map_err(|e| format!("write failed: {e}"))
-                        }
-                        ExportFormat::JsonResume => {
-                            let json = crate::resume::export_json_resume(&composed)
-                                .map_err(|e| format!("JSON Resume generation failed: {e}"))?;
-                            std::fs::write(&write_path, json.as_bytes())
-                                .map_err(|e| format!("write failed: {e}"))
-                        }
-                        ExportFormat::Typst => {
-                            let typst = crate::resume::export_typst(&export_doc);
-                            std::fs::write(&write_path, typst.as_bytes())
-                                .map_err(|e| format!("write failed: {e}"))
-                        }
-                    }
-                })
-                .await;
-
-            let preset_title = preset_name.unwrap_or_else(|| CURRENT_VIEW.to_string());
-            let _ = this.update(cx, |this, cx| {
-                match &outcome {
-                    Ok(()) => {
-                        log::info!("exported {} to {}", format.short_name(), path.display());
-                        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
-                        this.doc.record_export(
-                            timestamp,
-                            format.short_name(),
-                            preset_title,
-                            path.clone(),
-                        );
-                        if let Some(parent) = path.parent() {
-                            this.doc.export.last_destination = Some(parent.to_path_buf());
-                        }
-                        save_status::record(cx, "document", vault::save(&this.doc, &this.doc_path));
-                    }
-                    Err(message) => {
-                        // A failed export has to reach the screen. The banner
-                        // `render_preview` already draws is the one surface an
-                        // export and a compile share, and a silent `log::error!`
-                        // leaves the user staring at a dialog that closed and a
-                        // file that never appeared.
-                        log::error!("export to {} failed: {message}", path.display());
-                        this.compile_state = CompileState::Error {
-                            messages: vec![CompileMessage {
-                                severity: Severity::Error,
-                                section: None,
-                                text: format!(
-                                    "Couldn't export {}: {message}.",
-                                    format.short_name()
-                                ),
-                            }],
-                        };
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
     }
 }

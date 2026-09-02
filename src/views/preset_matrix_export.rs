@@ -38,7 +38,7 @@ pub struct BatchExportSheet {
 impl BatchExportSheet {
     /// How many rows would land on a name that already exists.
     pub fn collisions(&self) -> usize {
-        self.plan.iter().filter(|p| p.collides).count()
+        self.plan.iter().filter(|p| p.destination.collides).count()
     }
 }
 
@@ -96,6 +96,7 @@ impl Shell {
             .overflow_y_scrollbar()
             .children(sheet.plan.iter().map(|step| {
                 let name = step
+                    .destination
                     .target
                     .file_name()
                     .and_then(|n| n.to_str())
@@ -109,7 +110,7 @@ impl Shell {
                     .px_2()
                     .py_1p5()
                     .rounded(theme.radius_sm())
-                    .bg(if step.collides {
+                    .bg(if step.destination.collides {
                         theme.selected
                     } else {
                         theme.surface
@@ -133,13 +134,13 @@ impl Shell {
                                     .child(step.preset.clone()),
                             ),
                     )
-                    .child(if step.overwrites() {
+                    .child(if step.destination.overwrites() {
                         div()
                             .text_style(TextStyle::chip())
                             .text_color(theme.danger)
                             .child("replaces")
                             .into_any_element()
-                    } else if step.collides {
+                    } else if step.destination.collides {
                         div()
                             .text_style(TextStyle::chip())
                             .text_color(theme.warning)

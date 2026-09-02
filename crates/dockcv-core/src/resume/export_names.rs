@@ -119,26 +119,68 @@ pub enum OnCollision {
     Replace,
 }
 
-/// One file a batch export intends to write.
+/// Where one file would land, and what is already there.
+///
+/// The single export and every row of a batch resolve through
+/// [`resolve_destination`], so there is one answer to "may this write happen"
+/// and one place to test it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Destination {
+    /// The name the pattern produced, before any collision was considered.
+    pub proposed: PathBuf,
+    /// The name that will actually be written, once it was.
+    pub target: PathBuf,
+    /// Whether `proposed` was already taken — by a file on disk, or by a file
+    /// an earlier row of the same batch has claimed.
+    pub collides: bool,
+}
+
+impl Destination {
+    /// Whether this write will destroy something that exists.
+    ///
+    /// The floor A10 sets is that this is only ever true because the user said
+    /// [`OnCollision::Replace`].
+    pub fn overwrites(&self) -> bool {
+        self.collides && self.target == self.proposed
+    }
+}
+
+/// One preset's row in a batch export.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlannedExport {
     /// The preset this renders.
     pub preset: String,
     /// Its index in `ResumeDoc::presets`.
     pub preset_index: usize,
-    /// The name the pattern produced, before any collision was considered.
-    pub proposed: PathBuf,
-    /// The name that will actually be written, once it was.
-    pub target: PathBuf,
-    /// Whether `proposed` was already taken — by a file on disk, or by an
-    /// earlier row of this same batch.
-    pub collides: bool,
+    /// Where it goes.
+    pub destination: Destination,
 }
 
-impl PlannedExport {
-    /// Whether this row will destroy something that exists.
-    pub fn overwrites(&self) -> bool {
-        self.collides && self.target == self.proposed
+/// Decide where `proposed` may actually be written.
+///
+/// `claimed` is what other writes in the same gesture have already taken, which
+/// the filesystem cannot answer for: two rows of one batch aiming at one name
+/// are always separated, whatever the policy, because that is not a collision
+/// the user chose to resolve — it is the batch overwriting itself, and under
+/// `Replace` only the last preset would survive.
+pub fn resolve_destination(
+    proposed: PathBuf,
+    on_collision: OnCollision,
+    claimed: &[PathBuf],
+) -> Destination {
+    let claimed_here = claimed.contains(&proposed);
+    let collides = claimed_here || proposed.exists();
+
+    let target = if collides && (on_collision == OnCollision::KeepBoth || claimed_here) {
+        disambiguate_among(&proposed, claimed)
+    } else {
+        proposed.clone()
+    };
+
+    Destination {
+        proposed,
+        target,
+        collides,
     }
 }
 
@@ -157,40 +199,27 @@ pub fn plan_batch(
     on_collision: OnCollision,
 ) -> Vec<PlannedExport> {
     let mut planned: Vec<PlannedExport> = Vec::with_capacity(doc.presets.len());
+    let mut claimed: Vec<PathBuf> = Vec::with_capacity(doc.presets.len());
 
     for (preset_index, preset) in doc.presets.iter().enumerate() {
         let stem = doc.export_filename_stem(Some(&preset.name), None, today);
         let proposed = folder.join(format!("{stem}.{extension}"));
+        let destination = resolve_destination(proposed, on_collision, &claimed);
 
-        let claimed_earlier = planned.iter().any(|p| p.target == proposed);
-        let collides = claimed_earlier || proposed.exists();
-
-        // Replacing is a choice about *files on disk*. Two rows of one batch
-        // aiming at one name is not a choice the user made, so they are always
-        // separated — otherwise "Replace" would mean the batch overwrites
-        // itself and only the last preset survives.
-        let target = if collides && (on_collision == OnCollision::KeepBoth || claimed_earlier) {
-            disambiguate_among(&proposed, &planned)
-        } else {
-            proposed.clone()
-        };
-
+        claimed.push(destination.target.clone());
         planned.push(PlannedExport {
             preset: preset.name.clone(),
             preset_index,
-            proposed,
-            target,
-            collides,
+            destination,
         });
     }
 
     planned
 }
 
-/// [`disambiguate_filename`], also avoiding names this batch has already taken.
-fn disambiguate_among(path: &Path, planned: &[PlannedExport]) -> PathBuf {
-    let taken =
-        |candidate: &Path| candidate.exists() || planned.iter().any(|p| p.target == candidate);
+/// [`disambiguate_filename`], also avoiding names this gesture has claimed.
+fn disambiguate_among(path: &Path, claimed: &[PathBuf]) -> PathBuf {
+    let taken = |candidate: &Path| candidate.exists() || claimed.iter().any(|c| c == candidate);
     if !taken(path) {
         return path.to_path_buf();
     }
@@ -282,6 +311,55 @@ mod tests {
         assert_eq!(disambiguate_filename(&base), dir.0.join("Resume (2).pdf"));
     }
 
+    /// A10's floor, stated as an invariant over the one function every write
+    /// resolves through: a file is destroyed only because the user chose
+    /// `Replace`. Nothing about the UI can make this false without failing
+    /// here first.
+    #[test]
+    fn nothing_is_overwritten_unless_the_user_asked_for_it() {
+        let dir = TempDir::new("floor");
+        let taken = dir.touch("Albert Einstein.pdf");
+        let free = dir.0.join("Marie Curie.pdf");
+
+        for policy in [OnCollision::KeepBoth, OnCollision::Replace] {
+            for proposed in [taken.clone(), free.clone()] {
+                let d = resolve_destination(proposed.clone(), policy, &[]);
+                assert_eq!(d.proposed, proposed);
+                assert_eq!(d.collides, proposed.exists());
+                assert!(
+                    !d.overwrites() || policy == OnCollision::Replace,
+                    "{policy:?} would destroy {:?}",
+                    d.target
+                );
+                if policy == OnCollision::KeepBoth {
+                    assert!(
+                        !d.target.exists(),
+                        "keeping both still aimed at {:?}",
+                        d.target
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn keeping_both_walks_past_a_name_this_gesture_already_claimed() {
+        let dir = TempDir::new("claimed");
+        let proposed = dir.0.join("Albert Einstein.pdf");
+        // Nothing on disk, but an earlier write in the same gesture wants it.
+        let claimed = vec![proposed.clone()];
+
+        let d = resolve_destination(proposed.clone(), OnCollision::KeepBoth, &claimed);
+        assert!(d.collides);
+        assert_eq!(d.target, dir.0.join("Albert Einstein (1).pdf"));
+
+        // Even under Replace: two writes of one gesture aiming at one file is
+        // not a collision the user resolved, it is the gesture eating itself.
+        let d = resolve_destination(proposed, OnCollision::Replace, &claimed);
+        assert_eq!(d.target, dir.0.join("Albert Einstein (1).pdf"));
+        assert!(!d.overwrites());
+    }
+
     fn doc_with(pattern: &str, presets: &[&str]) -> ResumeDoc {
         let resume = Resume {
             basics: Basics {
@@ -311,9 +389,17 @@ mod tests {
 
         let plan = plan_batch(&doc, &dir.0, "pdf", "2026-09-02", OnCollision::KeepBoth);
         assert_eq!(plan.len(), 2);
-        assert_eq!(plan[0].target, dir.0.join("Albert Einstein - Concise.pdf"));
-        assert_eq!(plan[1].target, dir.0.join("Albert Einstein - Extended.pdf"));
-        assert!(plan.iter().all(|p| !p.collides && !p.overwrites()));
+        assert_eq!(
+            plan[0].destination.target,
+            dir.0.join("Albert Einstein - Concise.pdf")
+        );
+        assert_eq!(
+            plan[1].destination.target,
+            dir.0.join("Albert Einstein - Extended.pdf")
+        );
+        assert!(plan
+            .iter()
+            .all(|p| !p.destination.collides && !p.destination.overwrites()));
     }
 
     /// The floor A10 sets: nothing is overwritten unless the user said so, and
@@ -325,19 +411,19 @@ mod tests {
         let doc = doc_with("{name} - {preset}", &["Concise", "Extended"]);
 
         let plan = plan_batch(&doc, &dir.0, "pdf", "2026-09-02", OnCollision::KeepBoth);
-        assert!(plan[0].collides);
+        assert!(plan[0].destination.collides);
         assert_eq!(
-            plan[0].target,
+            plan[0].destination.target,
             dir.0.join("Albert Einstein - Concise (1).pdf")
         );
-        assert!(!plan[0].overwrites());
-        assert!(!plan[1].collides);
+        assert!(!plan[0].destination.overwrites());
+        assert!(!plan[1].destination.collides);
 
         for step in &plan {
             assert!(
-                !step.target.exists(),
+                !step.destination.target.exists(),
                 "{:?} would be written over",
-                step.target
+                step.destination.target
             );
         }
     }
@@ -349,10 +435,10 @@ mod tests {
         let doc = doc_with("{name} - {preset}", &["Concise", "Extended"]);
 
         let plan = plan_batch(&doc, &dir.0, "pdf", "2026-09-02", OnCollision::Replace);
-        assert!(plan[0].collides);
-        assert!(plan[0].overwrites());
-        assert_eq!(plan[0].target, plan[0].proposed);
-        assert!(!plan[1].overwrites());
+        assert!(plan[0].destination.collides);
+        assert!(plan[0].destination.overwrites());
+        assert_eq!(plan[0].destination.target, plan[0].destination.proposed);
+        assert!(!plan[1].destination.overwrites());
     }
 
     /// Two presets can resolve to one name. Without checking the rows planned
@@ -366,7 +452,7 @@ mod tests {
 
         for policy in [OnCollision::KeepBoth, OnCollision::Replace] {
             let plan = plan_batch(&doc, &dir.0, "pdf", "2026-09-02", policy);
-            let targets: Vec<_> = plan.iter().map(|p| &p.target).collect();
+            let targets: Vec<_> = plan.iter().map(|p| &p.destination.target).collect();
             assert_eq!(
                 targets,
                 vec![

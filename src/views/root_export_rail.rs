@@ -132,7 +132,7 @@ impl Root {
                                 div()
                                     .text_style(TextStyle::meta())
                                     .text_color(theme.text_muted)
-                                    .child(record.timestamp.clone()),
+                                    .child(format!("{} {}", record.date, record.time)),
                             ),
                     )
                     .child(

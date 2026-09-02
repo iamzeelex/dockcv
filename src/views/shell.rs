@@ -934,10 +934,10 @@ impl Shell {
                         preset_doc.apply_preset(step.preset_index);
                         let source = crate::resume::template::generate_for(&preset_doc);
                         let pdf_bytes = TypstEngine::new(source).compile_to_pdf()?;
-                        std::fs::write(&step.target, pdf_bytes).map_err(|e| {
-                            format!("write to {} failed: {e}", step.target.display())
+                        std::fs::write(&step.destination.target, pdf_bytes).map_err(|e| {
+                            format!("write to {} failed: {e}", step.destination.target.display())
                         })?;
-                        written.push((step.preset.clone(), step.target.clone()));
+                        written.push((step.preset.clone(), step.destination.target.clone()));
                     }
                     Ok::<Vec<(String, PathBuf)>, String>(written)
                 })
@@ -949,11 +949,12 @@ impl Shell {
                     Ok(written) => {
                         log::info!("exported {} presets to {}", written.len(), folder.display());
                         if let Screen::PresetMatrix(pm) = &mut this.screen {
-                            let timestamp =
-                                chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+                            let now = chrono::Local::now();
+                            let date = now.format("%Y-%m-%d").to_string();
+                            let time = now.format("%H:%M").to_string();
                             for (preset, path) in &written {
                                 pm.doc
-                                    .record_export(&timestamp, "PDF", preset, path.clone());
+                                    .record_export(&date, &time, "PDF", preset, path.clone());
                             }
                             pm.doc.export.last_destination = Some(folder.clone());
                             let result = vault::save(&pm.doc, &pm.path);
@@ -1409,7 +1410,7 @@ impl Render for Shell {
 }
 
 /// Options for a single-folder picker.
-fn pick_dir() -> PathPromptOptions {
+pub(super) fn pick_dir() -> PathPromptOptions {
     PathPromptOptions {
         files: false,
         directories: true,

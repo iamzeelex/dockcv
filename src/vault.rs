@@ -1684,7 +1684,8 @@ mod tests {
         used.export.filename_pattern = "{name} - {role} - {company}".into();
         used.export.last_destination = Some(PathBuf::from("/Users/someone/Documents/CVs"));
         used.record_export(
-            "2026-09-01 17:30",
+            "2026-09-01",
+            "17:30",
             "PDF",
             "Concise",
             PathBuf::from("/Users/someone/Documents/CVs/Ann Lee - SRE - Concise.pdf"),
