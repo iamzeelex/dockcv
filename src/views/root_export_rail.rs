@@ -126,7 +126,11 @@ impl Root {
                                 div()
                                     .text_style(TextStyle::chip())
                                     .text_color(theme.accent)
-                                    .child(format!("{} · {}", record.format, record.preset)),
+                                    .child(format!(
+                                        "{} · {}",
+                                        super::root_export_sheet::format_label(&record.format),
+                                        record.preset
+                                    )),
                             )
                             .child(
                                 div()

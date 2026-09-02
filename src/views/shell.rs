@@ -956,7 +956,9 @@ impl Shell {
                                 pm.doc
                                     .record_export(&date, &time, "PDF", preset, path.clone());
                             }
-                            pm.doc.export.last_destination = Some(folder.clone());
+                            let mut config = config::load();
+                            config.remember_export_destination(&pm.path, &folder);
+                            config::save(&config);
                             let result = vault::save(&pm.doc, &pm.path);
                             save_status::record(cx, "document", result);
                         }

@@ -2058,24 +2058,26 @@ pub struct ExportTokens<'a> {
     pub date: &'a str,
 }
 
-/// How this document names the files it exports, and where it last sent one.
+/// How this document names the files it exports.
 ///
 /// Document-level rather than app-level: two CVs in a vault are for different
-/// jobs and belong in different folders under different names, and an app-wide
-/// setting would make the second export of one of them propose the other's.
+/// jobs, and an app-wide pattern would make the second export of one of them
+/// propose the other's name.
+///
+/// *Where* it last sent one is deliberately not here. A folder is a fact about
+/// one machine, and `/Users/somebody/Downloads` in a document TOML points at
+/// nothing on the second laptop — so it lives in `config.rs` with the other
+/// preferences about looking. See the storage rules in `CLAUDE.md`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportSettings {
     #[serde(default = "ExportSettings::default_pattern")]
     pub filename_pattern: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_destination: Option<std::path::PathBuf>,
 }
 
 impl Default for ExportSettings {
     fn default() -> Self {
         Self {
             filename_pattern: Self::default_pattern(),
-            last_destination: None,
         }
     }
 }
@@ -2089,9 +2091,8 @@ impl ExportSettings {
 
     /// Whether the export settings match the default state.
     pub fn is_default(&self) -> bool {
-        (self.filename_pattern.trim() == Self::DEFAULT_PATTERN
-            || self.filename_pattern.trim().is_empty())
-            && self.last_destination.is_none()
+        self.filename_pattern.trim() == Self::DEFAULT_PATTERN
+            || self.filename_pattern.trim().is_empty()
     }
 
     /// Preset filename patterns offered in the layout rail.
@@ -2200,7 +2201,12 @@ pub struct ExportRecord {
     /// blob would have to be parsed to sort or to display.
     #[serde(default)]
     pub time: String,
-    /// Format identifier as the user saw it: `PDF`, `Word`, `Markdown`.
+    /// The format's file extension — `pdf`, `docx`, `md` — never the label the
+    /// user saw. A label recorded in history is wrong the day it is reworded,
+    /// and a row from 2026 would then disagree with a row from 2027 about the
+    /// same format. The view maps the key back to a name; a key it does not
+    /// know renders as itself rather than being dropped, which is also why this
+    /// is a `String` and not an enum.
     pub format: String,
     /// The preset name at that moment. A label recording history, not a lookup
     /// key — the preset itself may be renamed or deleted later.
@@ -3602,7 +3608,6 @@ mod applications_tests {
         // menu offers and the resolver drops is a menu item that does nothing.
         let all = ExportSettings {
             filename_pattern: "{name} - {role} - {preset} - {company} - {variant} - {date}".into(),
-            ..Default::default()
         };
         assert_eq!(
             all.resolve_filename(&ExportTokens {
@@ -3620,7 +3625,6 @@ mod applications_tests {
         for (label, pattern) in ExportSettings::PRESETS {
             let settings = ExportSettings {
                 filename_pattern: (*pattern).into(),
-                ..Default::default()
             };
             let stem = settings.resolve_filename(&ExportTokens {
                 name: "Ann Lee",
@@ -3656,7 +3660,6 @@ mod applications_tests {
     fn export_filename_drops_missing_tokens_with_their_separators() {
         let settings = ExportSettings {
             filename_pattern: "{name} - {company} - {role} - {preset}".into(),
-            ..Default::default()
         };
         // Company and role are empty here — neither may leave a stray dash.
         assert_eq!(
@@ -3673,7 +3676,6 @@ mod applications_tests {
     fn a_company_with_a_slash_in_it_does_not_reach_the_filesystem() {
         let settings = ExportSettings {
             filename_pattern: "{name} - {company}".into(),
-            ..Default::default()
         };
         assert_eq!(
             settings.resolve_filename(&ExportTokens {
