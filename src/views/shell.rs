@@ -32,6 +32,7 @@ use super::applications_pin::PinPick;
 use super::confirm;
 use super::diary_capture::DiaryPaste;
 use super::diary_use::DiaryUse;
+use super::gallery_sort::GallerySort;
 use super::import_flow::ImportStep;
 use super::library::LibrarySort;
 use super::library_edit::LibraryEdit;
@@ -111,6 +112,10 @@ pub struct Shell {
     pub(super) library_filter: Option<SectionKind>,
     /// How blocks are ordered inside each section group.
     pub(super) library_sort: LibrarySort,
+    /// How the gallery is ordered. Seeded from `config.rs` and written
+    /// back when it changes: a sort you chose and lost on relaunch is a
+    /// control that does not work.
+    pub(super) gallery_sort: GallerySort,
     /// The open block form — new when its index is `None`, otherwise an edit.
     pub(super) library_edit: Option<LibraryEdit>,
     /// The "which CVs should take this?" dialog, open only just after a
@@ -218,6 +223,7 @@ impl Shell {
             library_search: None,
             library_filter: None,
             library_sort: LibrarySort::default(),
+            gallery_sort: GallerySort::from_word(&config::load().gallery_sort),
             library_edit: None,
             library_push: None,
             update: UpdateState::default(),

@@ -26,6 +26,15 @@ pub struct Config {
     /// is not a folder there. Newest last, and capped.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub export_destinations: Vec<ExportDestination>,
+    /// How the gallery is ordered, by word.
+    ///
+    /// A preference about *looking*, not a fact about any document, so it lives
+    /// here rather than in the vault. One order for the person rather than one
+    /// per vault: a second vault is not a reason to want a different sort, and
+    /// if it ever becomes one, a keyed list is a free addition where changing
+    /// this field would not be.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub gallery_sort: String,
     /// The palette the user last chose. Defaults to Slate Dark.
     #[serde(default)]
     pub theme: ThemeMode,
