@@ -22,6 +22,7 @@ mod library_edit;
 mod library_link;
 mod library_usage;
 mod preset_matrix;
+mod preset_matrix_export;
 mod root;
 mod root_custom_sections;
 mod root_dates;

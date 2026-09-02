@@ -2168,7 +2168,7 @@ impl ExportSettings {
         };
         result = result.replace("{name}", name_val);
 
-        sanitize_filename_stem(&result)
+        super::export_names::sanitize_filename_stem(&result)
     }
 }
 
@@ -2212,102 +2212,6 @@ fn remove_token_with_separators(s: &str, token: &str) -> String {
         cur = cur.replace(pat, "");
     }
     cur
-}
-
-/// The longest filename stem we will produce.
-///
-/// Every filesystem this app runs on caps a name component at 255 *bytes*, and
-/// a stem is only part of one: the extension and the ` (2)` a collision adds
-/// come after it. 200 leaves room for both and is still longer than any name
-/// and role a person actually has.
-pub const MAX_FILENAME_STEM: usize = 200;
-
-/// Turn a resolved pattern into something a filesystem will accept.
-///
-/// This is where user data meets the filesystem, so it takes the widest rule of
-/// the three platforms rather than the host's: `\ : * ? " < > |` are illegal on
-/// Windows and merely awkward elsewhere, and a name that opens on the machine
-/// it was written on but not on the one it was copied to is the failure this
-/// avoids. Nothing is ever *refused* — a name is repaired, because the export
-/// is the thing the user wanted and the punctuation is not.
-pub fn sanitize_filename_stem(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-
-    for c in s.chars() {
-        if matches!(
-            c,
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0'..='\x1f' | '\x7f'
-        ) {
-            out.push('-');
-        } else {
-            out.push(c);
-        }
-    }
-
-    // Replacing a character with a dash creates runs — `a/b` beside an existing
-    // ` - ` separator turns into ` - - `. Collapse until it stops changing
-    // rather than a fixed number of times, so a pathological name settles too.
-    let mut cleaned = out;
-    loop {
-        let next = cleaned
-            .replace(" - - ", " - ")
-            .replace("--", "-")
-            .replace("  ", " ")
-            .replace("-.", ".")
-            .replace(" .", ".");
-        if next == cleaned {
-            break;
-        }
-        cleaned = next;
-    }
-
-    let trimmed = cleaned.trim().trim_matches(&['-', '_', ' '][..]);
-
-    // `.` and `..` are directory entries, not names. They only arise from a
-    // pattern that resolved to nothing but punctuation, and the fallback below
-    // is a better answer than a write that fails.
-    if trimmed.is_empty() || trimmed.chars().all(|c| c == '.') {
-        return "CV".to_string();
-    }
-
-    // Cut on a character boundary: a stem is user text and may be any script.
-    if trimmed.len() > MAX_FILENAME_STEM {
-        let mut cut = MAX_FILENAME_STEM;
-        while cut > 0 && !trimmed.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        return trimmed[..cut].trim_end().to_string();
-    }
-
-    trimmed.to_string()
-}
-
-/// Disambiguate a file path if a file already exists at `path` by appending ` (1)`, ` (2)`, etc.
-/// If `path` does not exist on disk, it is returned unchanged.
-pub fn disambiguate_filename(path: &std::path::Path) -> std::path::PathBuf {
-    if !path.exists() {
-        return path.to_path_buf();
-    }
-
-    let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
-    let file_stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("document");
-    let extension = path.extension().and_then(|s| s.to_str());
-
-    for i in 1..=10000 {
-        let candidate_filename = match extension {
-            Some(ext) if !ext.is_empty() => format!("{file_stem} ({i}).{ext}"),
-            _ => format!("{file_stem} ({i})"),
-        };
-        let candidate_path = parent.join(candidate_filename);
-        if !candidate_path.exists() {
-            return candidate_path;
-        }
-    }
-
-    path.to_path_buf()
 }
 
 /// A resume with every section independently versioned, plus document-wide
@@ -3678,8 +3582,7 @@ mod applications_tests {
     }
 
     #[test]
-    fn export_filename_sanitizer_removes_illegal_characters() {
-        // A company with a slash in it is the case the filesystem cares about.
+    fn a_company_with_a_slash_in_it_does_not_reach_the_filesystem() {
         let settings = ExportSettings {
             filename_pattern: "{name} - {company}".into(),
             ..Default::default()
@@ -3692,45 +3595,6 @@ mod applications_tests {
             }),
             "Albert Einstein - Acme Corp - Tech"
         );
-
-        assert_eq!(sanitize_filename_stem("My/Resume:2026*?"), "My-Resume-2026");
-        assert_eq!(sanitize_filename_stem("a\\b<c>d|e\"f"), "a-b-c-d-e-f");
-        assert_eq!(sanitize_filename_stem("   ---   "), "CV");
-        assert_eq!(sanitize_filename_stem(""), "CV");
-        // A stem that is only dots is not a filename any OS will accept.
-        assert_eq!(sanitize_filename_stem(".."), "CV");
-        assert_eq!(sanitize_filename_stem("."), "CV");
-        // Names survive whole: a hyphen someone typed is not a separator we left.
-        assert_eq!(
-            sanitize_filename_stem("Ann-Marie O'Neil - Sr. Dev"),
-            "Ann-Marie O'Neil - Sr. Dev"
-        );
-        // Long enough to break every filesystem there is, so it gets cut.
-        let long = sanitize_filename_stem(&"x".repeat(400));
-        assert!(long.len() <= MAX_FILENAME_STEM, "{}", long.len());
-    }
-
-    #[test]
-    fn disambiguate_filename_resolves_collisions() {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = std::env::temp_dir().join(format!("dockcv_test_{nanos}"));
-        std::fs::create_dir_all(&temp_dir).unwrap();
-
-        let base_file = temp_dir.join("Resume.pdf");
-        assert_eq!(disambiguate_filename(&base_file), base_file);
-
-        std::fs::write(&base_file, b"content 0").unwrap();
-        let disambiguated_1 = disambiguate_filename(&base_file);
-        assert_eq!(disambiguated_1, temp_dir.join("Resume (1).pdf"));
-
-        std::fs::write(&disambiguated_1, b"content 1").unwrap();
-        let disambiguated_2 = disambiguate_filename(&base_file);
-        assert_eq!(disambiguated_2, temp_dir.join("Resume (2).pdf"));
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
