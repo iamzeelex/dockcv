@@ -10,11 +10,13 @@ use std::path::PathBuf;
 
 use gpui::prelude::*;
 use gpui::{
-    div, px, relative, AnyElement, ClickEvent, Context, Entity, IntoElement, SharedString, Window,
+    div, px, AnyElement, ClickEvent, Context, Entity, IntoElement, SharedString, Subscription,
+    Window,
 };
 
 use dockcv_ui_components::{
-    Button, ButtonExt, Card, IconName, ScrollableElement, Sizable, TextField, TextFieldState,
+    Button, ButtonExt, Card, IconName, ScrollableElement, Sizable, TextField, TextFieldEvent,
+    TextFieldState,
 };
 
 use crate::resume::export_names::{resolve_destination, Destination, OnCollision};
@@ -159,6 +161,12 @@ pub struct ExportSheetState {
     pub seeded: String,
     /// What to do if that name is taken.
     pub on_collision: OnCollision,
+    /// Keeps the sheet repainting while the name is typed. The collision notice
+    /// and the filename in the footer are answers to what is in the field, and
+    /// an answer that arrives on the next unrelated repaint is not an answer.
+    /// It also makes Enter mean Export, which is what Enter means in a dialog
+    /// whose text field is the last thing you touch.
+    pub _subscription: Subscription,
 }
 
 impl Root {
@@ -176,6 +184,23 @@ impl Root {
             .export_filename_stem(preset_name.as_deref(), None, &today());
         let stem = cx.new(|cx| TextFieldState::single_line(window, cx));
         stem.update(cx, |field, cx| field.seed(seeded.clone(), window, cx));
+        let subscription =
+            cx.subscribe(
+                &stem,
+                |_this, _field, event: &TextFieldEvent, cx| match event {
+                    // Deferred, not immediate: exporting closes the sheet, and
+                    // the sheet owns this very subscription. Dropping it from
+                    // inside its own callback is not a thing to find out about
+                    // in the field. By the next tick the handler has returned.
+                    TextFieldEvent::Submitted => {
+                        let root = cx.entity();
+                        cx.defer(move |cx| {
+                            root.update(cx, |this, cx| this.perform_export(cx));
+                        });
+                    }
+                    _ => cx.notify(),
+                },
+            );
 
         self.export_sheet = Some(ExportSheetState {
             format: ExportFormat::Pdf,
@@ -191,6 +216,7 @@ impl Root {
             // The answer that cannot lose somebody's file, until they say
             // otherwise about a name they can see.
             on_collision: OnCollision::KeepBoth,
+            _subscription: subscription,
         });
         cx.notify();
     }
@@ -350,51 +376,57 @@ impl Root {
             .unwrap_or_default()
             .to_string();
 
-        // Formats down the side rather than in a grid across the body. Six
-        // cards two-abreast set the panel's width and then everything else
-        // stacked under them set its height, which ran the sheet off the top
-        // and bottom of the window; as a rail they cost one column and the
-        // decisions that depend on them sit beside them where they can be read
-        // together.
+        // Formats down the side rather than two-abreast across the body. Six
+        // cards in a grid set the panel's width, and then every decision that
+        // followed from the choice stacked underneath them set its height — the
+        // sheet ran off the top and the bottom of the window. As a rail they
+        // cost one column, and what depends on them sits beside them where the
+        // two can be read together.
+        //
+        // One line each: the six names say what they are, and the description
+        // of the one actually chosen sits under the rail, where it is read once
+        // rather than six times.
         let format_rail = div()
-            .w(px(190.0))
+            .w(px(186.0))
             .flex_none()
             .flex()
             .flex_col()
-            .gap(px(4.0))
-            .children(ExportFormat::ALL.map(|fmt| {
-                let is_selected = fmt == active_format;
-                Card::new()
-                    // The rail is six cards tall, so its padding sets the
-                    // panel's height more than anything else on the sheet.
-                    .xsmall()
-                    .interactive(SharedString::from(format!(
-                        "export-fmt-{}",
-                        fmt.extension()
-                    )))
-                    .border_color(if is_selected {
-                        theme.accent
-                    } else {
-                        theme.border
-                    })
-                    .bg(if is_selected {
-                        theme.selected
-                    } else {
-                        theme.surface
-                    })
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        if let Some(s) = this.export_sheet.as_mut() {
-                            s.format = fmt;
-                        }
-                        cx.notify();
-                    }))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_start()
-                            .w_full()
-                            .gap(px(1.0))
+            .gap(px(6.0))
+            .child(
+                div()
+                    .text_style(TextStyle::eyebrow())
+                    .text_color(theme.text_muted)
+                    .child("Format"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.0))
+                    .children(ExportFormat::ALL.map(|fmt| {
+                        let is_selected = fmt == active_format;
+                        Card::new()
+                            .xsmall()
+                            .interactive(SharedString::from(format!(
+                                "export-fmt-{}",
+                                fmt.extension()
+                            )))
+                            .border_color(if is_selected {
+                                theme.accent
+                            } else {
+                                theme.border
+                            })
+                            .bg(if is_selected {
+                                theme.selected
+                            } else {
+                                theme.surface
+                            })
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                                if let Some(s) = this.export_sheet.as_mut() {
+                                    s.format = fmt;
+                                }
+                                cx.notify();
+                            }))
                             .child(
                                 div()
                                     .flex()
@@ -417,19 +449,45 @@ impl Root {
                                         div()
                                             .flex_none()
                                             .text_style(TextStyle::meta())
-                                            .text_color(theme.text_muted)
+                                            .text_color(if is_selected {
+                                                theme.accent
+                                            } else {
+                                                theme.text_muted
+                                            })
                                             .child(fmt.badge()),
                                     ),
                             )
-                            .child(
-                                div()
-                                    .text_style(TextStyle::meta())
-                                    .text_color(theme.text_muted)
-                                    .truncate()
-                                    .child(fmt.subtitle()),
-                            ),
-                    )
-            }));
+                    })),
+            )
+            .child(
+                div()
+                    .pt(px(2.0))
+                    .text_style(TextStyle::meta())
+                    .text_color(theme.text_muted)
+                    .child(active_format.subtitle()),
+            );
+
+        let labelled = |label: &'static str, trailing: Option<AnyElement>, body: AnyElement| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(5.0))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .min_h(px(18.0))
+                        .child(
+                            div()
+                                .text_style(TextStyle::eyebrow())
+                                .text_color(theme.text_muted)
+                                .child(label),
+                        )
+                        .children(trailing),
+                )
+                .child(body)
+        };
 
         let preset_chips = div()
             .flex()
@@ -462,9 +520,10 @@ impl Root {
                         cx.notify();
                     }))
                     .child(preset.name.clone())
-            }));
+            }))
+            .into_any_element();
 
-        let resolution_block = div()
+        let resolution_body = div()
             .flex()
             .flex_col()
             .gap(px(3.0))
@@ -507,151 +566,92 @@ impl Root {
                                     }),
                             )
                     }),
-            );
-
-        let name_block = div()
-            .flex()
-            .flex_col()
-            .gap(px(5.0))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .text_style(TextStyle::label())
-                            .text_color(theme.text_subtle)
-                            .child("Name"),
-                    )
-                    .child(
-                        div()
-                            .text_style(TextStyle::meta())
-                            .text_color(theme.text_muted)
-                            .child(format!(".{}", active_format.extension())),
-                    ),
             )
-            // The name is a field, which is A10's third answer: editing is not
-            // a mode to enter, it is the name waiting to be typed over.
-            .child(TextField::new(&name_field).small());
-
-        let folder_block = div()
-            .flex()
-            .flex_col()
-            .gap(px(3.0))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .text_style(TextStyle::label())
-                            .text_color(theme.text_subtle)
-                            .child("Folder"),
-                    )
-                    .child(
-                        Button::new("export-change-folder")
-                            .quiet()
-                            .text_xs()
-                            .label("Change…")
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.change_export_folder(cx);
-                            })),
-                    ),
-            )
-            .child(
-                div()
-                    .text_style(TextStyle::code())
-                    .text_color(theme.text_muted)
-                    .truncate()
-                    .child(folder.display().to_string()),
-            );
-
-        let collision_block = collides.then(|| {
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(6.0))
-                .p_2p5()
-                .rounded(theme.radius_md())
-                .bg(theme.selected)
-                .border_1()
-                .border_color(if overwrites {
-                    theme.danger
-                } else {
-                    theme.warning
-                })
-                .child(
-                    div()
-                        .text_style(TextStyle::body())
-                        .text_color(theme.text)
-                        .child("That name is already taken in this folder."),
-                )
-                .child(div().flex().gap(px(6.0)).children(
-                    [OnCollision::KeepBoth, OnCollision::Replace].map(|policy| {
-                        let (id, label) = match policy {
-                            OnCollision::KeepBoth => ("export-keep-both", "Keep both"),
-                            OnCollision::Replace => ("export-replace", "Replace"),
-                        };
-                        Button::new(SharedString::from(id))
-                            .chip(on_collision == policy, &theme)
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                                if let Some(sheet) = this.export_sheet.as_mut() {
-                                    sheet.on_collision = policy;
-                                }
-                                cx.notify();
-                            }))
-                            .child(label)
-                    }),
-                ))
-        });
-
-        let outcome = div()
-            .flex()
-            .items_baseline()
-            .gap(px(8.0))
-            .pt(px(2.0))
-            .child(
-                div()
-                    .flex_none()
-                    .text_style(TextStyle::eyebrow())
-                    .text_color(if overwrites {
-                        theme.danger
-                    } else {
-                        theme.text_muted
-                    })
-                    .child(if overwrites { "Replaces" } else { "Writes" }),
-            )
-            .child(
-                div()
-                    .text_style(TextStyle::code())
-                    .text_color(if overwrites { theme.danger } else { theme.text })
-                    .truncate()
-                    .child(final_name),
-            );
+            .into_any_element();
 
         let details = div()
             .flex_1()
             .min_w_0()
             .flex()
             .flex_col()
-            .gap(px(12.0))
-            .child(preset_chips)
-            .child(resolution_block)
-            .child(name_block)
-            .child(folder_block)
-            .children(collision_block)
-            .child(outcome);
+            .gap(px(14.0))
+            .child(labelled("Preset", None, preset_chips))
+            .child(labelled("Resolves to", None, resolution_body))
+            .child(labelled(
+                "Name",
+                Some(
+                    div()
+                        .text_style(TextStyle::meta())
+                        .text_color(theme.text_muted)
+                        .child(format!(".{}", active_format.extension()))
+                        .into_any_element(),
+                ),
+                // A field, which is A10's third answer: editing the name is not
+                // a mode to enter, it is the name waiting to be typed over.
+                TextField::new(&name_field).small().into_any_element(),
+            ))
+            .child(labelled(
+                "Folder",
+                Some(
+                    Button::new("export-change-folder")
+                        .quiet()
+                        .text_xs()
+                        .label("Change…")
+                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                            this.change_export_folder(cx);
+                        }))
+                        .into_any_element(),
+                ),
+                div()
+                    .text_style(TextStyle::code())
+                    .text_color(theme.text_muted)
+                    .truncate()
+                    .child(folder.display().to_string())
+                    .into_any_element(),
+            ))
+            .children(collides.then(|| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.0))
+                    .p_2p5()
+                    .rounded(theme.radius_md())
+                    .bg(theme.selected)
+                    .border_1()
+                    .border_color(if overwrites {
+                        theme.danger
+                    } else {
+                        theme.warning
+                    })
+                    .child(
+                        div()
+                            .text_style(TextStyle::body())
+                            .text_color(theme.text)
+                            .child("That name is already taken in this folder."),
+                    )
+                    .child(div().flex().gap(px(6.0)).children(
+                        [OnCollision::KeepBoth, OnCollision::Replace].map(|policy| {
+                            let (id, label) = match policy {
+                                OnCollision::KeepBoth => ("export-keep-both", "Keep both"),
+                                OnCollision::Replace => ("export-replace", "Replace"),
+                            };
+                            Button::new(SharedString::from(id))
+                                .chip(on_collision == policy, &theme)
+                                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                                    if let Some(sheet) = this.export_sheet.as_mut() {
+                                        sheet.on_collision = policy;
+                                    }
+                                    cx.notify();
+                                }))
+                                .child(label)
+                        }),
+                    ))
+            }));
 
         let panel = div()
-            .w(px(660.0))
-            // Capped and scrolling, so a document with a dozen custom sections
-            // can never push the sheet past the top of the window again.
-            .max_h(relative(0.86))
+            .w(px(640.0))
             .flex()
             .flex_col()
-            .min_h_0()
             .rounded(theme.radius_lg())
             .bg(theme.elevated)
             .border_1()
@@ -659,11 +659,10 @@ impl Root {
             .shadow_lg()
             .child(
                 div()
-                    .flex_none()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_5()
+                    .px_4()
                     .py_3()
                     .border_b_1()
                     .border_color(theme.border)
@@ -684,42 +683,81 @@ impl Root {
                     ),
             )
             .child(
+                // A ceiling rather than `flex_1`: the panel sizes to its
+                // content, so a child asking to fill it asks for a share of
+                // nothing and collapses to zero — which is how the body came to
+                // render as an empty strip. The cap is high enough that only a
+                // document with many sections on unexpected variants reaches it.
                 div()
                     .id("export-sheet-body")
-                    .flex_1()
-                    .min_h_0()
+                    .max_h(px(440.0))
                     .overflow_y_scrollbar()
                     .flex()
-                    .gap(px(16.0))
+                    .gap(px(18.0))
                     .p_4()
                     .child(format_rail)
                     .child(details),
             )
             .child(
+                // The filename sits with the button that writes it. It is the
+                // one thing on this sheet that leaves the building, and reading
+                // it in the same glance as the verb is the whole point.
                 div()
-                    .flex_none()
                     .flex()
-                    .justify_end()
-                    .gap(px(8.0))
-                    .px_5()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(16.0))
+                    .px_4()
                     .py_3()
                     .border_t_1()
                     .border_color(theme.border)
                     .child(
-                        Button::new("export-cancel")
-                            .toolbar()
-                            .label("Cancel")
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.close_export_sheet(cx);
-                            })),
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .items_baseline()
+                            .gap(px(8.0))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .text_style(TextStyle::eyebrow())
+                                    .text_color(if overwrites {
+                                        theme.danger
+                                    } else {
+                                        theme.text_muted
+                                    })
+                                    .child(if overwrites { "Replaces" } else { "Writes" }),
+                            )
+                            .child(
+                                div()
+                                    .text_style(TextStyle::code())
+                                    .text_color(if overwrites { theme.danger } else { theme.text })
+                                    .truncate()
+                                    .child(final_name),
+                            ),
                     )
                     .child(
-                        Button::new("export-confirm")
-                            .toolbar_primary()
-                            .label(format!("Export {}", active_format.short_name()))
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.perform_export(cx);
-                            })),
+                        div()
+                            .flex_none()
+                            .flex()
+                            .gap(px(8.0))
+                            .child(
+                                Button::new("export-cancel")
+                                    .toolbar()
+                                    .label("Cancel")
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                        this.close_export_sheet(cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("export-confirm")
+                                    .toolbar_primary()
+                                    .label(format!("Export {}", active_format.short_name()))
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                        this.perform_export(cx);
+                                    })),
+                            ),
                     ),
             );
 
