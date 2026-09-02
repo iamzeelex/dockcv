@@ -271,7 +271,8 @@ pub struct Root {
     /// `TextFieldState` needs a `Window`, which the click handler that opens
     /// this has, same as `Root::fields`).
     pub(super) capture_sheet: Option<CaptureSheet>,
-    /// The export sheet overlay (Task A9): format/preset selection and export.
+    /// The export sheet overlay (`root_export_sheet.rs`): `Some` while the user
+    /// is choosing a format and a preset. One at a time, like `capture_sheet`.
     pub(super) export_sheet: Option<super::root_export_sheet::ExportSheetState>,
     /// The section header's rename control (`root_section_rename.rs`): `Some`
     /// while a section's printed heading is being edited inline. One at a

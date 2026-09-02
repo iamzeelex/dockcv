@@ -19,9 +19,9 @@ use dockcv_ui_components::{
 
 use crate::resume::model::{
     BulletGlyph, CategoryMark, ContactLayout, DateFormat, DocumentFont, Emphasis, EntryLayout,
-    ExportSettings, HeaderAlign, HeaderLayout, HeadingCase, HeadingLayout, HeadingStyle,
-    LayoutSettings, MetaOrder, MetaPosition, PageSize, ResumeDoc, RowSpacing, SkillSeparator,
-    SkillsLayout, SkillsStyle, TypeSizes,
+    HeaderAlign, HeaderLayout, HeadingCase, HeadingLayout, HeadingStyle, LayoutSettings, MetaOrder,
+    MetaPosition, PageSize, ResumeDoc, RowSpacing, SkillSeparator, SkillsLayout, SkillsStyle,
+    TypeSizes,
 };
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -481,144 +481,6 @@ impl Root {
             )
     }
 
-    /// Row for configuring the export filename pattern (Task A1).
-    pub(super) fn filename_pattern_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let root = cx.weak_entity();
-        let preset_name = self
-            .active_preset
-            .and_then(|idx| self.doc.presets.get(idx))
-            .map(|p| p.name.as_str());
-        let example_name = format!("{}.pdf", self.doc.export_filename_stem(preset_name, None));
-
-        let current_pattern = &self.doc.export.filename_pattern;
-        let active_label = ExportSettings::PRESETS
-            .iter()
-            .find(|(_, pat)| *pat == current_pattern.as_str())
-            .map(|(lbl, _)| *lbl)
-            .unwrap_or("Custom pattern");
-
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(7.0))
-            .child(self.rail_label(cx, "Filename pattern"))
-            .child(
-                Button::new("layout-filename-pattern")
-                    .selector_inline()
-                    .w_full()
-                    .label(active_label)
-                    .tooltip("Pattern used for naming exported files.")
-                    .dropdown_menu(move |mut menu, _window, _cx| {
-                        for (label, pattern) in ExportSettings::PRESETS {
-                            let root = root.clone();
-                            let pattern_str = pattern.to_string();
-                            menu = menu.item(
-                                PopupMenuItem::new(*label).on_click(move |_ev, window, cx| {
-                                    let pattern_to_set = pattern_str.clone();
-                                    let _ = root.update(cx, |this, cx| {
-                                        this.doc.export.filename_pattern = pattern_to_set;
-                                        this.after_layout_change(window, cx);
-                                    });
-                                }),
-                            );
-                        }
-                        menu
-                    }),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().text_muted)
-                    .child(format!("Example: {example_name}")),
-            )
-    }
-
-    pub(super) fn export_history_rows(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = *cx.theme();
-        if self.doc.export_history.is_empty() {
-            return div()
-                .text_xs()
-                .text_color(theme.text_muted)
-                .child("No exports recorded yet.")
-                .into_any_element();
-        }
-
-        let mut list = div().flex().flex_col().gap(px(6.0));
-
-        // Show up to the last 5 exports (most recent first)
-        for record in self.doc.export_history.iter().rev().take(5) {
-            let exists = record.path.exists();
-            let file_name = record
-                .path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("document");
-            let path_clone = record.path.clone();
-
-            list = list.child(
-                div()
-                    .p_2()
-                    .rounded(theme.radius_sm())
-                    .bg(theme.surface)
-                    .border_1()
-                    .border_color(theme.border)
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.0))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .child(
-                                div()
-                                    .text_size(px(11.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(theme.accent)
-                                    .child(format!("{} · {}", record.format, record.preset)),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(10.0))
-                                    .text_color(theme.text_muted)
-                                    .child(record.timestamp.clone()),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .gap(px(4.0))
-                            .child(
-                                div()
-                                    .text_size(px(11.5))
-                                    .text_color(if exists { theme.text } else { theme.text_muted })
-                                    .child(file_name.to_string()),
-                            )
-                            .child(if exists {
-                                Button::new(SharedString::from(format!("reveal-{}", record.timestamp)))
-                                    .quiet()
-                                    .text_xs()
-                                    .label("Reveal")
-                                    .on_click(move |_ev, _window, _cx| {
-                                        crate::resume::reveal_in_file_manager(&path_clone);
-                                    })
-                                    .into_any_element()
-                            } else {
-                                div()
-                                    .text_size(px(10.5))
-                                    .text_color(theme.danger)
-                                    .child("(moved or deleted)")
-                                    .into_any_element()
-                            }),
-                    ),
-            );
-        }
-
-        list.into_any_element()
-    }
-
     pub(super) fn page_size_row(
         &self,
         cx: &mut Context<Self>,
@@ -767,7 +629,11 @@ impl Root {
         }))
     }
 
-    fn rail_label(&self, cx: &mut Context<Self>, text: &'static str) -> impl IntoElement {
+    pub(super) fn rail_label(
+        &self,
+        cx: &mut Context<Self>,
+        text: &'static str,
+    ) -> impl IntoElement {
         div()
             .text_style(TextStyle::label())
             .text_color(cx.theme().text_muted)

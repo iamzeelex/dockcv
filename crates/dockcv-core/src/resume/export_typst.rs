@@ -22,20 +22,54 @@ pub fn export_typst_with_layout(resume: &Resume, layout: &LayoutSettings) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::resume::export_walk::sample_resume;
     use crate::typst_engine::TypstEngine;
 
+    /// The `.typ` we hand a Typst user has to be the whole document.
+    ///
+    /// "Standalone" is the entire promise of this export: it is worth more to
+    /// that audience than any template we ship, and it is worthless the moment
+    /// the file needs something from a vault they do not have. Compiling it
+    /// inside our own engine would not notice, so the source is also read for
+    /// the things that would make it depend on this machine.
     #[test]
-    fn export_typst_produces_compilable_source() {
-        let doc = ResumeDoc::default();
+    fn exported_typst_is_standalone_and_lays_out_the_same_page_count() {
+        let doc = ResumeDoc::from_resume(sample_resume(), "Base");
         let source = export_typst(&doc);
 
         assert!(source.contains("#set page"));
         assert!(source.contains("#render-cv"));
 
-        let engine = TypstEngine::new(source);
-        let result = engine.compile_to_pdf();
-        assert!(result.is_ok(), "Typst export must compile cleanly: {:?}", result.err());
-        let pdf_bytes = result.unwrap();
-        assert!(!pdf_bytes.is_empty());
+        // Nothing that reaches outside the file itself.
+        for reach in [
+            "#import \"",
+            "#include \"",
+            "read(",
+            "json(",
+            "csv(",
+            "image(",
+        ] {
+            assert!(
+                !source.contains(reach),
+                "the exported source reaches outside itself with {reach:?}, \
+                 so it will not compile on a machine that never had this vault"
+            );
+        }
+
+        // The file the user takes away lays out as the page they were shown.
+        let exported = TypstEngine::new(source);
+        let (_, exported_geometry) = exported
+            .compile_to_pixels(1.0)
+            .expect("the exported source must compile");
+        let previewed = TypstEngine::new(crate::resume::template::generate_for(&doc));
+        let (_, preview_geometry) = previewed
+            .compile_to_pixels(1.0)
+            .expect("the preview source must compile");
+
+        assert!(exported_geometry.page_count >= 1);
+        assert_eq!(
+            exported_geometry.page_count, preview_geometry.page_count,
+            "the .typ a user takes away paginates differently from the page they saw"
+        );
     }
 }

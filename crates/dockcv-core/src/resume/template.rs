@@ -502,7 +502,7 @@ pub fn generate_with_layout(resume: &Resume, layout: &LayoutSettings) -> String 
     out
 }
 
-/// Set PDF document metadata (Task A12).
+/// The document metadata every export carries.
 ///
 /// Internal preset names, variant names, vault paths and private notes must NEVER
 /// leak into exported document metadata.
@@ -2637,11 +2637,16 @@ mod date_format_tests {
         );
     }
 
-    /// Task A12: Document metadata is set cleanly and never leaks internal preset names,
-    /// variant names or private vault state.
+    /// A preset name in a recruiter's document properties is an embarrassment
+    /// we would have built ourselves, so this checks the produced **file**, not
+    /// the source we hoped would produce it. The file-to-preset mapping lives in
+    /// export history, inside the vault, where it is ours.
+    #[cfg(feature = "pdf")]
     #[test]
-    fn pdf_metadata_provenance_stays_clean_and_never_leaks_presets() {
-        use crate::resume::model::{Basics, Preset};
+    fn no_exported_pdf_carries_a_preset_or_variant_name() {
+        use crate::resume::model::{Basics, Preset, SectionKind};
+        use crate::typst_engine::TypstEngine;
+
         let resume = Resume {
             basics: Basics {
                 name: "Alexey Belochenko".into(),
@@ -2650,26 +2655,87 @@ mod date_format_tests {
             },
             ..Default::default()
         };
-        let doc = ResumeDoc {
-            presets: vec![
-                Preset {
-                    name: "FAANG · concise".into(),
-                    selection: vec![],
-                    hidden: vec![],
-                },
-                Preset {
-                    name: "Startup · long".into(),
-                    selection: vec![],
-                    hidden: vec![],
-                },
-            ],
-            ..ResumeDoc::from_resume(resume.clone(), "Base")
-        };
+        let mut doc = ResumeDoc::from_resume(resume, "Base");
+        // Variant and preset names a person would actually type, and would
+        // certainly not want sent: the point is that neither can reach the file.
+        doc.profile.variants[0].name = "FAANG rewrite".into();
+        doc.presets = vec![
+            Preset {
+                name: "FAANG · concise".into(),
+                selection: vec![(SectionKind::Profile, "FAANG rewrite".into())],
+                hidden: vec![SectionKind::Organizations],
+            },
+            Preset {
+                name: "Startup · long".into(),
+                selection: vec![],
+                hidden: vec![],
+            },
+        ];
 
-        let typst_source = generate_for(&doc);
-        assert!(typst_source.contains(r#"#set document(title: "Alexey Belochenko - Principal Systems Architect", author: "Alexey Belochenko")"#));
-        assert!(!typst_source.contains("FAANG"));
-        assert!(!typst_source.contains("concise"));
-        assert!(!typst_source.contains("Startup"));
+        let source = generate_for(&doc);
+        let pdf = TypstEngine::new(source)
+            .compile_to_pdf()
+            .expect("the document compiles");
+        let bytes = String::from_utf8_lossy(&pdf);
+
+        for secret in [
+            "FAANG", "concise", "Startup", "rewrite", "preset", "variant",
+        ] {
+            assert!(
+                !bytes.contains(secret),
+                "{secret:?} reached the exported PDF"
+            );
+        }
+
+        // And the two fields we *do* set are exactly the two we meant to set.
+        assert!(bytes.contains("Alexey Belochenko - Principal Systems Architect"));
+        assert!(bytes.contains("/Author"));
+        assert!(bytes.contains("/Title"));
+        assert!(
+            !bytes.contains("/Keywords") && !bytes.contains("/Subject"),
+            "a metadata field nobody decided on is being written"
+        );
+    }
+
+    /// The source is where the leak would start, so it is worth pinning too —
+    /// and it is the only half a build without the PDF writer can check.
+    #[test]
+    fn document_metadata_names_the_person_and_nothing_else() {
+        use crate::resume::model::Basics;
+
+        let with_both = Resume {
+            basics: Basics {
+                name: "Alexey Belochenko".into(),
+                label: "Principal Systems Architect".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut out = String::new();
+        document_metadata_into(&mut out, &with_both);
+        assert_eq!(
+            out.trim(),
+            r#"#set document(title: "Alexey Belochenko - Principal Systems Architect", author: "Alexey Belochenko")"#
+        );
+
+        // A quote in a name is a Typst string literal ending early, which is a
+        // compile error rather than a wrong title — so it gets escaped.
+        let quoted = Resume {
+            basics: Basics {
+                name: r#"Ann "Nan" O'Neil"#.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut out = String::new();
+        document_metadata_into(&mut out, &quoted);
+        assert!(out.contains(r#"\"Nan\""#), "{out}");
+
+        // An empty document still gets a title, and no author at all rather
+        // than an empty one.
+        let mut out = String::new();
+        document_metadata_into(&mut out, &Resume::default());
+        assert_eq!(out.trim(), r#"#set document(title: "Resume")"#);
+        assert!(!out.contains("author"));
     }
 }

@@ -1,15 +1,24 @@
-//! The Export Sheet (Task A9, Track A): format selector, preset selector,
-//! live filename preview, and export dispatch for all supported formats.
+//! The export sheet: one surface that says what is leaving.
+//!
+//! A bare save dialog proposes the same name for every preset, which is how
+//! `CV-final-2.pdf` gets made — by us, at the moment the person is most
+//! stressed and least careful. So the format, the preset and what it resolves
+//! to section by section, the filename and the folder are all on screen before
+//! anything is written, and cancelling writes nothing (P-08, US-18).
 
 use gpui::prelude::*;
-use gpui::{div, px, AnyElement, ClickEvent, Context, FontWeight, IntoElement, SharedString, Window};
+use gpui::{
+    div, px, AnyElement, ClickEvent, Context, FontWeight, IntoElement, SharedString, Window,
+};
 
-use dockcv_ui_components::{Button, ButtonExt, Card, IconName, Sizable, SANS};
+use dockcv_ui_components::{Button, ButtonExt, Card, IconName, Sizable};
 
+use crate::resume::diagnostics::CompileMessage;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
+use crate::typst_engine::Severity;
 use crate::vault;
 
-use super::root::Root;
+use super::root::{CompileState, Root};
 use super::save_status;
 
 /// Supported export formats in DockCV.
@@ -89,6 +98,15 @@ impl ExportFormat {
     }
 }
 
+/// What the sheet calls "no preset" — and what export history records for it,
+/// so the chip the user clicked and the row they read back say the same thing.
+const CURRENT_VIEW: &str = "Current view";
+
+/// The `{date}` token, in the only form that sorts correctly in Finder.
+pub(super) fn today() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
+}
+
 /// State of the open Export Sheet.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportSheetState {
@@ -121,6 +139,33 @@ impl Root {
         cx.notify();
     }
 
+    /// What a preset resolves to, section by section: `(title, variant, hidden)`.
+    ///
+    /// A9's whole point is that the composition is visible *before* the write —
+    /// a wrong-variant export is otherwise discovered by the recruiter.
+    fn preset_resolution(&self, preset_index: Option<usize>) -> Vec<(String, String, bool)> {
+        let mut doc = self.doc.clone();
+        if let Some(idx) = preset_index {
+            doc.apply_preset(idx);
+        }
+        doc.sections()
+            .into_iter()
+            .map(|kind| {
+                let active = doc.active_variant(kind);
+                let variant = doc
+                    .variant_names(kind)
+                    .get(active)
+                    .cloned()
+                    .unwrap_or_default();
+                (
+                    doc.section_title(kind),
+                    variant,
+                    doc.hidden_sections.contains(&kind),
+                )
+            })
+            .collect()
+    }
+
     /// Render the modal Export Sheet.
     pub(super) fn render_export_sheet(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = *cx.theme();
@@ -134,8 +179,15 @@ impl Root {
         let preset_name = selected_preset
             .and_then(|idx| self.doc.presets.get(idx))
             .map(|p| p.name.as_str());
-        let stem = self.doc.export_filename_stem(preset_name, None);
+        let stem = self.doc.export_filename_stem(preset_name, None, &today());
         let preview_filename = format!("{stem}.{}", active_format.extension());
+        let resolution = self.preset_resolution(selected_preset);
+        let destination = self
+            .doc
+            .export
+            .last_destination
+            .clone()
+            .unwrap_or_else(vault::user_home_dir);
 
         // 2-column grid of format cards
         let half = ExportFormat::ALL.len() / 2;
@@ -153,7 +205,10 @@ impl Root {
                     let is_selected = fmt == active_format;
                     Card::new()
                         .small()
-                        .interactive(SharedString::from(format!("export-fmt-{}", fmt.extension())))
+                        .interactive(SharedString::from(format!(
+                            "export-fmt-{}",
+                            fmt.extension()
+                        )))
                         .border_color(if is_selected {
                             theme.accent
                         } else {
@@ -200,8 +255,7 @@ impl Root {
                                         )
                                         .child(
                                             div()
-                                                .text_size(px(11.0))
-                                                .font_family(SANS)
+                                                .text_style(TextStyle::chip())
                                                 .px(px(4.0))
                                                 .py(px(1.0))
                                                 .rounded(px(4.0))
@@ -226,15 +280,16 @@ impl Root {
             .child(render_col(col1_formats, cx))
             .child(render_col(col2_formats, cx));
 
-        let presets: Vec<(Option<usize>, String)> = std::iter::once((None, "Current view".into()))
-            .chain(
-                self.doc
-                    .presets
-                    .iter()
-                    .enumerate()
-                    .map(|(i, p)| (Some(i), p.name.clone())),
-            )
-            .collect();
+        let presets: Vec<(Option<usize>, String)> =
+            std::iter::once((None, CURRENT_VIEW.to_string()))
+                .chain(
+                    self.doc
+                        .presets
+                        .iter()
+                        .enumerate()
+                        .map(|(i, p)| (Some(i), p.name.clone())),
+                )
+                .collect();
 
         let preset_chips = div()
             .flex()
@@ -334,18 +389,58 @@ impl Root {
                             .border_color(theme.border)
                             .child(
                                 div()
-                                    .text_size(px(10.5))
-                                    .font_weight(FontWeight::BOLD)
+                                    .text_style(TextStyle::eyebrow())
                                     .text_color(theme.text_muted)
-                                    .child("OUTPUT FILENAME"),
+                                    .child("This preset resolves to"),
+                            )
+                            .children(resolution.into_iter().map(|(section, variant, hidden)| {
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap(px(8.0))
+                                    .child(
+                                        div()
+                                            .text_style(TextStyle::body())
+                                            .text_color(if hidden {
+                                                theme.text_muted
+                                            } else {
+                                                theme.text
+                                            })
+                                            .child(section),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_style(TextStyle::meta())
+                                            .text_color(theme.text_muted)
+                                            .child(if hidden {
+                                                "hidden".to_string()
+                                            } else {
+                                                variant
+                                            }),
+                                    )
+                            }))
+                            .child(
+                                div()
+                                    .mt(px(6.0))
+                                    .pt(px(6.0))
+                                    .border_t_1()
+                                    .border_color(theme.border)
+                                    .text_style(TextStyle::eyebrow())
+                                    .text_color(theme.text_muted)
+                                    .child("Writes"),
                             )
                             .child(
                                 div()
-                                    .font_family(SANS)
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_size(px(13.0))
+                                    .text_style(TextStyle::code())
                                     .text_color(theme.text)
                                     .child(preview_filename),
+                            )
+                            .child(
+                                div()
+                                    .text_style(TextStyle::code())
+                                    .text_color(theme.text_muted)
+                                    .child(format!("in {}", destination.display())),
                             ),
                     )
                     .child(
@@ -366,9 +461,11 @@ impl Root {
                                 Button::new("export-confirm")
                                     .toolbar_primary()
                                     .label(format!("Export {}", active_format.short_name()))
-                                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                                        this.perform_export(active_format, selected_preset, cx);
-                                    })),
+                                    .on_click(cx.listener(
+                                        move |this, _: &ClickEvent, _window, cx| {
+                                            this.perform_export(active_format, selected_preset, cx);
+                                        },
+                                    )),
                             ),
                     ),
             );
@@ -402,7 +499,7 @@ impl Root {
             export_doc.apply_preset(idx);
         }
 
-        let stem = export_doc.export_filename_stem(preset_name.as_deref(), None);
+        let stem = export_doc.export_filename_stem(preset_name.as_deref(), None, &today());
         let suggested = format!("{stem}.{}", format.extension());
         let dir = self
             .doc
@@ -433,49 +530,77 @@ impl Root {
                             let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
                             engine.set_source(source);
                             let pdf_bytes = engine.compile_to_pdf()?;
-                            std::fs::write(&write_path, pdf_bytes).map_err(|e| format!("write failed: {e}"))
+                            std::fs::write(&write_path, pdf_bytes)
+                                .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::Docx => {
                             let bytes = crate::resume::export_docx(&composed)
                                 .map_err(|e| format!("DOCX generation failed: {e}"))?;
-                            std::fs::write(&write_path, bytes).map_err(|e| format!("write failed: {e}"))
+                            std::fs::write(&write_path, bytes)
+                                .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::PlainText => {
                             let text = crate::resume::export_plain_text(&composed);
-                            std::fs::write(&write_path, text.as_bytes()).map_err(|e| format!("write failed: {e}"))
+                            std::fs::write(&write_path, text.as_bytes())
+                                .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::Markdown => {
                             let md = crate::resume::export_markdown(&composed);
-                            std::fs::write(&write_path, md.as_bytes()).map_err(|e| format!("write failed: {e}"))
+                            std::fs::write(&write_path, md.as_bytes())
+                                .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::JsonResume => {
                             let json = crate::resume::export_json_resume(&composed)
                                 .map_err(|e| format!("JSON Resume generation failed: {e}"))?;
-                            std::fs::write(&write_path, json.as_bytes()).map_err(|e| format!("write failed: {e}"))
+                            std::fs::write(&write_path, json.as_bytes())
+                                .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::Typst => {
                             let typst = crate::resume::export_typst(&export_doc);
-                            std::fs::write(&write_path, typst.as_bytes()).map_err(|e| format!("write failed: {e}"))
+                            std::fs::write(&write_path, typst.as_bytes())
+                                .map_err(|e| format!("write failed: {e}"))
                         }
                     }
                 })
                 .await;
 
-            let preset_title = preset_name.unwrap_or_else(|| "Default".to_string());
-            let _ = this.update(cx, |this, cx| match &outcome {
-                Ok(()) => {
-                    log::info!("exported {} to {}", format.short_name(), path.display());
-                    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
-                    this.doc.record_export(timestamp, format.short_name(), preset_title, path.clone());
-                    if let Some(parent) = path.parent() {
-                        this.doc.export.last_destination = Some(parent.to_path_buf());
+            let preset_title = preset_name.unwrap_or_else(|| CURRENT_VIEW.to_string());
+            let _ = this.update(cx, |this, cx| {
+                match &outcome {
+                    Ok(()) => {
+                        log::info!("exported {} to {}", format.short_name(), path.display());
+                        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+                        this.doc.record_export(
+                            timestamp,
+                            format.short_name(),
+                            preset_title,
+                            path.clone(),
+                        );
+                        if let Some(parent) = path.parent() {
+                            this.doc.export.last_destination = Some(parent.to_path_buf());
+                        }
+                        save_status::record(cx, "document", vault::save(&this.doc, &this.doc_path));
                     }
-                    save_status::record(cx, "document", vault::save(&this.doc, &this.doc_path));
-                    cx.notify();
+                    Err(message) => {
+                        // A failed export has to reach the screen. The banner
+                        // `render_preview` already draws is the one surface an
+                        // export and a compile share, and a silent `log::error!`
+                        // leaves the user staring at a dialog that closed and a
+                        // file that never appeared.
+                        log::error!("export to {} failed: {message}", path.display());
+                        this.compile_state = CompileState::Error {
+                            messages: vec![CompileMessage {
+                                severity: Severity::Error,
+                                section: None,
+                                text: format!(
+                                    "Couldn't export {}: {message}.",
+                                    format.short_name()
+                                ),
+                            }],
+                        };
+                    }
                 }
-                Err(err) => {
-                    log::error!("export to {} failed: {err}", path.display());
-                }
+                cx.notify();
             });
         })
         .detach();

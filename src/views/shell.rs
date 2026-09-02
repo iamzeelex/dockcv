@@ -848,11 +848,25 @@ impl Shell {
         cx.notify();
     }
 
-    /// Export all presets of the current document to PDF in a chosen folder (Task A4).
+    /// Export every preset of the current document to PDF, into one chosen folder.
+    ///
+    /// The compile happens off the main thread and returns the paths it actually
+    /// wrote, which is the only thing export history may record: recomputing the
+    /// names afterwards would file a row against a name a collision had already
+    /// pushed aside, and a history that points at the wrong file is worse than
+    /// none.
     pub(super) fn export_all_matrix_presets(&mut self, cx: &mut Context<Self>) {
         let Screen::PresetMatrix(ref mut pm) = self.screen else {
             return;
         };
+        if pm.doc.presets.is_empty() {
+            save_status::record(
+                cx,
+                "export",
+                Err("This document has no presets yet, so there is nothing to export.".to_string()),
+            );
+            return;
+        }
         let doc = pm.doc.clone();
         let receiver = cx.prompt_for_paths(pick_dir());
         let executor = cx.background_executor().clone();
@@ -863,15 +877,22 @@ impl Shell {
             };
 
             let dir_for_write = target_dir.clone();
+            let today = super::root_export_sheet::today();
             let outcome = executor
                 .spawn(async move {
-                    let mut exported_count = 0;
+                    let mut written: Vec<(String, PathBuf, bool)> = Vec::new();
                     for (i, preset) in doc.presets.iter().enumerate() {
                         let mut preset_doc = doc.clone();
                         preset_doc.apply_preset(i);
-                        let stem = preset_doc.export_filename_stem(Some(&preset.name), None);
+                        let stem =
+                            preset_doc.export_filename_stem(Some(&preset.name), None, &today);
                         let base_path = dir_for_write.join(format!("{stem}.pdf"));
+                        // Never overwrite: A10's floor is that no existing file
+                        // is replaced without the user saying so. Writing beside
+                        // it is allowed — writing beside it *silently* is not,
+                        // which is what the renamed count below is for.
                         let target_path = crate::resume::disambiguate_filename(&base_path);
+                        let renamed = target_path != base_path;
 
                         let source = crate::resume::template::generate_for(&preset_doc);
                         let engine = TypstEngine::new(source);
@@ -879,35 +900,49 @@ impl Shell {
                         std::fs::write(&target_path, pdf_bytes).map_err(|e| {
                             format!("write to {} failed: {e}", target_path.display())
                         })?;
-                        exported_count += 1;
+                        written.push((preset.name.clone(), target_path, renamed));
                     }
-                    Ok::<usize, String>(exported_count)
+                    Ok::<Vec<(String, PathBuf, bool)>, String>(written)
                 })
                 .await;
 
             let _ = this.update(cx, |this, cx| {
-                match &outcome {
-                    Ok(count) => {
+                match outcome {
+                    Ok(written) => {
+                        let renamed = written.iter().filter(|(_, _, r)| *r).count();
                         log::info!(
-                            "successfully exported {count} presets to {}",
+                            "exported {} presets to {}",
+                            written.len(),
                             target_dir.display()
                         );
                         if let Screen::PresetMatrix(ref mut pm) = this.screen {
                             let timestamp =
                                 chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
-                            let preset_names: Vec<String> =
-                                pm.doc.presets.iter().map(|p| p.name.clone()).collect();
-                            for name in preset_names {
-                                let stem = pm.doc.export_filename_stem(Some(&name), None);
-                                let base_path = target_dir.join(format!("{stem}.pdf"));
-                                pm.doc.record_export(&timestamp, "PDF", &name, base_path);
+                            for (name, path, _) in &written {
+                                pm.doc.record_export(&timestamp, "PDF", name, path.clone());
                             }
                             pm.doc.export.last_destination = Some(target_dir.clone());
-                            let _ = vault::save(&pm.doc, &pm.path);
+                            let result = vault::save(&pm.doc, &pm.path);
+                            save_status::record(cx, "document", result);
+                        }
+                        if renamed > 0 {
+                            save_status::record(
+                                cx,
+                                "export",
+                                Err(format!(
+                                    "{renamed} of {} files already existed in that folder, \
+                                     so they were written beside the originals rather than \
+                                     over them. Recent Exports names what was written.",
+                                    written.len()
+                                )),
+                            );
                         }
                     }
-                    Err(err) => {
-                        log::error!("batch export failed: {err}");
+                    Err(message) => {
+                        // Some presets may already be on disk; say so rather
+                        // than leaving a folder half-written and a silent log.
+                        log::error!("batch export to {} failed: {message}", target_dir.display());
+                        save_status::record(cx, "export", Err(message));
                     }
                 }
                 cx.notify();

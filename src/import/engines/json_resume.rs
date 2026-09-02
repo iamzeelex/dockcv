@@ -626,27 +626,113 @@ mod tests {
         assert_eq!(imported.doc.profile.active().name, "Leo Vaicer");
     }
 
-    /// Task A6: exporting a composed resume as JSON Resume and importing it
-    /// back through the engine preserves the core fields without loss.
+    /// We own both ends, so a lossy field is a failing test here rather than a
+    /// bug report from someone whose CV lost its dates.
+    ///
+    /// The assertions walk the fields the *importer* reads, which is the list
+    /// that matters: an importer field with no writer behind it is exactly the
+    /// hole a stranger falls into when they take their data out and put it back.
     #[test]
-    fn export_round_trips_through_importer() {
+    fn export_round_trips_every_field_the_importer_reads() {
         use dockcv_core::resume::export_json_resume;
 
         let initial = import(SPEC_SHAPED).expect("parses spec-shaped sample");
         let composed = initial.doc.compose();
 
         let exported_json = export_json_resume(&composed).expect("exports valid json");
-        let round_tripped = import(&exported_json).expect("re-imports exported json");
+        let back = import(&exported_json).expect("re-imports exported json");
 
-        let p_orig = initial.doc.profile.active();
-        let p_rt = round_tripped.doc.profile.active();
-        assert_eq!(p_rt.name, p_orig.name);
-        assert_eq!(p_rt.label, p_orig.label);
-        assert_eq!(p_rt.email, p_orig.email);
+        let before = initial.doc.profile.active();
+        let after = back.doc.profile.active();
+        assert_eq!(after.name, before.name);
+        assert_eq!(after.label, before.label);
+        assert_eq!(after.email, before.email);
+        assert_eq!(after.phone, before.phone);
+        assert_eq!(after.url, before.url);
+        assert_eq!(after.summary, before.summary);
+        assert_eq!(after.location, before.location);
+        assert_eq!(after.profiles.len(), before.profiles.len());
+        for (b, a) in before.profiles.iter().zip(&after.profiles) {
+            assert_eq!(a.network, b.network);
+            assert_eq!(a.username, b.username);
+            assert_eq!(a.url, b.url);
+        }
 
-        assert_eq!(round_tripped.doc.work.active().len(), initial.doc.work.active().len());
-        assert_eq!(round_tripped.doc.education.active().len(), initial.doc.education.active().len());
-        assert_eq!(round_tripped.doc.skills.active().len(), initial.doc.skills.active().len());
-        assert_eq!(round_tripped.doc.certificates.active().len(), initial.doc.certificates.active().len());
+        // Dates are the field a lossy exporter drops first, and the one whose
+        // loss a reader notices last.
+        let (jobs_before, jobs_after) = (initial.doc.work.active(), back.doc.work.active());
+        assert_eq!(jobs_after.len(), jobs_before.len());
+        for (b, a) in jobs_before.iter().zip(jobs_after) {
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.position, b.position);
+            assert_eq!(a.start_date.text, b.start_date.text, "job start date");
+            assert_eq!(a.end_date.text, b.end_date.text, "job end date");
+            assert_eq!(a.summary, b.summary);
+            assert_eq!(a.highlights, b.highlights);
+        }
+
+        let (edu_before, edu_after) = (initial.doc.education.active(), back.doc.education.active());
+        assert_eq!(edu_after.len(), edu_before.len());
+        for (b, a) in edu_before.iter().zip(edu_after) {
+            assert_eq!(a.institution, b.institution);
+            assert_eq!(a.study_type, b.study_type);
+            assert_eq!(a.start_date.text, b.start_date.text, "education start date");
+            assert_eq!(a.end_date.text, b.end_date.text, "education end date");
+        }
+
+        let (skills_before, skills_after) = (initial.doc.skills.active(), back.doc.skills.active());
+        assert_eq!(skills_after.len(), skills_before.len());
+        for (b, a) in skills_before.iter().zip(skills_after) {
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.keywords, b.keywords);
+        }
+
+        let (cert_before, cert_after) = (
+            initial.doc.certificates.active(),
+            back.doc.certificates.active(),
+        );
+        assert_eq!(cert_after.len(), cert_before.len());
+        for (b, a) in cert_before.iter().zip(cert_after) {
+            assert_eq!(a.name, b.name);
+            assert_eq!(a.issuer, b.issuer);
+            assert_eq!(a.date.text, b.date.text, "certificate date");
+        }
+
+        let (vol_before, vol_after) = (initial.doc.volunteer.active(), back.doc.volunteer.active());
+        assert_eq!(vol_after.len(), vol_before.len());
+        for (b, a) in vol_before.iter().zip(vol_after) {
+            assert_eq!(a.organization, b.organization);
+            assert_eq!(a.position, b.position);
+            assert_eq!(a.start_date.text, b.start_date.text, "volunteer start date");
+        }
+
+        // `projects`, `awards`, `publications` and `languages` arrive as custom
+        // sections; each has to leave through the array it came from and come
+        // back under the same heading, or a whole section of the CV vanishes on
+        // the way out and back.
+        let titles = |doc: &dockcv_core::resume::model::ResumeDoc| {
+            let mut t: Vec<String> = doc
+                .custom_sections
+                .iter()
+                .map(|s| s.title.clone())
+                .collect();
+            t.sort();
+            t
+        };
+        assert_eq!(titles(&back.doc), titles(&initial.doc));
+        for section in &initial.doc.custom_sections {
+            let same = back
+                .doc
+                .custom_sections
+                .iter()
+                .find(|s| s.title == section.title)
+                .unwrap_or_else(|| panic!("{:?} did not survive the round trip", section.title));
+            assert_eq!(
+                same.content.active().len(),
+                section.content.active().len(),
+                "{:?} lost entries",
+                section.title
+            );
+        }
     }
 }

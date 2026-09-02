@@ -1652,33 +1652,59 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// Task A1: export filename settings round-trip cleanly through TOML,
-    /// and documents without an explicit [export] section deserialize with defaults.
+    /// A 0.2.0 vault has no `[export]` table and no export history, and both
+    /// have to arrive as defaults rather than as a parse error — and a document
+    /// that has never been exported must not start writing either of them, so a
+    /// vault written by this branch still opens on `main`.
     #[test]
-    fn export_settings_round_trip_and_defaults() {
+    fn export_settings_and_history_round_trip_and_stay_out_of_untouched_files() {
+        use crate::resume::model::ExportSettings;
+        use std::path::PathBuf;
+
         let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
         let doc = ResumeDoc::from_resume(resume, "Base");
 
-        // Without modification, default is skipped in serialization
         let text = super::to_toml(&doc).expect("serialize");
-        assert!(!text.contains("export"));
+        assert!(
+            !text.contains("[export]") && !text.contains("filename_pattern"),
+            "an untouched document grew an export table:\n{text}"
+        );
+        assert!(!text.contains("export_history"));
 
         let loaded: ResumeDoc = toml::from_str(&text).expect("deserialize default");
         assert_eq!(
             loaded.export.filename_pattern,
-            crate::resume::model::ExportSettings::DEFAULT_PATTERN
+            ExportSettings::DEFAULT_PATTERN
+        );
+        assert!(loaded.export.last_destination.is_none());
+        assert!(loaded.export_history.is_empty());
+
+        // Once set, every field survives the trip in both directions.
+        let mut used = doc;
+        used.export.filename_pattern = "{name} - {role} - {company}".into();
+        used.export.last_destination = Some(PathBuf::from("/Users/someone/Documents/CVs"));
+        used.record_export(
+            "2026-09-01 17:30",
+            "PDF",
+            "Concise",
+            PathBuf::from("/Users/someone/Documents/CVs/Ann Lee - SRE - Concise.pdf"),
         );
 
-        // With custom pattern, it serializes and reloads
-        let mut custom = doc;
-        custom.export.filename_pattern = "{name} - {role} - {company}".into();
-        let text2 = super::to_toml(&custom).expect("serialize custom");
-        assert!(text2.contains("filename_pattern = \"{name} - {role} - {company}\""));
+        let text = super::to_toml(&used).expect("serialize custom");
+        let back: ResumeDoc = toml::from_str(&text).expect("deserialize custom");
+        assert_eq!(back.export, used.export);
+        assert_eq!(back.export_history, used.export_history);
 
-        let loaded2: ResumeDoc = toml::from_str(&text2).expect("deserialize custom");
-        assert_eq!(
-            loaded2.export.filename_pattern,
-            "{name} - {role} - {company}"
-        );
+        // And the same file with the new tables stripped back out — which is
+        // what a 0.2.0 vault is — still opens, with defaults in their place.
+        let downgraded: String = text
+            .lines()
+            .take_while(|l| !l.starts_with("[export") && !l.starts_with("[[export"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let old: ResumeDoc =
+            toml::from_str(&downgraded).expect("a document without the export tables still parses");
+        assert_eq!(old.export, ExportSettings::default());
+        assert!(old.export_history.is_empty());
     }
 }

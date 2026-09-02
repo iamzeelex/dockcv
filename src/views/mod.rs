@@ -25,6 +25,7 @@ mod preset_matrix;
 mod root;
 mod root_custom_sections;
 mod root_dates;
+mod root_export_rail;
 mod root_export_sheet;
 mod root_highlights;
 mod root_layout_rail;
