@@ -21,7 +21,30 @@ use super::model::{
     SkillGroup, Volunteer, Work,
 };
 
-/// The hard-wrap column limit for plain-text export.
+/// The column plain text wraps at.
+///
+/// Only prose reaches the wrapper — the summary and the bullets. Headings, job
+/// titles and dates are short by construction, so this number is a decision
+/// about reading paragraphs and nothing else.
+///
+/// Three things make it 72 rather than something else:
+///
+/// * **Measure.** Prose reads best somewhere between 45 and 75 characters a
+///   line. A bullet is indented four columns, so 72 gives it a measure of 68 —
+///   inside the band, with the summary at 72 near its top.
+/// * **Slack under 80.** Eight columns is what a `> ` quote prefix costs when
+///   this file is pasted into a reply, plus the column a terminal keeps for its
+///   cursor. It is why 72 is the number in RFC 2822 and in the git commit
+///   convention, and the reason applies here unchanged.
+/// * **Scripts that are two columns wide.** At 72 a Japanese line holds 36
+///   characters, which is close to the norm for Japanese body text. That fell
+///   out of measuring width instead of bytes (see [`super::export_wrap`]) and is
+///   worth keeping in mind before anyone tunes this number for English alone.
+///
+/// Deliberately not a setting. It is one more control on a screen that has
+/// plenty, for a decision almost nobody holds an opinion about, and a CV that
+/// wraps differently from the one you sent last week is a difference nobody
+/// asked for.
 pub const WRAP_WIDTH: usize = 72;
 
 /// Export a composed [`Resume`] into clean, plain-text format.

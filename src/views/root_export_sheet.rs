@@ -605,9 +605,7 @@ impl Root {
                                     .items_center()
                                     .gap(px(6.0))
                                     .child(
-                                        Icon::new(IconName::Check)
-                                            .small()
-                                            .text_color(theme.accent),
+                                        Icon::new(IconName::Check).small().text_color(theme.accent),
                                     )
                                     .child(
                                         div()
@@ -624,8 +622,16 @@ impl Root {
                                     .rounded(theme.radius_sm())
                                     .text_size(px(10.5))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .bg(if notable_count > 0 { theme.selected } else { theme.hover })
-                                    .text_color(if notable_count > 0 { theme.accent } else { theme.text_muted })
+                                    .bg(if notable_count > 0 {
+                                        theme.selected
+                                    } else {
+                                        theme.hover
+                                    })
+                                    .text_color(if notable_count > 0 {
+                                        theme.accent
+                                    } else {
+                                        theme.text_muted
+                                    })
                                     .child(if notable_count > 0 {
                                         format!("{notable_count} custom")
                                     } else {
@@ -634,40 +640,60 @@ impl Root {
                             ),
                     )
                     .children((!resolution.notable.is_empty()).then(|| {
-                        div()
-                            .p_3()
-                            .flex()
-                            .flex_col()
-                            .gap(px(6.0))
-                            .children(resolution.notable.into_iter().map(|(section, variant, hidden)| {
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap(px(12.0))
-                                    .py(px(1.5))
-                                    .px_1()
-                                    .child(
-                                        div()
-                                            .text_size(px(12.5))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .text_color(if hidden { theme.text_muted } else { theme.text })
-                                            .child(section),
-                                    )
-                                    .child(
-                                        div()
-                                            .px(px(7.0))
-                                            .py(px(1.5))
-                                            .rounded(theme.radius_sm())
-                                            .text_size(px(11.0))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .bg(if hidden { theme.hover } else { theme.selected })
-                                            .border_1()
-                                            .border_color(if hidden { theme.border } else { theme.accent.opacity(0.3) })
-                                            .text_color(if hidden { theme.text_muted } else { theme.accent })
-                                            .child(if hidden { "hidden".to_string() } else { variant }),
-                                    )
-                            }))
+                        div().p_3().flex().flex_col().gap(px(6.0)).children(
+                            resolution
+                                .notable
+                                .into_iter()
+                                .map(|(section, variant, hidden)| {
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .gap(px(12.0))
+                                        .py(px(1.5))
+                                        .px_1()
+                                        .child(
+                                            div()
+                                                .text_size(px(12.5))
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(if hidden {
+                                                    theme.text_muted
+                                                } else {
+                                                    theme.text
+                                                })
+                                                .child(section),
+                                        )
+                                        .child(
+                                            div()
+                                                .px(px(7.0))
+                                                .py(px(1.5))
+                                                .rounded(theme.radius_sm())
+                                                .text_size(px(11.0))
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .bg(if hidden {
+                                                    theme.hover
+                                                } else {
+                                                    theme.selected
+                                                })
+                                                .border_1()
+                                                .border_color(if hidden {
+                                                    theme.border
+                                                } else {
+                                                    theme.accent.opacity(0.3)
+                                                })
+                                                .text_color(if hidden {
+                                                    theme.text_muted
+                                                } else {
+                                                    theme.accent
+                                                })
+                                                .child(if hidden {
+                                                    "hidden".to_string()
+                                                } else {
+                                                    variant
+                                                }),
+                                        )
+                                }),
+                        )
                     })),
             );
 
@@ -797,9 +823,11 @@ impl Root {
                                         Button::new("export-change-folder")
                                             .toolbar()
                                             .label("Change…")
-                                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                                this.change_export_folder(cx);
-                                            })),
+                                            .on_click(cx.listener(
+                                                |this, _: &ClickEvent, _window, cx| {
+                                                    this.change_export_folder(cx);
+                                                },
+                                            )),
                                     ),
                             ),
                     ),
@@ -825,17 +853,15 @@ impl Root {
                         .flex()
                         .gap(px(10.0))
                         .child(
-                            div()
-                                .pt(px(2.0))
-                                .child(
-                                    Icon::new(IconName::TriangleAlert)
-                                        .small()
-                                        .text_color(if overwrites {
-                                            theme.danger
-                                        } else {
-                                            theme.warning
-                                        }),
+                            div().pt(px(2.0)).child(
+                                Icon::new(IconName::TriangleAlert).small().text_color(
+                                    if overwrites {
+                                        theme.danger
+                                    } else {
+                                        theme.warning
+                                    },
                                 ),
+                            ),
                         )
                         .child(
                             div()
@@ -847,7 +873,9 @@ impl Root {
                                         .text_size(px(13.0))
                                         .font_weight(FontWeight::SEMIBOLD)
                                         .text_color(theme.text)
-                                        .child("A file with this name already exists in this folder"),
+                                        .child(
+                                            "A file with this name already exists in this folder",
+                                        ),
                                 )
                                 .child(
                                     div()
@@ -862,27 +890,25 @@ impl Root {
                                 ),
                         ),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .gap(px(8.0))
-                        .pl(px(26.0))
-                        .children([OnCollision::KeepBoth, OnCollision::Replace].map(|policy| {
-                            let (id, label) = match policy {
-                                OnCollision::KeepBoth => ("export-keep-both", "Keep both (auto-numbered)"),
-                                OnCollision::Replace => ("export-replace", "Replace existing file"),
-                            };
-                            Button::new(SharedString::from(id))
-                                .chip(on_collision == policy, &theme)
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                                    if let Some(sheet) = this.export_sheet.as_mut() {
-                                        sheet.on_collision = policy;
-                                    }
-                                    cx.notify();
-                                }))
-                                .child(label)
-                        })),
-                )
+                .child(div().flex().gap(px(8.0)).pl(px(26.0)).children(
+                    [OnCollision::KeepBoth, OnCollision::Replace].map(|policy| {
+                        let (id, label) = match policy {
+                            OnCollision::KeepBoth => {
+                                ("export-keep-both", "Keep both (auto-numbered)")
+                            }
+                            OnCollision::Replace => ("export-replace", "Replace existing file"),
+                        };
+                        Button::new(SharedString::from(id))
+                            .chip(on_collision == policy, &theme)
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                                if let Some(sheet) = this.export_sheet.as_mut() {
+                                    sheet.on_collision = policy;
+                                }
+                                cx.notify();
+                            }))
+                            .child(label)
+                    }),
+                ))
         });
 
         let panel = div()
@@ -983,18 +1009,18 @@ impl Root {
                                     } else {
                                         theme.text_muted
                                     })
-                                    .child(if overwrites { "REPLACES EXISTING FILE" } else { "OUTPUT TARGET" }),
+                                    .child(if overwrites {
+                                        "REPLACES EXISTING FILE"
+                                    } else {
+                                        "OUTPUT TARGET"
+                                    }),
                             )
                             .child(
                                 div()
                                     .font_family(MONO)
                                     .text_size(px(12.5))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(if overwrites {
-                                        theme.danger
-                                    } else {
-                                        theme.text
-                                    })
+                                    .text_color(if overwrites { theme.danger } else { theme.text })
                                     .truncate()
                                     .child(final_name),
                             ),
