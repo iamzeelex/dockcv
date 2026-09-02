@@ -10,13 +10,13 @@ use std::path::PathBuf;
 
 use gpui::prelude::*;
 use gpui::{
-    div, px, AnyElement, ClickEvent, Context, Entity, IntoElement, SharedString, Subscription,
-    Window,
+    div, px, AnyElement, ClickEvent, Context, Entity, FontWeight, IntoElement, SharedString,
+    Subscription, Window,
 };
 
 use dockcv_ui_components::{
-    Button, ButtonExt, Card, IconName, ScrollableElement, Sizable, TextField, TextFieldEvent,
-    TextFieldState,
+    Button, ButtonExt, Card, Icon, IconName, ScrollableElement, Sizable, TextField, TextFieldEvent,
+    TextFieldState, MONO,
 };
 
 use crate::resume::export_names::{resolve_destination, Destination, OnCollision};
@@ -376,37 +376,55 @@ impl Root {
             .unwrap_or_default()
             .to_string();
 
-        // Formats down the side rather than two-abreast across the body. Six
-        // cards in a grid set the panel's width, and then every decision that
-        // followed from the choice stacked underneath them set its height — the
-        // sheet ran off the top and the bottom of the window. As a rail they
-        // cost one column, and what depends on them sits beside them where the
-        // two can be read together.
-        //
-        // One line each: the six names say what they are, and the description
-        // of the one actually chosen sits under the rail, where it is read once
-        // rather than six times.
+        let person_name = self.doc.profile.active().name.trim();
+        let person_role = self.doc.profile.active().label.trim();
+        let doc_subtitle = if !person_name.is_empty() && !person_role.is_empty() {
+            format!("{person_name} · {person_role}")
+        } else if !person_name.is_empty() {
+            person_name.to_string()
+        } else {
+            "Document".to_string()
+        };
+
+        // Left sidebar: format selector with rich card indicators
         let format_rail = div()
-            .w(px(186.0))
+            .w(px(270.0))
             .flex_none()
+            .bg(theme.surface)
+            .border_r_1()
+            .border_color(theme.border)
+            .p_4()
             .flex()
             .flex_col()
-            .gap(px(6.0))
+            .gap(px(10.0))
             .child(
                 div()
-                    .text_style(TextStyle::eyebrow())
-                    .text_color(theme.text_muted)
-                    .child("Format"),
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_1()
+                    .mb(px(2.0))
+                    .child(
+                        div()
+                            .text_style(TextStyle::eyebrow())
+                            .text_color(theme.text_muted)
+                            .child("EXPORT FORMAT"),
+                    )
+                    .child(
+                        div()
+                            .text_style(TextStyle::meta())
+                            .text_color(theme.text_muted)
+                            .child("6 formats"),
+                    ),
             )
             .child(
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.0))
+                    .gap(px(6.0))
                     .children(ExportFormat::ALL.map(|fmt| {
                         let is_selected = fmt == active_format;
                         Card::new()
-                            .xsmall()
                             .interactive(SharedString::from(format!(
                                 "export-fmt-{}",
                                 fmt.extension()
@@ -419,221 +437,440 @@ impl Root {
                             .bg(if is_selected {
                                 theme.selected
                             } else {
-                                theme.surface
+                                theme.elevated
                             })
-                            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                                 if let Some(s) = this.export_sheet.as_mut() {
                                     s.format = fmt;
                                 }
+                                this.reseed_export_name(window, cx);
                                 cx.notify();
                             }))
                             .child(
                                 div()
                                     .flex()
-                                    .items_center()
-                                    .justify_between()
+                                    .flex_col()
+                                    .gap(px(3.0))
                                     .w_full()
-                                    .gap(px(6.0))
                                     .child(
                                         div()
-                                            .text_style(TextStyle::control())
-                                            .text_color(if is_selected {
-                                                theme.text
-                                            } else {
-                                                theme.text_subtle
-                                            })
-                                            .truncate()
-                                            .child(fmt.title()),
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .w_full()
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(6.0))
+                                                    .children(is_selected.then(|| {
+                                                        div()
+                                                            .w(px(3.0))
+                                                            .h(px(14.0))
+                                                            .rounded(px(1.5))
+                                                            .bg(theme.accent)
+                                                    }))
+                                                    .child(
+                                                        div()
+                                                            .text_style(TextStyle::control())
+                                                            .font_weight(if is_selected {
+                                                                FontWeight::SEMIBOLD
+                                                            } else {
+                                                                FontWeight::MEDIUM
+                                                            })
+                                                            .text_color(if is_selected {
+                                                                theme.text
+                                                            } else {
+                                                                theme.text_subtle
+                                                            })
+                                                            .child(fmt.title()),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .px(px(6.0))
+                                                    .py(px(1.5))
+                                                    .rounded(theme.radius_sm())
+                                                    .font_family(MONO)
+                                                    .text_size(px(11.0))
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .bg(if is_selected {
+                                                        theme.accent.opacity(0.18)
+                                                    } else {
+                                                        theme.hover
+                                                    })
+                                                    .text_color(if is_selected {
+                                                        theme.accent
+                                                    } else {
+                                                        theme.text_muted
+                                                    })
+                                                    .child(fmt.badge()),
+                                            ),
                                     )
                                     .child(
                                         div()
-                                            .flex_none()
-                                            .text_style(TextStyle::meta())
+                                            .pl(if is_selected { px(9.0) } else { px(0.0) })
+                                            .text_size(px(11.5))
                                             .text_color(if is_selected {
-                                                theme.accent
+                                                theme.text_subtle
                                             } else {
                                                 theme.text_muted
                                             })
-                                            .child(fmt.badge()),
+                                            .child(fmt.subtitle()),
                                     ),
                             )
                     })),
-            )
-            .child(
-                div()
-                    .pt(px(2.0))
-                    .text_style(TextStyle::meta())
-                    .text_color(theme.text_muted)
-                    .child(active_format.subtitle()),
             );
 
-        let labelled = |label: &'static str, trailing: Option<AnyElement>, body: AnyElement| {
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(5.0))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .min_h(px(18.0))
-                        .child(
-                            div()
-                                .text_style(TextStyle::eyebrow())
-                                .text_color(theme.text_muted)
-                                .child(label),
-                        )
-                        .children(trailing),
-                )
-                .child(body)
-        };
-
-        let preset_chips = div()
-            .flex()
-            .flex_wrap()
-            .gap(px(6.0))
-            .child({
-                let selected = selected_preset.is_none();
-                Button::new("export-preset-none")
-                    .chip(selected, &theme)
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        if let Some(s) = this.export_sheet.as_mut() {
-                            s.preset_index = None;
-                        }
-                        this.reseed_export_name(window, cx);
-                        cx.notify();
-                    }))
-                    .child(CURRENT_VIEW)
-            })
-            .children(self.doc.presets.iter().enumerate().map(|(i, preset)| {
-                let selected = selected_preset == Some(i);
-                Button::new(SharedString::from(format!("export-preset-{i}")))
-                    .chip(selected, &theme)
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        if let Some(s) = this.export_sheet.as_mut() {
-                            s.preset_index = Some(i);
-                        }
-                        // The pattern may name the preset, so the filename
-                        // follows the chip — unless the user typed their own.
-                        this.reseed_export_name(window, cx);
-                        cx.notify();
-                    }))
-                    .child(preset.name.clone())
-            }))
-            .into_any_element();
-
-        let resolution_body = div()
+        // Section 1: Preset selection & section resolution summary
+        let notable_count = resolution.notable.len();
+        let preset_section = div()
             .flex()
             .flex_col()
-            .gap(px(3.0))
+            .gap(px(10.0))
             .child(
                 div()
-                    .text_style(TextStyle::meta())
-                    .text_color(theme.text_muted)
-                    .child(resolution.headline()),
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_style(TextStyle::eyebrow())
+                            .text_color(theme.text_muted)
+                            .child("PRESET & CONTENT"),
+                    )
+                    .child(
+                        div()
+                            .text_style(TextStyle::meta())
+                            .text_color(theme.text_muted)
+                            .child(format!("{} presets", self.doc.presets.len() + 1)),
+                    ),
             )
-            .children(
-                resolution
-                    .notable
-                    .into_iter()
-                    .map(|(section, variant, hidden)| {
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(6.0))
+                    .child({
+                        let selected = selected_preset.is_none();
+                        Button::new("export-preset-none")
+                            .chip(selected, &theme)
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                if let Some(s) = this.export_sheet.as_mut() {
+                                    s.preset_index = None;
+                                }
+                                this.reseed_export_name(window, cx);
+                                cx.notify();
+                            }))
+                            .child(CURRENT_VIEW)
+                    })
+                    .children(self.doc.presets.iter().enumerate().map(|(i, preset)| {
+                        let selected = selected_preset == Some(i);
+                        Button::new(SharedString::from(format!("export-preset-{i}")))
+                            .chip(selected, &theme)
+                            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                if let Some(s) = this.export_sheet.as_mut() {
+                                    s.preset_index = Some(i);
+                                }
+                                this.reseed_export_name(window, cx);
+                                cx.notify();
+                            }))
+                            .child(preset.name.clone())
+                    })),
+            )
+            .child(
+                // Resolution summary card
+                div()
+                    .rounded(theme.radius_md())
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .overflow_hidden()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        // Header banner of the card
                         div()
                             .flex()
                             .items_center()
                             .justify_between()
-                            .gap(px(8.0))
+                            .px_3()
+                            .py_2()
+                            .bg(theme.elevated)
+                            .border_b_1()
+                            .border_color(theme.border)
                             .child(
                                 div()
-                                    .text_style(TextStyle::body())
-                                    .text_color(if hidden { theme.text_muted } else { theme.text })
-                                    .truncate()
-                                    .child(section),
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.0))
+                                    .child(
+                                        Icon::new(IconName::Check)
+                                            .small()
+                                            .text_color(theme.accent),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(13.0))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(theme.text)
+                                            .child(resolution.headline()),
+                                    ),
                             )
                             .child(
                                 div()
-                                    .flex_none()
-                                    .text_style(TextStyle::meta())
-                                    .text_color(if hidden {
-                                        theme.text_muted
+                                    .px(px(6.0))
+                                    .py(px(1.0))
+                                    .rounded(theme.radius_sm())
+                                    .text_size(px(10.5))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .bg(if notable_count > 0 { theme.selected } else { theme.hover })
+                                    .text_color(if notable_count > 0 { theme.accent } else { theme.text_muted })
+                                    .child(if notable_count > 0 {
+                                        format!("{notable_count} custom")
                                     } else {
-                                        theme.accent
-                                    })
-                                    .child(if hidden {
-                                        "hidden".to_string()
-                                    } else {
-                                        variant
+                                        "all standard".to_string()
                                     }),
-                            )
-                    }),
-            )
-            .into_any_element();
+                            ),
+                    )
+                    .children((!resolution.notable.is_empty()).then(|| {
+                        div()
+                            .p_3()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.0))
+                            .children(resolution.notable.into_iter().map(|(section, variant, hidden)| {
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap(px(12.0))
+                                    .py(px(1.5))
+                                    .px_1()
+                                    .child(
+                                        div()
+                                            .text_size(px(12.5))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(if hidden { theme.text_muted } else { theme.text })
+                                            .child(section),
+                                    )
+                                    .child(
+                                        div()
+                                            .px(px(7.0))
+                                            .py(px(1.5))
+                                            .rounded(theme.radius_sm())
+                                            .text_size(px(11.0))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .bg(if hidden { theme.hover } else { theme.selected })
+                                            .border_1()
+                                            .border_color(if hidden { theme.border } else { theme.accent.opacity(0.3) })
+                                            .text_color(if hidden { theme.text_muted } else { theme.accent })
+                                            .child(if hidden { "hidden".to_string() } else { variant }),
+                                    )
+                            }))
+                    })),
+            );
 
-        let details = div()
-            .flex_1()
-            .min_w_0()
+        // Section 2: Output filename and destination folder in an integrated card
+        let output_section = div()
             .flex()
             .flex_col()
-            .gap(px(14.0))
-            .child(labelled("Preset", None, preset_chips))
-            .child(labelled("Resolves to", None, resolution_body))
-            .child(labelled(
-                "Name",
-                Some(
-                    div()
-                        .text_style(TextStyle::meta())
-                        .text_color(theme.text_muted)
-                        .child(format!(".{}", active_format.extension()))
-                        .into_any_element(),
-                ),
-                // A field, which is A10's third answer: editing the name is not
-                // a mode to enter, it is the name waiting to be typed over.
-                TextField::new(&name_field).small().into_any_element(),
-            ))
-            .child(labelled(
-                "Folder",
-                Some(
-                    Button::new("export-change-folder")
-                        .quiet()
-                        .text_xs()
-                        .label("Change…")
-                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                            this.change_export_folder(cx);
-                        }))
-                        .into_any_element(),
-                ),
+            .gap(px(10.0))
+            .child(
                 div()
-                    .text_style(TextStyle::code())
+                    .text_style(TextStyle::eyebrow())
                     .text_color(theme.text_muted)
-                    .truncate()
-                    .child(folder.display().to_string())
-                    .into_any_element(),
-            ))
-            .children(collides.then(|| {
+                    .child("OUTPUT DESTINATION"),
+            )
+            .child(
                 div()
+                    .rounded(theme.radius_md())
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .p_3p5()
                     .flex()
                     .flex_col()
-                    .gap(px(6.0))
-                    .p_2p5()
-                    .rounded(theme.radius_md())
-                    .bg(theme.selected)
-                    .border_1()
-                    .border_color(if overwrites {
-                        theme.danger
-                    } else {
-                        theme.warning
-                    })
+                    .gap(px(12.0))
                     .child(
+                        // Filename
                         div()
-                            .text_style(TextStyle::body())
-                            .text_color(theme.text)
-                            .child("That name is already taken in this folder."),
+                            .flex()
+                            .flex_col()
+                            .gap(px(5.0))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(theme.text_subtle)
+                                            .child("Filename"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.0))
+                                            .text_color(theme.text_muted)
+                                            .child("press Enter to export"),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .w_full()
+                                    .rounded(theme.radius_md())
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .bg(theme.elevated)
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .child(TextField::new(&name_field).small()),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .px(px(12.0))
+                                            .py(px(6.0))
+                                            .border_l_1()
+                                            .border_color(theme.border)
+                                            .bg(theme.surface)
+                                            .rounded_r(theme.radius_md())
+                                            .font_family(MONO)
+                                            .text_size(px(12.0))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(theme.text_muted)
+                                            .child(format!(".{}", active_format.extension())),
+                                    ),
+                            ),
                     )
-                    .child(div().flex().gap(px(6.0)).children(
-                        [OnCollision::KeepBoth, OnCollision::Replace].map(|policy| {
+                    .child(
+                        // Destination Folder
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(5.0))
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(theme.text_subtle)
+                                    .child("Save into folder"),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap(px(10.0))
+                                    .p_2p5()
+                                    .rounded(theme.radius_md())
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .bg(theme.elevated)
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(8.0))
+                                            .min_w_0()
+                                            .child(
+                                                Icon::new(IconName::Folder)
+                                                    .small()
+                                                    .text_color(theme.text_muted),
+                                            )
+                                            .child(
+                                                div()
+                                                    .font_family(MONO)
+                                                    .text_size(px(12.0))
+                                                    .text_color(theme.text)
+                                                    .truncate()
+                                                    .child(folder.display().to_string()),
+                                            ),
+                                    )
+                                    .child(
+                                        Button::new("export-change-folder")
+                                            .toolbar()
+                                            .label("Change…")
+                                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                                this.change_export_folder(cx);
+                                            })),
+                                    ),
+                            ),
+                    ),
+            );
+
+        // Section 3: Collision Warning (when collides)
+        let collision_warning = collides.then(|| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(10.0))
+                .p_3p5()
+                .rounded(theme.radius_md())
+                .bg(theme.selected)
+                .border_1()
+                .border_color(if overwrites {
+                    theme.danger
+                } else {
+                    theme.warning
+                })
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(10.0))
+                        .child(
+                            div()
+                                .pt(px(2.0))
+                                .child(
+                                    Icon::new(IconName::TriangleAlert)
+                                        .small()
+                                        .text_color(if overwrites {
+                                            theme.danger
+                                        } else {
+                                            theme.warning
+                                        }),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.0))
+                                .child(
+                                    div()
+                                        .text_size(px(13.0))
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(theme.text)
+                                        .child("A file with this name already exists in this folder"),
+                                )
+                                .child(
+                                    div()
+                                        .font_family(MONO)
+                                        .text_size(px(12.0))
+                                        .text_color(if overwrites {
+                                            theme.danger
+                                        } else {
+                                            theme.text_subtle
+                                        })
+                                        .child(format!("Target: {final_name}")),
+                                ),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(8.0))
+                        .pl(px(26.0))
+                        .children([OnCollision::KeepBoth, OnCollision::Replace].map(|policy| {
                             let (id, label) = match policy {
-                                OnCollision::KeepBoth => ("export-keep-both", "Keep both"),
-                                OnCollision::Replace => ("export-replace", "Replace"),
+                                OnCollision::KeepBoth => ("export-keep-both", "Keep both (auto-numbered)"),
+                                OnCollision::Replace => ("export-replace", "Replace existing file"),
                             };
                             Button::new(SharedString::from(id))
                                 .chip(on_collision == policy, &theme)
@@ -644,95 +881,120 @@ impl Root {
                                     cx.notify();
                                 }))
                                 .child(label)
-                        }),
-                    ))
-            }));
+                        })),
+                )
+        });
 
         let panel = div()
-            .w(px(640.0))
+            .w(px(880.0))
             .flex()
             .flex_col()
-            .rounded(theme.radius_lg())
+            .rounded(theme.radius_xl())
+            .overflow_hidden()
             .bg(theme.elevated)
             .border_1()
             .border_color(theme.border)
             .shadow_lg()
             .child(
+                // Header
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_4()
-                    .py_3()
+                    .px_6()
+                    .py_4()
                     .border_b_1()
                     .border_color(theme.border)
+                    .bg(theme.surface)
                     .child(
                         div()
-                            .text_style(TextStyle::heading())
-                            .text_color(theme.text)
-                            .child("Export Document"),
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.0))
+                            .child(
+                                div()
+                                    .text_style(TextStyle::heading())
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(theme.text)
+                                    .child("Export Document"),
+                            )
+                            .child(
+                                div()
+                                    .text_style(TextStyle::meta())
+                                    .text_color(theme.text_muted)
+                                    .child(doc_subtitle),
+                            ),
                     )
                     .child(
                         Button::new("export-sheet-close")
                             .icon_only()
                             .icon(IconName::Close)
-                            .tooltip("Close")
+                            .tooltip("Close (Esc)")
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.close_export_sheet(cx);
                             })),
                     ),
             )
             .child(
-                // A ceiling rather than `flex_1`: the panel sizes to its
-                // content, so a child asking to fill it asks for a share of
-                // nothing and collapses to zero — which is how the body came to
-                // render as an empty strip. The cap is high enough that only a
-                // document with many sections on unexpected variants reaches it.
+                // Body: 2 columns
                 div()
                     .id("export-sheet-body")
-                    .max_h(px(440.0))
-                    .overflow_y_scrollbar()
+                    .max_h(px(580.0))
                     .flex()
-                    .gap(px(18.0))
-                    .p_4()
                     .child(format_rail)
-                    .child(details),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .p_6()
+                            .overflow_y_scrollbar()
+                            .flex()
+                            .flex_col()
+                            .gap(px(18.0))
+                            .child(preset_section)
+                            .child(output_section)
+                            .children(collision_warning),
+                    ),
             )
             .child(
-                // The filename sits with the button that writes it. It is the
-                // one thing on this sheet that leaves the building, and reading
-                // it in the same glance as the verb is the whole point.
+                // Footer
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .gap(px(16.0))
-                    .px_4()
-                    .py_3()
+                    .gap(px(20.0))
+                    .px_6()
+                    .py_4()
                     .border_t_1()
                     .border_color(theme.border)
+                    .bg(theme.surface)
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .flex()
-                            .items_baseline()
-                            .gap(px(8.0))
+                            .flex_col()
+                            .gap(px(2.0))
                             .child(
                                 div()
-                                    .flex_none()
                                     .text_style(TextStyle::eyebrow())
                                     .text_color(if overwrites {
                                         theme.danger
                                     } else {
                                         theme.text_muted
                                     })
-                                    .child(if overwrites { "Replaces" } else { "Writes" }),
+                                    .child(if overwrites { "REPLACES EXISTING FILE" } else { "OUTPUT TARGET" }),
                             )
                             .child(
                                 div()
-                                    .text_style(TextStyle::code())
-                                    .text_color(if overwrites { theme.danger } else { theme.text })
+                                    .font_family(MONO)
+                                    .text_size(px(12.5))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(if overwrites {
+                                        theme.danger
+                                    } else {
+                                        theme.text
+                                    })
                                     .truncate()
                                     .child(final_name),
                             ),
@@ -741,7 +1003,8 @@ impl Root {
                         div()
                             .flex_none()
                             .flex()
-                            .gap(px(8.0))
+                            .items_center()
+                            .gap(px(10.0))
                             .child(
                                 Button::new("export-cancel")
                                     .toolbar()
@@ -753,6 +1016,7 @@ impl Root {
                             .child(
                                 Button::new("export-confirm")
                                     .toolbar_primary()
+                                    .icon(IconName::ArrowDown)
                                     .label(format!("Export {}", active_format.short_name()))
                                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                         this.perform_export(cx);
