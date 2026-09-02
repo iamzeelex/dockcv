@@ -358,6 +358,7 @@ mod tests {
             preset_names: Vec::new(),
             unreadable: false,
             modified_secs: None,
+            search: Vec::new(),
         }
     }
 

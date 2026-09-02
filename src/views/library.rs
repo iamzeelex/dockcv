@@ -34,7 +34,7 @@ use super::shell::{remove_at, Screen, Shell};
 /// The five section kinds that have a library pool, in the order the screen
 /// lists them. Profile has no pool (there is only one of you), and custom
 /// sections do not have one either — see `root.rs::save_block_to_library`.
-const POOLS: [(SectionKind, &str); 5] = [
+pub(super) const POOLS: [(SectionKind, &str); 5] = [
     (SectionKind::Work, "Work Experience"),
     (SectionKind::Education, "Education"),
     (SectionKind::Skills, "Skills"),
@@ -44,7 +44,7 @@ const POOLS: [(SectionKind, &str); 5] = [
 
 /// One block flattened for rendering: the lines a card draws, plus the
 /// keywords a skill group shows as chips instead of a body line.
-struct BlockCard {
+pub(super) struct BlockCard {
     /// Position in the *pool*, not in the filtered list on screen — this is
     /// what delete addresses, so it must survive search and filtering.
     index: usize,
@@ -67,7 +67,7 @@ impl BlockCard {
     /// matches against. Searching the text of blocks rather than their titles
     /// is the point of having a library at all (review P-14 / US-20); this
     /// covers what the card shows, not yet every bullet behind it.
-    fn haystack(&self) -> String {
+    pub(super) fn haystack(&self) -> String {
         format!(
             "{} {} {} {} {}",
             self.title,
@@ -172,7 +172,7 @@ fn push_clone<T: Clone>(block: Option<&T>, into: &mut Vec<T>) {
 }
 
 /// Flatten one section's pool into cards, in pool order.
-fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
+pub(super) fn cards_for(library: &Library, section: SectionKind) -> Vec<BlockCard> {
     match section {
         SectionKind::Work => library
             .work
