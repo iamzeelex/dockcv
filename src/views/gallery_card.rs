@@ -309,13 +309,30 @@ impl Shell {
                     .child("draft"),
                 )
             })
-            .children(shown.into_iter().map(|name| {
-                Tag::custom(theme.chip_bg, theme.chip_fg, theme.chip_bg)
+            .children(shown.into_iter().enumerate().map(|(index, name)| {
+                let path = meta.path.clone();
+                // `occlude` because the whole card is a click target: without
+                // it the card's own handler is behind this hitbox and sees the
+                // press first, opening the document in whatever state it was
+                // left. Same reason the `···` menu occludes — see `card_menu`.
+                div().occlude().child(
+                    Button::new(SharedString::from(format!(
+                        "card-preset-{}-{index}",
+                        meta.path.to_string_lossy()
+                    )))
+                    .quiet()
                     .px(px(8.0))
                     .py(px(3.0))
                     .rounded(theme.radius_sm())
+                    .bg(theme.chip_bg)
+                    .text_color(theme.chip_fg)
                     .text_style(TextStyle::chip())
-                    .child(name)
+                    .tooltip("Open at this preset")
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.open_doc_at(path.clone(), Some(index), window, cx);
+                    }))
+                    .child(name),
+                )
             }))
             .when(hidden > 0, |row| {
                 row.child(

@@ -649,6 +649,25 @@ impl Shell {
     /// advertises as hand-editable was replaced by sample data on one click,
     /// and the gallery happily routed a card marked "unreadable file" straight
     /// into it. A document that will not parse is a document to leave alone.
+    /// Open a document, showing it at `preset` when the caller named one.
+    ///
+    /// The gallery's preset chips are the only caller that names one: the card
+    /// itself opens the document as it was left, which is what a card has
+    /// always done.
+    pub(super) fn open_doc_at(
+        &mut self,
+        doc_path: PathBuf,
+        preset: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_doc(doc_path, cx);
+        if let (Some(index), Screen::Editor(editor)) = (preset, &self.screen) {
+            let editor = editor.clone();
+            editor.update(cx, |root, cx| root.open_at_preset(index, window, cx));
+        }
+    }
+
     pub(super) fn open_doc(&mut self, doc_path: PathBuf, cx: &mut Context<Self>) {
         let doc = match vault::load(&doc_path) {
             Ok(doc) => doc,
