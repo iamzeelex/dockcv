@@ -7,9 +7,12 @@
 use std::fmt::Write as _;
 
 use super::dates::DateFormat;
+use super::export_walk::{
+    format_date_range, is_section_empty, ordered_sections, resolve_section_title,
+};
 use super::model::{
-    Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, ResumeDate,
-    ResumeDoc, SectionKind, SkillGroup, Volunteer, Work,
+    Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
+    SkillGroup, Volunteer, Work,
 };
 
 /// Export a composed [`Resume`] to GitHub-Flavored Markdown.
@@ -147,7 +150,13 @@ fn format_tel(phone: &str) -> String {
     if phone.starts_with("tel:") {
         phone.to_string()
     } else {
-        format!("tel:{}", phone.chars().filter(|c| !c.is_whitespace() && *c != '(' && *c != ')' && *c != '-').collect::<String>())
+        format!(
+            "tel:{}",
+            phone
+                .chars()
+                .filter(|c| !c.is_whitespace() && *c != '(' && *c != ')' && *c != '-')
+                .collect::<String>()
+        )
     }
 }
 
@@ -321,72 +330,6 @@ fn write_markdown_custom_entry(out: &mut String, e: &CustomEntry, date_format: D
     }
 }
 
-fn format_date_range(start: &ResumeDate, end: &ResumeDate, date_format: DateFormat) -> String {
-    let start_str = start.display(date_format);
-    let end_str = end.display(date_format);
-    if !start_str.is_empty() && !end_str.is_empty() {
-        format!("{start_str} – {end_str}")
-    } else if !start_str.is_empty() {
-        start_str
-    } else if !end_str.is_empty() {
-        end_str
-    } else {
-        String::new()
-    }
-}
-
-fn ordered_sections(resume: &Resume) -> Vec<SectionKind> {
-    if !resume.section_order.is_empty() {
-        return resume.section_order.clone();
-    }
-
-    let mut list = vec![
-        SectionKind::Work,
-        SectionKind::Education,
-        SectionKind::Skills,
-        SectionKind::Certificates,
-        SectionKind::Organizations,
-    ];
-    for cs in &resume.custom_sections {
-        list.push(SectionKind::Custom(cs.id));
-    }
-    list
-}
-
-fn is_section_empty(resume: &Resume, kind: SectionKind) -> bool {
-    match kind {
-        SectionKind::Profile => resume.basics.summary.trim().is_empty(),
-        SectionKind::Work => resume.work.is_empty(),
-        SectionKind::Education => resume.education.is_empty(),
-        SectionKind::Skills => resume.skills.is_empty(),
-        SectionKind::Certificates => resume.certificates.is_empty(),
-        SectionKind::Organizations => resume.volunteer.is_empty(),
-        SectionKind::Custom(id) => resume
-            .custom_sections
-            .iter()
-            .find(|cs| cs.id == id)
-            .map(|cs| cs.entries.is_empty())
-            .unwrap_or(true),
-    }
-}
-
-fn resolve_section_title(resume: &Resume, kind: SectionKind) -> String {
-    if let SectionKind::Custom(id) = kind {
-        return resume
-            .custom_sections
-            .iter()
-            .find(|cs| cs.id == id)
-            .map(|cs| cs.title.clone())
-            .unwrap_or_default();
-    }
-
-    if let Some((_, title)) = resume.section_titles.iter().find(|(k, _)| *k == kind) {
-        return title.clone();
-    }
-
-    ResumeDoc::default_section_title(kind).to_string()
-}
-
 /// Convert Typst inline markup (`*bold*`, `_italic_`, `#link("url")[label]`) to Markdown.
 pub fn typst_to_markdown(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -455,78 +398,8 @@ pub fn typst_to_markdown(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::resume::export_walk::sample_resume;
     use crate::resume::model::*;
-
-    fn sample_resume() -> Resume {
-        Resume {
-            basics: Basics {
-                name: "Alexey Belochenko".into(),
-                label: "Principal Systems Architect".into(),
-                summary: "Experienced *systems engineer* specializing in _distributed_ storage."
-                    .into(),
-                email: "alexey@example.com".into(),
-                phone: "+1 555-0199".into(),
-                location: "San Francisco, CA".into(),
-                url: "https://example.com".into(),
-                profiles: vec![NetworkProfile {
-                    network: "GitHub".into(),
-                    username: "zeelex".into(),
-                    url: "https://github.com/zeelex".into(),
-                }],
-            },
-            work: vec![Work {
-                name: "Tech Corp".into(),
-                position: "Staff Software Engineer".into(),
-                location: "Mountain View, CA".into(),
-                start_date: ResumeDate::new("2021-03"),
-                end_date: ResumeDate::new("Present"),
-                summary: "Lead storage engine architecture.".into(),
-                highlights: vec![
-                    "Designed high-throughput commit log with #link(\"https://dockcv.com\")[DockCV].".into(),
-                ],
-            }],
-            education: vec![Education {
-                institution: "State University".into(),
-                study_type: "B.S. in Computer Science".into(),
-                start_date: ResumeDate::new("2015-09"),
-                end_date: ResumeDate::new("2019-06"),
-                url: "https://university.edu".into(),
-                highlights: vec!["Graduated *Summa Cum Laude* with honors.".into()],
-            }],
-            skills: vec![SkillGroup {
-                name: "Languages".into(),
-                keywords: vec!["Rust".into(), "C++".into(), "Go".into()],
-            }],
-            certificates: vec![Certificate {
-                name: "AWS Solutions Architect".into(),
-                issuer: "Amazon Web Services".into(),
-                date: ResumeDate::new("2022-05"),
-                url: "https://aws.amazon.com".into(),
-            }],
-            volunteer: vec![Volunteer {
-                organization: "Open Source Collective".into(),
-                position: "Core Maintainer".into(),
-                start_date: ResumeDate::new("2020-01"),
-                end_date: ResumeDate::new("Present"),
-                highlights: vec!["Maintain networking libraries.".into()],
-            }],
-            custom_sections: vec![ComposedCustomSection {
-                id: CustomSectionId::from_u32(1),
-                title: "Publications".into(),
-                entries: vec![CustomEntry {
-                    title: "High Performance Storage in Rust".into(),
-                    subtitle: "ACM Systems Conference".into(),
-                    start_date: ResumeDate::new("2023-11"),
-                    end_date: ResumeDate::new(""),
-                    url: "https://doi.org/10.1145/example".into(),
-                    highlights: vec!["Awarded Best Paper.".into()],
-                }],
-            }],
-            section_titles: Vec::new(),
-            section_overrides: Vec::new(),
-            section_order: Vec::new(),
-        }
-    }
 
     #[test]
     fn markdown_export_contains_all_markdown_headers_and_links() {
@@ -571,10 +444,7 @@ mod tests {
     #[test]
     fn markdown_export_respects_custom_order_and_titles() {
         let mut resume = sample_resume();
-        resume.section_order = vec![
-            SectionKind::Skills,
-            SectionKind::Work,
-        ];
+        resume.section_order = vec![SectionKind::Skills, SectionKind::Work];
         resume.section_titles = vec![(SectionKind::Work, "Selected Work".into())];
 
         let md = export_markdown(&resume);

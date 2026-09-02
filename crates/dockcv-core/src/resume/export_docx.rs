@@ -5,14 +5,31 @@
 
 use std::io::Cursor;
 
-use docx_rs::{Docx, DocxError, Paragraph, Run};
+use docx_rs::{
+    AbstractNumbering, Docx, DocxError, IndentLevel, Level, LevelJc, LevelText, NumberFormat,
+    Numbering, NumberingId, Paragraph, Run, Start,
+};
 
 use super::dates::DateFormat;
 use super::export_text::strip_typst_markup;
-use super::model::{
-    Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, ResumeDate,
-    ResumeDoc, SectionKind, SkillGroup, Volunteer, Work,
+use super::export_walk::{
+    format_date_range, is_section_empty, ordered_sections, resolve_section_title,
 };
+use super::model::{
+    Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
+    SkillGroup, Volunteer, Work,
+};
+
+/// Word's outline level for a section heading (`EXPERIENCE`), zero-based.
+const SECTION_OUTLINE_LEVEL: usize = 0;
+
+/// …and for the entry headings under it (a job title, a degree).
+const ENTRY_OUTLINE_LEVEL: usize = 1;
+
+/// The one bullet list definition the document carries. A literal `•` in a
+/// paragraph reads as a bullet to a person and as punctuation to a parser, and
+/// this format exists to be parsed.
+const BULLET_NUMBERING: usize = 1;
 
 /// Export a composed [`Resume`] to DOCX binary bytes.
 pub fn export_docx(resume: &Resume) -> Result<Vec<u8>, DocxError> {
@@ -24,7 +41,25 @@ pub fn export_docx_with_date_format(
     resume: &Resume,
     date_format: DateFormat,
 ) -> Result<Vec<u8>, DocxError> {
-    let mut docx = Docx::new();
+    let mut docx = Docx::new()
+        .add_abstract_numbering(
+            AbstractNumbering::new(BULLET_NUMBERING).add_level(
+                Level::new(
+                    0,
+                    Start::new(1),
+                    NumberFormat::new("bullet"),
+                    LevelText::new("•"),
+                    LevelJc::new("left"),
+                )
+                .indent(
+                    Some(360),
+                    Some(docx_rs::SpecialIndentType::Hanging(360)),
+                    None,
+                    None,
+                ),
+            ),
+        )
+        .add_numbering(Numbering::new(BULLET_NUMBERING, BULLET_NUMBERING));
 
     // 1. Header / Basics
     write_docx_basics(&mut docx, &resume.basics);
@@ -49,6 +84,11 @@ pub fn export_docx_with_date_format(
             if !title.trim().is_empty() {
                 docx = docx.add_paragraph(
                     Paragraph::new()
+                        // `outline_lvl` is what makes Word's navigation pane and
+                        // a parser see structure. Bold text at 13pt only *looks*
+                        // like a heading, and looking like one is exactly what
+                        // an ATS cannot read.
+                        .outline_lvl(SECTION_OUTLINE_LEVEL)
                         .add_run(Run::new().add_text(title.to_uppercase()).bold().size(26)),
                 );
             }
@@ -89,15 +129,13 @@ pub fn export_docx_with_date_format(
 
 fn write_docx_basics(docx: &mut Docx, b: &Basics) {
     if !b.name.is_empty() {
-        *docx = std::mem::take(docx).add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(&b.name).bold().size(36)),
-        );
+        *docx = std::mem::take(docx)
+            .add_paragraph(Paragraph::new().add_run(Run::new().add_text(&b.name).bold().size(36)));
     }
 
     if !b.label.is_empty() {
-        *docx = std::mem::take(docx).add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(&b.label).bold().size(24)),
-        );
+        *docx = std::mem::take(docx)
+            .add_paragraph(Paragraph::new().add_run(Run::new().add_text(&b.label).bold().size(24)));
     }
 
     let mut contact_parts = Vec::new();
@@ -116,9 +154,8 @@ fn write_docx_basics(docx: &mut Docx, b: &Basics) {
 
     if !contact_parts.is_empty() {
         let contact_line = contact_parts.join("  |  ");
-        *docx = std::mem::take(docx).add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(contact_line).size(20)),
-        );
+        *docx = std::mem::take(docx)
+            .add_paragraph(Paragraph::new().add_run(Run::new().add_text(contact_line).size(20)));
     }
 
     if !b.profiles.is_empty() {
@@ -147,9 +184,8 @@ fn write_docx_basics(docx: &mut Docx, b: &Basics) {
 
     if !b.summary.is_empty() {
         let clean_summary = strip_typst_markup(&b.summary);
-        *docx = std::mem::take(docx).add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(clean_summary).size(22)),
-        );
+        *docx = std::mem::take(docx)
+            .add_paragraph(Paragraph::new().add_run(Run::new().add_text(clean_summary).size(22)));
     }
 }
 
@@ -179,14 +215,15 @@ fn write_docx_work(mut docx: Docx, work: &[Work], date_format: DateFormat) -> Do
 
         if !w.summary.is_empty() {
             let clean = strip_typst_markup(&w.summary);
-            docx = docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(clean).size(22)));
+            docx =
+                docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(clean).size(22)));
         }
 
         for hl in &w.highlights {
             let clean = strip_typst_markup(hl);
             docx = docx.add_paragraph(
                 Paragraph::new()
-                    .add_run(Run::new().add_text("• ").size(22))
+                    .numbering(NumberingId::new(BULLET_NUMBERING), IndentLevel::new(0))
                     .add_run(Run::new().add_text(clean).size(22)),
             );
         }
@@ -205,7 +242,9 @@ fn write_docx_education(mut docx: Docx, edu: &[Education], date_format: DateForm
         };
 
         docx = docx.add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(heading).bold().size(22)),
+            Paragraph::new()
+                .outline_lvl(ENTRY_OUTLINE_LEVEL)
+                .add_run(Run::new().add_text(heading).bold().size(22)),
         );
 
         let date_str = format_date_range(&e.start_date, &e.end_date, date_format);
@@ -216,16 +255,15 @@ fn write_docx_education(mut docx: Docx, edu: &[Education], date_format: DateForm
         }
 
         if !e.url.is_empty() {
-            docx = docx.add_paragraph(
-                Paragraph::new().add_run(Run::new().add_text(&e.url).size(20)),
-            );
+            docx =
+                docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(&e.url).size(20)));
         }
 
         for hl in &e.highlights {
             let clean = strip_typst_markup(hl);
             docx = docx.add_paragraph(
                 Paragraph::new()
-                    .add_run(Run::new().add_text("• ").size(22))
+                    .numbering(NumberingId::new(BULLET_NUMBERING), IndentLevel::new(0))
                     .add_run(Run::new().add_text(clean).size(22)),
             );
         }
@@ -241,7 +279,12 @@ fn write_docx_skills(mut docx: Docx, skills: &[SkillGroup]) -> Docx {
         let kw_list = sg.keywords.join(", ");
         let p = if !sg.name.is_empty() {
             Paragraph::new()
-                .add_run(Run::new().add_text(format!("{}: ", sg.name)).bold().size(22))
+                .add_run(
+                    Run::new()
+                        .add_text(format!("{}: ", sg.name))
+                        .bold()
+                        .size(22),
+                )
                 .add_run(Run::new().add_text(kw_list).size(22))
         } else {
             Paragraph::new().add_run(Run::new().add_text(kw_list).size(22))
@@ -251,11 +294,7 @@ fn write_docx_skills(mut docx: Docx, skills: &[SkillGroup]) -> Docx {
     docx
 }
 
-fn write_docx_certificates(
-    mut docx: Docx,
-    certs: &[Certificate],
-    date_format: DateFormat,
-) -> Docx {
+fn write_docx_certificates(mut docx: Docx, certs: &[Certificate], date_format: DateFormat) -> Docx {
     for c in certs {
         let mut p = Paragraph::new().add_run(Run::new().add_text(&c.name).bold().size(22));
         if !c.issuer.is_empty() {
@@ -289,7 +328,9 @@ fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], date_format: DateForm
         };
 
         docx = docx.add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(heading).bold().size(22)),
+            Paragraph::new()
+                .outline_lvl(ENTRY_OUTLINE_LEVEL)
+                .add_run(Run::new().add_text(heading).bold().size(22)),
         );
 
         let date_str = format_date_range(&v.start_date, &v.end_date, date_format);
@@ -303,7 +344,7 @@ fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], date_format: DateForm
             let clean = strip_typst_markup(hl);
             docx = docx.add_paragraph(
                 Paragraph::new()
-                    .add_run(Run::new().add_text("• ").size(22))
+                    .numbering(NumberingId::new(BULLET_NUMBERING), IndentLevel::new(0))
                     .add_run(Run::new().add_text(clean).size(22)),
             );
         }
@@ -311,11 +352,7 @@ fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], date_format: DateForm
     docx
 }
 
-fn write_docx_custom(
-    mut docx: Docx,
-    cs: &ComposedCustomSection,
-    date_format: DateFormat,
-) -> Docx {
+fn write_docx_custom(mut docx: Docx, cs: &ComposedCustomSection, date_format: DateFormat) -> Docx {
     for e in &cs.entries {
         docx = write_docx_custom_entry(docx, e, date_format);
     }
@@ -333,7 +370,9 @@ fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, date_format: DateFor
 
     if !heading.is_empty() {
         docx = docx.add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(heading).bold().size(22)),
+            Paragraph::new()
+                .outline_lvl(ENTRY_OUTLINE_LEVEL)
+                .add_run(Run::new().add_text(heading).bold().size(22)),
         );
     }
 
@@ -345,16 +384,14 @@ fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, date_format: DateFor
     }
 
     if !e.url.is_empty() {
-        docx = docx.add_paragraph(
-            Paragraph::new().add_run(Run::new().add_text(&e.url).size(20)),
-        );
+        docx = docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(&e.url).size(20)));
     }
 
     for hl in &e.highlights {
         let clean = strip_typst_markup(hl);
         docx = docx.add_paragraph(
             Paragraph::new()
-                .add_run(Run::new().add_text("• ").size(22))
+                .numbering(NumberingId::new(BULLET_NUMBERING), IndentLevel::new(0))
                 .add_run(Run::new().add_text(clean).size(22)),
         );
     }
@@ -362,182 +399,92 @@ fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, date_format: DateFor
     docx
 }
 
-fn format_date_range(start: &ResumeDate, end: &ResumeDate, date_format: DateFormat) -> String {
-    let start_str = start.display(date_format);
-    let end_str = end.display(date_format);
-    if !start_str.is_empty() && !end_str.is_empty() {
-        format!("{start_str} – {end_str}")
-    } else if !start_str.is_empty() {
-        start_str
-    } else if !end_str.is_empty() {
-        end_str
-    } else {
-        String::new()
-    }
-}
-
-fn ordered_sections(resume: &Resume) -> Vec<SectionKind> {
-    if !resume.section_order.is_empty() {
-        return resume.section_order.clone();
-    }
-
-    let mut list = vec![
-        SectionKind::Work,
-        SectionKind::Education,
-        SectionKind::Skills,
-        SectionKind::Certificates,
-        SectionKind::Organizations,
-    ];
-    for cs in &resume.custom_sections {
-        list.push(SectionKind::Custom(cs.id));
-    }
-    list
-}
-
-fn is_section_empty(resume: &Resume, kind: SectionKind) -> bool {
-    match kind {
-        SectionKind::Profile => resume.basics.summary.trim().is_empty(),
-        SectionKind::Work => resume.work.is_empty(),
-        SectionKind::Education => resume.education.is_empty(),
-        SectionKind::Skills => resume.skills.is_empty(),
-        SectionKind::Certificates => resume.certificates.is_empty(),
-        SectionKind::Organizations => resume.volunteer.is_empty(),
-        SectionKind::Custom(id) => resume
-            .custom_sections
-            .iter()
-            .find(|cs| cs.id == id)
-            .map(|cs| cs.entries.is_empty())
-            .unwrap_or(true),
-    }
-}
-
-fn resolve_section_title(resume: &Resume, kind: SectionKind) -> String {
-    if let SectionKind::Custom(id) = kind {
-        return resume
-            .custom_sections
-            .iter()
-            .find(|cs| cs.id == id)
-            .map(|cs| cs.title.clone())
-            .unwrap_or_default();
-    }
-
-    if let Some((_, title)) = resume.section_titles.iter().find(|(k, _)| *k == kind) {
-        return title.clone();
-    }
-
-    ResumeDoc::default_section_title(kind).to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resume::model::*;
+    use crate::resume::export_walk::sample_resume;
 
-    fn sample_resume() -> Resume {
-        Resume {
-            basics: Basics {
-                name: "Alexey Belochenko".into(),
-                label: "Principal Systems Architect".into(),
-                summary: "Experienced *systems engineer* specializing in distributed storage."
-                    .into(),
-                email: "alexey@example.com".into(),
-                phone: "+1 555-0199".into(),
-                location: "San Francisco, CA".into(),
-                url: "https://example.com".into(),
-                profiles: vec![NetworkProfile {
-                    network: "GitHub".into(),
-                    username: "zeelex".into(),
-                    url: "https://github.com/zeelex".into(),
-                }],
-            },
-            work: vec![Work {
-                name: "Tech Corp".into(),
-                position: "Staff Software Engineer".into(),
-                location: "Mountain View, CA".into(),
-                start_date: ResumeDate::new("2021-03"),
-                end_date: ResumeDate::new("Present"),
-                summary: "Lead storage engine architecture.".into(),
-                highlights: vec![
-                    "Designed high-throughput commit log processing 50M ops/sec with sub-millisecond p99 latency."
-                        .into(),
-                    "Mentored 8 senior engineers and authored 5 architecture RFCs.".into(),
-                ],
-            }],
-            education: vec![Education {
-                institution: "State University".into(),
-                study_type: "B.S. in Computer Science".into(),
-                start_date: ResumeDate::new("2015-09"),
-                end_date: ResumeDate::new("2019-06"),
-                url: "https://university.edu".into(),
-                highlights: vec!["Graduated Summa Cum Laude with honors.".into()],
-            }],
-            skills: vec![SkillGroup {
-                name: "Languages".into(),
-                keywords: vec!["Rust".into(), "C++".into(), "Go".into()],
-            }],
-            certificates: vec![Certificate {
-                name: "AWS Solutions Architect".into(),
-                issuer: "Amazon Web Services".into(),
-                date: ResumeDate::new("2022-05"),
-                url: "https://aws.amazon.com".into(),
-            }],
-            volunteer: vec![Volunteer {
-                organization: "Open Source Collective".into(),
-                position: "Core Maintainer".into(),
-                start_date: ResumeDate::new("2020-01"),
-                end_date: ResumeDate::new("Present"),
-                highlights: vec!["Maintain high-performance networking libraries.".into()],
-            }],
-            custom_sections: vec![ComposedCustomSection {
-                id: CustomSectionId::from_u32(1),
-                title: "Publications".into(),
-                entries: vec![CustomEntry {
-                    title: "High Performance Storage in Rust".into(),
-                    subtitle: "ACM Systems Conference".into(),
-                    start_date: ResumeDate::new("2023-11"),
-                    end_date: ResumeDate::new(""),
-                    url: "https://doi.org/10.1145/example".into(),
-                    highlights: vec!["Awarded Best Paper.".into()],
-                }],
-            }],
-            section_titles: Vec::new(),
-            section_overrides: Vec::new(),
-            section_order: Vec::new(),
-        }
-    }
-
+    /// A writer nobody reads back is a writer that silently drifts, so this
+    /// opens what it wrote with the same library Word would and checks the
+    /// structure — not just that the words are somewhere in the file.
     #[test]
-    fn docx_export_and_readback_verifies_headings_and_bullets() {
+    fn docx_readback_finds_headings_as_headings_and_bullets_as_a_list() {
         let resume = sample_resume();
         let bytes = export_docx(&resume).expect("DOCX generation should succeed");
         assert!(!bytes.is_empty());
 
         let docx = docx_rs::read_docx(&bytes).expect("DOCX should be readable by docx-rs");
-        let mut text_content = String::new();
+
+        let mut headings: Vec<String> = Vec::new();
+        let mut bullets: Vec<String> = Vec::new();
+        let mut all_text = String::new();
 
         for child in docx.document.children {
-            if let docx_rs::DocumentChild::Paragraph(p) = child {
-                for p_child in p.children {
-                    if let docx_rs::ParagraphChild::Run(r) = p_child {
-                        for r_child in r.children {
-                            if let docx_rs::RunChild::Text(t) = r_child {
-                                text_content.push_str(&t.text);
-                                text_content.push(' ');
-                            }
-                        }
-                    }
-                }
+            let docx_rs::DocumentChild::Paragraph(p) = child else {
+                continue;
+            };
+            let text: String = p
+                .children
+                .iter()
+                .filter_map(|c| match c {
+                    docx_rs::ParagraphChild::Run(r) => Some(
+                        r.children
+                            .iter()
+                            .filter_map(|rc| match rc {
+                                docx_rs::RunChild::Text(t) => Some(t.text.clone()),
+                                _ => None,
+                            })
+                            .collect::<String>(),
+                    ),
+                    _ => None,
+                })
+                .collect();
+            all_text.push_str(&text);
+            all_text.push('\n');
+
+            if p.property.outline_lvl.as_ref().map(|o| o.v) == Some(SECTION_OUTLINE_LEVEL) {
+                headings.push(text.clone());
+            }
+            if p.property.numbering_property.is_some() {
+                bullets.push(text);
             }
         }
 
-        assert!(text_content.contains("Alexey Belochenko"));
-        assert!(text_content.contains("WORK EXPERIENCE"));
-        assert!(text_content.contains("Staff Software Engineer"));
-        assert!(text_content.contains("Designed high-throughput commit log"));
-        assert!(text_content.contains("EDUCATION"));
-        assert!(text_content.contains("State University"));
-        assert!(text_content.contains("SKILLS"));
-        assert!(text_content.contains("Rust"));
-        assert!(text_content.contains("PUBLICATIONS"));
+        // Headings are headings: an outline level, not merely bold text.
+        for kind in crate::resume::export_walk::ordered_sections(&resume) {
+            let title = crate::resume::export_walk::resolve_section_title(&resume, kind);
+            if title.is_empty() {
+                continue;
+            }
+            assert!(
+                headings.contains(&title.to_uppercase()),
+                "{title:?} is not a Word heading; headings were {headings:?}"
+            );
+        }
+
+        // Bullets are a list: the first highlight of every job, education entry,
+        // organization and custom entry has a numbering property on it.
+        for job in &resume.work {
+            let first = crate::resume::export_text::strip_typst_markup(&job.highlights[0]);
+            assert!(
+                bullets.contains(&first),
+                "the first bullet of {:?} is not a list item",
+                job.name
+            );
+        }
+        for entry in resume.custom_sections.iter().flat_map(|cs| &cs.entries) {
+            let first = crate::resume::export_text::strip_typst_markup(&entry.highlights[0]);
+            assert!(bullets.contains(&first), "{first:?} is not a list item");
+        }
+        assert!(
+            !bullets.is_empty() && bullets.iter().all(|b| !b.starts_with('•')),
+            "a list item must not also carry a literal bullet glyph: {bullets:?}"
+        );
+
+        // And the content itself survived.
+        assert!(all_text.contains("Alexey Belochenko"));
+        assert!(all_text.contains("Staff Software Engineer"));
+        assert!(all_text.contains("State University"));
+        assert!(all_text.contains("Rust"));
     }
 }

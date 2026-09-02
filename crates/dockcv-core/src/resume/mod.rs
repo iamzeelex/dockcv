@@ -12,6 +12,7 @@ pub mod export_json_resume;
 pub mod export_markdown;
 pub mod export_text;
 pub mod export_typst;
+pub mod export_walk;
 pub mod model;
 pub mod template;
 
@@ -21,4 +22,4 @@ pub use export_json_resume::export_json_resume;
 pub use export_markdown::{export_markdown, export_markdown_with_date_format};
 pub use export_text::{export_plain_text, export_plain_text_with_date_format};
 pub use export_typst::{export_typst, export_typst_with_layout};
-pub use model::{disambiguate_filename, reveal_in_file_manager, ExportRecord};
+pub use model::{disambiguate_filename, ExportRecord};

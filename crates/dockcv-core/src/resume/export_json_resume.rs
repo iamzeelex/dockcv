@@ -334,11 +334,7 @@ impl SchemaJsonResume {
                         start_date: e.start_date.text.clone(),
                         end_date: e.end_date.text.clone(),
                         url: e.url.clone(),
-                        highlights: e
-                            .highlights
-                            .iter()
-                            .map(|h| strip_typst_markup(h))
-                            .collect(),
+                        highlights: e.highlights.iter().map(|h| strip_typst_markup(h)).collect(),
                         keywords: Vec::new(),
                     });
                 }
@@ -456,93 +452,7 @@ fn convert_skill(s: &CoreSkill) -> SchemaSkill {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resume::model::*;
-
-    fn sample_resume() -> Resume {
-        Resume {
-            basics: CoreBasics {
-                name: "Alexey Belochenko".into(),
-                label: "Principal Systems Architect".into(),
-                summary: "Experienced *systems engineer* specializing in distributed storage."
-                    .into(),
-                email: "alexey@example.com".into(),
-                phone: "+1 555-0199".into(),
-                location: "San Francisco, CA, US".into(),
-                url: "https://example.com".into(),
-                profiles: vec![CoreProfile {
-                    network: "GitHub".into(),
-                    username: "zeelex".into(),
-                    url: "https://github.com/zeelex".into(),
-                }],
-            },
-            work: vec![CoreWork {
-                name: "Tech Corp".into(),
-                position: "Staff Software Engineer".into(),
-                location: "Mountain View, CA".into(),
-                start_date: ResumeDate::new("2021-03-01"),
-                end_date: ResumeDate::new("2024-01-01"),
-                summary: "Lead storage engine architecture.".into(),
-                highlights: vec![
-                    "Designed commit log processing 50M ops/sec with sub-millisecond p99 latency."
-                        .into(),
-                ],
-            }],
-            education: vec![CoreEdu {
-                institution: "State University".into(),
-                study_type: "B.S. in Computer Science".into(),
-                start_date: ResumeDate::new("2015-09-01"),
-                end_date: ResumeDate::new("2019-06-01"),
-                url: "https://university.edu".into(),
-                highlights: vec!["Graduated Summa Cum Laude.".into()],
-            }],
-            skills: vec![CoreSkill {
-                name: "Languages".into(),
-                keywords: vec!["Rust".into(), "C++".into(), "Go".into()],
-            }],
-            certificates: vec![CoreCert {
-                name: "AWS Solutions Architect".into(),
-                issuer: "Amazon Web Services".into(),
-                date: ResumeDate::new("2022-05-15"),
-                url: "https://aws.amazon.com".into(),
-            }],
-            volunteer: vec![CoreVol {
-                organization: "Open Source Collective".into(),
-                position: "Core Maintainer".into(),
-                start_date: ResumeDate::new("2020-01-01"),
-                end_date: ResumeDate::new("2023-01-01"),
-                highlights: vec!["Maintain networking libraries.".into()],
-            }],
-            custom_sections: vec![
-                ComposedCustomSection {
-                    id: CustomSectionId::from_u32(1),
-                    title: "Publications".into(),
-                    entries: vec![CustomEntry {
-                        title: "High Performance Storage in Rust".into(),
-                        subtitle: "ACM Systems Conference".into(),
-                        start_date: ResumeDate::new("2023-11-01"),
-                        end_date: ResumeDate::new(""),
-                        url: "https://doi.org/10.1145/example".into(),
-                        highlights: vec!["Awarded Best Paper.".into()],
-                    }],
-                },
-                ComposedCustomSection {
-                    id: CustomSectionId::from_u32(2),
-                    title: "Side Projects".into(),
-                    entries: vec![CustomEntry {
-                        title: "DockCV".into(),
-                        subtitle: "Modern CV builder in Rust".into(),
-                        start_date: ResumeDate::new("2024-01-01"),
-                        end_date: ResumeDate::new("Present"),
-                        url: "https://dockcv.com".into(),
-                        highlights: vec!["Fast typst-backed CV desktop app.".into()],
-                    }],
-                },
-            ],
-            section_titles: Vec::new(),
-            section_overrides: Vec::new(),
-            section_order: Vec::new(),
-        }
-    }
+    use crate::resume::export_walk::sample_resume;
 
     #[test]
     fn json_resume_export_serializes_valid_schema() {

@@ -7,9 +7,12 @@
 use std::fmt::Write as _;
 
 use super::dates::DateFormat;
+use super::export_walk::{
+    format_date_range, is_section_empty, ordered_sections, resolve_section_title,
+};
 use super::model::{
-    Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, ResumeDate,
-    ResumeDoc, SectionKind, SkillGroup, Volunteer, Work,
+    Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
+    SkillGroup, Volunteer, Work,
 };
 
 /// The hard-wrap column limit for plain-text export.
@@ -297,72 +300,6 @@ fn write_custom_entry(out: &mut String, e: &CustomEntry, date_format: DateFormat
     }
 }
 
-fn format_date_range(start: &ResumeDate, end: &ResumeDate, date_format: DateFormat) -> String {
-    let start_str = start.display(date_format);
-    let end_str = end.display(date_format);
-    if !start_str.is_empty() && !end_str.is_empty() {
-        format!("{start_str} - {end_str}")
-    } else if !start_str.is_empty() {
-        start_str
-    } else if !end_str.is_empty() {
-        end_str
-    } else {
-        String::new()
-    }
-}
-
-fn ordered_sections(resume: &Resume) -> Vec<SectionKind> {
-    if !resume.section_order.is_empty() {
-        return resume.section_order.clone();
-    }
-
-    let mut list = vec![
-        SectionKind::Work,
-        SectionKind::Education,
-        SectionKind::Skills,
-        SectionKind::Certificates,
-        SectionKind::Organizations,
-    ];
-    for cs in &resume.custom_sections {
-        list.push(SectionKind::Custom(cs.id));
-    }
-    list
-}
-
-fn is_section_empty(resume: &Resume, kind: SectionKind) -> bool {
-    match kind {
-        SectionKind::Profile => resume.basics.summary.trim().is_empty(),
-        SectionKind::Work => resume.work.is_empty(),
-        SectionKind::Education => resume.education.is_empty(),
-        SectionKind::Skills => resume.skills.is_empty(),
-        SectionKind::Certificates => resume.certificates.is_empty(),
-        SectionKind::Organizations => resume.volunteer.is_empty(),
-        SectionKind::Custom(id) => resume
-            .custom_sections
-            .iter()
-            .find(|cs| cs.id == id)
-            .map(|cs| cs.entries.is_empty())
-            .unwrap_or(true),
-    }
-}
-
-fn resolve_section_title(resume: &Resume, kind: SectionKind) -> String {
-    if let SectionKind::Custom(id) = kind {
-        return resume
-            .custom_sections
-            .iter()
-            .find(|cs| cs.id == id)
-            .map(|cs| cs.title.clone())
-            .unwrap_or_default();
-    }
-
-    if let Some((_, title)) = resume.section_titles.iter().find(|(k, _)| *k == kind) {
-        return title.clone();
-    }
-
-    ResumeDoc::default_section_title(kind).to_string()
-}
-
 /// Strip common Typst formatting markup (`*`, `_`, `#link(..)[..]`, etc.)
 pub fn strip_typst_markup(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
@@ -437,12 +374,7 @@ fn write_wrapped(out: &mut String, text: &str, first_indent: usize, rest_indent:
     write_wrapped_with_prefix(out, text, &first_prefix, rest_indent);
 }
 
-fn write_wrapped_with_prefix(
-    out: &mut String,
-    text: &str,
-    first_prefix: &str,
-    rest_indent: usize,
-) {
+fn write_wrapped_with_prefix(out: &mut String, text: &str, first_prefix: &str, rest_indent: usize) {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() {
         return;
@@ -478,80 +410,8 @@ fn write_wrapped_with_prefix(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::resume::export_walk::sample_resume;
     use crate::resume::model::*;
-
-    fn sample_resume() -> Resume {
-        Resume {
-            basics: Basics {
-                name: "Alexey Belochenko".into(),
-                label: "Principal Systems Architect".into(),
-                summary: "Experienced *systems engineer* specializing in distributed storage."
-                    .into(),
-                email: "alexey@example.com".into(),
-                phone: "+1 555-0199".into(),
-                location: "San Francisco, CA".into(),
-                url: "https://example.com".into(),
-                profiles: vec![NetworkProfile {
-                    network: "GitHub".into(),
-                    username: "zeelex".into(),
-                    url: "https://github.com/zeelex".into(),
-                }],
-            },
-            work: vec![Work {
-                name: "Tech Corp".into(),
-                position: "Staff Software Engineer".into(),
-                location: "Mountain View, CA".into(),
-                start_date: ResumeDate::new("2021-03"),
-                end_date: ResumeDate::new("Present"),
-                summary: "Lead storage engine architecture.".into(),
-                highlights: vec![
-                    "Designed high-throughput commit log processing 50M ops/sec with sub-millisecond p99 latency."
-                        .into(),
-                    "Mentored 8 senior engineers and authored 5 architecture RFCs.".into(),
-                ],
-            }],
-            education: vec![Education {
-                institution: "State University".into(),
-                study_type: "B.S. in Computer Science".into(),
-                start_date: ResumeDate::new("2015-09"),
-                end_date: ResumeDate::new("2019-06"),
-                url: "https://university.edu".into(),
-                highlights: vec!["Graduated Summa Cum Laude with honors.".into()],
-            }],
-            skills: vec![SkillGroup {
-                name: "Languages".into(),
-                keywords: vec!["Rust".into(), "C++".into(), "Go".into(), "Python".into()],
-            }],
-            certificates: vec![Certificate {
-                name: "AWS Solutions Architect".into(),
-                issuer: "Amazon Web Services".into(),
-                date: ResumeDate::new("2022-05"),
-                url: "https://aws.amazon.com".into(),
-            }],
-            volunteer: vec![Volunteer {
-                organization: "Open Source Collective".into(),
-                position: "Core Maintainer".into(),
-                start_date: ResumeDate::new("2020-01"),
-                end_date: ResumeDate::new("Present"),
-                highlights: vec!["Maintain high-performance networking libraries.".into()],
-            }],
-            custom_sections: vec![ComposedCustomSection {
-                id: CustomSectionId::from_u32(1),
-                title: "Publications".into(),
-                entries: vec![CustomEntry {
-                    title: "High Performance Storage in Rust".into(),
-                    subtitle: "ACM Systems Conference".into(),
-                    start_date: ResumeDate::new("2023-11"),
-                    end_date: ResumeDate::new(""),
-                    url: "https://doi.org/10.1145/example".into(),
-                    highlights: vec!["Awarded Best Paper.".into()],
-                }],
-            }],
-            section_titles: Vec::new(),
-            section_overrides: Vec::new(),
-            section_order: Vec::new(),
-        }
-    }
 
     #[test]
     fn plain_text_export_contains_all_sections_and_respects_wrap_width() {
@@ -613,47 +473,5 @@ mod tests {
             strip_typst_markup(r#"Visit #link("https://dockcv.com")[DockCV]"#),
             "Visit DockCV (https://dockcv.com)"
         );
-    }
-
-    #[test]
-    fn every_section_kind_is_visited() {
-        // Exhaustive match test: if SectionKind gains a variant, this test forces handling
-        let all_kinds = [
-            SectionKind::Profile,
-            SectionKind::Work,
-            SectionKind::Education,
-            SectionKind::Skills,
-            SectionKind::Certificates,
-            SectionKind::Organizations,
-            SectionKind::Custom(CustomSectionId::from_u32(99)),
-        ];
-
-        let resume = sample_resume();
-        for kind in all_kinds {
-            match kind {
-                SectionKind::Profile => {
-                    assert!(!is_section_empty(&resume, kind));
-                }
-                SectionKind::Work => {
-                    assert!(!is_section_empty(&resume, kind));
-                }
-                SectionKind::Education => {
-                    assert!(!is_section_empty(&resume, kind));
-                }
-                SectionKind::Skills => {
-                    assert!(!is_section_empty(&resume, kind));
-                }
-                SectionKind::Certificates => {
-                    assert!(!is_section_empty(&resume, kind));
-                }
-                SectionKind::Organizations => {
-                    assert!(!is_section_empty(&resume, kind));
-                }
-                SectionKind::Custom(_) => {
-                    // CustomSectionId(99) is empty in sample_resume
-                    assert!(is_section_empty(&resume, kind));
-                }
-            }
-        }
     }
 }
