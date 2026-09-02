@@ -418,9 +418,9 @@ mod tests {
         let resume = sample_resume();
         let exported = export_plain_text(&resume);
 
-        assert!(exported.contains("Alexey Belochenko"));
+        assert!(exported.contains("Albert Einstein"));
         assert!(exported.contains("Principal Systems Architect"));
-        assert!(exported.contains("alexey@example.com"));
+        assert!(exported.contains("albert@example.com"));
         assert!(exported.contains("WORK EXPERIENCE"));
         assert!(exported.contains("EDUCATION"));
         assert!(exported.contains("SKILLS"));

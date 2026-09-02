@@ -421,9 +421,9 @@ mod tests {
         let index = UsageIndex::build(
             &library,
             vec![
-                (&meta("cv-a", "Sofiia"), &a),
-                (&meta("cv-b", "Sofiia"), &b),
-                (&meta("cv-c", "Sofiia"), &c),
+                (&meta("cv-a", "Albert"), &a),
+                (&meta("cv-b", "Albert"), &b),
+                (&meta("cv-c", "Albert"), &c),
             ],
         );
 
@@ -452,7 +452,7 @@ mod tests {
         tailored.summary = "Rewritten for this employer".into();
         let doc = doc_with(vec![tailored]);
 
-        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Albert"), &doc)]);
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 1);
     }
 
@@ -465,7 +465,7 @@ mod tests {
         };
         let doc = doc_with(vec![work("Acme Corp", "Staff SWE", "2022-01", "x")]);
 
-        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Albert"), &doc)]);
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 0);
     }
 
@@ -486,7 +486,7 @@ mod tests {
         doc.work.variants[1].data = vec![block];
         doc.set_active_variant(SectionKind::Work, 0);
 
-        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Albert"), &doc)]);
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 1);
     }
 
@@ -499,7 +499,7 @@ mod tests {
         };
         let doc = doc_with(vec![work("  acme corp ", "SENIOR SWE", "2022-01", "y")]);
 
-        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Albert"), &doc)]);
         assert_eq!(index.count_for(&library, SectionKind::Work, 0), 1);
     }
 
@@ -524,7 +524,7 @@ mod tests {
             "Base",
         );
 
-        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Albert"), &doc)]);
         assert_eq!(index.count_for(&library, SectionKind::Skills, 0), 1);
     }
 
@@ -565,8 +565,8 @@ mod tests {
         let index = UsageIndex::build(
             &library,
             vec![
-                (&meta("cv-a", "Sofiia"), &untouched),
-                (&meta("cv-b", "Sofiia"), &tailored),
+                (&meta("cv-a", "Albert"), &untouched),
+                (&meta("cv-b", "Albert"), &tailored),
             ],
         );
 
@@ -596,7 +596,7 @@ mod tests {
         reworded.summary = "Rewritten for this employer".into();
         doc.work.variants[1].data = vec![reworded];
 
-        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Albert"), &doc)]);
         let found = index.documents_for(&library, SectionKind::Work, 0);
         assert_eq!(found.len(), 1);
         assert!(found[0].diverged);
@@ -653,7 +653,7 @@ mod tests {
     fn content_the_library_does_not_hold_is_not_indexed() {
         let library = Library::default();
         let doc = doc_with(vec![work("Acme Corp", "Senior SWE", "2022-01", "x")]);
-        let index = UsageIndex::build(&library, vec![(&meta("cv", "Sofiia"), &doc)]);
+        let index = UsageIndex::build(&library, vec![(&meta("cv", "Albert"), &doc)]);
         assert_eq!(index.total_reuses(&library), 0);
     }
 

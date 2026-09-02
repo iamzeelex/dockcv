@@ -989,7 +989,7 @@ fn field(out: &mut String, indent: usize, key: &str, value: &str) {
 ///
 /// Content blocks keep emphasis live (`*bold*`, `_italic_`) because authors do
 /// write it. What they never mean is the *referencing* and *executing* syntax:
-/// `hi@zeelex.me` is an email, not `@label`; `C#` is a language, not code mode;
+/// `albert@example.com` is an email, not `@label`; `C#` is a language, not code mode;
 /// `$2M ARR` is a number, not math. Each of those parses, fails, and takes the
 /// whole document down with it — so a real bullet loses a hypothetical
 /// `#emph[..]` rather than the user losing their preview. `[`/`]` close the
@@ -1129,7 +1129,7 @@ mod tests {
 
         let resume = Resume {
             basics: Basics {
-                name: "Sofiia Medvedenko".into(),
+                name: "Albert Einstein".into(),
                 summary: "Backend engineer with eight years of experience.".into(),
                 ..Default::default()
             },
@@ -1564,7 +1564,7 @@ mod tests {
 
         let resume = Resume {
             basics: Basics {
-                name: "Sofiia Medvedenko".into(),
+                name: "Albert Einstein".into(),
                 label: "Staff Engineer".into(),
                 location: "Barcelona, Spain".into(),
                 email: "s@example.com".into(),
@@ -1680,7 +1680,7 @@ mod tests {
 
         let resume = Resume {
             basics: Basics {
-                name: "Sofiia Medvedenko".into(),
+                name: "Albert Einstein".into(),
                 label: "Staff Engineer".into(),
                 ..Default::default()
             },
@@ -2040,7 +2040,7 @@ mod tests {
     /// the page actually changed. A4 is 297mm tall and Letter 279.4mm, so a real
     /// compile must report measurably different page heights.
     /// The bug this guards: a bullet carrying the CV's own email compiled to
-    /// `label <zeelex.mecritical> does not exist`, because Typst reads `@x` as a
+    /// `label <example.comcritical> does not exist`, because Typst reads `@x` as a
     /// reference. `C#` fails the same way through code mode. Asserting on the
     /// generated source would not have caught it — only the compiler knows.
     #[test]
@@ -2052,7 +2052,7 @@ mod tests {
             work: vec![Work {
                 position: "Engineer".into(),
                 highlights: vec![
-                    "Reachable at hi@zeelex.me for critical incidents".into(),
+                    "Reachable at albert@example.com for critical incidents".into(),
                     "Ported the C# service and its #tags to Rust".into(),
                     "Cut latency [p99] by 40%".into(),
                 ],
@@ -2422,7 +2422,7 @@ mod section_order_tests {
         // "last" collapse to the same place and a positional bug is invisible.
         let seeded = || Resume {
             basics: crate::resume::model::Basics {
-                name: "Sofiia Medvedenko".into(),
+                name: "Albert Einstein".into(),
                 ..Default::default()
             },
             work: vec![crate::resume::model::Work {
@@ -2649,7 +2649,7 @@ mod date_format_tests {
 
         let resume = Resume {
             basics: Basics {
-                name: "Alexey Belochenko".into(),
+                name: "Albert Einstein".into(),
                 label: "Principal Systems Architect".into(),
                 ..Default::default()
             },
@@ -2688,7 +2688,7 @@ mod date_format_tests {
         }
 
         // And the two fields we *do* set are exactly the two we meant to set.
-        assert!(bytes.contains("Alexey Belochenko - Principal Systems Architect"));
+        assert!(bytes.contains("Albert Einstein - Principal Systems Architect"));
         assert!(bytes.contains("/Author"));
         assert!(bytes.contains("/Title"));
         assert!(
@@ -2705,7 +2705,7 @@ mod date_format_tests {
 
         let with_both = Resume {
             basics: Basics {
-                name: "Alexey Belochenko".into(),
+                name: "Albert Einstein".into(),
                 label: "Principal Systems Architect".into(),
                 ..Default::default()
             },
@@ -2715,7 +2715,7 @@ mod date_format_tests {
         document_metadata_into(&mut out, &with_both);
         assert_eq!(
             out.trim(),
-            r#"#set document(title: "Alexey Belochenko - Principal Systems Architect", author: "Alexey Belochenko")"#
+            r#"#set document(title: "Albert Einstein - Principal Systems Architect", author: "Albert Einstein")"#
         );
 
         // A quote in a name is a Typst string literal ending early, which is a

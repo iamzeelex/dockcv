@@ -3426,7 +3426,7 @@ mod applications_tests {
             created: "2026-06-01".into(),
             applied: Some("2026-06-02".into()),
             sent_as: Some(SentCv {
-                document: "sofiia-senior-swe".into(),
+                document: "albert-senior-swe".into(),
                 preset: "FAANG · concise".into(),
             }),
             url: "https://brambletech.example/careers/123".into(),
@@ -3597,13 +3597,13 @@ mod applications_tests {
     #[test]
     fn export_filename_pattern_resolves_every_token() {
         let stem = ExportSettings::default().resolve_filename(&tokens(
-            "Alexey Belochenko",
+            "Albert Einstein",
             "Principal Systems Architect",
             "Backend",
         ));
         assert_eq!(
             stem,
-            "Alexey Belochenko - Principal Systems Architect - Backend"
+            "Albert Einstein - Principal Systems Architect - Backend"
         );
 
         // Every token the pattern advertises has to reach the name. A token the
@@ -3614,14 +3614,14 @@ mod applications_tests {
         };
         assert_eq!(
             all.resolve_filename(&ExportTokens {
-                name: "Alexey Belochenko",
+                name: "Albert Einstein",
                 role: "Staff SWE",
                 preset: "Concise",
                 company: "Acme",
                 variant: "Short",
                 date: "2026-09-01",
             }),
-            "Alexey Belochenko - Staff SWE - Concise - Acme - Short - 2026-09-01"
+            "Albert Einstein - Staff SWE - Concise - Acme - Short - 2026-09-01"
         );
 
         // Every pattern the layout rail offers must survive a full token set.
@@ -3668,12 +3668,12 @@ mod applications_tests {
         };
         // Company and role are empty here — neither may leave a stray dash.
         assert_eq!(
-            settings.resolve_filename(&tokens("Alexey Belochenko", "", "Concise")),
-            "Alexey Belochenko - Concise"
+            settings.resolve_filename(&tokens("Albert Einstein", "", "Concise")),
+            "Albert Einstein - Concise"
         );
         assert_eq!(
-            settings.resolve_filename(&tokens("Alexey Belochenko", "", "")),
-            "Alexey Belochenko"
+            settings.resolve_filename(&tokens("Albert Einstein", "", "")),
+            "Albert Einstein"
         );
     }
 
@@ -3686,11 +3686,11 @@ mod applications_tests {
         };
         assert_eq!(
             settings.resolve_filename(&ExportTokens {
-                name: "Alexey Belochenko",
+                name: "Albert Einstein",
                 company: "Acme Corp / Tech",
                 ..Default::default()
             }),
-            "Alexey Belochenko - Acme Corp - Tech"
+            "Albert Einstein - Acme Corp - Tech"
         );
 
         assert_eq!(sanitize_filename_stem("My/Resume:2026*?"), "My-Resume-2026");
@@ -3737,7 +3737,7 @@ mod applications_tests {
     fn export_filename_stem_feeds_every_token_the_rail_offers() {
         let resume = Resume {
             basics: Basics {
-                name: "Alexey Belochenko".into(),
+                name: "Albert Einstein".into(),
                 label: "Principal Systems Architect".into(),
                 ..Default::default()
             },
@@ -3749,7 +3749,7 @@ mod applications_tests {
         doc.export.filename_pattern = "{name} - {date}".into();
         assert_eq!(
             doc.export_filename_stem(None, None, "2026-09-01"),
-            "Alexey Belochenko - 2026-09-01"
+            "Albert Einstein - 2026-09-01"
         );
 
         // `{variant}` is the profile's active variant, which is what names the
@@ -3757,7 +3757,7 @@ mod applications_tests {
         doc.export.filename_pattern = "{name} - {variant}".into();
         assert_eq!(
             doc.export_filename_stem(None, None, "2026-09-01"),
-            "Alexey Belochenko - Base"
+            "Albert Einstein - Base"
         );
 
         // `{company}` resolves only from an application card, and drops its
@@ -3765,11 +3765,11 @@ mod applications_tests {
         doc.export.filename_pattern = "{name} - {company} - {preset}".into();
         assert_eq!(
             doc.export_filename_stem(Some("Concise"), None, "2026-09-01"),
-            "Alexey Belochenko - Concise"
+            "Albert Einstein - Concise"
         );
         assert_eq!(
             doc.export_filename_stem(Some("Concise"), Some("Acme"), "2026-09-01"),
-            "Alexey Belochenko - Acme - Concise"
+            "Albert Einstein - Acme - Concise"
         );
     }
 
@@ -3783,7 +3783,7 @@ mod applications_tests {
             "PDF",
             "Concise",
             std::path::PathBuf::from(
-                "/tmp/Alexey Belochenko - Principal Systems Architect - Concise.pdf",
+                "/tmp/Albert Einstein - Principal Systems Architect - Concise.pdf",
             ),
         );
         assert_eq!(doc.export_history.len(), 1);

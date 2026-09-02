@@ -278,10 +278,10 @@ mod tests {
 
     #[test]
     fn a_home_directory_never_reaches_the_log() {
-        let home = "/Users/sofiia";
-        let line = redact("could not save /Users/sofiia/CVs/cv.toml: read-only", home);
+        let home = "/Users/albert";
+        let line = redact("could not save /Users/albert/CVs/cv.toml: read-only", home);
         assert_eq!(line, "could not save ~/CVs/cv.toml: read-only");
-        assert!(!line.contains("sofiia"), "the account name is the point");
+        assert!(!line.contains("albert"), "the account name is the point");
     }
 
     /// `user_home_dir` falls back to `.` when `HOME` is unset, and rewriting

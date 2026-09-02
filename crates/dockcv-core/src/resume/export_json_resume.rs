@@ -459,9 +459,9 @@ mod tests {
         let resume = sample_resume();
         let json_str = export_json_resume(&resume).expect("Export JSON should succeed");
 
-        assert!(json_str.contains("\"name\": \"Alexey Belochenko\""));
+        assert!(json_str.contains("\"name\": \"Albert Einstein\""));
         assert!(json_str.contains("\"label\": \"Principal Systems Architect\""));
-        assert!(json_str.contains("\"email\": \"alexey@example.com\""));
+        assert!(json_str.contains("\"email\": \"albert@example.com\""));
         assert!(json_str.contains("\"city\": \"San Francisco\""));
         assert!(json_str.contains("\"region\": \"CA\""));
         assert!(json_str.contains("\"countryCode\": \"US\""));
@@ -476,7 +476,7 @@ mod tests {
         // Verify that it deserializes cleanly into SchemaJsonResume
         let parsed: SchemaJsonResume =
             serde_json::from_str(&json_str).expect("Valid JSON Resume structure");
-        assert_eq!(parsed.basics.name, "Alexey Belochenko");
+        assert_eq!(parsed.basics.name, "Albert Einstein");
         assert_eq!(parsed.work.len(), 1);
         assert_eq!(parsed.education.len(), 1);
         assert_eq!(parsed.skills.len(), 1);

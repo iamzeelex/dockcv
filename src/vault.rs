@@ -1037,12 +1037,12 @@ mod tests {
 
         // And the new field round-trips when it is set.
         let mut with_source = diary;
-        with_source.entries[0].source_doc = Some("sofiia-senior-swe".into());
+        with_source.entries[0].source_doc = Some("albert-senior-swe".into());
         let text = toml::to_string_pretty(&with_source).expect("serializes");
         let back: Diary = toml::from_str(&text).expect("round-trips");
         assert_eq!(
             back.entries[0].source_doc.as_deref(),
-            Some("sofiia-senior-swe")
+            Some("albert-senior-swe")
         );
     }
 
@@ -1064,12 +1064,12 @@ mod tests {
 
         // …and it round-trips once a win actually goes into a CV.
         let mut promoted = diary;
-        promoted.entries[0].used_in = vec!["sofiia-senior-swe".into(), "sofiia-em".into()];
+        promoted.entries[0].used_in = vec!["albert-senior-swe".into(), "albert-em".into()];
         let text = toml::to_string_pretty(&promoted).expect("serializes");
         let back: Diary = toml::from_str(&text).expect("round-trips");
         assert_eq!(
             back.entries[0].used_in,
-            vec!["sofiia-senior-swe", "sofiia-em"]
+            vec!["albert-senior-swe", "albert-em"]
         );
     }
 
@@ -1471,7 +1471,7 @@ mod tests {
             role: "Staff Engineer".into(),
             status_word: ApplicationStatus::Interviewing.word().into(),
             sent_as: Some(crate::resume::model::SentCv {
-                document: "sofiia-senior-swe".into(),
+                document: "albert-senior-swe".into(),
                 preset: "FAANG · concise".into(),
             }),
             ..Default::default()

@@ -157,7 +157,7 @@ mod tests {
     /// state with the live document, it would restore nothing.
     #[test]
     fn a_snapshot_is_independent_of_the_document_it_came_from() {
-        let mut doc = doc_named("Sofiia Medvedenko");
+        let mut doc = doc_named("Albert Einstein");
         doc.add_variant(SectionKind::Work);
         let snapshot = doc.clone();
 
@@ -165,7 +165,7 @@ mod tests {
         doc.profile.active_mut().name = "Someone else".into();
         doc.add_preset("Tailored");
 
-        assert_eq!(snapshot.profile.active().name, "Sofiia Medvedenko");
+        assert_eq!(snapshot.profile.active().name, "Albert Einstein");
         assert!(snapshot.presets.is_empty());
         assert_eq!(
             snapshot.variant_names(SectionKind::Work).len(),

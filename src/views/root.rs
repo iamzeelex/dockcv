@@ -580,7 +580,7 @@ impl Root {
     // --- diary quick-capture (D-7, design doc §8) ---
 
     /// The document's identity as shown in the titlebar breadcrumb
-    /// (`Sofiia — Senior SWE`) — reused by the capture sheet so the user can
+    /// (`Albert — Senior SWE`) — reused by the capture sheet so the user can
     /// see which document a captured entry will be linked to.
     /// The document's own name — its file stem, which is what a document is
     /// called under File-over-App and the only thing that distinguishes two

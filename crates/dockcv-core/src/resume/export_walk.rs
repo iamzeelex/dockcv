@@ -106,18 +106,18 @@ pub(crate) fn sample_resume() -> super::model::Resume {
 
     Resume {
         basics: Basics {
-            name: "Alexey Belochenko".into(),
+            name: "Albert Einstein".into(),
             label: "Principal Systems Architect".into(),
             summary: "Experienced *systems engineer* specializing in _distributed_ storage."
                 .into(),
-            email: "alexey@example.com".into(),
+            email: "albert@example.com".into(),
             phone: "+1 555-0199".into(),
             location: "San Francisco, CA, US".into(),
             url: "https://example.com".into(),
             profiles: vec![NetworkProfile {
                 network: "GitHub".into(),
-                username: "zeelex".into(),
-                url: "https://github.com/zeelex".into(),
+                username: "aeinstein".into(),
+                url: "https://github.com/aeinstein".into(),
             }],
         },
         work: vec![Work {

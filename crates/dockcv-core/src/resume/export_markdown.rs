@@ -406,10 +406,10 @@ mod tests {
         let resume = sample_resume();
         let md = export_markdown(&resume);
 
-        assert!(md.contains("# Alexey Belochenko"));
+        assert!(md.contains("# Albert Einstein"));
         assert!(md.contains("**Principal Systems Architect**"));
-        assert!(md.contains("[alexey@example.com](mailto:alexey@example.com)"));
-        assert!(md.contains("[GitHub](https://github.com/zeelex)"));
+        assert!(md.contains("[albert@example.com](mailto:albert@example.com)"));
+        assert!(md.contains("[GitHub](https://github.com/aeinstein)"));
         assert!(md.contains("## Work Experience"));
         assert!(md.contains("### Staff Software Engineer, Tech Corp (Mountain View, CA)"));
         assert!(md.contains("[DockCV](https://dockcv.com)"));

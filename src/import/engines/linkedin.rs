@@ -561,8 +561,8 @@ mod tests {
     #[test]
     fn a_bare_url_and_an_empty_cell_both_read() {
         assert_eq!(
-            super::websites_in("https://sofiia.dev"),
-            vec!["https://sofiia.dev".to_string()]
+            super::websites_in("https://einstein.example"),
+            vec!["https://einstein.example".to_string()]
         );
         assert!(super::websites_in("").is_empty());
         assert!(super::websites_in("[TYPE:OTHER:]").is_empty());
@@ -574,7 +574,7 @@ mod tests {
     fn every_website_reaches_the_profile() {
         // Quoted, as a real export writes it — the cell contains a comma.
         let csv = "First Name,Last Name,Websites\n\
-                   Sofiia,Medvedenko,\"[TYPE:OTHER:https://a.com],[TYPE:BLOG:https://b.com]\"\n";
+                   Albert,Einstein,\"[TYPE:OTHER:https://a.com],[TYPE:BLOG:https://b.com]\"\n";
         let table = super::Table::parse(csv.as_bytes()).expect("parses");
         let mut resume = crate::resume::model::Resume::default();
         super::read_profile(&table, &mut resume);
@@ -631,10 +631,10 @@ mod tests {
 
     #[test]
     fn the_primary_address_is_the_one_that_reaches_the_cv() {
-        let t = table("Email Address,Primary\nold@example.com,No\nhi@zeelex.me,Yes\n");
+        let t = table("Email Address,Primary\nold@example.com,No\nalbert@example.com,Yes\n");
         let mut resume = Resume::default();
         read_email(&t, &mut resume);
-        assert_eq!(resume.basics.email, "hi@zeelex.me");
+        assert_eq!(resume.basics.email, "albert@example.com");
     }
 
     /// A one-column file used to fail `find_header`'s `len() > 1` test and be
@@ -685,7 +685,7 @@ mod tests {
         let options: zip::write::FileOptions<'_, ()> =
             zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
         for (name, body) in [
-            ("Profile.csv", "First Name,Last Name\nSofiia,Medvedenko\n"),
+            ("Profile.csv", "First Name,Last Name\nAlbert,Einstein\n"),
             (
                 "Honors.csv",
                 "Title,Description\nBest Paper,ACM\nRunner Up,IEEE\n",
@@ -701,7 +701,7 @@ mod tests {
         let imported = import_linkedin(&path).expect("the archive imports");
         assert_eq!(
             imported.doc.profile.active().name,
-            "Sofiia Medvedenko",
+            "Albert Einstein",
             "the mapped table still reads"
         );
 

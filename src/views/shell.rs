@@ -1605,7 +1605,7 @@ mod clone_url_tests {
             Some("dockcv")
         );
         assert_eq!(
-            repo_name("git@github.com:zeelex/my-cvault").as_deref(),
+            repo_name("git@github.com:aeinstein/my-cvault").as_deref(),
             Some("my-cvault")
         );
         assert_eq!(repo_name("https://example.com/cv/").as_deref(), Some("cv"));

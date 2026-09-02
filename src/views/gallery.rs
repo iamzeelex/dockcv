@@ -419,7 +419,7 @@ impl Shell {
             .child(
                 // `flex_1` alongside the `min_w_0`: without it the title box
                 // shrinks to its own minimum and ellipsises a title that had
-                // the whole card to sit in — "Leo Vaicer" came out
+                // the whole card to sit in — "Marie Curie" came out
                 // "Leo Vai…" with 200px to spare.
                 div()
                     .flex_1()

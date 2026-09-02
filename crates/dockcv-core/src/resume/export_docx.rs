@@ -482,7 +482,7 @@ mod tests {
         );
 
         // And the content itself survived.
-        assert!(all_text.contains("Alexey Belochenko"));
+        assert!(all_text.contains("Albert Einstein"));
         assert!(all_text.contains("Staff Software Engineer"));
         assert!(all_text.contains("State University"));
         assert!(all_text.contains("Rust"));

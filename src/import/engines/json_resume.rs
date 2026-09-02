@@ -495,11 +495,11 @@ mod tests {
     /// The exact document that used to import as a CV named `{`.
     const SPEC_SHAPED: &str = r#"{
       "basics": {
-        "name": "Sofiia Medvedenko",
+        "name": "Albert Einstein",
         "label": "Staff Engineer",
         "email": "s@example.com",
         "phone": "+49 30 123456",
-        "url": "https://sofiia.dev",
+        "url": "https://einstein.example",
         "summary": "Builds data platforms.",
         "location": { "city": "Berlin", "region": "Berlin", "countryCode": "DE" },
         "profiles": [{ "network": "GitHub", "username": "sm", "url": "https://github.com/sm" }]
@@ -538,7 +538,7 @@ mod tests {
         let imported = import(SPEC_SHAPED).expect("a JSON Resume is recognised");
         let basics = imported.doc.profile.active();
 
-        assert_eq!(basics.name, "Sofiia Medvedenko");
+        assert_eq!(basics.name, "Albert Einstein");
         assert_eq!(basics.email, "s@example.com");
         assert_eq!(basics.phone, "+49 30 123456");
         assert_eq!(basics.label, "Staff Engineer");
@@ -622,8 +622,8 @@ mod tests {
     /// The minimum a résumé needs to be one: a name and nothing else.
     #[test]
     fn a_name_alone_is_enough() {
-        let imported = import(r#"{"basics":{"name":"Leo Vaicer"}}"#).expect("a name is a resume");
-        assert_eq!(imported.doc.profile.active().name, "Leo Vaicer");
+        let imported = import(r#"{"basics":{"name":"Marie Curie"}}"#).expect("a name is a resume");
+        assert_eq!(imported.doc.profile.active().name, "Marie Curie");
     }
 
     /// We own both ends, so a lossy field is a failing test here rather than a
