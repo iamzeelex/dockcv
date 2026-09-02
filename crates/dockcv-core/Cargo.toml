@@ -97,4 +97,4 @@ serde_json = "1.0"
 # what a migration must keep reading — so the round-trip assertions belong
 # here. Dev-only: this crate never touches a file, and `vault.rs` in the binary
 # is what actually reads and writes them.
-toml = "0.8"
+toml = "1.1"
