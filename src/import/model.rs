@@ -118,46 +118,86 @@ fn heading_for(field: &str) -> String {
     }
 }
 
-/// Turn leftovers into a custom section on `doc`, one entry each.
+/// Turn leftovers into a custom section on `doc`.
 ///
 /// This is the destination the panel used to lack. Custom sections (D-9) and
-/// `CustomEntry` already fit the shapes that fall out: an interest is a title
-/// with its keywords, a reference is a title with the text as a highlight, a
-/// CSV row is a line. Nothing new had to be modelled — the data just had to
-/// survive the trip, which is what [`Unplaced`] is for.
+/// `CustomEntry` already fit the shapes that fall out — nothing new had to be
+/// modelled, the data just had to survive the trip, which is what [`Unplaced`]
+/// is for.
 ///
-/// Returns the entries it created, so the caller can say how many rather than
-/// claiming success it has not checked.
+/// The two kinds land differently, because they are different:
+///
+/// * A source that named the field gets **one entry per thing**, keeping its
+///   title and its details as bullets. An interest is a heading with its
+///   keywords under it, which is what it was in the file.
+/// * Lines nobody could label collapse into **one entry whose bullets are the
+///   lines**. Each as its own heading would promote a stray line from a contact
+///   block to the rank of a job title; as a bulleted list they read as what
+///   they are, which is also what the panel promises.
+///
+/// Returns how many leftovers were taken, not how many entries were made — the
+/// caller uses it to decide what to stop reporting, and four lines becoming one
+/// entry is still four leftovers dealt with.
 pub fn adopt_as_section(doc: &mut ResumeDoc, heading: &str, items: &[Unplaced]) -> usize {
     use crate::resume::model::{CustomEntry, ResumeDate};
 
-    let entries: Vec<CustomEntry> = items
-        .iter()
-        .filter(|item| item.offer() != UnplacedOffer::Nothing)
-        .map(|item| CustomEntry {
-            title: item.title.clone(),
-            subtitle: item.subtitle.clone(),
-            start_date: ResumeDate::new(""),
-            end_date: ResumeDate::new(""),
-            url: String::new(),
-            highlights: item
-                .details
-                .iter()
-                .filter(|d| !d.trim().is_empty())
-                .cloned()
-                .collect(),
-        })
-        .collect();
+    let blank_entry = || CustomEntry {
+        title: String::new(),
+        subtitle: String::new(),
+        start_date: ResumeDate::new(""),
+        end_date: ResumeDate::new(""),
+        url: String::new(),
+        highlights: Vec::new(),
+    };
+    let kept = |values: &[String]| -> Vec<String> {
+        values
+            .iter()
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+            .collect()
+    };
 
+    let mut entries: Vec<CustomEntry> = Vec::new();
+    let mut lines: Vec<String> = Vec::new();
+    let mut taken = 0;
+
+    for item in items {
+        match item.offer() {
+            UnplacedOffer::Section { .. } => {
+                entries.push(CustomEntry {
+                    title: item.title.clone(),
+                    subtitle: item.subtitle.clone(),
+                    highlights: kept(&item.details),
+                    ..blank_entry()
+                });
+                taken += 1;
+            }
+            UnplacedOffer::NamedByPerson => {
+                lines.push(item.title.clone());
+                lines.extend(kept(&item.details));
+                taken += 1;
+            }
+            // A photo URL is not a section, and handing it over anyway does not
+            // make it one.
+            UnplacedOffer::Nothing => {}
+        }
+    }
+
+    if !lines.is_empty() {
+        entries.push(CustomEntry {
+            highlights: kept(&lines),
+            ..blank_entry()
+        });
+    }
     if entries.is_empty() {
         return 0;
     }
-    let created = entries.len();
+
     let id = doc.add_custom_section(heading);
     if let Some(section) = doc.custom_section_mut(id) {
         *section.content.active_mut() = entries;
     }
-    created
+    taken
 }
 
 /// The result of importing an external document file.

@@ -1845,4 +1845,60 @@ mod tests {
         assert_eq!(classify_header("Educaton"), SectionKind::Education);
         assert_eq!(classify_header("Skils"), SectionKind::Skills);
     }
+
+    /// The third of three sources, and the only one whose offer nothing
+    /// asserted: a line the classifier read and could not place has no label,
+    /// so the person names the section and the lines become its bullets.
+    ///
+    /// The kinds must not merge. Nothing in `offer()` stops someone changing
+    /// one arm of that match, and the difference is the whole of what the
+    /// import panel can honestly say.
+    #[test]
+    fn a_line_that_cannot_be_placed_is_offered_as_a_section_the_person_names() {
+        use crate::import::model::{adopt_as_section, Unplaced, UnplacedOffer, UnplacedSource};
+
+        let raw = "Albert Einstein\n\
+                   CONTACT\n\
+                   albert@example.com\n\
+                   Member of the Prussian Academy\n";
+        let imported = classify_raw_text("PDF", raw);
+
+        // The email is contact data and is consumed; the sentence is not.
+        let leftover = imported
+            .unplaced
+            .iter()
+            .find(|u| u.source == UnplacedSource::Classifier)
+            .expect("the sentence is reported, not dropped");
+        assert_eq!(leftover.title, "Member of the Prussian Academy");
+        assert_eq!(
+            leftover.offer(),
+            UnplacedOffer::NamedByPerson,
+            "a classifier line has no heading to propose"
+        );
+
+        // And the panel's promise — "each becomes one bullet" — is what
+        // actually happens. Built here rather than taken from the import
+        // because the contact reader joins consecutive stray lines into one,
+        // and the shape worth pinning is what adoption does with several.
+        let lines = [
+            Unplaced::line_only("Member of the Prussian Academy"),
+            Unplaced::line_only("Willing to relocate"),
+        ];
+        let mut doc = imported.doc.clone();
+        assert_eq!(adopt_as_section(&mut doc, "Notes", &lines), 2);
+
+        let section = doc.custom_sections.last().expect("the section");
+        assert_eq!(section.title, "Notes");
+        let entries = section.content.active();
+        assert_eq!(
+            entries.len(),
+            1,
+            "unlabelled lines are bullets of one entry, not headings of several"
+        );
+        assert!(entries[0].title.is_empty());
+        assert_eq!(
+            entries[0].highlights,
+            ["Member of the Prussian Academy", "Willing to relocate"]
+        );
+    }
 }
