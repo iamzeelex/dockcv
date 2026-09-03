@@ -335,6 +335,42 @@ impl Shell {
     }
 
     /// The gallery's current search query, lowercased and trimmed.
+    /// How many library blocks carry the gallery's current query.
+    ///
+    /// The same matcher the Library screen uses, over the same cache — a second
+    /// definition of "matches" would drift, and the gallery would start
+    /// promising hits the Library then failed to show.
+    pub(super) fn library_hits(&self, query: &str) -> usize {
+        if query.is_empty() {
+            return 0;
+        }
+        let library = self.cache.library();
+        super::library::POOLS
+            .iter()
+            .flat_map(|&(section, _)| super::library::cards_for(library, section))
+            .filter(|card| card.haystack().contains(query))
+            .count()
+    }
+
+    /// Open the Library with `query` already in its box.
+    ///
+    /// Carrying the query across is the whole gesture: the gallery said blocks
+    /// match, and arriving at an unfiltered Library would make the user type it
+    /// again to see the thing they were just told about.
+    pub(super) fn open_library_with(
+        &mut self,
+        query: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ensure_inputs(window, cx);
+        if let Some(field) = self.library_search.clone() {
+            field.update(cx, |field, cx| field.seed(query, window, cx));
+        }
+        self.screen = Screen::Library;
+        cx.notify();
+    }
+
     pub(super) fn search_query(&self, cx: &App) -> String {
         self.search
             .as_ref()

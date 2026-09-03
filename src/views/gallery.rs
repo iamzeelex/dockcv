@@ -158,11 +158,14 @@ impl Shell {
                     .text_color(theme.text_subtle),
             )
             .child(
-                div().flex_1().min_w_0().children(
-                    self.search
-                        .as_ref()
-                        .map(|state| TextField::new(state).seamless().placeholder("Search CVs…")),
-                ),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .children(self.search.as_ref().map(|state| {
+                        TextField::new(state)
+                            .seamless()
+                            .placeholder("Search names, presets, variants…")
+                    })),
             )
     }
 
@@ -176,7 +179,7 @@ impl Shell {
             .cache
             .metadata()
             .iter()
-            .filter(|m| query.is_empty() || m.name.to_lowercase().contains(&query))
+            .filter(|m| query.is_empty() || m.best_match(&query).is_some())
             .cloned()
             .collect();
         let now = std::time::SystemTime::now()
@@ -195,11 +198,49 @@ impl Shell {
             .len()
             > 1;
 
-        div().flex().flex_wrap().gap(px(18.0)).children(
-            metas
-                .into_iter()
-                .map(|meta| self.doc_card(cx, meta, now, mixed_names)),
-        )
+        let theme = *cx.theme();
+        // A block is not a document, so it is not a card in this grid — but a
+        // query that finds nothing here and six things in the Library should
+        // say so rather than reading as "no results".
+        let library_hits = self.library_hits(&query);
+        let library_row = (library_hits > 0).then(|| {
+            let query = query.clone();
+            div()
+                .mt(px(18.0))
+                .flex()
+                .items_center()
+                .gap(px(10.0))
+                .child(
+                    div()
+                        .text_style(TextStyle::body())
+                        .text_color(theme.text_subtle)
+                        .child(format!(
+                            "{library_hits} {} in your Library also match",
+                            if library_hits == 1 { "block" } else { "blocks" }
+                        )),
+                )
+                .child(
+                    Button::new("gallery-library-hits")
+                        .quiet()
+                        .text_color(theme.accent)
+                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                            this.open_library_with(query.clone(), window, cx);
+                        }))
+                        .child("Open Library"),
+                )
+        });
+
+        div()
+            .flex()
+            .flex_col()
+            .child(
+                div().flex().flex_wrap().gap(px(18.0)).children(
+                    metas
+                        .into_iter()
+                        .map(|meta| self.doc_card(cx, meta, now, mixed_names)),
+                ),
+            )
+            .children(library_row)
     }
 
     /// One document card.
@@ -258,6 +299,13 @@ impl Shell {
                 .child("rendering…")
                 .into_any_element(),
         };
+
+        // Only while searching, and only when the match is not the headline or
+        // the file name the card already prints.
+        let query = self.search_query(cx);
+        let matched = meta
+            .best_match(&query)
+            .and_then(|entry| entry.kind.label().map(|k| (k, entry.text.clone())));
 
         let card_id = SharedString::from(format!("card-{}", meta.path.to_string_lossy()));
         Card::new()
@@ -332,6 +380,32 @@ impl Shell {
                         ),
                     )
                     .child(div().mt(px(11.0)).child(self.card_presets(cx, &meta)))
+                    // Why this card is in the results, when the reason is not
+                    // already on it. A search that matched a variant name shows
+                    // an otherwise unremarkable card, and a result that cannot
+                    // explain itself is the flat list this task exists to end.
+                    .children(matched.map(|(kind, text)| {
+                        div()
+                            .mt(px(7.0))
+                            .flex()
+                            .items_center()
+                            .gap(px(5.0))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .text_style(TextStyle::eyebrow())
+                                    .text_color(theme.accent)
+                                    .child(kind),
+                            )
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_style(TextStyle::meta())
+                                    .text_color(theme.text_subtle)
+                                    .child(text),
+                            )
+                    }))
                     // File name and age are different kinds of fact and were
                     // being joined with middots into the least readable line on
                     // the card. Two columns under a hairline: the name scans

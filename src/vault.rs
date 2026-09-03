@@ -136,6 +136,46 @@ pub fn create_vault(parent: &Path) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Which of a document's names a search matched.
+///
+/// Search returning a flat list of documents is the defect: the box matched
+/// `name` alone — the *person's* name, identical on every card in a vault of
+/// one person's CVs — so it found everything or nothing and never said why.
+/// A result has to name what carried the query, or the answer is not usable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MatchKind {
+    /// The file stem. First, because it is what the card leads with and the
+    /// only field that tells two CVs of one person with one title apart.
+    Stem,
+    Person,
+    Role,
+    Preset,
+    Variant,
+}
+
+impl MatchKind {
+    /// The word shown beside a result. `None` for the fields already on the
+    /// card — saying "stem" over the title it just matched is noise.
+    pub fn label(self) -> Option<&'static str> {
+        match self {
+            Self::Stem | Self::Person => None,
+            Self::Role => Some("role"),
+            Self::Preset => Some("preset"),
+            Self::Variant => Some("variant"),
+        }
+    }
+}
+
+/// One searchable name belonging to a document.
+#[derive(Clone, Debug)]
+pub struct SearchEntry {
+    pub kind: MatchKind,
+    /// As the user wrote it, for showing back.
+    pub text: String,
+    /// Lower-cased once here rather than on every keystroke.
+    folded: String,
+}
+
 /// Human-readable summary of a document, for the gallery cards.
 ///
 /// `Clone` because the cache owns one copy and the cards take theirs by value —
@@ -164,6 +204,12 @@ pub struct DocMeta {
     /// deliberately a raw timestamp, not a formatted string, so formatting
     /// stays pure and testable at the boundary.
     pub modified_secs: Option<u64>,
+    /// Every name in this document a search can match, folded once.
+    ///
+    /// Built here rather than walked per keystroke: `vault_cache.rs` exists so
+    /// the vault is parsed once per change, and a search that reopens every
+    /// `ResumeDoc` on every character undoes exactly that.
+    pub search: Vec<SearchEntry>,
 }
 
 impl DocMeta {
@@ -172,6 +218,23 @@ impl DocMeta {
     /// moment a preset is added or removed elsewhere.
     pub fn is_draft(&self) -> bool {
         self.presets == 0
+    }
+
+    /// What in this document carries `folded`, or `None` if nothing does.
+    ///
+    /// `folded` must already be lower-cased — the caller does it once per
+    /// keystroke rather than this doing it once per document. The kinds are
+    /// ordered so the stem answers first: it is what the card leads with, so a
+    /// result explaining itself as a preset when the title already matched
+    /// would be explaining the wrong thing.
+    pub fn best_match(&self, folded: &str) -> Option<&SearchEntry> {
+        if folded.is_empty() {
+            return None;
+        }
+        self.search
+            .iter()
+            .filter(|entry| entry.folded.contains(folded))
+            .min_by_key(|entry| entry.kind)
     }
 }
 
@@ -190,31 +253,84 @@ fn meta_from(path: &Path, doc: Option<&ResumeDoc>) -> DocMeta {
     match doc {
         Some(doc) => {
             let basics = doc.profile.active();
+            let name = if basics.name.trim().is_empty() {
+                stem.clone()
+            } else {
+                basics.name.clone()
+            };
+            let preset_names: Vec<String> = doc.presets.iter().map(|p| p.name.clone()).collect();
+
+            let mut search = SearchIndex::default();
+            search.add(MatchKind::Stem, &stem);
+            search.add(MatchKind::Person, &name);
+            search.add(MatchKind::Role, &basics.label);
+            for preset in &preset_names {
+                search.add(MatchKind::Preset, preset);
+            }
+            // One name per variant, not one per section that happens to carry
+            // it: every section usually has a `Base`, and seven copies of it
+            // would be seven identical results for one word.
+            for section in doc.sections() {
+                for variant in doc.variant_names(section) {
+                    search.add(MatchKind::Variant, &variant);
+                }
+            }
+
             DocMeta {
-                name: if basics.name.trim().is_empty() {
-                    stem.clone()
-                } else {
-                    basics.name.clone()
-                },
+                name,
                 label: basics.label.clone(),
                 presets: doc.presets.len(),
-                preset_names: doc.presets.iter().map(|p| p.name.clone()).collect(),
+                preset_names,
                 unreadable: false,
                 path: path.to_path_buf(),
                 stem,
                 modified_secs,
+                search: search.into_entries(),
             }
         }
-        None => DocMeta {
-            name: stem.clone(),
-            label: String::new(),
-            presets: 0,
-            preset_names: Vec::new(),
-            unreadable: true,
-            path: path.to_path_buf(),
-            stem,
-            modified_secs,
-        },
+        // A file that will not parse still gets its stem searched: it is the
+        // only thing known about it, and it is how the user finds it to fix it.
+        None => {
+            let mut search = SearchIndex::default();
+            search.add(MatchKind::Stem, &stem);
+            DocMeta {
+                name: stem.clone(),
+                label: String::new(),
+                presets: 0,
+                preset_names: Vec::new(),
+                unreadable: true,
+                path: path.to_path_buf(),
+                stem,
+                modified_secs,
+                search: search.into_entries(),
+            }
+        }
+    }
+}
+
+/// Collects a document's searchable names, skipping blanks and repeats.
+#[derive(Default)]
+struct SearchIndex(Vec<SearchEntry>);
+
+impl SearchIndex {
+    fn add(&mut self, kind: MatchKind, text: &str) {
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        let folded = text.to_lowercase();
+        if self.0.iter().any(|e| e.kind == kind && e.folded == folded) {
+            return;
+        }
+        self.0.push(SearchEntry {
+            kind,
+            text: text.to_string(),
+            folded,
+        });
+    }
+
+    fn into_entries(self) -> Vec<SearchEntry> {
+        self.0
     }
 }
 
@@ -1003,6 +1119,7 @@ mod tests {
             presets: 1,
             unreadable: false,
             modified_secs: None,
+            search: Vec::new(),
         };
         assert!(!with_presets.is_draft());
         let no_presets = super::DocMeta {
@@ -1779,5 +1896,84 @@ path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
         assert!(!rewritten.contains("timestamp"));
         assert!(rewritten.contains("date = \"2026-09-01\""));
         assert!(rewritten.contains("time = \"23:47\""));
+    }
+
+    /// The defect this task exists for: the box matched the *person's* name,
+    /// which is the same on every card in a vault of one person's CVs, and
+    /// ignored the stem the card leads with. Typing `northwind` found nothing.
+    #[test]
+    fn search_reaches_every_name_a_document_carries_and_says_which() {
+        use super::MatchKind;
+        use crate::resume::model::{Basics, Preset, Resume, SectionKind};
+
+        let resume = Resume {
+            basics: Basics {
+                name: "Albert Einstein".into(),
+                label: "Engineering Manager, Platform".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut doc = ResumeDoc::from_resume(resume, "Base");
+        doc.profile.variants[0].name = "Short".into();
+        doc.presets = vec![Preset {
+            name: "FAANG".into(),
+            selection: vec![(SectionKind::Profile, "Short".into())],
+            hidden: vec![],
+        }];
+
+        let dir = std::env::temp_dir().join(format!(
+            "dockcv_search_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("scratch");
+        let path = dir.join("northwind-em.toml");
+        super::save(&doc, &path).expect("save");
+
+        let meta = super::meta_from(&path, Some(&doc));
+
+        // Each of the five kinds is reachable, and reports itself.
+        for (query, kind, text) in [
+            ("northwind", MatchKind::Stem, "northwind-em"),
+            ("einstein", MatchKind::Person, "Albert Einstein"),
+            ("platform", MatchKind::Role, "Engineering Manager, Platform"),
+            ("faang", MatchKind::Preset, "FAANG"),
+            ("short", MatchKind::Variant, "Short"),
+        ] {
+            let hit = meta
+                .best_match(query)
+                .unwrap_or_else(|| panic!("{query:?} found nothing"));
+            assert_eq!(hit.kind, kind, "{query:?} matched the wrong kind");
+            assert_eq!(hit.text, text);
+        }
+
+        // The stem answers first when two kinds both match, because it is what
+        // the card leads with.
+        assert_eq!(meta.best_match("n").map(|h| h.kind), Some(MatchKind::Stem));
+
+        // A word in nothing finds nothing, rather than everything.
+        assert!(meta.best_match("kubernetes").is_none());
+
+        // Stem and person are already on the card, so they explain nothing.
+        assert_eq!(MatchKind::Stem.label(), None);
+        assert_eq!(MatchKind::Preset.label(), Some("preset"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A file that will not parse is still findable by its name — it is the
+    /// only handle on it, and finding it is how it gets fixed.
+    #[test]
+    fn an_unreadable_document_is_still_findable_by_its_stem() {
+        use super::MatchKind;
+        let meta = super::meta_from(std::path::Path::new("/tmp/broken-cv.toml"), None);
+        assert!(meta.unreadable);
+        assert_eq!(
+            meta.best_match("broken").map(|h| h.kind),
+            Some(MatchKind::Stem)
+        );
     }
 }
