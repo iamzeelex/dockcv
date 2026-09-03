@@ -240,6 +240,39 @@ mod tests {
         }
     }
 
+    /// End to end through the real config parse, not just `from_word`: a
+    /// `config.toml` written before this field existed has no key for it, and
+    /// the gallery has to open on recency rather than on whatever `Default`
+    /// happens to put first.
+    #[test]
+    fn a_config_without_the_key_opens_on_recency() {
+        let older: crate::config::Config = toml::from_str(
+            r#"
+            vault = "/Users/someone/cvault"
+            theme = "slate_dark"
+            update_check = "manual"
+            "#,
+        )
+        .expect("a config from before this field still parses");
+        assert_eq!(older.gallery_sort, "");
+        assert_eq!(
+            GallerySort::from_word(&older.gallery_sort),
+            GallerySort::Recent
+        );
+        assert_eq!(
+            GallerySort::from_word(&older.gallery_sort).label(),
+            "Recently edited"
+        );
+
+        // And a key that is present is honoured.
+        let stored: crate::config::Config =
+            toml::from_str(r#"gallery_sort = "name""#).expect("parses");
+        assert_eq!(
+            GallerySort::from_word(&stored.gallery_sort),
+            GallerySort::Name
+        );
+    }
+
     #[test]
     fn an_unknown_word_in_the_config_reads_as_the_default() {
         assert_eq!(GallerySort::from_word("last-sent"), GallerySort::LastSent);
