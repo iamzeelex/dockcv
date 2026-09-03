@@ -716,6 +716,39 @@ pub struct Applications {
 
 impl Applications {
     /// Number of cards in a given column.
+    /// The last date `document_stem` was sent, as the ISO date it was sent on.
+    ///
+    /// "Sent" is the move into Applied, not the card's creation: a card can sit
+    /// in Wishlist for a month with a CV attached and nothing has left the
+    /// building. `sent_as` names the document as a label rather than a live
+    /// reference (US-04), so this matches on the stem it recorded — a document
+    /// renamed since keeps its history under the old name, which is the truth
+    /// about what was sent.
+    ///
+    /// ISO dates compare correctly as strings, which is why they are stored
+    /// that way; `max` here needs no parsing and cannot fail on a hand-edited
+    /// date it does not understand.
+    pub fn last_sent_for(&self, document_stem: &str) -> Option<&str> {
+        let applied = ApplicationStatus::Applied.word();
+        self.entries
+            .iter()
+            .filter(|entry| {
+                entry
+                    .sent_as
+                    .as_ref()
+                    .is_some_and(|sent| sent.document == document_stem)
+            })
+            .filter_map(|entry| {
+                entry
+                    .history
+                    .iter()
+                    .filter(|change| change.to == applied)
+                    .map(|change| change.at.as_str())
+                    .max()
+            })
+            .max()
+    }
+
     pub fn count(&self, status: ApplicationStatus) -> usize {
         self.entries.iter().filter(|a| a.status() == status).count()
     }
@@ -3480,6 +3513,50 @@ mod applications_tests {
 
     /// An unrecognised/typo'd status must not fail the whole file — it falls
     /// back to `Wishlist`, the board's own default column.
+    #[test]
+    fn last_sent_is_the_move_into_applied_not_the_card() {
+        let sent_as = |stem: &str| {
+            Some(SentCv {
+                document: stem.into(),
+                preset: String::new(),
+            })
+        };
+        let change = |at: &str, to: ApplicationStatus| StageChange {
+            at: at.into(),
+            to: to.word().into(),
+        };
+
+        let apps = Applications {
+            entries: vec![
+                // Sent twice; the later date wins.
+                Application {
+                    sent_as: sent_as("northwind-em"),
+                    history: vec![
+                        change("2026-03-01", ApplicationStatus::Applied),
+                        change("2026-04-02", ApplicationStatus::Interviewing),
+                    ],
+                    ..Default::default()
+                },
+                Application {
+                    sent_as: sent_as("northwind-em"),
+                    history: vec![change("2026-07-14", ApplicationStatus::Applied)],
+                    ..Default::default()
+                },
+                // A wishlist card with a CV attached: nothing has left the
+                // building, so it is not a send.
+                Application {
+                    sent_as: sent_as("research-cv"),
+                    history: vec![change("2026-08-01", ApplicationStatus::Wishlist)],
+                    ..Default::default()
+                },
+            ],
+        };
+
+        assert_eq!(apps.last_sent_for("northwind-em"), Some("2026-07-14"));
+        assert_eq!(apps.last_sent_for("research-cv"), None);
+        assert_eq!(apps.last_sent_for("never-heard-of-it"), None);
+    }
+
     #[test]
     fn unknown_status_falls_back_to_wishlist_rather_than_erroring() {
         let toml_text = "[[entries]]\ncompany = \"Acme\"\nrole = \"SWE\"\nstatus = \"ghosted\"\n";

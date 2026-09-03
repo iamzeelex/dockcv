@@ -16,6 +16,8 @@ mod diary;
 mod diary_capture;
 mod diary_use;
 mod gallery;
+mod gallery_card;
+mod gallery_sort;
 pub mod import_flow;
 mod library;
 mod library_edit;
