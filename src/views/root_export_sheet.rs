@@ -6,7 +6,7 @@
 //! to section by section, the filename and the folder are all on screen before
 //! anything is written, and cancelling writes nothing (P-08, US-18).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gpui::prelude::*;
 use gpui::{
@@ -19,6 +19,7 @@ use dockcv_ui_components::{
     TextFieldState, MONO,
 };
 
+use crate::config;
 use crate::resume::export_names::{resolve_destination, Destination, OnCollision};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
@@ -110,6 +111,25 @@ pub(super) const CURRENT_VIEW: &str = "Current view";
 /// The `{date}` token, in the only form that sorts correctly in Finder.
 pub(super) fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
+}
+
+/// The name to show for a format recorded in export history.
+///
+/// History stores the extension, so this is the only place a key becomes words.
+/// It also answers the labels written before that was settled — a row that says
+/// `Word` predates the change and still has to read as Word, not as a mystery.
+/// A key from a future version renders as itself: unknown is not the same as
+/// gone, and dropping the row would be worse than an unfamiliar word in it.
+pub(super) fn format_label(key: &str) -> String {
+    match key.to_ascii_lowercase().as_str() {
+        "pdf" => "PDF".into(),
+        "docx" | "word" => "Word".into(),
+        "txt" | "text" => "Plain text".into(),
+        "md" | "markdown" => "Markdown".into(),
+        "json" => "JSON Resume".into(),
+        "typ" | "typst" => "Typst".into(),
+        _ => key.to_string(),
+    }
 }
 
 /// What a preset resolves to, ready to draw.
@@ -205,11 +225,11 @@ impl Root {
         self.export_sheet = Some(ExportSheetState {
             format: ExportFormat::Pdf,
             preset_index: self.active_preset,
-            folder: self
-                .doc
-                .export
-                .last_destination
-                .clone()
+            // Where this document went last time, remembered on this machine
+            // rather than in the document (A11, and the storage rules).
+            folder: config::load()
+                .export_destination(&self.doc_path)
+                .map(Path::to_path_buf)
                 .unwrap_or_else(vault::user_home_dir),
             stem,
             seeded,

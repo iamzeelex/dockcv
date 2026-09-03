@@ -8,6 +8,7 @@
 
 use gpui::Context;
 
+use crate::config;
 use crate::resume::diagnostics::CompileMessage;
 use crate::typst_engine::Severity;
 use crate::vault;
@@ -101,11 +102,13 @@ impl Root {
                         this.doc.record_export(
                             now.format("%Y-%m-%d").to_string(),
                             now.format("%H:%M").to_string(),
-                            format.short_name(),
+                            format.extension(),
                             preset_title,
                             path.clone(),
                         );
-                        this.doc.export.last_destination = Some(folder);
+                        let mut config = config::load();
+                        config.remember_export_destination(&this.doc_path, &folder);
+                        config::save(&config);
                         save_status::record(cx, "document", vault::save(&this.doc, &this.doc_path));
                     }
                     Err(message) => {

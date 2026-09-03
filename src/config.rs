@@ -5,7 +5,7 @@
 //! config, distinct from the user's cvault (which holds the résumés).
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +16,16 @@ use crate::update::Channel;
 pub struct Config {
     /// The vault directory the user last opened, if any.
     pub vault: Option<PathBuf>,
+    /// Where each document was last exported to.
+    ///
+    /// A11 wants the second export of a document to default to the first one's
+    /// folder, and per document rather than per vault — two CVs are for
+    /// different jobs and go to different places. It lives here rather than in
+    /// the document because a folder is a fact about *this machine*: a vault
+    /// copied to another laptop would carry `/Users/somebody/Downloads`, which
+    /// is not a folder there. Newest last, and capped.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub export_destinations: Vec<ExportDestination>,
     /// The palette the user last chose. Defaults to Slate Dark.
     #[serde(default)]
     pub theme: ThemeMode,
@@ -54,6 +64,50 @@ impl Config {
     /// The channel this config selects, defaulting safely.
     pub fn update_channel(&self) -> Channel {
         Channel::from_word(&self.update_check)
+    }
+}
+
+/// One document's last export folder. An array of tables rather than a map,
+/// because a TOML key holding an absolute path is unreadable and needs quoting.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportDestination {
+    /// The document this is about.
+    pub document: PathBuf,
+    /// The folder its last export went to.
+    pub folder: PathBuf,
+}
+
+/// How many documents' export folders are remembered.
+///
+/// Long past a vault anyone has, and the entries that fall off the front are
+/// the ones least recently exported — whose folder is the least likely to still
+/// be the right guess.
+const MAX_EXPORT_DESTINATIONS: usize = 100;
+
+impl Config {
+    /// The folder `document` was last exported to, if this machine remembers.
+    pub fn export_destination(&self, document: &Path) -> Option<&Path> {
+        self.export_destinations
+            .iter()
+            .rev()
+            .find(|row| row.document == document)
+            .map(|row| row.folder.as_path())
+    }
+
+    /// Remember where `document` was just exported, replacing any earlier
+    /// answer for it rather than stacking a second one.
+    pub fn remember_export_destination(&mut self, document: &Path, folder: &Path) {
+        self.export_destinations
+            .retain(|row| row.document != document);
+        self.export_destinations.push(ExportDestination {
+            document: document.to_path_buf(),
+            folder: folder.to_path_buf(),
+        });
+        let overflow = self
+            .export_destinations
+            .len()
+            .saturating_sub(MAX_EXPORT_DESTINATIONS);
+        self.export_destinations.drain(..overflow);
     }
 }
 

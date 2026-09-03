@@ -1676,17 +1676,15 @@ mod tests {
             loaded.export.filename_pattern,
             ExportSettings::DEFAULT_PATTERN
         );
-        assert!(loaded.export.last_destination.is_none());
         assert!(loaded.export_history.is_empty());
 
         // Once set, every field survives the trip in both directions.
         let mut used = doc;
         used.export.filename_pattern = "{name} - {role} - {company}".into();
-        used.export.last_destination = Some(PathBuf::from("/Users/someone/Documents/CVs"));
         used.record_export(
             "2026-09-01",
             "17:30",
-            "PDF",
+            "pdf",
             "Concise",
             PathBuf::from("/Users/someone/Documents/CVs/Ann Lee - SRE - Concise.pdf"),
         );
@@ -1707,6 +1705,33 @@ mod tests {
             toml::from_str(&downgraded).expect("a document without the export tables still parses");
         assert_eq!(old.export, ExportSettings::default());
         assert!(old.export_history.is_empty());
+    }
+
+    /// A document written while `last_destination` still lived in the vault.
+    ///
+    /// The field moved to `config.rs` because a folder is a fact about one
+    /// machine. Nothing here reads it any more, and nothing needs to: it is a
+    /// convenience the next export re-learns. What must not happen is the
+    /// document refusing to open over it.
+    #[test]
+    fn a_document_that_still_carries_last_destination_opens() {
+        let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
+        let doc = ResumeDoc::from_resume(resume, "Base");
+        let mut text = super::to_toml(&doc).expect("serialize");
+        text.push_str(
+            r#"
+[export]
+filename_pattern = "{name} - {role}"
+last_destination = "/Users/someone/Downloads"
+"#,
+        );
+
+        let loaded: ResumeDoc = toml::from_str(&text).expect("a vault-era destination is ignored");
+        assert_eq!(loaded.export.filename_pattern, "{name} - {role}");
+
+        // And it is not written back, so the field dies out on the next save.
+        let rewritten = super::to_toml(&loaded).expect("serialize");
+        assert!(!rewritten.contains("last_destination"));
     }
 
     /// The exact block that failed to open: an export history written before

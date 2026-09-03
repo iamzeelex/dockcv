@@ -217,6 +217,41 @@ Every component gets a doc comment saying what it is and one usage line.
   open it in Finder (US-09).
 - Every schema change needs a forward migration and a round-trip test in `vault.rs`.
 
+### Three kinds of state, three homes
+
+Ask which of these a new field is *before* choosing where to put it. Getting it wrong is
+not caught by any test — the vault reads back fine on the machine that wrote it.
+
+| Kind | Home | Test |
+|---|---|---|
+| The user's data and decisions | TOML in the vault | Would it be missed if the vault were copied to a new laptop? |
+| Local to this machine or this person | `~/.config/dockcv/config.toml` (`config.rs`) | Is it about *looking*, rather than about a document? |
+| Derived, rebuildable | memory (`vault_cache.rs`) | Could it be deleted and recomputed with nobody noticing? |
+
+Two rules follow.
+
+**A path stored in the vault is relative to the vault or it is a bug.** `Snapshot::file`
+names a file inside `<vault>/snapshots/` and travels correctly; an absolute
+`/Users/somebody/Downloads` in a document TOML points at nothing on the second machine.
+The exception is a record of something that already happened — export history keeps the
+absolute path it wrote to, and the UI says "moved or deleted" rather than pretending.
+
+**Derived data never lives in the vault.** The moment an index or a cache is written
+there, the vault stops being a folder of TOML the user owns and becomes a folder of TOML
+plus a thing they must not delete. If it ever outgrows memory it goes in a cache directory
+outside the vault, and deleting that directory costs nothing.
+
+### Adding a field is free; changing one is not
+
+`#[serde(default)]` plus `skip_serializing_if` means a new field costs nothing: old files
+read, and files that do not use it do not grow. *Renaming or splitting* a field is what
+breaks vaults — `ExportRecord`'s `timestamp` became `date` plus `time` without a migration
+and every document with an export in it stopped opening.
+
+So do not add fields speculatively for features two releases out. Do get the shape of the
+fields that exist right, and prefer a stable key to a display string: a label recorded in
+history is wrong the day the label is reworded.
+
 ---
 
 ## Conventions
