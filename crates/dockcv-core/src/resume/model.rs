@@ -2751,6 +2751,40 @@ impl ResumeDoc {
         self.hidden_sections = preset.hidden;
     }
 
+    /// Whether preset `index` is already what the document is showing.
+    ///
+    /// Applying a preset is an edit: it moves `active` on every section it
+    /// names and rewrites `hidden_sections`, and all of that is stored. So
+    /// arriving at a document *already* in that state must not be an edit —
+    /// otherwise opening a card at the preset it is already in would checkpoint
+    /// nothing onto the undo stack and write an identical file to disk.
+    ///
+    /// A preset naming no sections is not "active": it selects nothing, so
+    /// there is nothing for the document to already agree with.
+    pub fn is_preset_active(&self, index: usize) -> bool {
+        let Some(preset) = self.presets.get(index) else {
+            return false;
+        };
+        if preset.selection.is_empty() {
+            return false;
+        }
+        // Order is not meaning — `apply_preset` assigns the list wholesale, but
+        // a hand-edited vault can spell the same set differently.
+        if preset.hidden.len() != self.hidden_sections.len()
+            || !preset
+                .hidden
+                .iter()
+                .all(|section| self.hidden_sections.contains(section))
+        {
+            return false;
+        }
+        preset.selection.iter().all(|(section, name)| {
+            self.variant_names(*section)
+                .get(self.active_variant(*section))
+                .is_some_and(|active| active == name)
+        })
+    }
+
     pub fn remove_preset(&mut self, index: usize) {
         if index < self.presets.len() {
             self.presets.remove(index);
@@ -3513,6 +3547,56 @@ mod applications_tests {
 
     /// An unrecognised/typo'd status must not fail the whole file — it falls
     /// back to `Wishlist`, the board's own default column.
+    #[test]
+    fn a_preset_already_in_effect_is_not_applied_again() {
+        let resume = Resume {
+            basics: Basics {
+                name: "Albert Einstein".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut doc = ResumeDoc::from_resume(resume, "Base");
+        doc.profile.variants.push(crate::resume::model::Variant {
+            name: "Short".into(),
+            data: Basics::default(),
+        });
+        doc.presets = vec![
+            Preset {
+                name: "Short profile".into(),
+                selection: vec![(SectionKind::Profile, "Short".into())],
+                hidden: vec![],
+            },
+            Preset {
+                name: "Base profile".into(),
+                selection: vec![(SectionKind::Profile, "Base".into())],
+                hidden: vec![],
+            },
+            Preset {
+                name: "Names nothing".into(),
+                selection: vec![],
+                hidden: vec![],
+            },
+        ];
+
+        // The document opens on `Base`, so preset 1 is already in effect and
+        // preset 0 is not.
+        assert!(!doc.is_preset_active(0));
+        assert!(doc.is_preset_active(1));
+
+        doc.apply_preset(0);
+        assert!(doc.is_preset_active(0));
+        assert!(!doc.is_preset_active(1));
+
+        // A preset that selects nothing agrees with nothing.
+        assert!(!doc.is_preset_active(2));
+        assert!(!doc.is_preset_active(99));
+
+        // Hiding a section the preset does not hide takes it out of effect.
+        doc.hidden_sections = vec![SectionKind::Skills];
+        assert!(!doc.is_preset_active(0));
+    }
+
     #[test]
     fn last_sent_is_the_move_into_applied_not_the_card() {
         let sent_as = |stem: &str| {

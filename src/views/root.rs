@@ -437,6 +437,35 @@ impl Root {
         self.schedule_recompile(window, cx);
     }
 
+    /// Show this document at preset `index`, on arrival from the gallery.
+    ///
+    /// The same edit as picking the preset from the toolbar menu — applying a
+    /// preset moves `active` on every section it names, and that is stored, so
+    /// there is no honest way for this gesture to mean something weaker. Two
+    /// paths to one state that differ in whether they persist is the confusing
+    /// thing, not the writing.
+    ///
+    /// Except when the document is already in that state, which is the common
+    /// case for a card whose chip you clicked because it is what you want. Then
+    /// this only names the preset in the toolbar: no checkpoint, no save, no
+    /// recompile of a page that has not changed.
+    pub(super) fn open_at_preset(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if index >= self.doc.presets.len() {
+            return;
+        }
+        if self.doc.is_preset_active(index) {
+            self.active_preset = Some(index);
+            cx.notify();
+            return;
+        }
+        self.apply_preset(index, window, cx);
+    }
+
     /// Save the document's current section×variant selection as a new named
     /// preset (`ResumeDoc::add_preset`) and make it the toolbar's displayed
     /// preset. Not "capture" — see `ResumeDoc::add_preset`'s own doc comment

@@ -309,13 +309,37 @@ impl Shell {
                     .child("draft"),
                 )
             })
-            .children(shown.into_iter().map(|name| {
-                Tag::custom(theme.chip_bg, theme.chip_fg, theme.chip_bg)
-                    .px(px(8.0))
-                    .py(px(3.0))
-                    .rounded(theme.radius_sm())
-                    .text_style(TextStyle::chip())
-                    .child(name)
+            .children(shown.into_iter().enumerate().map(|(index, name)| {
+                let path = meta.path.clone();
+                // The `Tag` is unchanged. A `Button` here brought its own size
+                // ladder — padding and a minimum height that no `px` override
+                // reaches — and the chips came out half again the size of the
+                // `draft` tag beside them. The card is not what this task was
+                // for, so the behaviour is wrapped around the chip rather than
+                // swapped in for it.
+                //
+                // `occlude` because the whole card is a click target: without
+                // it the card's own handler sits behind this hitbox and sees
+                // the press first, opening the document in whatever state it
+                // was left. Same reason the `···` menu occludes.
+                div()
+                    .id(SharedString::from(format!(
+                        "card-preset-{}-{index}",
+                        meta.path.to_string_lossy()
+                    )))
+                    .occlude()
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        this.open_doc_at(path.clone(), Some(index), window, cx);
+                    }))
+                    .child(
+                        Tag::custom(theme.chip_bg, theme.chip_fg, theme.chip_bg)
+                            .px(px(8.0))
+                            .py(px(3.0))
+                            .rounded(theme.radius_sm())
+                            .text_style(TextStyle::chip())
+                            .child(name),
+                    )
             }))
             .when(hidden > 0, |row| {
                 row.child(
