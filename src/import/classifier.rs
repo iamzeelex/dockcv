@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::sync::OnceLock;
 
 use crate::import::layout;
-use crate::import::model::ImportedDoc;
+use crate::import::model::{ImportedDoc, Unplaced};
 use crate::import::notes::{Note, Part};
 use crate::resume::model::{
     Certificate, CustomEntry, Education, NetworkProfile, Resume, ResumeDoc, SkillGroup, Volunteer,
@@ -950,7 +950,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 } else if first_lines.len() < 3 {
                     first_lines.push(line);
                 } else {
-                    unplaced.push(line.to_string());
+                    unplaced.push(Unplaced::line_only(line));
                 }
             }
             SectionKind::Contact => {
@@ -959,7 +959,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 // the top of the document, and a second reading would overwrite
                 // it with whatever the block happened to start with.
                 if !absorb_contact(line, &mut resume) {
-                    unplaced.push(line.to_string());
+                    unplaced.push(Unplaced::line_only(line));
                 }
             }
             SectionKind::Summary => {
@@ -1761,7 +1761,7 @@ mod tests {
 
         // The heart of it: contact data must not be reported as dropped. The
         // email in particular was both parsed *and* listed as lost.
-        for line in &imported.unplaced {
+        for line in imported.unplaced.iter().map(Unplaced::line) {
             assert!(
                 !line.contains('@') && !line.contains("http"),
                 "contact line reported as unplaced: {line}"
@@ -1844,5 +1844,61 @@ mod tests {
         assert_eq!(classify_header("Experiance"), SectionKind::Work);
         assert_eq!(classify_header("Educaton"), SectionKind::Education);
         assert_eq!(classify_header("Skils"), SectionKind::Skills);
+    }
+
+    /// The third of three sources, and the only one whose offer nothing
+    /// asserted: a line the classifier read and could not place has no label,
+    /// so the person names the section and the lines become its bullets.
+    ///
+    /// The kinds must not merge. Nothing in `offer()` stops someone changing
+    /// one arm of that match, and the difference is the whole of what the
+    /// import panel can honestly say.
+    #[test]
+    fn a_line_that_cannot_be_placed_is_offered_as_a_section_the_person_names() {
+        use crate::import::model::{adopt_as_section, Unplaced, UnplacedOffer, UnplacedSource};
+
+        let raw = "Albert Einstein\n\
+                   CONTACT\n\
+                   albert@example.com\n\
+                   Member of the Prussian Academy\n";
+        let imported = classify_raw_text("PDF", raw);
+
+        // The email is contact data and is consumed; the sentence is not.
+        let leftover = imported
+            .unplaced
+            .iter()
+            .find(|u| u.source == UnplacedSource::Classifier)
+            .expect("the sentence is reported, not dropped");
+        assert_eq!(leftover.title, "Member of the Prussian Academy");
+        assert_eq!(
+            leftover.offer(),
+            UnplacedOffer::NamedByPerson,
+            "a classifier line has no heading to propose"
+        );
+
+        // And the panel's promise — "each becomes one bullet" — is what
+        // actually happens. Built here rather than taken from the import
+        // because the contact reader joins consecutive stray lines into one,
+        // and the shape worth pinning is what adoption does with several.
+        let lines = [
+            Unplaced::line_only("Member of the Prussian Academy"),
+            Unplaced::line_only("Willing to relocate"),
+        ];
+        let mut doc = imported.doc.clone();
+        assert_eq!(adopt_as_section(&mut doc, "Notes", &lines), 2);
+
+        let section = doc.custom_sections.last().expect("the section");
+        assert_eq!(section.title, "Notes");
+        let entries = section.content.active();
+        assert_eq!(
+            entries.len(),
+            1,
+            "unlabelled lines are bullets of one entry, not headings of several"
+        );
+        assert!(entries[0].title.is_empty());
+        assert_eq!(
+            entries[0].highlights,
+            ["Member of the Prussian Academy", "Willing to relocate"]
+        );
     }
 }

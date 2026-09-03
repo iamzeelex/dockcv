@@ -19,6 +19,7 @@ mod gallery;
 mod gallery_card;
 mod gallery_sort;
 pub mod import_flow;
+mod import_unplaced;
 mod library;
 mod library_edit;
 mod library_link;

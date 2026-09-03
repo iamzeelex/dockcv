@@ -26,7 +26,7 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::import::layout::without_bullet;
-use crate::import::model::ImportedDoc;
+use crate::import::model::{ImportedDoc, Unplaced, UnplacedSource};
 use crate::import::notes::{Note, Part};
 use crate::resume::model::{
     Certificate, CustomEntry, Education, NetworkProfile, Resume, ResumeDoc, SkillGroup, Volunteer,
@@ -204,19 +204,35 @@ pub fn import_linkedin(path: &Path) -> Result<ImportedDoc, String> {
     // Named, not counted. This is the one import path that can say exactly what
     // it left behind: the archive hands over its file names and its row counts,
     // so "Honors.csv — 4 rows" is a fact rather than an estimate.
-    let mut unread: Vec<(&String, usize)> = tables
+    let mut unread: Vec<(&String, &Table)> = tables
         .iter()
         .filter(|(name, table)| !READ.contains(&name.as_str()) && !table.rows.is_empty())
-        .map(|(name, table)| (name, table.rows.len()))
         .collect();
     unread.sort_by(|a, b| a.0.cmp(b.0));
+    // The rows themselves, not only how many there were. A count is enough to
+    // report a loss and not enough to undo one, and this engine is holding the
+    // table already parsed.
     imported
         .unplaced
-        .extend(unread.into_iter().map(|(name, rows)| {
-            format!(
-                "{name} — {rows} row{} the archive carried and DockCV has no section for",
-                if rows == 1 { "" } else { "s" }
-            )
+        .extend(unread.into_iter().map(|(name, table)| {
+            let rows = table.rows.len();
+            Unplaced {
+                source: UnplacedSource::LinkedIn { csv: name.clone() },
+                title: format!("{rows} row{}", if rows == 1 { "" } else { "s" }),
+                subtitle: String::new(),
+                details: table
+                    .rows
+                    .iter()
+                    .map(|row| {
+                        row.iter()
+                            .map(|cell| cell.trim())
+                            .filter(|cell| !cell.is_empty())
+                            .collect::<Vec<_>>()
+                            .join(" · ")
+                    })
+                    .filter(|line| !line.is_empty())
+                    .collect(),
+            }
         }));
 
     imported.observe();
@@ -705,12 +721,42 @@ mod tests {
             "the mapped table still reads"
         );
 
-        let reported = imported.unplaced.join("\n");
-        assert!(reported.contains("courses.csv — 1 row "), "{reported}");
-        assert!(reported.contains("honors.csv — 2 rows "), "{reported}");
+        let reported = imported
+            .unplaced
+            .iter()
+            .map(Unplaced::line)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(reported.contains("courses.csv: 1 row"), "{reported}");
+        assert!(reported.contains("honors.csv: 2 rows"), "{reported}");
         assert!(
             !reported.contains("profile.csv"),
             "a table that *was* read must not be reported lost: {reported}"
+        );
+
+        // The rows themselves, not only how many there were. A count is enough
+        // to report a loss and not enough to undo one — and this engine is
+        // holding the table already parsed, so a section can be built from it.
+        assert!(reported.contains("Distributed Systems"), "{reported}");
+        assert!(reported.contains("Best Paper"), "{reported}");
+
+        let honors = imported
+            .unplaced
+            .iter()
+            .find(|u| {
+                u.source
+                    == UnplacedSource::LinkedIn {
+                        csv: "honors.csv".into(),
+                    }
+            })
+            .expect("honors.csv is reported");
+        assert_eq!(honors.details.len(), 2);
+        assert_eq!(
+            honors.offer(),
+            crate::import::model::UnplacedOffer::Section {
+                heading: "Honors".into()
+            },
+            "the file name is a heading: `honors.csv` is called Honors"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

@@ -26,7 +26,7 @@
 
 use serde::Deserialize;
 
-use crate::import::model::ImportedDoc;
+use crate::import::model::{ImportedDoc, Unplaced, UnplacedSource};
 use crate::import::notes::{Note, Part};
 use crate::resume::model::{
     Certificate, CustomEntry, Education, NetworkProfile, Resume, ResumeDoc, SkillGroup, Volunteer,
@@ -452,23 +452,40 @@ impl JsonResume {
             if interest.name.trim().is_empty() && interest.keywords.is_empty() {
                 continue;
             }
-            let keywords = interest.keywords.join(", ");
-            unplaced.push(match keywords.is_empty() {
-                true => format!("interests: {}", interest.name),
-                false => format!("interests: {} — {keywords}", interest.name),
+            // The name and the keywords stay apart. Joined into a sentence here
+            // — which is what this did — a section could never be built back
+            // out of them.
+            unplaced.push(Unplaced {
+                source: UnplacedSource::JsonResume { field: "interests" },
+                title: interest.name,
+                subtitle: String::new(),
+                details: interest.keywords,
             });
         }
         for reference in self.references {
             if reference.name.trim().is_empty() && reference.reference.trim().is_empty() {
                 continue;
             }
-            unplaced.push(format!(
-                "references: {} — {}",
-                reference.name, reference.reference
-            ));
+            unplaced.push(Unplaced {
+                source: UnplacedSource::JsonResume {
+                    field: "references",
+                },
+                title: reference.name,
+                subtitle: String::new(),
+                details: vec![reference.reference],
+            });
         }
         if !self.basics.image.trim().is_empty() {
-            unplaced.push(format!("basics.image: {}", self.basics.image));
+            // Stays a warning: a photo URL is not a section, and the value of
+            // the warning is that it shrinks to cases like this one.
+            unplaced.push(Unplaced {
+                source: UnplacedSource::JsonResume {
+                    field: "basics.image",
+                },
+                title: self.basics.image,
+                subtitle: String::new(),
+                details: Vec::new(),
+            });
         }
         imported.unplaced = unplaced;
         imported
@@ -595,7 +612,7 @@ mod tests {
             imported
                 .unplaced
                 .iter()
-                .any(|l| l.starts_with("interests:")),
+                .any(|l| l.line().starts_with("interests:")),
             "{:?}",
             imported.unplaced
         );
@@ -603,7 +620,7 @@ mod tests {
             imported
                 .unplaced
                 .iter()
-                .any(|l| l.starts_with("references:")),
+                .any(|l| l.line().starts_with("references:")),
             "{:?}",
             imported.unplaced
         );
@@ -734,5 +751,112 @@ mod tests {
                 section.title
             );
         }
+    }
+
+    /// The rule for importer work is that a fix arrives with the file that
+    /// broke it. This is the shape that produced the panel: two fields the spec
+    /// carries and DockCV does not model, plus a photo URL that genuinely has
+    /// nowhere to go.
+    const LEFTOVERS: &str = r#"{
+      "basics": {
+        "name": "Albert Einstein",
+        "image": "https://example.com/albert.jpg"
+      },
+      "interests": [
+        { "name": "Wildlife", "keywords": ["Ferrets", "Unicorns"] },
+        { "name": "Sailing", "keywords": [] }
+      ],
+      "references": [
+        { "name": "Marie Curie", "reference": "Ships things." }
+      ]
+    }"#;
+
+    /// The blocker this task had to clear: the engine flattened a name and a
+    /// keyword list into `"interests: Wildlife — Ferrets, Unicorns"` before the
+    /// UI saw it, and a typed section cannot be built back out of a sentence.
+    #[test]
+    fn what_could_not_be_placed_keeps_its_parts() {
+        use crate::import::model::{UnplacedOffer, UnplacedSource};
+
+        let imported = import(LEFTOVERS).expect("parses");
+        let interests: Vec<_> = imported
+            .unplaced
+            .iter()
+            .filter(|u| u.source == UnplacedSource::JsonResume { field: "interests" })
+            .collect();
+        assert_eq!(interests.len(), 2);
+
+        // The parts, still apart.
+        assert_eq!(interests[0].title, "Wildlife");
+        assert_eq!(interests[0].details, ["Ferrets", "Unicorns"]);
+        assert_eq!(interests[1].title, "Sailing");
+        assert!(interests[1].details.is_empty());
+
+        // And the sentence still derivable from them, unchanged.
+        assert_eq!(
+            interests[0].line(),
+            "interests: Wildlife — Ferrets, Unicorns"
+        );
+        assert_eq!(interests[1].line(), "interests: Sailing");
+
+        // A heading can be proposed for the two the source named, and not for
+        // the photo — which is the whole reason the warning is worth reading.
+        assert_eq!(
+            interests[0].offer(),
+            UnplacedOffer::Section {
+                heading: "Interests".into()
+            }
+        );
+        let image = imported
+            .unplaced
+            .iter()
+            .find(|u| {
+                u.source
+                    == UnplacedSource::JsonResume {
+                        field: "basics.image",
+                    }
+            })
+            .expect("the photo is still reported");
+        assert_eq!(image.offer(), UnplacedOffer::Nothing);
+    }
+
+    /// The destination: one click turns a structured leftover into a section
+    /// with one entry per thing, keeping the keywords as its bullets.
+    #[test]
+    fn adopting_interests_yields_one_entry_each_with_its_keywords() {
+        use crate::import::model::{adopt_as_section, UnplacedOffer};
+
+        let mut imported = import(LEFTOVERS).expect("parses");
+        let interests: Vec<_> = imported
+            .unplaced
+            .iter()
+            .filter(|u| {
+                u.offer()
+                    == UnplacedOffer::Section {
+                        heading: "Interests".into(),
+                    }
+            })
+            .cloned()
+            .collect();
+
+        let before = imported.doc.custom_sections.len();
+        let created = adopt_as_section(&mut imported.doc, "Interests", &interests);
+        assert_eq!(created, 2);
+        assert_eq!(imported.doc.custom_sections.len(), before + 1);
+
+        let section = imported.doc.custom_sections.last().expect("the section");
+        assert_eq!(section.title, "Interests");
+        let entries = section.content.active();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].title, "Wildlife");
+        assert_eq!(entries[0].highlights, ["Ferrets", "Unicorns"]);
+        assert_eq!(entries[1].title, "Sailing");
+        assert!(entries[1].highlights.is_empty());
+
+        // Nothing is invented: a photo URL is not adopted even if it is handed
+        // over with the rest.
+        let all: Vec<_> = imported.unplaced.clone();
+        let mut doc = imported.doc.clone();
+        assert_eq!(adopt_as_section(&mut doc, "Everything", &all), 3);
     }
 }
