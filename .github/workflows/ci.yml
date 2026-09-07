@@ -111,7 +111,7 @@ jobs:
         run: cargo clippy -p dockcv-wasm --locked --target wasm32-unknown-unknown -- -D warnings
 
   matrix:
-    name: Cross-Platform Build Check
+    name: Cross-Platform Parity & Smoke Test
     strategy:
       fail-fast: false
       matrix:
@@ -131,10 +131,29 @@ jobs:
             libxcb1-dev \
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
-            libwayland-dev
+            libwayland-dev \
+            xvfb \
+            mesa-vulkan-drivers \
+            libegl1-mesa
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
 
       - name: Cargo Check Workspace
         run: cargo check --workspace
+
+      - name: Run Workspace Tests
+        run: cargo test --workspace
+
+      - name: Desktop GUI Smoke Test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cargo run --locked -- --smoke-test
+
+      - name: Desktop GUI Smoke Test (Windows)
+        if: runner.os == 'Windows'
+        run: cargo run --locked -- --smoke-test
+
+      - name: Desktop GUI Smoke Test (macOS)
+        if: runner.os == 'macOS'
+        run: cargo run --locked -- --smoke-test
+

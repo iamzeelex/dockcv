@@ -28,6 +28,15 @@ mod views;
 pub use dockcv_core::{resume, typst_engine};
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args
+        .iter()
+        .any(|a| a == "--version" || a == "-v" || a == "-V")
+    {
+        println!("DockCV {}", app::APP_VERSION);
+        return;
+    }
+
     // First, and before any window: everything after this point can fail, and
     // a failure nobody can read is the thing this exists to end.
     logging::init();

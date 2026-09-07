@@ -3,7 +3,7 @@
 
 use gpui::{
     actions, point, px, size, App, AppContext, Bounds, KeyBinding, Menu, MenuItem, OsAction,
-    SharedString, TitlebarOptions, WindowBounds, WindowOptions,
+    SharedString, TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions,
 };
 
 use crate::views::settings_window::SettingsWindow;
@@ -42,16 +42,52 @@ actions!(
 
 /// Start the GPUI application. Blocks until the last window closes.
 pub fn run() {
+    let smoke = is_smoke_test();
+    if smoke {
+        log::info!("running DockCV in automated smoke-test mode");
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    {
+        let compositor = gpui::guess_compositor();
+        log::info!("Linux display compositor detected: {compositor}");
+        if compositor == "Headless" && !smoke {
+            log::warn!(
+                "No Wayland or X11 display detected ($WAYLAND_DISPLAY and $DISPLAY are unset). \
+                 DockCV is running in headless mode — no GUI window will be displayed on screen."
+            );
+        }
+    }
+
     gpui_platform::application()
         // Lucide plus DockCV's three additions, composed. SVG icons resolve by
         // path through this source; without it every glyph is blank.
         .with_assets(dockcv_ui_components::Assets)
-        .run(|cx: &mut App| {
+        .run(move |cx: &mut App| {
             register_fonts(cx);
             init(cx);
-            open_main_window(cx);
+            open_main_window(cx, smoke);
             cx.activate(true);
+
+            if smoke {
+                std::thread::spawn(|| {
+                    std::thread::sleep(std::time::Duration::from_secs(15));
+                    log::error!(
+                        "Smoke test watchdog timed out after 15 seconds without completing initial frame"
+                    );
+                    std::process::exit(1);
+                });
+            }
         });
+}
+
+/// Whether the application was launched in automated smoke-test mode.
+///
+/// Triggered via `--smoke-test` command-line argument or `DOCKCV_SMOKE_TEST=1` env var.
+/// In smoke-test mode, the app boots, opens the window, renders the first frame,
+/// and exits cleanly with code 0 (or exits 1 on watchdog timeout).
+pub fn is_smoke_test() -> bool {
+    std::env::args().any(|a| a == "--smoke-test") || std::env::var_os("DOCKCV_SMOKE_TEST").is_some()
 }
 
 /// Register every bundled face so the UI can ask for it by family name.
@@ -358,6 +394,56 @@ fn show_notices(cx: &mut App) {
     }
 }
 
+/// Builds [`WindowOptions`] given platform traits, so unit tests can assert
+/// the configuration for macOS, Windows, and Linux on any host.
+pub(crate) fn build_window_options(
+    title: &str,
+    bounds: Bounds<gpui::Pixels>,
+    is_macos: bool,
+    is_linux: bool,
+) -> WindowOptions {
+    let titlebar = Some(TitlebarOptions {
+        title: Some(SharedString::from(title.to_string())),
+        appears_transparent: is_macos,
+        traffic_light_position: if is_macos {
+            Some(point(px(12.0), px(12.0)))
+        } else {
+            None
+        },
+    });
+
+    let window_decorations = if is_linux {
+        Some(WindowDecorations::Server)
+    } else {
+        None
+    };
+
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        titlebar,
+        window_decorations,
+        ..Default::default()
+    }
+}
+
+/// Construct [`WindowOptions`] shaped for the host platform.
+///
+/// - macOS: transparent titlebar (`appears_transparent: true`) with traffic-light
+///   buttons inset at (12, 12), allowing content to extend under the window controls.
+/// - Windows: standard native titlebar (`appears_transparent: false`), so DWM
+///   draws the native title bar, window title, and min/max/close controls.
+/// - Linux: native server-side decorations (`WindowDecorations::Server`), so Wayland
+///   (via `zxdg_toplevel_decoration_v1`) and X11 (via `_MOTIF_WM_HINTS`) render
+///   the desktop environment's native title and caption buttons.
+pub(crate) fn platform_window_options(title: &str, bounds: Bounds<gpui::Pixels>) -> WindowOptions {
+    build_window_options(
+        title,
+        bounds,
+        cfg!(target_os = "macos"),
+        cfg!(any(target_os = "linux", target_os = "freebsd")),
+    )
+}
+
 /// Open Settings, or bring it forward if it is already up. A second Settings
 /// window would be two views of one truth, each able to contradict the other.
 fn open_settings_window(cx: &mut App) {
@@ -379,20 +465,17 @@ fn open_settings_window(cx: &mut App) {
         return;
     };
     let bounds = Bounds::centered(None, size(px(720.), px(520.)), cx);
-    let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(bounds)),
-        titlebar: Some(TitlebarOptions {
-            title: Some(SharedString::from("Settings")),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
+    let options = platform_window_options("Settings", bounds);
 
     match cx.open_window(options, |window, cx| {
+        window.activate_window();
         let view = cx.new(|_| SettingsWindow::new(shell));
         dockcv_ui_components::input::window_root(view, window, cx)
     }) {
         Ok(handle) => {
+            let _ = handle.update(cx, |_, window, _| {
+                window.activate_window();
+            });
             if cx.has_global::<AppWindows>() {
                 cx.global_mut::<AppWindows>().settings = Some(handle.into());
             }
@@ -401,20 +484,14 @@ fn open_settings_window(cx: &mut App) {
     }
 }
 
-/// Open the primary window with a macOS-style transparent title bar so the
-/// content can extend under the traffic-light buttons.
-fn open_main_window(cx: &mut App) {
+/// Open the primary window.
+///
+/// On macOS, uses an integrated transparent title bar with native traffic lights.
+/// On Windows, enables native titlebar/DWM caption buttons.
+/// On Linux, requests native server-side decorations.
+fn open_main_window(cx: &mut App, smoke_test: bool) {
     let bounds = Bounds::centered(None, size(px(1100.), px(720.)), cx);
-
-    let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(bounds)),
-        titlebar: Some(TitlebarOptions {
-            title: Some(SharedString::from(APP_NAME)),
-            appears_transparent: true,
-            traffic_light_position: Some(point(px(12.0), px(12.0))),
-        }),
-        ..Default::default()
-    };
+    let options = platform_window_options(APP_NAME, bounds);
 
     // Only the *main* window closing ends the app. Before Settings had a
     // window of its own, "a window closed" and "the app is done" were the same
@@ -449,13 +526,83 @@ fn open_main_window(cx: &mut App) {
     let kept_shell = shell.clone();
     let handle = cx
         .open_window(options, move |window, cx| {
+            window.activate_window();
             dockcv_ui_components::input::window_root(shell, window, cx)
         })
         .expect("failed to open the main DockCV window");
+
+    let _ = handle.update(cx, |_, window, _| {
+        window.activate_window();
+    });
+
+    if smoke_test {
+        let _ = handle.update(cx, |_, window, _| {
+            window.on_next_frame(|_, cx| {
+                log::info!("Smoke test passed: initial window frame rendered successfully");
+                cx.quit();
+            });
+        });
+    }
 
     cx.set_global(AppWindows {
         shell: kept_shell,
         main: handle.into(),
         settings: None,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn platform_window_options_shape_matches_target_os_conventions() {
+        let bounds = Bounds::default();
+
+        // macOS: transparent titlebar, traffic lights positioned at (12, 12), no server decorations
+        let mac = build_window_options("DockCV", bounds, true, false);
+        let mac_tb = mac.titlebar.expect("macos titlebar");
+        assert!(
+            mac_tb.appears_transparent,
+            "macOS must use transparent titlebar"
+        );
+        assert_eq!(
+            mac_tb.traffic_light_position,
+            Some(point(px(12.0), px(12.0))),
+            "macOS must inset traffic lights"
+        );
+        assert_eq!(mac.window_decorations, None);
+
+        // Windows: non-transparent titlebar so DWM draws native frame & caption buttons
+        let win = build_window_options("DockCV", bounds, false, false);
+        let win_tb = win.titlebar.expect("windows titlebar");
+        assert!(
+            !win_tb.appears_transparent,
+            "Windows must not hide native titlebar"
+        );
+        assert_eq!(
+            win_tb.traffic_light_position, None,
+            "Windows must not position traffic lights"
+        );
+        assert_eq!(win_tb.title.as_deref(), Some("DockCV"));
+        assert_eq!(win.window_decorations, None);
+
+        // Linux: Server-side decorations requested, non-transparent titlebar
+        let lin = build_window_options("DockCV", bounds, false, true);
+        let lin_tb = lin.titlebar.expect("linux titlebar");
+        assert!(!lin_tb.appears_transparent);
+        assert_eq!(lin_tb.traffic_light_position, None);
+        assert_eq!(
+            lin.window_decorations,
+            Some(WindowDecorations::Server),
+            "Linux must request server-side decorations"
+        );
+    }
+
+    #[test]
+    fn smoke_test_flag_detection() {
+        unsafe { std::env::set_var("DOCKCV_SMOKE_TEST", "1") };
+        assert!(is_smoke_test());
+        unsafe { std::env::remove_var("DOCKCV_SMOKE_TEST") };
+    }
 }
