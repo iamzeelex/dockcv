@@ -82,7 +82,17 @@ fn read_pages(path: &Path) -> Result<String, pdf_extract::OutputError> {
             .map_err(pdf_extract::OutputError::PdfError)?;
     }
     let mut lines = Lines::default();
-    pdf_extract::output_doc(&doc, &mut lines)?;
+    // One page at a time, because `output_doc` reads them all through a single
+    // reader that caches fonts by their **resource name** — `/F1`, `/F2` — and
+    // a resource name is page-local. Typst numbers page two's fonts from one
+    // again, so page two's character codes were decoded through page one's
+    // font: every page after the first came back as plausible-looking nonsense
+    // (`the` as `tag`), and a CV that ran to two pages lost everything below
+    // the break. `output_doc_page` builds its own reader per call, which is
+    // all the isolation this needs.
+    for page in doc.get_pages().keys() {
+        pdf_extract::output_doc_page(&doc, &mut lines, *page)?;
+    }
     Ok(lines.text)
 }
 
@@ -397,6 +407,77 @@ mod tests {
             "the site is listed twice, once as itself and once as a profile: {:?}",
             b.profiles
         );
+    }
+
+    /// Page two reads as page two, not as page one's alphabet.
+    ///
+    /// `pdf_extract::output_doc` walks every page through one reader whose font
+    /// cache is keyed by the **resource name** — `/F1`, `/F2` — and a resource
+    /// name means nothing outside the page that declares it. Typst numbers each
+    /// page's fonts from one, so page two's character codes were decoded
+    /// through page one's font: not gibberish anyone would notice a parser
+    /// choking on, but plausible words — `the` came out as `tag` — and every
+    /// section below the page break was quietly lost. A CV that runs to two
+    /// pages is an ordinary CV.
+    #[test]
+    fn a_second_page_is_decoded_with_its_own_fonts() {
+        use crate::resume::model::{Basics, Resume, ResumeDate, Work};
+        use crate::resume::template;
+        use crate::typst_engine::TypstEngine;
+
+        // Long enough to break the page, and every employer a single token so
+        // a wrap cannot be mistaken for a mis-decode.
+        let work: Vec<Work> = (1..=34)
+            .map(|n| Work {
+                name: format!("Employer{n:02}"),
+                position: "Engineer".into(),
+                start_date: ResumeDate::new("2010-01"),
+                end_date: ResumeDate::new("2011-01"),
+                highlights: vec![
+                    "Built the thing, ran the thing, and wrote down what the thing cost."
+                        .to_string(),
+                    "Then did it again somewhere else, with a smaller budget and more people."
+                        .to_string(),
+                ],
+                ..Default::default()
+            })
+            .collect();
+        let resume = Resume {
+            basics: Basics {
+                name: "Albert Einstein".into(),
+                ..Default::default()
+            },
+            work,
+            ..Default::default()
+        };
+
+        let bytes = TypstEngine::new(template::generate(&resume))
+            .compile_to_pdf()
+            .expect("the document compiles");
+        let dir = std::env::temp_dir().join(format!("dockcv-pdf-pages-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let file = dir.join("long.pdf");
+        std::fs::write(&file, bytes).expect("write");
+
+        let pages = pdf_extract::Document::load(&file)
+            .expect("the PDF loads")
+            .get_pages()
+            .len();
+        let text = extract_text(&file).expect("extraction succeeds");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            pages >= 2,
+            "the fixture has to break the page to test anything; it made {pages}"
+        );
+        for n in 1..=34 {
+            let employer = format!("Employer{n:02}");
+            assert!(
+                text.contains(&employer),
+                "{employer} is not in the text layer, so a page was read with \
+                 the wrong font; got:\n{text}"
+            );
+        }
     }
 
     /// The regression I-02: a scanned CV has a text layer and it is empty.
