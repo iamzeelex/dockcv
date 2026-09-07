@@ -10,6 +10,7 @@ use super::dates::DateFormat;
 use super::export_walk::{
     format_date_range, is_section_empty, ordered_sections, resolve_section_title,
 };
+use super::links;
 use super::model::{
     Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
     SkillGroup, Volunteer, Work,
@@ -93,16 +94,16 @@ fn write_markdown_basics(out: &mut String, b: &Basics) {
     // Contact line
     let mut contacts = Vec::new();
     if !b.email.is_empty() {
-        contacts.push(format!("[{}]({})", b.email, format_mailto(&b.email)));
+        contacts.push(linked(&b.email, links::mailto(&b.email)));
     }
     if !b.phone.is_empty() {
-        contacts.push(format!("[{}]({})", b.phone, format_tel(&b.phone)));
+        contacts.push(linked(&b.phone, links::tel(&b.phone)));
     }
     if !b.location.is_empty() {
         contacts.push(b.location.clone());
     }
     if !b.url.is_empty() {
-        contacts.push(format!("[{}]({})", b.url, b.url));
+        contacts.push(linked(&b.url, links::href(&b.url)));
     }
 
     if !contacts.is_empty() {
@@ -115,9 +116,9 @@ fn write_markdown_basics(out: &mut String, b: &Basics) {
             .iter()
             .map(|p| {
                 if !p.url.is_empty() && !p.network.is_empty() {
-                    format!("[{}]({})", p.network, p.url)
+                    linked(&p.network, links::href(&p.url))
                 } else if !p.url.is_empty() {
-                    format!("[{}]({})", p.url, p.url)
+                    linked(&p.url, links::href(&p.url))
                 } else if !p.username.is_empty() {
                     format!("{}: {}", p.network, p.username)
                 } else {
@@ -138,25 +139,13 @@ fn write_markdown_basics(out: &mut String, b: &Basics) {
     }
 }
 
-fn format_mailto(email: &str) -> String {
-    if email.starts_with("mailto:") {
-        email.to_string()
-    } else {
-        format!("mailto:{email}")
-    }
-}
-
-fn format_tel(phone: &str) -> String {
-    if phone.starts_with("tel:") {
-        phone.to_string()
-    } else {
-        format!(
-            "tel:{}",
-            phone
-                .chars()
-                .filter(|c| !c.is_whitespace() && *c != '(' && *c != ')' && *c != '-')
-                .collect::<String>()
-        )
+/// `[text](target)` when there is a target, and the bare text when there is
+/// not — a Markdown link to a relative reference like `dtu.dk` resolves against
+/// whatever renders the file, which is never the site the CV meant.
+fn linked(shown: &str, href: Option<String>) -> String {
+    match href {
+        Some(href) => format!("[{shown}]({href})"),
+        None => shown.to_string(),
     }
 }
 
@@ -173,11 +162,7 @@ fn write_markdown_work(out: &mut String, work: &[Work], date_format: DateFormat)
             w.name.clone()
         };
 
-        let heading = if !w.url.is_empty() {
-            format!("### [{role}]({})", w.url)
-        } else {
-            format!("### {role}")
-        };
+        let heading = format!("### {}", linked(&role, links::href(&w.url)));
 
         let mut heading_line = heading;
         if !w.location.is_empty() {
@@ -217,11 +202,7 @@ fn write_markdown_education(out: &mut String, edu: &[Education], date_format: Da
             e.institution.clone()
         };
 
-        let heading = if !e.url.is_empty() {
-            format!("### [{text}]({})", e.url)
-        } else {
-            format!("### {text}")
-        };
+        let heading = format!("### {}", linked(&text, links::href(&e.url)));
 
         let _ = writeln!(out, "{heading}");
 
@@ -263,8 +244,8 @@ fn write_markdown_certificates(out: &mut String, certs: &[Certificate], date_for
         if !date_str.is_empty() {
             line.push_str(&format!(" (*{date_str}*)"));
         }
-        if !c.url.is_empty() {
-            line.push_str(&format!(" [Link]({})", c.url));
+        if let Some(href) = links::href(&c.url) {
+            line.push_str(&format!(" [Link]({href})"));
         }
         let _ = writeln!(out, "{line}");
     }
@@ -283,11 +264,7 @@ fn write_markdown_volunteer(out: &mut String, vol: &[Volunteer], date_format: Da
             v.organization.clone()
         };
 
-        let heading = if !v.url.is_empty() {
-            format!("### [{text}]({})", v.url)
-        } else {
-            format!("### {text}")
-        };
+        let heading = format!("### {}", linked(&text, links::href(&v.url)));
 
         let _ = writeln!(out, "{heading}");
 
@@ -324,11 +301,7 @@ fn write_markdown_custom_entry(out: &mut String, e: &CustomEntry, date_format: D
     };
 
     if !text.is_empty() {
-        let heading = if !e.url.is_empty() {
-            format!("### [{text}]({})", e.url)
-        } else {
-            format!("### {text}")
-        };
+        let heading = format!("### {}", linked(&text, links::href(&e.url)));
         let _ = writeln!(out, "{heading}");
     }
 
@@ -377,12 +350,12 @@ pub fn typst_to_markdown(input: &str) -> String {
                 if link_end + 1 < input.len() && input[link_end + 1..].starts_with('[') {
                     if let Some(close_bracket) = input[link_end + 1..].find(']') {
                         let label = &input[link_end + 2..link_end + 1 + close_bracket];
-                        out.push_str(&format!("[{label}]({url_content})"));
+                        out.push_str(&linked(label, links::href(url_content)));
                         i = link_end + 2 + close_bracket;
                         continue;
                     }
                 } else {
-                    out.push_str(&format!("[{url_content}]({url_content})"));
+                    out.push_str(&linked(url_content, links::href(url_content)));
                     i = link_end + 1;
                     continue;
                 }

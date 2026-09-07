@@ -15,6 +15,7 @@ use super::export_text::strip_typst_markup;
 use super::export_walk::{
     format_date_range, is_section_empty, ordered_sections, resolve_section_title,
 };
+use super::links;
 use super::model::{
     Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
     SkillGroup, Volunteer, Work,
@@ -138,55 +139,70 @@ fn write_docx_basics(docx: &mut Docx, b: &Basics) {
             .add_paragraph(Paragraph::new().add_run(Run::new().add_text(&b.label).bold().size(24)));
     }
 
-    let mut contact_parts = Vec::new();
-    if !b.email.is_empty() {
-        contact_parts.push(b.email.clone());
-    }
-    if !b.phone.is_empty() {
-        contact_parts.push(b.phone.clone());
-    }
-    if !b.location.is_empty() {
-        contact_parts.push(b.location.clone());
-    }
-    if !b.url.is_empty() {
-        contact_parts.push(b.url.clone());
-    }
+    // The contact row is the part of a CV a recruiter actually clicks, and in
+    // DOCX it was flat text while the PDF's was live — a parity hole G1 left.
+    // Each part carries its own target, so the address prints as written and
+    // resolves as a URI (`resume::links`).
+    let contact_parts: Vec<(String, Option<String>)> = [
+        (b.email.clone(), links::mailto(&b.email)),
+        (b.phone.clone(), links::tel(&b.phone)),
+        (b.location.clone(), None),
+        (b.url.clone(), links::href(&b.url)),
+    ]
+    .into_iter()
+    .filter(|(shown, _)| !shown.is_empty())
+    .collect();
+    write_linked_line(docx, &contact_parts);
 
-    if !contact_parts.is_empty() {
-        let contact_line = contact_parts.join("  |  ");
-        *docx = std::mem::take(docx)
-            .add_paragraph(Paragraph::new().add_run(Run::new().add_text(contact_line).size(20)));
-    }
-
-    if !b.profiles.is_empty() {
-        let prof_parts: Vec<String> = b
-            .profiles
-            .iter()
-            .map(|p| {
-                if !p.url.is_empty() && !p.network.is_empty() {
-                    format!("{}: {}", p.network, p.url)
-                } else if !p.url.is_empty() {
-                    p.url.clone()
-                } else if !p.username.is_empty() {
-                    format!("{}: {}", p.network, p.username)
-                } else {
-                    p.network.clone()
-                }
-            })
-            .filter(|s| !s.is_empty())
-            .collect();
-        if !prof_parts.is_empty() {
-            *docx = std::mem::take(docx).add_paragraph(
-                Paragraph::new().add_run(Run::new().add_text(prof_parts.join("  |  ")).size(20)),
-            );
-        }
-    }
+    let prof_parts: Vec<(String, Option<String>)> = b
+        .profiles
+        .iter()
+        .map(|p| {
+            let shown = if !p.url.is_empty() && !p.network.is_empty() {
+                format!("{}: {}", p.network, p.url)
+            } else if !p.url.is_empty() {
+                p.url.clone()
+            } else if !p.username.is_empty() {
+                format!("{}: {}", p.network, p.username)
+            } else {
+                p.network.clone()
+            };
+            (shown, links::href(&p.url))
+        })
+        .filter(|(shown, _)| !shown.is_empty())
+        .collect();
+    write_linked_line(docx, &prof_parts);
 
     if !b.summary.is_empty() {
         let clean_summary = strip_typst_markup(&b.summary);
         *docx = std::mem::take(docx)
             .add_paragraph(Paragraph::new().add_run(Run::new().add_text(clean_summary).size(22)));
     }
+}
+
+/// One `a  |  b  |  c` line whose parts are hyperlinks where they have targets.
+///
+/// Built run by run rather than by joining strings first, because a hyperlink
+/// in OOXML is a sibling of the runs around it, not a span inside one — the
+/// separators have to be their own runs for the links to keep their own extent.
+fn write_linked_line(docx: &mut Docx, parts: &[(String, Option<String>)]) {
+    if parts.is_empty() {
+        return;
+    }
+    let mut p = Paragraph::new();
+    for (i, (shown, href)) in parts.iter().enumerate() {
+        if i > 0 {
+            p = p.add_run(Run::new().add_text("  |  ").size(20));
+        }
+        p = match href {
+            Some(href) => p.add_hyperlink(
+                Hyperlink::new(href, HyperlinkType::External)
+                    .add_run(Run::new().add_text(shown).size(20)),
+            ),
+            None => p.add_run(Run::new().add_text(shown).size(20)),
+        };
+    }
+    *docx = std::mem::take(docx).add_paragraph(p);
 }
 
 fn write_docx_work(mut docx: Docx, work: &[Work], date_format: DateFormat) -> Docx {
@@ -200,9 +216,12 @@ fn write_docx_work(mut docx: Docx, work: &[Work], date_format: DateFormat) -> Do
         };
 
         let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
-        if !w.url.is_empty() {
+        // `Hyperlink` writes the target into the relationship part
+        // verbatim, so a bare `dtu.dk` becomes a *relative* target and
+        // Word looks for a file of that name next to the document.
+        if let Some(href) = links::href(&w.url) {
             p = p.add_hyperlink(
-                Hyperlink::new(&w.url, HyperlinkType::External)
+                Hyperlink::new(href, HyperlinkType::External)
                     .add_run(Run::new().add_text(role).bold().size(22)),
             );
         } else {
@@ -255,9 +274,9 @@ fn write_docx_education(mut docx: Docx, edu: &[Education], date_format: DateForm
         };
 
         let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
-        if !e.url.is_empty() {
+        if let Some(href) = links::href(&e.url) {
             p = p.add_hyperlink(
-                Hyperlink::new(&e.url, HyperlinkType::External)
+                Hyperlink::new(href, HyperlinkType::External)
                     .add_run(Run::new().add_text(heading).bold().size(22)),
             );
         } else {
@@ -311,9 +330,9 @@ fn write_docx_skills(mut docx: Docx, skills: &[SkillGroup]) -> Docx {
 fn write_docx_certificates(mut docx: Docx, certs: &[Certificate], date_format: DateFormat) -> Docx {
     for c in certs {
         let mut p = Paragraph::new();
-        if !c.url.is_empty() {
+        if let Some(href) = links::href(&c.url) {
             p = p.add_hyperlink(
-                Hyperlink::new(&c.url, HyperlinkType::External)
+                Hyperlink::new(href, HyperlinkType::External)
                     .add_run(Run::new().add_text(&c.name).bold().size(22)),
             );
         } else {
@@ -347,9 +366,9 @@ fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], date_format: DateForm
         };
 
         let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
-        if !v.url.is_empty() {
+        if let Some(href) = links::href(&v.url) {
             p = p.add_hyperlink(
-                Hyperlink::new(&v.url, HyperlinkType::External)
+                Hyperlink::new(href, HyperlinkType::External)
                     .add_run(Run::new().add_text(heading).bold().size(22)),
             );
         } else {
@@ -394,9 +413,9 @@ fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, date_format: DateFor
 
     if !heading.is_empty() {
         let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
-        if !e.url.is_empty() {
+        if let Some(href) = links::href(&e.url) {
             p = p.add_hyperlink(
-                Hyperlink::new(&e.url, HyperlinkType::External)
+                Hyperlink::new(href, HyperlinkType::External)
                     .add_run(Run::new().add_text(heading).bold().size(22)),
             );
         } else {

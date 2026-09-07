@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::export_text::strip_typst_markup;
+use super::links;
 use super::model::{
     Basics as CoreBasics, Certificate as CoreCert, Education as CoreEdu,
     NetworkProfile as CoreProfile, Resume, SkillGroup as CoreSkill, Volunteer as CoreVol,
@@ -295,7 +296,7 @@ impl SchemaJsonResume {
                         name: e.title.clone(),
                         publisher: e.subtitle.clone(),
                         release_date: e.start_date.text.clone(),
-                        url: e.url.clone(),
+                        url: uri(&e.url),
                         summary: e
                             .highlights
                             .iter()
@@ -333,7 +334,7 @@ impl SchemaJsonResume {
                         description: e.subtitle.clone(),
                         start_date: e.start_date.text.clone(),
                         end_date: e.end_date.text.clone(),
-                        url: e.url.clone(),
+                        url: uri(&e.url),
                         highlights: e.highlights.iter().map(|h| strip_typst_markup(h)).collect(),
                         keywords: Vec::new(),
                     });
@@ -345,6 +346,15 @@ impl SchemaJsonResume {
     }
 }
 
+/// A URL field the way JSON Resume declares it — the schema says `"format":
+/// "uri"`, and a consumer that renders `dtu.dk` into an `href` produces exactly
+/// the dead link the PDF did. What cannot be made absolute is passed through
+/// unchanged rather than dropped: this is an interchange file, and it should
+/// lose nothing on the way out.
+fn uri(raw: &str) -> String {
+    links::href(raw).unwrap_or_else(|| raw.to_string())
+}
+
 fn convert_basics(b: &CoreBasics) -> SchemaBasics {
     SchemaBasics {
         name: b.name.clone(),
@@ -352,7 +362,7 @@ fn convert_basics(b: &CoreBasics) -> SchemaBasics {
         image: String::new(),
         email: b.email.clone(),
         phone: b.phone.clone(),
-        url: b.url.clone(),
+        url: uri(&b.url),
         summary: strip_typst_markup(&b.summary),
         location: parse_location(&b.location),
         profiles: b.profiles.iter().map(convert_profile).collect(),
@@ -390,7 +400,7 @@ fn convert_profile(p: &CoreProfile) -> SchemaProfile {
     SchemaProfile {
         network: p.network.clone(),
         username: p.username.clone(),
-        url: p.url.clone(),
+        url: uri(&p.url),
     }
 }
 
@@ -398,7 +408,7 @@ fn convert_work(w: &CoreWork) -> SchemaWork {
     SchemaWork {
         name: w.name.clone(),
         position: w.position.clone(),
-        url: w.url.clone(),
+        url: uri(&w.url),
         start_date: w.start_date.text.clone(),
         end_date: w.end_date.text.clone(),
         summary: strip_typst_markup(&w.summary),
@@ -411,7 +421,7 @@ fn convert_volunteer(v: &CoreVol) -> SchemaVolunteer {
     SchemaVolunteer {
         organization: v.organization.clone(),
         position: v.position.clone(),
-        url: v.url.clone(),
+        url: uri(&v.url),
         start_date: v.start_date.text.clone(),
         end_date: v.end_date.text.clone(),
         summary: String::new(),
@@ -422,7 +432,7 @@ fn convert_volunteer(v: &CoreVol) -> SchemaVolunteer {
 fn convert_education(e: &CoreEdu) -> SchemaEducation {
     SchemaEducation {
         institution: e.institution.clone(),
-        url: e.url.clone(),
+        url: uri(&e.url),
         area: String::new(),
         study_type: e.study_type.clone(),
         start_date: e.start_date.text.clone(),
@@ -437,7 +447,7 @@ fn convert_certificate(c: &CoreCert) -> SchemaCertificate {
         name: c.name.clone(),
         date: c.date.text.clone(),
         issuer: c.issuer.clone(),
-        url: c.url.clone(),
+        url: uri(&c.url),
     }
 }
 

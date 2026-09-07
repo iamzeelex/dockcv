@@ -1180,53 +1180,193 @@ mod font_tests {
         }
     }
 
-    #[test]
+    /// Every `/URI` action in a compiled PDF, in page order.
+    ///
+    /// Read out of the raw bytes rather than through a PDF library: annotation
+    /// dictionaries are written uncompressed, the parse is six lines, and the
+    /// alternative is a dependency carried for one test.
     #[cfg(feature = "pdf")]
-    fn compiled_pdf_contains_interactive_links_for_entries_and_contacts() {
-        use crate::resume::model::{Basics, NetworkProfile, Resume, Work};
+    fn pdf_link_targets(pdf: &[u8]) -> Vec<String> {
+        const MARKER: &[u8] = b"/URI(";
+        let mut targets = Vec::new();
+        let mut at = 0;
+        while let Some(found) = pdf[at..]
+            .windows(MARKER.len())
+            .position(|w| w == MARKER)
+            .map(|i| at + i + MARKER.len())
+        {
+            let mut target = String::new();
+            let mut i = found;
+            while i < pdf.len() && pdf[i] != b')' {
+                // A literal string escapes an unbalanced paren as `\)`.
+                if pdf[i] == b'\\' && i + 1 < pdf.len() {
+                    i += 1;
+                }
+                target.push(pdf[i] as char);
+                i += 1;
+            }
+            targets.push(target);
+            at = i;
+        }
+        targets
+    }
+
+    /// G1 shipped every link target as the string the user typed, and a CV's
+    /// URL field holds `dtu.dk`, not `https://dtu.dk`. RFC 3986 reads that as a
+    /// *relative reference*, so a PDF viewer resolves it against the document:
+    /// Preview does nothing, and a browser goes looking for a file called
+    /// `dtu.dk` in the folder it opened the CV from. Fourteen of the fifteen
+    /// links in a real CV were dead, and the test guarding them passed, because
+    /// it asked what was in the renderer's source instead of what reached a
+    /// reader.
+    ///
+    /// So this one compiles the document and reads the annotations. Every
+    /// target a viewer is handed must be absolute — that is the whole property,
+    /// and it cannot be satisfied by any amount of correct-looking Typst.
+    /// Every text run on the page, with the font it was actually set in.
+    fn typeset_runs(frame: &typst::layout::Frame, out: &mut Vec<(String, String, bool)>) {
+        for (_, item) in frame.items() {
+            match item {
+                typst::layout::FrameItem::Group(g) => typeset_runs(&g.frame, out),
+                typst::layout::FrameItem::Text(t) => out.push((
+                    t.text.to_string(),
+                    t.font.info().family.clone(),
+                    // Glyph 0 is `.notdef` — the empty box a reader gets when
+                    // the chosen face does not have the character.
+                    t.glyphs.iter().any(|g| g.id == 0),
+                )),
+                _ => {}
+            }
+        }
+    }
+
+    /// The followable mark is on the page, in a face that has the glyph.
+    ///
+    /// Asserting that the renderer's source *mentions* Geist proves nothing:
+    /// Typst answers a missing glyph by falling back to another font rather
+    /// than by failing, which is the silent substitution L-11 exists to catch.
+    /// So this compiles the document and looks at what was typeset.
+    #[test]
+    fn the_link_mark_is_typeset_in_a_face_that_has_it() {
+        use crate::resume::model::{Resume, Work};
         use crate::resume::template;
 
         let resume = Resume {
-            basics: Basics {
-                name: "Ada Lovelace".into(),
-                email: "ada@example.com".into(),
-                url: "https://ada.example.com".into(),
-                profiles: vec![NetworkProfile {
-                    network: "GitHub".into(),
-                    username: "adalove".into(),
-                    url: "https://github.com/adalove".into(),
-                }],
-                ..Default::default()
-            },
             work: vec![Work {
-                name: "Babbage Engines".into(),
-                position: "Analyst".into(),
-                url: "https://analytical-engine.org".into(),
+                name: "Patent Office".into(),
+                position: "Examiner".into(),
+                url: "ige.ch".into(),
                 ..Default::default()
             }],
             ..Default::default()
         };
 
-        let source = template::generate(&resume);
-        let engine = TypstEngine::new(source);
-        let pdf = engine.compile_to_pdf().expect("compile to pdf");
-        let pdf_str = String::from_utf8_lossy(&pdf);
+        let engine = TypstEngine::new(template::generate(&resume));
+        let document = typst::compile::<PagedDocument>(&engine)
+            .output
+            .expect("document with a link compiles");
+
+        let mut runs = Vec::new();
+        for page in document.pages() {
+            typeset_runs(&page.frame, &mut runs);
+        }
+
+        let (_, family, has_notdef) = runs
+            .iter()
+            .find(|(text, _, _)| text.contains('\u{2197}'))
+            .expect("the entry has a URL, so the page must carry the mark");
+        assert!(
+            family.to_lowercase().contains("geist"),
+            "the mark fell back to {family:?} instead of the bundled face"
+        );
+        assert!(!has_notdef, "the mark was typeset as .notdef in {family:?}");
+    }
+
+    #[test]
+    #[cfg(feature = "pdf")]
+    fn every_link_a_compiled_pdf_offers_is_one_a_viewer_can_follow() {
+        use crate::resume::model::{Basics, Certificate, NetworkProfile, Resume, Volunteer, Work};
+        use crate::resume::template;
+
+        let resume = Resume {
+            basics: Basics {
+                name: "Albert Einstein".into(),
+                // Written the way people write their own contact details.
+                email: "albert@example.com".into(),
+                phone: "+41 44 632 11 11".into(),
+                url: "einstein.example.com".into(),
+                profiles: vec![NetworkProfile {
+                    network: "GitHub".into(),
+                    username: "aeinstein".into(),
+                    url: "github.com/aeinstein".into(),
+                }],
+                ..Default::default()
+            },
+            work: vec![Work {
+                name: "Patent Office".into(),
+                position: "Examiner".into(),
+                url: "ige.ch".into(),
+                ..Default::default()
+            }],
+            volunteer: vec![Volunteer {
+                organization: "Institute".into(),
+                position: "Fellow".into(),
+                // A field holding something that is not an address at all.
+                url: "ask me about this one".into(),
+                ..Default::default()
+            }],
+            certificates: vec![Certificate {
+                name: "Paper".into(),
+                issuer: "Annalen der Physik".into(),
+                url: "doi.org/10.1002/andp.19053221004".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let pdf = TypstEngine::new(template::generate(&resume))
+            .compile_to_pdf()
+            .expect("compile to pdf");
+        let targets = pdf_link_targets(&pdf);
 
         assert!(
-            pdf_str.contains("/Subtype /Link") || pdf_str.contains("/Subtype/Link"),
-            "PDF must contain link annotations"
+            !targets.is_empty(),
+            "the document has links; the PDF has none"
         );
+        for target in &targets {
+            assert!(
+                target.starts_with("https://")
+                    || target.starts_with("http://")
+                    || target.starts_with("mailto:")
+                    || target.starts_with("tel:"),
+                "{target:?} is a relative reference, and no viewer resolves one \
+                 against a CV — all targets: {targets:?}"
+            );
+            assert!(
+                !target.contains(' '),
+                "{target:?} has a space in it and is not a URI"
+            );
+        }
+
+        for expected in [
+            "mailto:albert@example.com",
+            "tel:+41446321111",
+            "https://einstein.example.com",
+            "https://github.com/aeinstein",
+            "https://ige.ch",
+            "https://doi.org/10.1002/andp.19053221004",
+        ] {
+            assert!(
+                targets.iter().any(|t| t == expected),
+                "no link to {expected}; got {targets:?}"
+            );
+        }
+
+        // Free text in a URL field prints, and links nowhere. A link that looks
+        // live and goes nowhere is worse than plain text.
         assert!(
-            pdf_str.contains("analytical-engine.org"),
-            "PDF must contain entry link target"
-        );
-        assert!(
-            pdf_str.contains("ada@example.com"),
-            "PDF must contain email link"
-        );
-        assert!(
-            pdf_str.contains("github.com/adalove"),
-            "PDF must contain profile link"
+            !targets.iter().any(|t| t.contains("ask me")),
+            "free text was dressed up as a link: {targets:?}"
         );
     }
 

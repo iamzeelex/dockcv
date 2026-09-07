@@ -15,6 +15,7 @@ pub mod export_text;
 pub mod export_typst;
 pub mod export_walk;
 pub mod export_wrap;
+pub mod links;
 pub mod model;
 pub mod template;
 

@@ -18,6 +18,7 @@
 
 use std::fmt::Write as _;
 
+use crate::resume::links;
 use crate::resume::model::{
     DateFormat, LayoutSettings, Resume, ResumeDoc, SectionKind, SectionOverrides, TypeSizes,
 };
@@ -133,6 +134,16 @@ const RENDERER: &str = r##"
   else { body }
 }
 
+// Text and target are two different values and are kept that way: the page
+// prints `vestergaard.dev` because that is what its owner wrote, and follows
+// `https://vestergaard.dev` because the shorter form is a relative reference
+// that no viewer can resolve. `resume::links` prepares every `href`; an empty
+// one means the field held something that is not an address, and the text
+// prints without pretending to be a link.
+#let followable(shown, href) = {
+  if shown == "" { none } else if href == "" { shown } else { link(href)[#shown] }
+}
+
 // The small indicator saying there is something to follow.
 //
 // Drawn in Geist explicitly, never in the document's own font: Newsreader and
@@ -146,15 +157,15 @@ const RENDERER: &str = r##"
 // `trailing` arrives in document order (date, location); `entry-meta-order`
 // decides whether it prints that way. Empty parts are dropped by `meta`, so a
 // job with no location reads the same under either order.
-#let entry(el, title, subtitle, trailing, url: "") = {
+#let entry(el, title, subtitle, trailing, href: "") = {
   let ordered = if el.order == "location-first" { trailing.rev() } else { trailing }
   let head-inner = {
     text(weight: "bold", title)
     if subtitle != "" { styled(el.subtitle, ", " + subtitle) }
   }
   let head = text(size: size-entry, {
-    if url != "" {
-      link(url)[#head-inner#link-mark]
+    if href != "" {
+      link(href)[#head-inner#link-mark]
     } else {
       head-inner
     }
@@ -201,22 +212,11 @@ const RENDERER: &str = r##"
   })
   v(2pt)
 
-  let email-item = {
-    let em = b.at("email", default: "")
-    if em != "" { link("mailto:" + em)[#em] } else { none }
-  }
-  let phone-item = {
-    let ph = b.at("phone", default: "")
-    if ph != "" { link("tel:" + ph)[#ph] } else { none }
-  }
-  let url-item = {
-    let u = b.at("url", default: "")
-    if u != "" { link(u)[#u] } else { none }
-  }
-  let profile-items = b.at("profiles", default: ()).map(p => {
-    let u = p.at("url", default: "")
-    if u != "" { link(u)[#u] } else { none }
-  })
+  let email-item = followable(b.at("email", default: ""), b.at("emailHref", default: ""))
+  let phone-item = followable(b.at("phone", default: ""), b.at("phoneHref", default: ""))
+  let url-item = followable(b.at("url", default: ""), b.at("urlHref", default: ""))
+  let profile-items = b.at("profiles", default: ()).map(p =>
+    followable(p.at("url", default: ""), p.at("href", default: "")))
   // Empty parts are dropped here rather than in each branch below, so a CV
   // with no phone leaves no gap and no stray separator whichever shape is
   // chosen.
@@ -273,7 +273,7 @@ const RENDERER: &str = r##"
         w.at("name", default: ""),
         (daterange(w.at("startDate", default: ""), w.at("endDate", default: "")),
          w.at("location", default: "")),
-        url: w.at("url", default: ""),
+        href: w.at("href", default: ""),
       )
       let s = w.at("summary", default: none)
       if s != none { if el.indent { pad(left: 0.9em, s) } else { s } }
@@ -295,7 +295,7 @@ const RENDERER: &str = r##"
         e.at("studyType", default: ""),
         e.at("institution", default: ""),
         (daterange(e.at("startDate", default: ""), e.at("endDate", default: "")),),
-        url: e.at("url", default: ""),
+        href: e.at("href", default: ""),
       )
       let hs = e.at("highlights", default: ())
       if hs.len() > 0 { bullets(el, hs) }
@@ -407,12 +407,13 @@ const RENDERER: &str = r##"
         c.at("name", default: ""),
         c.at("issuer", default: ""),
         (c.at("date", default: ""),),
-        url: u,
+        href: c.at("href", default: ""),
       )
       // The link was stored, saved and editable, and the page never printed
       // it — a value that reaches the model and not the output. Custom
-      // sections have shown theirs all along; this is the same line.
-      if u != "" { meta((u,)) }
+      // sections have shown theirs all along; this is the same line. It is
+      // followable too: a printed URL is the thing a reader clicks first.
+      if u != "" { meta((followable(u, c.at("href", default: "")),)) }
       v(2pt)
     }
   }
@@ -429,7 +430,7 @@ const RENDERER: &str = r##"
         o.at("position", default: ""),
         o.at("organization", default: ""),
         (daterange(o.at("startDate", default: ""), o.at("endDate", default: "")),),
-        url: o.at("url", default: ""),
+        href: o.at("href", default: ""),
       )
       let hs = o.at("highlights", default: ())
       if hs.len() > 0 { bullets(el, hs) }
@@ -461,11 +462,11 @@ const RENDERER: &str = r##"
             it.at("title", default: ""),
             it.at("subtitle", default: ""),
             (daterange(it.at("startDate", default: ""), it.at("endDate", default: "")),),
-            url: u,
+            href: it.at("href", default: ""),
           )
           let hs = it.at("highlights", default: ())
           if hs.len() > 0 { bullets(el, hs) }
-          if u != "" { meta((u,)) }
+          if u != "" { meta((followable(u, it.at("href", default: "")),)) }
           v(3pt)
         }
       }
@@ -799,9 +800,18 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
     field(s, 4, "label", &b.label);
     content(s, 4, "summary", &b.summary);
     field(s, 4, "email", &b.email);
+    if let Some(href) = links::mailto(&b.email) {
+        field(s, 4, "emailHref", &href);
+    }
     field(s, 4, "phone", &b.phone);
+    if let Some(href) = links::tel(&b.phone) {
+        field(s, 4, "phoneHref", &href);
+    }
     field(s, 4, "location", &b.location);
     field(s, 4, "url", &b.url);
+    if let Some(href) = links::href(&b.url) {
+        field(s, 4, "urlHref", &href);
+    }
     if !b.profiles.is_empty() {
         s.push_str("    profiles: (\n");
         for p in &b.profiles {
@@ -811,6 +821,8 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
             write_quoted(s, &p.username);
             s.push_str(", url: ");
             write_quoted(s, &p.url);
+            s.push_str(", href: ");
+            write_quoted(s, links::href(&p.url).as_deref().unwrap_or_default());
             s.push_str("),\n");
         }
         s.push_str("    ),\n");
@@ -833,6 +845,7 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
             field(s, 6, "startDate", &w.start_date.display(dates));
             field(s, 6, "endDate", &w.end_date.display(dates));
             field(s, 6, "url", &w.url);
+            href_field(s, 6, &w.url);
             content(s, 6, "summary", &w.summary);
             highlights(s, 6, &w.highlights);
             s.push_str("    ),\n");
@@ -850,6 +863,7 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
             field(s, 6, "startDate", &e.start_date.display(dates));
             field(s, 6, "endDate", &e.end_date.display(dates));
             field(s, 6, "url", &e.url);
+            href_field(s, 6, &e.url);
             highlights(s, 6, &e.highlights);
             s.push_str("    ),\n");
         }
@@ -881,6 +895,8 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
             write_quoted(s, &c.date.display(dates));
             s.push_str(", url: ");
             write_quoted(s, &c.url);
+            s.push_str(", href: ");
+            write_quoted(s, links::href(&c.url).as_deref().unwrap_or_default());
             s.push_str("),\n");
         }
         s.push_str("  ),\n");
@@ -896,6 +912,7 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
             field(s, 6, "startDate", &v.start_date.display(dates));
             field(s, 6, "endDate", &v.end_date.display(dates));
             field(s, 6, "url", &v.url);
+            href_field(s, 6, &v.url);
             highlights(s, 6, &v.highlights);
             s.push_str("    ),\n");
         }
@@ -977,6 +994,7 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
                     field(s, 10, "startDate", &e.start_date.display(dates));
                     field(s, 10, "endDate", &e.end_date.display(dates));
                     field(s, 10, "url", &e.url);
+                    href_field(s, 10, &e.url);
                     highlights(s, 10, &e.highlights);
                     s.push_str("        ),\n");
                 }
@@ -1008,6 +1026,18 @@ fn write_quoted(out: &mut String, value: &str) {
         }
     }
     out.push('"');
+}
+
+/// Emit `href: "…"` beside a `url` field, when what the user typed can be made
+/// into something a viewer will follow.
+///
+/// The two are separate keys because they are separate values: the page prints
+/// `dtu.dk` and follows `https://dtu.dk`. See [`crate::resume::links`] for why
+/// the shorter form on its own is a dead link.
+fn href_field(out: &mut String, indent: usize, raw: &str) {
+    if let Some(href) = links::href(raw) {
+        field(out, indent, "href", &href);
+    }
 }
 
 /// Emit `key: "value",` only when non-empty.
@@ -2259,17 +2289,23 @@ mod tests {
         assert!(engine.compile_with_diagnostics(1.0).result.is_ok());
     }
 
-    /// G1: Work and Volunteer entries can carry a URL, serialized into the
-    /// Typst dict and rendered with a followable indicator mark `↗` styled in Geist.
+    /// An entry's URL reaches the generated dict as two values: the text the
+    /// page prints, exactly as typed, and the absolute target a viewer follows.
+    ///
+    /// That the target then becomes a working PDF annotation, and that the
+    /// indicator mark is typeset in a face that has the glyph, are asserted
+    /// where those artefacts are made — `typst_engine::font_tests`. Asserting
+    /// them here, against the text of `RENDERER`, is what let G1 ship with
+    /// every link dead and this test green.
     #[test]
-    fn entry_links_reach_the_page_and_render_indicator() {
+    fn entry_links_reach_the_page_as_text_and_target() {
         use crate::resume::model::{Education, Resume, Volunteer, Work};
 
         let resume = Resume {
             work: vec![Work {
                 name: "Acme Corp".into(),
                 position: "Senior Engineer".into(),
-                url: "https://acme.example.com".into(),
+                url: "acme.example.com".into(),
                 ..Default::default()
             }],
             education: vec![Education {
@@ -2280,35 +2316,37 @@ mod tests {
             }],
             volunteer: vec![Volunteer {
                 organization: "Red Cross".into(),
+                // A URL field can hold anything someone typed into it.
+                url: "ask me".into(),
                 position: "Volunteer".into(),
-                url: "https://redcross.org".into(),
                 ..Default::default()
             }],
             ..Default::default()
         };
 
         let source = generate(&resume);
-        assert!(
-            source.contains(r#"url: "https://acme.example.com""#),
-            "work url was not serialized"
-        );
-        assert!(
-            source.contains(r#"url: "https://mit.edu""#),
-            "education url was not serialized"
-        );
-        assert!(
-            source.contains(r#"url: "https://redcross.org""#),
-            "volunteer url was not serialized"
-        );
-
-        assert!(
-            RENDERER.contains(r#"#let link-mark = text(font: "Geist", size: 0.85em, " ↗")"#),
-            "renderer must define link-mark using Geist font"
-        );
-        assert!(
-            RENDERER.contains("link(url)[#head-inner#link-mark]"),
-            "entry must wrap heading with link(url) and link-mark"
-        );
+        for (url, href) in [
+            ("acme.example.com", Some("https://acme.example.com")),
+            ("https://mit.edu", Some("https://mit.edu")),
+            ("ask me", None),
+        ] {
+            assert!(
+                source.contains(&format!(r#"url: "{url}""#)),
+                "{url:?} must print as the user typed it, got:\n{source}"
+            );
+            match href {
+                Some(href) => assert!(
+                    source.contains(&format!(r#"href: "{href}""#)),
+                    "{url:?} must carry the target {href:?}, got:\n{source}"
+                ),
+                // Nothing followable, so nothing to follow: the text prints and
+                // the entry is not dressed up as a link.
+                None => assert!(
+                    !source.contains(r#"href: "ask"#),
+                    "free text became a link target, got:\n{source}"
+                ),
+            }
+        }
 
         let engine = crate::typst_engine::TypstEngine::new(source);
         let report = engine.compile_with_diagnostics(1.0);

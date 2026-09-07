@@ -325,33 +325,36 @@ mod tests {
         out
     }
 
-    /// G1: Every Track A exporter formats entry links according to its own idiom:
-    /// - Plain text: appends `(url)` to the entry heading
-    /// - Markdown: formats heading as `### [Title](url)`
-    /// - DOCX: writes an interactive Hyperlink run for the heading
-    /// - JSON Resume: preserves `url` on Work and Volunteer entries
-    /// - Typst: generates `#link(url)[#head#link-mark]`
+    /// Every emitter carries an entry link in its own idiom — plain text in
+    /// parentheses, Markdown as `### [Title](target)`, DOCX as a hyperlink
+    /// relationship, JSON Resume as a `url`, Typst as an `href` beside the
+    /// printed text.
+    ///
+    /// The URLs below are written the way people write their own — `dtu.dk`,
+    /// not `https://dtu.dk` — because that is what the vault holds and because
+    /// the version of this test that used absolute URLs passed while every
+    /// link in a real CV was dead. What prints stays as typed; what is followed
+    /// is absolute. See [`crate::resume::links`].
     #[test]
     fn entry_links_reach_all_track_a_exporters_in_their_own_idiom() {
         let mut resume = sample_resume();
-        resume.work[0].url = "https://techcorp.example.com".into();
-        resume.volunteer[0].url = "https://opensource.example.org".into();
+        resume.work[0].url = "techcorp.example.com".into();
+        resume.education[0].url = "university.edu".into();
+        resume.volunteer[0].url = "opensource.example.org".into();
 
         // 1. Plain Text: heading (url)
         let text = crate::resume::export_text::export_plain_text(&resume);
         assert!(
             text.contains("Staff Software Engineer, Tech Corp (Mountain View, CA)")
-                && text.contains("techcorp.example.com"),
+                && text.contains("(techcorp.example.com)"),
             "Plain text must include work url in parentheses after heading, got:\n{text}"
         );
         assert!(
-            text.contains("B.S. in Computer Science, State University (https://university.edu)"),
+            text.contains("B.S. in Computer Science, State University (university.edu)"),
             "Plain text must include education url in parentheses after heading, got:\n{text}"
         );
         assert!(
-            text.contains(
-                "Core Maintainer, Open Source Collective (https://opensource.example.org)"
-            ),
+            text.contains("Core Maintainer, Open Source Collective (opensource.example.org)"),
             "Plain text must include volunteer url in parentheses after heading, got:\n{text}"
         );
 
@@ -427,18 +430,19 @@ mod tests {
                 &mut rels,
             )
             .expect("read rels");
-            assert!(
-                rels.contains("techcorp.example.com"),
-                "DOCX rels must contain work url target"
-            );
-            assert!(
-                rels.contains("university.edu"),
-                "DOCX rels must contain education url target"
-            );
-            assert!(
-                rels.contains("opensource.example.org"),
-                "DOCX rels must contain volunteer url target"
-            );
+            // The full target, not a substring a bare `techcorp.example.com`
+            // would also satisfy: Word resolves a relative target against the
+            // document's own folder and finds nothing there.
+            for target in [
+                "https://techcorp.example.com",
+                "https://university.edu",
+                "https://opensource.example.org",
+            ] {
+                assert!(
+                    rels.contains(&format!("Target=\"{target}\"")),
+                    "DOCX rels must point at {target}, got:\n{rels}"
+                );
+            }
         }
 
         // 4. JSON Resume: exports work and volunteer url
@@ -453,19 +457,17 @@ mod tests {
             "JSON Resume must contain volunteer url"
         );
 
-        // 5. Typst: contains url and link-mark
+        // 5. Typst: the printed text and the followed target are separate keys.
+        // That the target then survives into a PDF annotation is asserted where
+        // the PDF is made — `typst_engine::font_tests`.
         let typst_src = crate::resume::template::generate(&resume);
         assert!(
-            typst_src.contains(r#"url: "https://techcorp.example.com""#),
-            "Typst dict must contain work url"
+            typst_src.contains(r#"url: "techcorp.example.com""#),
+            "Typst dict must print the url as the user typed it, got:\n{typst_src}"
         );
         assert!(
-            typst_src.contains(r#"#let link-mark = text(font: "Geist", size: 0.85em, " ↗")"#),
-            "Typst template must contain link-mark"
-        );
-        assert!(
-            typst_src.contains("link(url)[#head-inner#link-mark]"),
-            "Typst entry must wrap with link(url)"
+            typst_src.contains(r#"href: "https://techcorp.example.com""#),
+            "Typst dict must carry an absolute target beside it, got:\n{typst_src}"
         );
     }
 }
