@@ -250,7 +250,11 @@ fn write_markdown_certificates(out: &mut String, certs: &[Certificate], date_for
             line.push_str(&format!(" (*{date_str}*)"));
         }
         if let Some(href) = links::href(&c.url) {
-            line.push_str(&format!(" [Link]({href})"));
+            // The address as its own label, in brackets, the way plain text
+            // writes it — a live link that still reads as an address. `[Link]`
+            // said nothing and left a stray word behind wherever the file was
+            // read back as text.
+            line.push_str(&format!(" ([{}]({href}))", c.url));
         }
         let _ = writeln!(out, "{line}");
     }

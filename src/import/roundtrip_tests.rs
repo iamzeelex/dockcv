@@ -126,7 +126,9 @@ fn fixture() -> ResumeDoc {
                 name: "Copley Medal".into(),
                 issuer: "Royal Society".into(),
                 date: ResumeDate::new("1925-11"),
-                url: String::new(),
+                // Printed on its own line under the entry, which is how it came
+                // back as a certificate of its own called `https://…`.
+                url: "royalsociety.org/copley".into(),
             },
         ],
         volunteer: vec![
@@ -176,7 +178,7 @@ struct Shape {
     work: Vec<(usize, String, String)>,
     education: usize,
     skills: Vec<(String, usize)>,
-    certificates: usize,
+    certificates: Vec<(String, String, String)>,
     volunteer: usize,
     custom: Vec<(String, usize)>,
 }
@@ -202,7 +204,21 @@ fn shape_of(doc: &ResumeDoc) -> Shape {
             .iter()
             .map(|s| (s.name.clone(), s.keywords.len()))
             .collect(),
-        certificates: doc.certificates.active().len(),
+        certificates: doc
+            .certificates
+            .active()
+            .iter()
+            // The address, not the string: JSON Resume declares `format: uri`
+            // and writes `https://royalsociety.org/copley` where the vault
+            // holds `royalsociety.org/copley`. Same link, deliberately.
+            .map(|c| {
+                (
+                    c.name.clone(),
+                    c.issuer.clone(),
+                    dockcv_core::resume::links::href(&c.url).unwrap_or_default(),
+                )
+            })
+            .collect(),
         volunteer: doc.volunteer.active().len(),
         custom: doc
             .custom_sections

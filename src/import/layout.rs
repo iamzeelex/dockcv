@@ -165,7 +165,7 @@ fn unspace_tracked(line: &str) -> Option<String> {
 /// Brackets around it mean it is not: `(doi.org/10.1002/andp…)` on its own line
 /// is the tail of a title the measure broke, and the parentheses are the proof
 /// — they were opened on the line above.
-fn is_lone_address(line: &str) -> bool {
+pub fn is_lone_address(line: &str) -> bool {
     let token = line.trim();
     !token.contains(char::is_whitespace)
         && !token.contains('@')

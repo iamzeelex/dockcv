@@ -172,7 +172,14 @@ fn get_date_range_regex() -> &'static Regex {
     DATE_RANGE_REGEX.get_or_init(|| {
         let months = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|янв(?:арь)?|фев(?:раль)?|мар(?:т)?|апр(?:ель)?|май|июн(?:ь)?|июл(?:ь)?|авг(?:уст)?|сен(?:тябрь)?|окт(?:ябрь)?|ноя(?:брь)?|дек(?:абрь)?)";
         let year = r"(?:[0-9]{4}|[0-9]{2}XX)";
-        let date_elem = format!(r"(?:(?:{months}[\s./-]*{year})|(?:{year}[\s./-]+[0-9]{{1,2}})|(?:[0-9]{{1,2}}[\s./-]+{year})|(?:{year}))");
+        // The full ISO date comes first, because the alternation is ordered and
+        // `2019-01` would otherwise win and leave `-01` behind: `2019-01-01 –
+        // 2021-01-01` was read as no range at all, and the title of every entry
+        // in a CV written with ISO dates came back as `Project  -01-01 –
+        // 2021-01-01`. It is one of DockCV's own date formats.
+        let date_elem = format!(
+            r"(?:(?:{months}[\s./-]*{year})|(?:{year}[\s./-]+[0-9]{{1,2}}[\s./-]+[0-9]{{1,2}})|(?:{year}[\s./-]+[0-9]{{1,2}})|(?:[0-9]{{1,2}}[\s./-]+{year})|(?:{year}))"
+        );
         let present = r"(?:present|current|till now|ongoing|настоящее время|н\.в\.|по н\.в\.|по настоящее время)";
         let pattern = format!(r"(?i)(\b{date_elem}\b)\s*(?:–|—|-|~|to|по)\s*(\b{date_elem}\b|{present})");
         Regex::new(&pattern).unwrap()
@@ -180,7 +187,12 @@ fn get_date_range_regex() -> &'static Regex {
 }
 
 fn get_single_date_regex() -> &'static Regex {
-    SINGLE_DATE_REGEX.get_or_init(|| Regex::new(r"(?i)\b(19|20)(\d{2}|XX)\b").unwrap())
+    // A year, and the month and day after it when they are there. Matching the
+    // year alone left `-11-07` behind out of `2021-11-07`, which then read as
+    // text: a certificate's issuer came back as `Company  2021-11-07`.
+    SINGLE_DATE_REGEX.get_or_init(|| {
+        Regex::new(r"(?i)\b(19|20)(\d{2}|XX)(?:[-/.][0-9]{1,2}(?:[-/.][0-9]{1,2})?)?\b").unwrap()
+    })
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -536,13 +548,183 @@ pub fn is_only_dates(line: &str) -> bool {
     }
     let stripped = get_date_range_regex().replace_all(trimmed, "");
     let stripped = get_single_date_regex().replace_all(&stripped, "");
-    let stripped = stripped
+    let mut stripped = stripped
         .to_lowercase()
         .replace("present", "")
         .replace("current", "")
         .replace("ongoing", "");
-    stripped.chars().count() < trimmed.chars().count()
+    // A month is part of a date, and `Apr 2023` printed beside a certificate is
+    // as much "only a date" as `2023` is. Without this the month was left over
+    // and the line read as text.
+    for month in MONTH_NAMES {
+        stripped = stripped.replace(month, "");
+    }
+    // …but a date has a figure in it. Otherwise `May` — which is also a name —
+    // would be a date, and so would the bare word `present`.
+    trimmed.chars().any(|c| c.is_ascii_digit())
+        && stripped.chars().count() < trimmed.chars().count()
         && !stripped.chars().any(|c| c.is_alphanumeric())
+}
+
+/// Month names long and short, lowercase, longest first so `january` is
+/// removed whole rather than leaving `uary` behind after `jan`.
+const MONTH_NAMES: [&str; 24] = [
+    "january",
+    "february",
+    "september",
+    "november",
+    "december",
+    "october",
+    "august",
+    "march",
+    "april",
+    "june",
+    "july",
+    "may",
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "sept",
+    "oct",
+    "nov",
+    "dec",
+];
+
+/// The three fields a certificate line carries.
+///
+/// Each emitter writes them differently — `Name - Issuer (2023-04) (site.org)`
+/// in plain text and Markdown, `Name, Issuer 2023-04` on a page, `Name —
+/// Issuer (2023-04)` in Word — and the whole line was going into the name, so
+/// a CV's certifications came back as three long strings with no issuer and no
+/// date between them.
+fn parse_certificate(text: &str) -> Certificate {
+    let mut head = text.trim();
+    let mut date = String::new();
+    let mut url = String::new();
+
+    // Brackets at the end hold the date and the address, in either order, and
+    // never anything else.
+    while let Some(open) = head
+        .strip_suffix(')')
+        .and_then(|inner| inner.rfind('('))
+        .filter(|_| date.is_empty() || url.is_empty())
+    {
+        let inner = head[open + 1..head.len() - 1].trim();
+        if url.is_empty() && layout::is_lone_address(inner) {
+            url = inner.to_string();
+        } else if date.is_empty() && is_only_dates(inner) {
+            date = inner.to_string();
+        } else {
+            break;
+        }
+        head = head[..open].trim_end();
+    }
+
+    // Word has nowhere to put a link but on the words themselves, so the DOCX
+    // reader writes the target inline after the name it was hiding behind. An
+    // address anywhere in a certificate line is that certificate's link.
+    let without_address;
+    if url.is_empty() {
+        let address = head
+            .split_whitespace()
+            .find(|token| layout::is_lone_address(token));
+        if let Some(address) = address {
+            let rest = head.replace(address, " ");
+            if rest.split_whitespace().count() > 0 {
+                url = address.to_string();
+                without_address = rest.split_whitespace().collect::<Vec<_>>().join(" ");
+                head = without_address.as_str();
+            }
+        }
+    }
+
+    // A page prints the date after the issuer with no brackets around it.
+    let (head, trailing) = split_trailing_date(head);
+    if date.is_empty() {
+        date = trailing.to_string();
+    }
+
+    // The issuer is written last and is one field, so the **last** separator is
+    // the boundary: `AWS Solutions Architect — Associate, Amazon Web Services`
+    // keeps the dash inside its own name.
+    let boundary = ["—", "–", ",", " - "]
+        .iter()
+        .filter_map(|sep| head.rfind(sep).map(|at| (at, sep.len())))
+        .max_by_key(|(at, _)| *at);
+    let (name, issuer) = match boundary {
+        Some((at, len)) => (head[..at].trim(), head[at + len..].trim()),
+        None => (head, ""),
+    };
+
+    Certificate {
+        name: name.to_string(),
+        issuer: issuer.to_string(),
+        date: date.into(),
+        url,
+    }
+}
+
+/// File a bare address under the entry it was printed beneath.
+///
+/// `false` when there is no open entry to put it on, or when that entry
+/// already has one — in which case it is a line like any other and is read as
+/// content, which is what it must be.
+fn attach_entry_url(
+    section: SectionKind,
+    resume: &mut Resume,
+    custom: &mut [(String, Vec<CustomEntry>)],
+    url: &str,
+) -> bool {
+    let slot: Option<&mut String> = match section {
+        SectionKind::Work => resume.work.last_mut().map(|w| &mut w.url),
+        SectionKind::Education => resume.education.last_mut().map(|e| &mut e.url),
+        SectionKind::Certificates => resume.certificates.last_mut().map(|c| &mut c.url),
+        SectionKind::Volunteer => resume.volunteer.last_mut().map(|v| &mut v.url),
+        SectionKind::Named => custom
+            .last_mut()
+            .and_then(|(_, entries)| entries.last_mut())
+            .map(|e| &mut e.url),
+        _ => None,
+    };
+    match slot {
+        Some(slot) if slot.is_empty() => {
+            *slot = url.to_string();
+            true
+        }
+        _ => false,
+    }
+}
+
+/// What a line says, and the date printed after it.
+///
+/// `Certified Kubernetes Administrator, The Linux Foundation Apr 2023` is one
+/// line carrying three fields, and the date is the one that can be found from
+/// the right without guessing: it is the longest tail that is nothing but a
+/// date.
+fn split_trailing_date(text: &str) -> (&str, &str) {
+    let mut boundary = text.len();
+    let mut at = text.len();
+    while let Some(space) = text[..at].rfind(char::is_whitespace) {
+        let tail = text[space..].trim();
+        at = space;
+        if tail.is_empty() {
+            continue;
+        }
+        if is_only_dates(tail) {
+            boundary = space;
+        } else {
+            break;
+        }
+    }
+    (
+        text[..boundary].trim().trim_end_matches(',').trim(),
+        text[boundary..].trim(),
+    )
 }
 
 /// Does the line *name* a section, taken whole?
@@ -1075,6 +1257,17 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
         }
         let line = entry.text.as_str();
 
+        // An entry's link is printed on its own line beneath it — on the page,
+        // and in the plain-text export the same way. Read as content it became
+        // an entry of its own, so a section of one certificate imported as two,
+        // the second of them called `https://certificate.com`.
+        if !entry.is_bullet()
+            && layout::is_lone_address(line)
+            && attach_entry_url(current_section, &mut resume, &mut custom, line)
+        {
+            continue;
+        }
+
         match current_section {
             SectionKind::Named => {
                 let Some((_, entries)) = custom.last_mut() else {
@@ -1368,11 +1561,9 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 }
             }
             SectionKind::Certificates => {
-                let bullet = clean_bullet(line);
-                resume.certificates.push(Certificate {
-                    name: bullet.to_string(),
-                    ..Default::default()
-                });
+                resume
+                    .certificates
+                    .push(parse_certificate(clean_bullet(line)));
             }
             SectionKind::Volunteer => {
                 // The same three shapes as Work, because it is the same shape
