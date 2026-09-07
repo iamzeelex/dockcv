@@ -141,7 +141,14 @@ const RENDERER: &str = r##"
 // one means the field held something that is not an address, and the text
 // prints without pretending to be a link.
 #let followable(shown, href) = {
-  if shown == "" { none } else if href == "" { shown } else { link(href)[#shown] }
+  // In a box, so the line breaker cannot take the address apart. UAX #14
+  // offers a break after every `/`, and a header narrow enough to need one put
+  // `linkedin.com/in/` at the end of a line and `nora-vestergaard` at the start
+  // of the next — an address a reader cannot copy and a PDF reader brings back
+  // as two unrelated fields.
+  if shown == "" { none }
+  else if href == "" { box(shown) }
+  else { box(link(href)[#shown]) }
 }
 
 // The small indicator saying there is something to follow.

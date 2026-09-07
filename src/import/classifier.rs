@@ -395,17 +395,8 @@ fn absorb_contact(line: &str, resume: &mut Resume) -> bool {
     let mut absorbed = false;
 
     for url in get_url_regex().find_iter(line) {
-        let url = trim_url_tail(url.as_str()).to_string();
         absorbed = true;
-        if resume.basics.url.is_empty() {
-            resume.basics.url = url;
-        } else if !resume.basics.profiles.iter().any(|p| p.url == url) {
-            resume.basics.profiles.push(NetworkProfile {
-                network: network_of(&url).to_string(),
-                username: String::new(),
-                url,
-            });
-        }
+        take_address(trim_url_tail(url.as_str()), resume);
     }
 
     if get_email_regex().is_match(line) {
@@ -420,7 +411,19 @@ fn absorb_contact(line: &str, resume: &mut Resume) -> bool {
     // the first field found is how the phone number and the city were dropped
     // from every CV that wrote them beside the address, DockCV's own exports
     // included. So each field is read out of its own part.
-    for part in line.split(['|', '·', '•', '‧']).map(str::trim) {
+    //
+    // The comma is a separator here as much as the pipe is: a CV whose header
+    // is set with commas writes `Copenhagen, Denmark, you@example.com, …`, and
+    // splitting on the strong separators alone left that as one part and no
+    // location at all. The place is then two parts wide, which is why the
+    // windows below are up to two.
+    let parts: Vec<&str> = line
+        .split([',', '|', '·', '•', '‧'])
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect();
+
+    for part in &parts {
         // A personal site is written the way people write one — `vestergaard.dev`,
         // with no scheme and no `www.` — which the URL pattern above cannot see.
         // Only a part that is a single token counts, so a sentence that happens
@@ -431,23 +434,58 @@ fn absorb_contact(line: &str, resume: &mut Resume) -> bool {
             && !get_url_regex().is_match(part)
         {
             absorbed = true;
-            let url = part.to_string();
-            if resume.basics.url.is_empty() {
-                resume.basics.url = url;
-            } else if !resume.basics.profiles.iter().any(|p| p.url == url) {
-                resume.basics.profiles.push(NetworkProfile {
-                    network: network_of(&url).to_string(),
-                    username: String::new(),
-                    url,
-                });
-            }
-        }
-        if resume.basics.location.is_empty() && looks_like_place(part) {
-            resume.basics.location = part.to_string();
-            absorbed = true;
+            take_address(part, resume);
         }
     }
+
+    if resume.basics.location.is_empty() {
+        let is_other_field = |p: &&str| {
+            p.contains('@')
+                || get_phone_regex().is_match(p)
+                || (!p.contains(char::is_whitespace) && crate::resume::links::href(p).is_some())
+        };
+        // One part first, so `Berlin, Germany` on a line of its own is not
+        // widened into the field after it.
+        'search: for width in 1..=2 {
+            for window in parts.windows(width) {
+                if window.iter().any(is_other_field) {
+                    continue;
+                }
+                let candidate = window.join(", ");
+                if looks_like_place(&candidate) {
+                    resume.basics.location = candidate;
+                    absorbed = true;
+                    break 'search;
+                }
+            }
+        }
+    }
+
     absorbed
+}
+
+/// File one address under the person's own site or under their profiles.
+///
+/// A recognised network is a profile, and anything else is the site — reading
+/// them first-come-first-served made `github.com/…` somebody's homepage and
+/// then listed their actual homepage again beneath it, so the header printed
+/// the same address twice.
+fn take_address(url: &str, resume: &mut Resume) {
+    let network = network_of(url);
+    let is_own_site = network == "Website";
+
+    if is_own_site && resume.basics.url.is_empty() {
+        resume.basics.url = url.to_string();
+        return;
+    }
+    if resume.basics.url == url || resume.basics.profiles.iter().any(|p| p.url == url) {
+        return;
+    }
+    resume.basics.profiles.push(NetworkProfile {
+        network: network.to_string(),
+        username: String::new(),
+        url: url.to_string(),
+    });
 }
 
 /// Punctuation that ends the sentence a URL sits in, not the URL.
@@ -966,8 +1004,21 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
     if let Some(mat) = get_phone_regex().find(contact_text) {
         resume.basics.phone = mat.as_str().to_string();
     }
-    if let Some(mat) = get_url_regex().find(contact_text) {
-        resume.basics.url = trim_url_tail(mat.as_str()).to_string();
+    // The person's *own* site, not the first address in the block: a CV lists
+    // its GitHub and its LinkedIn there too, and taking the first left the
+    // Website field pointing at a profile — which the line walk below then
+    // listed a second time.
+    // Only an address that is nobody's profile. A GitHub or a LinkedIn is not
+    // the person's website, and filing one there both mislabelled it and left
+    // the real site to be listed again underneath as a profile — the header
+    // then printed the same address twice. A network address is not lost by
+    // this: the walk below files it under `profiles`, which is where it goes.
+    if let Some(own) = get_url_regex()
+        .find_iter(contact_text)
+        .map(|m| trim_url_tail(m.as_str()))
+        .find(|u| network_of(u) == "Website")
+    {
+        resume.basics.url = own.to_string();
     }
 
     let mut current_section = SectionKind::Unknown;

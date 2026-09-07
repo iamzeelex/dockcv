@@ -111,6 +111,8 @@ struct Lines {
     /// Baseline and pen position of the glyph before this one.
     last_y: f64,
     last_x: f64,
+    /// The size the last glyph was drawn at.
+    last_size: f64,
     /// Where the last glyph could have ended, when its width was legible.
     last_end: f64,
     started: bool,
@@ -124,6 +126,9 @@ impl Lines {
     /// And a pen this far past the end of the last glyph skipped something —
     /// a producer that positions its words instead of writing spaces.
     const GAP: f64 = 0.25;
+    /// A size this much larger or smaller than the run before it, on the same
+    /// baseline, is a different field rather than a continuation of one.
+    const NEW_FIELD: f64 = 0.2;
 }
 
 impl pdf_extract::OutputDev for Lines {
@@ -169,6 +174,16 @@ impl pdf_extract::OutputDev for Lines {
         if self.started {
             if (y - self.last_y).abs() > size * Self::NEW_LINE {
                 self.text.push('\n');
+            } else if (size - self.last_size).abs() > self.last_size * Self::NEW_FIELD
+                && !self.text.ends_with("  ")
+            {
+                // A header sets the name large and the title beside it small,
+                // on one line — and a text layer has no way to say "these are
+                // two things" except how they are set. Two spaces is the run
+                // the classifier already reads as a field boundary; one space
+                // would have left `Nora Vestergaard Platform Engineer` as
+                // somebody's name.
+                self.text.push_str("  ");
             } else if x > self.last_end + size * Self::GAP
                 && !glyph.starts_with(char::is_whitespace)
                 && !self.text.ends_with(char::is_whitespace)
@@ -185,6 +200,7 @@ impl pdf_extract::OutputDev for Lines {
         self.started = true;
         self.last_y = y;
         self.last_x = x;
+        self.last_size = size;
         // Zero is not a width, it is a width we could not read; fall back to
         // the pen position so the gap test compares like with like.
         self.last_end = if width > 0.0 { x + width * size } else { x };
@@ -305,6 +321,81 @@ mod tests {
         assert!(
             !text.contains("PROFILEPhysicist"),
             "the heading was fused to the paragraph under it:\n{text}"
+        );
+    }
+
+    /// The header, read back off the page it was printed on.
+    ///
+    /// A header set with commas — `Copenhagen, Denmark, you@example.com, …` —
+    /// is where every field of it went wrong at once. The city was lost,
+    /// because a place has a comma inside it and splitting on commas left
+    /// `Copenhagen` and `Denmark` as two parts, neither of which looks like
+    /// one. The name swallowed the title beside it, because a text layer sets
+    /// them on one line and says nothing about their being two things. And the
+    /// person's own site was listed twice — once in the Website field and once
+    /// again among the profiles — because the first address in the block took
+    /// the field, and the first address is a GitHub.
+    #[test]
+    fn a_comma_separated_header_comes_back_whole() {
+        use crate::resume::model::{
+            Basics, HeaderLayout, LayoutSettings, NetworkProfile, Resume, SkillSeparator,
+        };
+        use crate::resume::template;
+        use crate::typst_engine::TypstEngine;
+
+        let resume = Resume {
+            basics: Basics {
+                name: "Albert Einstein".into(),
+                label: "Principal Systems Architect".into(),
+                email: "albert@example.com".into(),
+                phone: "+45 28 44 10 92".into(),
+                location: "Copenhagen, Denmark".into(),
+                url: "einstein.example.com".into(),
+                profiles: vec![NetworkProfile {
+                    network: "GitHub".into(),
+                    username: "aeinstein".into(),
+                    url: "github.com/aeinstein".into(),
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let layout = LayoutSettings {
+            header: HeaderLayout {
+                separator: SkillSeparator::Comma,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let bytes = TypstEngine::new(template::generate_with_layout(&resume, &layout))
+            .compile_to_pdf()
+            .expect("the document compiles");
+        let dir = std::env::temp_dir().join(format!("dockcv-pdf-header-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let file = dir.join("header.pdf");
+        std::fs::write(&file, bytes).expect("write");
+        let imported = import_pdf(&file).expect("the PDF imports");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let b = imported.doc.profile.active();
+        assert_eq!(b.name, "Albert Einstein", "the title was read as the name");
+        assert_eq!(b.label, "Principal Systems Architect");
+        assert_eq!(b.email, "albert@example.com");
+        assert_eq!(b.location, "Copenhagen, Denmark");
+        assert_eq!(
+            b.url, "einstein.example.com",
+            "a profile took the site field"
+        );
+        assert!(
+            b.profiles.iter().any(|p| p.url == "github.com/aeinstein"),
+            "the GitHub profile was lost: {:?}",
+            b.profiles
+        );
+        assert!(
+            !b.profiles.iter().any(|p| p.url == b.url),
+            "the site is listed twice, once as itself and once as a profile: {:?}",
+            b.profiles
         );
     }
 
