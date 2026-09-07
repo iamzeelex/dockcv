@@ -306,16 +306,34 @@ fn join_split_entry_headers(lines: Vec<LogicalLine>) -> Vec<LogicalLine> {
 
     for line in lines {
         if line.kind != LineKind::Heading && is_only_dates(&line.text) {
-            pending_dates = Some(line.text.clone());
+            match out.last_mut() {
+                // The line above claims the dates whenever it is one that could
+                // own them. That is the order DockCV's own exporter writes —
+                // title, dates, bullets — and holding them for the *next* line
+                // stapled them to the entry's first bullet instead, leaving the
+                // entry itself undated.
+                Some(prev) if prev.kind != LineKind::Heading && prev.kind != LineKind::Bullet => {
+                    prev.text = format!("{} {}", prev.text, line.text);
+                    prev.kind = LineKind::EntryHeader;
+                }
+                // A section heading or a list above, so nothing there can own
+                // them: this template printed the dates first, and the entry is
+                // on the line below.
+                _ => pending_dates = Some(line.text.clone()),
+            }
             continue;
         }
         match pending_dates.take() {
-            // The line after a bare date is the entry that date belongs to.
-            Some(dates) if line.kind != LineKind::Heading => out.push(LogicalLine::new(
-                format!("{} {}", line.text, dates),
-                LineKind::EntryHeader,
-            )),
-            // A heading follows: the dates belonged to the entry above it.
+            // The line after a bare date is the entry that date belongs to —
+            // unless it is a list item, which is content under an entry and
+            // never an entry itself.
+            Some(dates) if line.kind != LineKind::Heading && line.kind != LineKind::Bullet => out
+                .push(LogicalLine::new(
+                    format!("{} {}", line.text, dates),
+                    LineKind::EntryHeader,
+                )),
+            // A heading or a bullet follows: the dates belonged to the entry
+            // above them.
             Some(dates) => {
                 if let Some(prev) = out.last_mut().filter(|p| p.kind == LineKind::EntryHeader) {
                     prev.text = format!("{} {}", prev.text, dates);

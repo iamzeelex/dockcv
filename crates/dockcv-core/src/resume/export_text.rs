@@ -65,6 +65,13 @@ pub fn export_plain_text_with_date_format(resume: &Resume, date_format: DateForm
         if is_section_empty(resume, kind) {
             continue;
         }
+        // The summary is printed under the name, the way the page prints it, so
+        // a `Profile` in the section order has nothing left to write. It still
+        // wrote the heading, and a heading with a rule and no body under it is
+        // not a section — the importer read `-------` back as the summary.
+        if kind == SectionKind::Profile {
+            continue;
+        }
 
         // Section header
         let heading_hidden = resume
@@ -86,9 +93,7 @@ pub fn export_plain_text_with_date_format(resume: &Resume, date_format: DateForm
 
         // Section content
         match kind {
-            SectionKind::Profile => {
-                // Profile summary is rendered with basics; if there is additional text, handle it here
-            }
+            SectionKind::Profile => {}
             SectionKind::Work => {
                 write_work_section(&mut out, &resume.work, date_format);
             }
@@ -138,25 +143,24 @@ fn write_basics(out: &mut String, b: &Basics) {
         contacts.push(b.url.as_str());
     }
 
-    if !contacts.is_empty() {
-        let contact_line = contacts.join(" | ");
-        write_wrapped(out, &contact_line, 0, 0);
-    }
+    write_separated(out, &contacts, " | ");
 
     for p in &b.profiles {
-        let mut prof_parts = Vec::new();
-        if !p.network.is_empty() {
-            prof_parts.push(p.network.as_str());
-        }
-        if !p.username.is_empty() {
-            prof_parts.push(p.username.as_str());
-        }
-        if !p.url.is_empty() {
-            prof_parts.push(p.url.as_str());
-        }
-        if !prof_parts.is_empty() {
-            write_wrapped(out, &prof_parts.join(": "), 0, 0);
-        }
+        // `GitHub: github.com/nvestergaard`, never
+        // `GitHub: nvestergaard: github.com/nvestergaard` — the handle is in
+        // the address, and the second colon read back as another field.
+        let detail = if !p.url.is_empty() {
+            p.url.as_str()
+        } else {
+            p.username.as_str()
+        };
+        let line = match (p.network.is_empty(), detail.is_empty()) {
+            (true, true) => continue,
+            (false, false) => format!("{}: {detail}", p.network),
+            (true, false) => detail.to_string(),
+            (false, true) => p.network.clone(),
+        };
+        write_wrapped(out, &line, 0, 0);
     }
 
     if !b.summary.is_empty() {
@@ -404,6 +408,32 @@ fn write_bullet(out: &mut String, text: &str) {
 
 /// A paragraph, hard-wrapped, with `first_indent` spaces on its first line and
 /// `rest_indent` on the rest.
+/// A `a | b | c` line, broken between its parts rather than through them.
+///
+/// Wrapping the joined string as prose left `Copenhagen, Denmark |` at the end
+/// of a line with its next field on the one below — a separator with nothing
+/// after it reads as truncation, and the importer took the two lines for two
+/// unrelated things.
+fn write_separated(out: &mut String, parts: &[&str], separator: &str) {
+    let mut line = String::new();
+    for part in parts {
+        let candidate = if line.is_empty() {
+            (*part).to_string()
+        } else {
+            format!("{line}{separator}{part}")
+        };
+        if line.is_empty() || export_wrap::width(&candidate) <= WRAP_WIDTH {
+            line = candidate;
+        } else {
+            let _ = writeln!(out, "{line}");
+            line = (*part).to_string();
+        }
+    }
+    if !line.is_empty() {
+        let _ = writeln!(out, "{line}");
+    }
+}
+
 fn write_wrapped(out: &mut String, text: &str, first_indent: usize, rest_indent: usize) {
     let first_prefix = " ".repeat(first_indent);
     export_wrap::wrap_into(out, text, &first_prefix, rest_indent, WRAP_WIDTH);

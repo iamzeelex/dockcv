@@ -81,7 +81,7 @@ pub fn wrap(text: &str, first_prefix: &str, rest_indent: usize, columns: usize) 
     // which is a break opportunity with no space in it.
     let mut pending_space = false;
 
-    for raw in break_pieces(&normalized) {
+    for raw in break_pieces(&normalized, &atomic_spans(&normalized)) {
         // A break opportunity falls *after* the space that caused it, so the
         // space belongs to the line being closed and never to the next one.
         let piece = raw.trim_end_matches(' ');
@@ -165,16 +165,51 @@ fn normalize_whitespace(text: &str) -> String {
 
 /// The slices between consecutive break opportunities. The segmenter yields
 /// byte offsets, starting at zero, so the first one closes nothing.
-fn break_pieces(text: &str) -> impl Iterator<Item = &str> {
+fn break_pieces<'a>(text: &'a str, atomic: &'a [(usize, usize)]) -> impl Iterator<Item = &'a str> {
     let mut previous = 0;
     SEGMENTER.segment_str(text).filter_map(move |boundary| {
         if boundary <= previous {
+            return None;
+        }
+        // A break the segmenter offers *inside* an address is one we decline.
+        if atomic
+            .iter()
+            .any(|&(start, end)| boundary > start && boundary < end)
+        {
             return None;
         }
         let piece = &text[previous..boundary];
         previous = boundary;
         Some(piece)
     })
+}
+
+/// The byte spans of runs that must not be broken, whatever UAX #14 says.
+///
+/// Today that means addresses. The segmenter offers a break after every `/` in
+/// a path, which is correct for prose and wrong for a URL: the plain-text
+/// export put `doi.org/10.0000/` on one line and `nssp.2021.14)` on the next,
+/// and the address stopped being one — unclickable in a terminal, and read
+/// back by the importer as two unrelated fragments.
+///
+/// A whitespace-delimited token counts as an address if [`links::href`] can
+/// make one of it, which is the same test the exporters use to decide whether
+/// to link it. Trailing punctuation is peeled off first so `(dtu.dk)` and
+/// `see dtu.dk.` are recognised — the brackets are prose and may break.
+fn atomic_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut offset = 0;
+    for token in text.split(' ') {
+        let start = offset;
+        offset += token.len() + 1; // the space that split it
+
+        let lead = token.len() - token.trim_start_matches(['(', '[', '<', '"']).len();
+        let body = token[lead..].trim_end_matches([')', ']', '>', '"', '.', ',', ';', ':']);
+        if body.len() > 1 && crate::resume::links::href(body).is_some() {
+            spans.push((start + lead, start + lead + body.len()));
+        }
+    }
+    spans
 }
 
 /// Split `s` so the first part is at most `columns` wide, cutting on a grapheme

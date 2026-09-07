@@ -13,7 +13,8 @@
 use typst::syntax::{ast, ast::AstNode, Source, SyntaxKind, SyntaxNode};
 
 use crate::resume::model::{
-    Certificate, Education, NetworkProfile, Resume, SkillGroup, Volunteer, Work,
+    Certificate, ComposedCustomSection, CustomEntry, CustomSectionId, Education, NetworkProfile,
+    Resume, SkillGroup, Volunteer, Work,
 };
 
 /// Parse an AltaCV-style document and recognize its sections.
@@ -119,6 +120,35 @@ fn extract(source: &Source, dict: ast::Dict) -> Resume {
         set(source, entry, "endDate", &mut v.end_date.text);
         v.highlights = string_list(source, named(entry, "highlights"));
         resume.volunteer.push(v);
+    }
+
+    // Custom sections were the one part of a DockCV Typst export this could not
+    // read back, so a CV round-tripped through `.typ` lost its Publications and
+    // its Talks without saying so. Ids are not read: the document that receives
+    // these issues its own (see `ResumeDoc::from_resume`).
+    for (index, section) in array_of_dicts(named(dict, "customSections"))
+        .into_iter()
+        .enumerate()
+    {
+        let mut cs = ComposedCustomSection {
+            id: CustomSectionId::from_u32(index as u32),
+            title: String::new(),
+            entries: Vec::new(),
+        };
+        set(source, section, "title", &mut cs.title);
+        for item in array_of_dicts(named(section, "entries")) {
+            let mut e = CustomEntry::default();
+            set(source, item, "title", &mut e.title);
+            set(source, item, "subtitle", &mut e.subtitle);
+            set(source, item, "startDate", &mut e.start_date.text);
+            set(source, item, "endDate", &mut e.end_date.text);
+            set(source, item, "url", &mut e.url);
+            e.highlights = string_list(source, named(item, "highlights"));
+            cs.entries.push(e);
+        }
+        if !cs.title.is_empty() || !cs.entries.is_empty() {
+            resume.custom_sections.push(cs);
+        }
     }
 
     resume

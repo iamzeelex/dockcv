@@ -167,12 +167,14 @@ pub struct CustomEntry {
 pub struct CustomSectionId(u32);
 
 impl CustomSectionId {
-    /// An id from a raw number, for building fixtures.
+    /// An id from a raw number, for a section that is not yet part of a
+    /// document — a fixture, or one being read out of a file.
     ///
-    /// Test-only on purpose: ids are handed out by `next_custom_section_id` and
-    /// never reissued (D-9), and a public constructor is how two live sections
-    /// come to share one. A fixture needs stable ids, and nothing else does.
-    #[cfg(test)]
+    /// Crate-private on purpose: ids are handed out by `next_custom_section_id`
+    /// and never reissued (D-9), and a public constructor is how two live
+    /// sections come to share one. An id made here is provisional; the moment
+    /// the section joins a document, [`ResumeDoc::from_resume`] issues it a real
+    /// one from that document's own counter.
     pub(crate) const fn from_u32(id: u32) -> Self {
         Self(id)
     }
@@ -2625,13 +2627,15 @@ impl ResumeDoc {
 
     /// Wrap a flat resume as a document with one variant per section.
     pub fn from_resume(r: Resume, base_name: impl Into<String> + Clone) -> Self {
-        Self {
+        let base_name = base_name.into();
+        let customs = r.custom_sections;
+        let mut doc = Self {
             profile: Versioned::single(base_name.clone(), r.basics),
             work: Versioned::single(base_name.clone(), r.work),
             education: Versioned::single(base_name.clone(), r.education),
             skills: Versioned::single(base_name.clone(), r.skills),
             certificates: Versioned::single(base_name.clone(), r.certificates),
-            volunteer: Versioned::single(base_name, r.volunteer),
+            volunteer: Versioned::single(base_name.clone(), r.volunteer),
             presets: Vec::new(),
             section_order: Vec::new(),
             section_titles: Vec::new(),
@@ -2642,7 +2646,20 @@ impl ResumeDoc {
             hidden_sections: Vec::new(),
             section_overrides: Vec::new(),
             export_history: Vec::new(),
+        };
+
+        // A composed résumé's custom sections were dropped on the floor here,
+        // which is why a document exported as Typst and read back had its
+        // Publications and Talks silently gone. Ids are re-issued rather than
+        // carried: the counter is this document's, and the incoming ids came
+        // from whatever document wrote the file.
+        for section in customs {
+            let id = doc.add_custom_section(section.title);
+            if let Some(added) = doc.custom_section_mut(id) {
+                *added.content.active_mut() = section.entries;
+            }
         }
+        doc
     }
 
     /// Look up a custom section by its stable id.

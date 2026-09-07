@@ -35,6 +35,13 @@ pub fn export_markdown_with_date_format(resume: &Resume, date_format: DateFormat
             continue;
         }
 
+        // The summary is printed under the name, so a `Profile` in the section
+        // order has nothing left to write — and wrote a bare `## Profile` with
+        // no body under it. See the same guard in `export_text`.
+        if kind == SectionKind::Profile {
+            continue;
+        }
+
         // Section header
         let heading_hidden = resume
             .section_overrides
@@ -54,9 +61,7 @@ pub fn export_markdown_with_date_format(resume: &Resume, date_format: DateFormat
 
         // Section content
         match kind {
-            SectionKind::Profile => {
-                // Profile summary is handled with basics
-            }
+            SectionKind::Profile => {}
             SectionKind::Work => {
                 write_markdown_work(&mut out, &resume.work, date_format);
             }

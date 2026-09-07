@@ -131,8 +131,13 @@ fn get_phone_regex() -> &'static Regex {
         // `[ .-]`, not `[\s.-]`, throughout: `\s` matches a newline, so a postal
         // code and the fragment of a number on the line below joined into one
         // "phone" (`10012\n212-998`). A phone number does not wrap.
+        // The `+` alternative counts *groups* rather than prescribing their
+        // widths: `+45 28 44 10 92` is how a Danish number is written, and a
+        // pattern that demanded a three-digit group in the middle read straight
+        // past it. Nothing writes a date range with a leading `+`, so there is
+        // no ambiguity left for the group widths to resolve.
         Regex::new(
-            r"(?:\+\d{1,3}[ .-]?\(?\d{1,4}\)?[ .-]?\d{3,4}[ .-]?\d{2,4}|\(?\d{2,4}\)?[ .-]?\d{3,4}[ .-]\d{3,4})",
+            r"(?:\+\d{1,3}(?:[ .-]?\(?\d{2,4}\)?){2,6}|\(?\d{2,4}\)?[ .-]?\d{3,4}[ .-]\d{3,4})",
         )
         .unwrap()
     })
@@ -372,9 +377,46 @@ pub fn looks_like_degree(line: &str) -> bool {
 
 /// Take a line as contact data, if that is what it is.
 fn absorb_contact(line: &str, resume: &mut Resume) -> bool {
-    if get_email_regex().is_match(line) || get_url_regex().is_match(line) {
-        for url in get_url_regex().find_iter(line) {
-            let url = url.as_str().to_string();
+    let mut absorbed = false;
+
+    for url in get_url_regex().find_iter(line) {
+        let url = trim_url_tail(url.as_str()).to_string();
+        absorbed = true;
+        if resume.basics.url.is_empty() {
+            resume.basics.url = url;
+        } else if !resume.basics.profiles.iter().any(|p| p.url == url) {
+            resume.basics.profiles.push(NetworkProfile {
+                network: network_of(&url).to_string(),
+                username: String::new(),
+                url,
+            });
+        }
+    }
+
+    if get_email_regex().is_match(line) {
+        absorbed = true;
+    }
+    if get_phone_regex().is_match(line) {
+        absorbed = true;
+    }
+
+    // A contact block is usually **one line of several fields** —
+    // `you@example.com | +45 28 44 10 92 | Copenhagen, Denmark`. Returning at
+    // the first field found is how the phone number and the city were dropped
+    // from every CV that wrote them beside the address, DockCV's own exports
+    // included. So each field is read out of its own part.
+    for part in line.split(['|', '·', '•', '‧']).map(str::trim) {
+        // A personal site is written the way people write one — `vestergaard.dev`,
+        // with no scheme and no `www.` — which the URL pattern above cannot see.
+        // Only a part that is a single token counts, so a sentence that happens
+        // to contain `Node.js` is not read as somebody's homepage.
+        if !part.contains(char::is_whitespace)
+            && !part.contains('@')
+            && crate::resume::links::href(part).is_some()
+            && !get_url_regex().is_match(part)
+        {
+            absorbed = true;
+            let url = part.to_string();
             if resume.basics.url.is_empty() {
                 resume.basics.url = url;
             } else if !resume.basics.profiles.iter().any(|p| p.url == url) {
@@ -385,16 +427,52 @@ fn absorb_contact(line: &str, resume: &mut Resume) -> bool {
                 });
             }
         }
-        return true;
+        if resume.basics.location.is_empty() && looks_like_place(part) {
+            resume.basics.location = part.to_string();
+            absorbed = true;
+        }
     }
-    if get_phone_regex().is_match(line) {
-        return true;
+    absorbed
+}
+
+/// Punctuation that ends the sentence a URL sits in, not the URL.
+///
+/// `GitHub (https://github.com/nvestergaard)` yields the closing bracket to a
+/// greedy `[^\s]+`, and the profile then pointed at an address with a `)` on
+/// the end of it. A bracket the URL opened itself is kept.
+fn trim_url_tail(url: &str) -> &str {
+    let mut end = url.len();
+    while let Some(last) = url[..end].chars().last() {
+        let unbalanced_close =
+            last == ')' && url[..end].matches('(').count() < url[..end].matches(')').count();
+        if matches!(
+            last,
+            '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '"' | ']' | '>'
+        ) || unbalanced_close
+        {
+            end -= last.len_utf8();
+        } else {
+            break;
+        }
     }
-    if looks_like_place(line) && resume.basics.location.is_empty() {
-        resume.basics.location = line.to_string();
-        return true;
-    }
-    false
+    &url[..end]
+}
+
+/// Does the line end in `(2023-04)` — a date in brackets, closing it?
+fn ends_with_parenthesised_date(line: &str) -> bool {
+    let trimmed = line.trim_end();
+    let Some(rest) = trimmed.strip_suffix(')') else {
+        return false;
+    };
+    // Its own test rather than `is_only_dates`, which reads a *range* and says
+    // no to the bare `2023-04` a certificate is stamped with: a year, and
+    // nothing that could be a word.
+    rest.rfind('(').is_some_and(|at| {
+        let inner = rest[at + 1..].trim();
+        !inner.is_empty()
+            && get_single_date_regex().is_match(inner)
+            && !inner.chars().any(char::is_alphabetic)
+    })
 }
 
 /// Is the line nothing but a date or a date range?
@@ -719,9 +797,22 @@ pub fn classify_raw_text(format_name: &str, raw_text: &str) -> ImportedDoc {
         .filter(|n| n.len() >= 4 && !n.contains('@'))
         .unwrap_or_default();
     let fragments = [name_fragment, email];
+    // Leading whitespace is carried through: `layout` reads it to tell an
+    // indented list item from a date range at the margin, and to join a wrapped
+    // item back onto the one it belongs to. `strip_running_header` trims, so
+    // the indent is measured here and put back.
     let cleaned: String = raw_text
         .lines()
-        .map(|l| strip_running_header(l.trim(), &fragments))
+        .map(|l| {
+            let body = l.trim_start();
+            let indent = &l[..l.len() - body.len()];
+            let stripped = strip_running_header(body, &fragments);
+            if stripped.is_empty() {
+                stripped
+            } else {
+                format!("{indent}{stripped}")
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -729,7 +820,12 @@ pub fn classify_raw_text(format_name: &str, raw_text: &str) -> ImportedDoc {
     // measure is one bullet again, and the section parsers below never have to
     // guess whether a line is a new item or the tail of the last one.
     let lines = layout::logical_lines(&cleaned, is_section_header, |l| {
-        get_date_range_regex().is_match(l)
+        // "Does this line already carry its dates?" — asked of the line above,
+        // to decide whether the next one continues it. A certificate is written
+        // `Name - Issuer (2023-04)`: one date, not a range, and nothing after
+        // it, so the line is finished. Read as unfinished, two certificates
+        // joined into one.
+        get_date_range_regex().is_match(l) || ends_with_parenthesised_date(l)
     });
     classify_lines(format_name, lines)
 }
@@ -824,7 +920,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
         resume.basics.phone = mat.as_str().to_string();
     }
     if let Some(mat) = get_url_regex().find(contact_text) {
-        resume.basics.url = mat.as_str().to_string();
+        resume.basics.url = trim_url_tail(mat.as_str()).to_string();
     }
 
     let mut current_section = SectionKind::Unknown;
@@ -844,6 +940,14 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
             .checked_sub(1)
             .and_then(|i| lines.get(i))
             .is_some_and(|l| l.is_bullet());
+        // …and a line followed by nothing but dates is an entry, whatever else
+        // it looks like. A heading is never dated. Without this, the second
+        // degree in an Education section — printed after the first degree's
+        // bullets, with its years on the line below — was read as a sub-heading
+        // and became a section of its own, taking the degree out of Education.
+        let next_is_dates = lines
+            .get(idx + 1)
+            .is_some_and(|l| l.kind != layout::LineKind::Heading && is_only_dates(&l.text));
         if entry.kind == layout::LineKind::Heading {
             current_section = classify_header(&entry.text);
             // A document never has two Work sections. When a second heading
@@ -1021,6 +1125,13 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                     .work
                     .last_mut()
                     .filter(|w| w.name.is_empty() && !w.position.is_empty())
+                    // …but only while the entry is still being opened. An
+                    // employer is printed *above* the dates, never after the
+                    // bullets, so once either has arrived the entry is finished
+                    // and the next bare line begins the following job. Without
+                    // this, a plain-text CV filed every job's title as the
+                    // previous job's employer and lost one entry per job.
+                    .filter(|w| w.start_date.is_empty() && w.highlights.is_empty())
                 {
                     // The employer, printed under the job title. DOCX templates
                     // scatter an entry across cells this way, and each stray
@@ -1102,7 +1213,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                             });
                         }
                     }
-                } else if !entry.is_bullet() && after_bullet && !next_is_bullet {
+                } else if !entry.is_bullet() && after_bullet && !next_is_bullet && !next_is_dates {
                     // A non-bullet line arriving after the bullet list has
                     // started is not another bullet — the document stopped
                     // listing and started naming. Followed by more names rather
@@ -1166,11 +1277,61 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 });
             }
             SectionKind::Volunteer => {
-                let bullet = clean_bullet(line);
-                resume.volunteer.push(Volunteer {
-                    position: bullet.to_string(),
-                    ..Default::default()
-                });
+                // The same three shapes as Work, because it is the same shape
+                // of thing: a role at an organisation, over a period, with
+                // bullets under it. This branch used to push a new entry for
+                // every line and put the whole line in `position`, so a section
+                // of two roles imported as six roles with no dates, no
+                // organisation and their bullets promoted to entries of their
+                // own.
+                if entry.is_bullet() {
+                    match resume.volunteer.last_mut() {
+                        Some(last) => last.highlights.push(line.to_string()),
+                        None => resume.volunteer.push(Volunteer {
+                            highlights: vec![line.to_string()],
+                            ..Default::default()
+                        }),
+                    }
+                    continue;
+                }
+
+                let stated = entry.kind == layout::LineKind::EntryHeader;
+                if stated || get_date_range_regex().is_match(line) {
+                    let header = layout::EntryHeader::parse(line, get_date_range_regex());
+                    let awaiting = resume
+                        .volunteer
+                        .last_mut()
+                        .filter(|_| !stated)
+                        .filter(|v| v.start_date.is_empty() && v.highlights.is_empty());
+                    match awaiting {
+                        Some(open) => {
+                            if open.organization.is_empty() {
+                                open.organization = header.whole();
+                            }
+                            open.start_date = header.start.into();
+                            open.end_date = header.end.into();
+                        }
+                        None => resume.volunteer.push(Volunteer {
+                            position: header.lead,
+                            organization: header.org,
+                            start_date: header.start.into(),
+                            end_date: header.end.into(),
+                            ..Default::default()
+                        }),
+                    }
+                } else if let Some(last) = resume
+                    .volunteer
+                    .last_mut()
+                    .filter(|v| v.organization.is_empty() && !v.position.is_empty())
+                    .filter(|v| v.start_date.is_empty() && v.highlights.is_empty())
+                {
+                    last.organization = line.to_string();
+                } else {
+                    resume.volunteer.push(Volunteer {
+                        position: clean_bullet(line).to_string(),
+                        ..Default::default()
+                    });
+                }
             }
         }
     }
@@ -1196,6 +1357,23 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
         if resume.basics.label.is_empty() {
             if let Some(second) = first_lines.get(1).filter(|l| !looks_like_contact_line(l)) {
                 resume.basics.label = second.to_string();
+            }
+        }
+    }
+
+    // The paragraph under the contact block, when the CV gives it no heading of
+    // its own. It was collected into `first_lines` and then dropped on the
+    // floor: every CV written the way DockCV writes one — name, title, contacts,
+    // then the summary — imported with no summary at all.
+    if resume.basics.summary.is_empty() {
+        if let Some(prose) = first_lines
+            .iter()
+            .skip(1)
+            .find(|l| l.split_whitespace().count() >= 8 && !looks_like_contact_line(l))
+        {
+            resume.basics.summary = (*prose).to_string();
+            if resume.basics.label == **prose {
+                resume.basics.label.clear();
             }
         }
     }

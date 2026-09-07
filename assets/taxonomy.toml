@@ -16,7 +16,11 @@
 # shape alone. The taxonomy only improves recall for title-case headings.
 
 [work]
-en = ["work", "experience", "employment", "career", "professional experience", "work history", "relevant experience"]
+# `work experience` is DockCV's own printed name for this section. Its absence
+# was invisible to the plain-text and Markdown paths, which recognise a heading
+# by how it is set, and cost DOCX the whole work history: nothing else told it
+# the heading was one.
+en = ["work", "experience", "employment", "career", "professional experience", "work history", "relevant experience", "work experience"]
 ru = ["опыт работы", "карьера", "профессиональный опыт", "места работы"]
 de = ["berufserfahrung", "beruflicher werdegang", "arbeitserfahrung", "tätigkeiten"]
 fr = ["expérience professionnelle", "parcours professionnel", "expériences"]
@@ -60,7 +64,9 @@ nl = ["certificaten", "diploma's", "cursussen", "trainingen"]
 pl = ["certyfikaty", "kursy", "licencje", "szkolenia"]
 
 [volunteer]
-en = ["volunteer", "volunteering", "community", "leadership", "activities"]
+# `organizations` is DockCV's own printed name for this section, so a CV it
+# exported was importing its own Organizations back as a custom section.
+en = ["volunteer", "volunteering", "community", "leadership", "activities", "organizations", "organisations"]
 ru = ["общественная деятельность", "волонтерство"]
 de = ["ehrenamtliches engagement", "ehrenamt", "soziales engagement"]
 fr = ["bénévolat", "engagement associatif", "activités"]

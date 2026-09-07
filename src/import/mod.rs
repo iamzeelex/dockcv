@@ -9,11 +9,14 @@ pub mod error;
 pub mod layout;
 pub mod model;
 pub mod notes;
+#[cfg(test)]
+mod roundtrip_tests;
 
 pub mod engines {
     pub mod docx;
     pub mod json_resume;
     pub mod linkedin;
+    pub mod markdown;
     pub mod pdf;
     pub mod structured;
     pub mod text;
@@ -24,6 +27,16 @@ use model::ImportedDoc;
 use std::path::Path;
 
 const MAX_IMPORT_FILE_SIZE: u64 = 50 * 1024 * 1024; // 50 MB
+
+/// Read a text file, or say what stopped us in the same voice as every other
+/// import refusal.
+fn read_text(path: &Path) -> Result<String, ImportError> {
+    std::fs::read_to_string(path).map_err(|e| {
+        ImportError::new("Could not read this file")
+            .detail(format!("the system said: {e}"))
+            .remedy("Check the file is still where you picked it from")
+    })
+}
 
 /// Main entry point for importing any supported resume file.
 pub fn import_file(path: &Path) -> Result<ImportedDoc, ImportError> {
@@ -59,7 +72,16 @@ pub fn import_file(path: &Path) -> Result<ImportedDoc, ImportError> {
         // out as a CV whose name was `{`, with the whole work history gone and
         // `import_file` returning `Ok`.
         "json" | "typ" => engines::structured::import_structured(path),
-        "txt" | "md" | "markdown" => engines::text::import_text(path).map_err(ImportError::from),
+        // Markdown states its own structure and is read as markup; plain text
+        // has none and is recovered from typography. Handing `.md` to the prose
+        // path threw the structure away and then guessed it back wrongly — a
+        // CV DockCV had exported itself came back with `##` in its section
+        // names and its whole work history in one custom section.
+        "md" | "markdown" => Ok(engines::markdown::import_markdown(
+            "Markdown",
+            &read_text(path)?,
+        )),
+        "txt" => engines::text::import_text(path).map_err(ImportError::from),
         // No extension to go on, so trying both is the only option — and here
         // the fallback is honest, because the user never said what it was.
         _ => engines::structured::import_structured(path)

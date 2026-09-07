@@ -79,6 +79,120 @@ impl LogicalLine {
 /// the entry rather than the text of one line.
 const BULLET_GLYPHS: [char; 5] = ['•', '▪', '‣', '◦', '·'];
 
+/// The ASCII markers a list uses when it has no glyph to spare — which is what
+/// a plain-text CV, DockCV's own included, is written with.
+///
+/// Only ever read **indented**. That is the whole distinction: `- 2019` at the
+/// left margin opens a date range, and `  - Led the migration` two columns in
+/// is a list item, because nothing else in a CV is indented at all.
+const ASCII_BULLETS: [char; 3] = ['-', '*', '+'];
+
+/// A line of nothing but rule characters: the `-------` a plain-text CV puts
+/// under a heading, and Markdown's thematic break.
+///
+/// It is typography, and reading it as content is how `PROFILE / -------`
+/// arrived as a person whose summary was seven dashes.
+fn is_rule(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.chars().count() >= 3
+        && trimmed
+            .chars()
+            .all(|c| matches!(c, '-' | '=' | '_' | '─' | '━' | '–' | '—' | '*' | '·'))
+}
+
+/// Does the line open with its own label — `Languages: Rust, Go, Python`?
+///
+/// A wrapped line never introduces one: the label is written by the author at
+/// the head of a row, so finding one is proof the row started here.
+fn opens_labelled_row(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    let Some((label, rest)) = trimmed.split_once(':') else {
+        return false;
+    };
+    !rest.trim().is_empty()
+        && label.len() <= 32
+        && (1..=3).contains(&label.split_whitespace().count())
+        && label.starts_with(char::is_uppercase)
+        && !label.contains(['.', ',', ';', '(', ')'])
+}
+
+/// A line holding two list items, split where the second one starts.
+///
+/// Only inside what is already a bullet, and only on a glyph that opens lists
+/// and nothing else — a `-` or a `*` mid-sentence is punctuation.
+fn split_at_inner_bullet(line: &str) -> Option<(String, String)> {
+    let body = line.trim_start();
+    if !starts_with_bullet(body) {
+        return None;
+    }
+    let rest = without_bullet(body);
+    let at = rest.find(BULLET_GLYPHS)?;
+    let head = rest[..at].trim();
+    let tail = without_bullet(rest[at..].trim());
+    (head.len() > 1 && tail.len() > 1).then(|| (head.to_string(), tail.to_string()))
+}
+
+/// Undo the letter spacing a typesetter puts under a section heading.
+///
+/// A PDF's text layer records what was drawn, and a heading set with tracking
+/// is drawn one glyph at a time: `WO R K   E X P E R I E N C E`. Nothing
+/// downstream can recognise that as a heading — the whole section boundary is
+/// lost with it, which is why a CV exported from DockCV and read back as PDF
+/// arrived as one section containing the entire document.
+///
+/// The evidence is the shape of the run rather than any single token: most of
+/// the pieces are one character long, which no ordinary sentence is. A wider
+/// gap is a word break and stays one.
+fn unspace_tracked(line: &str) -> Option<String> {
+    let tokens: Vec<&str> = line.split(' ').filter(|t| !t.is_empty()).collect();
+    let singles = tokens.iter().filter(|t| t.chars().count() == 1).count();
+    if tokens.len() < 4 || singles * 3 < tokens.len() * 2 {
+        return None;
+    }
+
+    let mut out = String::with_capacity(line.len());
+    for word in line.split("  ").filter(|w| !w.trim().is_empty()) {
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.extend(word.split(' ').filter(|p| !p.is_empty()));
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// A line that is one address and nothing else.
+///
+/// Brackets around it mean it is not: `(doi.org/10.1002/andp…)` on its own line
+/// is the tail of a title the measure broke, and the parentheses are the proof
+/// — they were opened on the line above.
+fn is_lone_address(line: &str) -> bool {
+    let token = line.trim();
+    !token.contains(char::is_whitespace)
+        && !token.contains('@')
+        && !token.starts_with(['(', '[', '<'])
+        && !token.ends_with([')', ']', '>'])
+        && crate::resume::links::href(token).is_some()
+}
+
+/// How far a line is indented, and what is left after the indent.
+fn indent_of(line: &str) -> (usize, &str) {
+    let body = line.trim_start();
+    (line.len() - body.len(), body)
+}
+
+/// An indented ASCII list marker followed by a space, and the text after it.
+fn ascii_bullet(indent: usize, body: &str) -> Option<&str> {
+    if indent == 0 {
+        return None;
+    }
+    let mut chars = body.chars();
+    let marker = chars.next()?;
+    if !ASCII_BULLETS.contains(&marker) || chars.next() != Some(' ') {
+        return None;
+    }
+    Some(body[marker.len_utf8()..].trim_start())
+}
+
 /// Strip a bullet glyph and the space after it.
 pub fn without_bullet(line: &str) -> &str {
     line.trim_start_matches(BULLET_GLYPHS).trim()
@@ -148,12 +262,22 @@ fn normalize_spaces(line: &str) -> String {
         .collect()
 }
 
+/// Glyphs a page draws *about* the text rather than as part of it.
+///
+/// `↗` is DockCV's own mark saying an entry carries a link. It means something
+/// to a reader and nothing to a parser, and a PDF's text layer records it like
+/// any other character — so a university came back named `Aarhus Universitet ↗`.
+const PAGE_ORNAMENTS: [char; 3] = ['↗', '↪', '⧉'];
+
 fn strip_footer_noise(line: &str) -> String {
     // A run of three or more pipes is decoration, never punctuation — a single
     // `|` is the separator an exporter puts before a location and must stay.
     let mut out = String::with_capacity(line.len());
     let mut pipe_run = 0usize;
     for ch in line.chars() {
+        if PAGE_ORNAMENTS.contains(&ch) {
+            continue;
+        }
         if ch == '|' {
             pipe_run += 1;
             continue;
@@ -181,35 +305,88 @@ pub fn logical_lines(
     has_date_range: impl Fn(&str) -> bool,
 ) -> Vec<LogicalLine> {
     // Blank lines are separators, so they are recorded and then dropped.
-    let mut source: Vec<(String, bool)> = Vec::new();
-    let mut break_pending = false;
+    // Indentation is evidence and is carried alongside the text: it is what
+    // tells a list item from a date range, and a wrapped item from the next one.
+    let mut source: Vec<(usize, String)> = Vec::new();
     for raw_line in raw.lines() {
-        let line = strip_footer_noise(&normalize_spaces(raw_line));
-        if line.is_empty() {
-            break_pending = true;
+        let normalized = normalize_spaces(raw_line);
+        let (indent, _) = indent_of(&normalized);
+        let normalized = unspace_tracked(&normalized).unwrap_or(normalized);
+        let line = strip_footer_noise(&normalized);
+        // A rule under a heading is how the heading was drawn, not something
+        // the author wrote.
+        if line.is_empty() || is_rule(&line) {
             continue;
         }
-        source.push((line, break_pending));
-        break_pending = false;
+        source.push((indent, line));
     }
 
-    let widths: Vec<&str> = source.iter().map(|(l, _)| l.as_str()).collect();
+    let widths: Vec<&str> = source.iter().map(|(_, l)| l.as_str()).collect();
     let measure = measure_of(&widths);
 
     let mut out: Vec<LogicalLine> = Vec::new();
-    for (line, _after_break) in source {
+    // The indent of the line that opened the item still being read, so its
+    // wrapped remainder — indented further — is joined back onto it.
+    let mut open_indent: Option<usize> = None;
+    for (indent, line) in source {
         let heading = is_heading(&line);
-        let bullet = starts_with_bullet(&line);
+        let glyph_bullet = starts_with_bullet(&line);
+        let ascii = ascii_bullet(indent, &line);
+        let bullet = glyph_bullet || ascii.is_some();
+
+        let hangs_under_open =
+            !heading && !bullet && open_indent.is_some_and(|opened| indent > opened);
 
         // Does this continue the line above?
         let continues = !heading
             && !bullet
             && out.last().is_some_and(|prev| {
-                prev.kind != LineKind::Heading
-                    && !has_date_range(&prev.text)
+                if prev.kind == LineKind::Heading {
+                    return false;
+                }
+                // Indentation under an open item is the author saying this is
+                // the same item, and outranks everything guessed from the text
+                // — including the full stop that ends `…per-branch stacks.`
+                // one line before the sentence that finishes the thought.
+                if hangs_under_open {
+                    return true;
+                }
+                // An address alone on its own line was put there; it is not the
+                // tail of the line above. Joining it glued a personal site onto
+                // the contact line and produced a city called
+                // `Copenhagen, Denmark vestergaard.dev`.
+                if is_lone_address(&line) {
+                    return false;
+                }
+                // A row that names itself is a new row. `Languages: Rust, Go`
+                // under a full-width `Platform: …` line was folded into it by
+                // the width rule alone, and two skill groups became one.
+                if opens_labelled_row(&line) {
+                    return false;
+                }
+                !has_date_range(&prev.text)
                     && !ends_a_sentence(&prev.text)
                     && (prev.tail_width >= measure || starts_mid_sentence(&line))
             });
+
+        // A bullet glyph in the middle of a line is where the *next* item
+        // began: a PDF's text layer runs two list items together when they sit
+        // on one typeset line, and joined they read as one achievement the CV
+        // never claimed.
+        if let Some((head, tail)) = split_at_inner_bullet(&line) {
+            out.push(LogicalLine {
+                tail_width: head.chars().count(),
+                text: head,
+                kind: LineKind::Bullet,
+            });
+            open_indent = Some(indent);
+            out.push(LogicalLine {
+                tail_width: tail.chars().count(),
+                text: tail,
+                kind: LineKind::Bullet,
+            });
+            continue;
+        }
 
         if continues {
             let prev = out.last_mut().expect("checked by is_some_and above");
@@ -217,17 +394,18 @@ pub fn logical_lines(
                 prev.text.push(' ');
             }
             prev.tail_width = line.chars().count();
-            prev.text.push_str(&line);
+            prev.text.push_str(line.trim_start());
             continue;
         }
 
+        open_indent = bullet.then_some(indent);
         let tail_width = line.chars().count();
         out.push(LogicalLine {
             tail_width,
-            text: if bullet {
-                without_bullet(&line).to_string()
-            } else {
-                line
+            text: match ascii {
+                Some(rest) => rest.to_string(),
+                None if glyph_bullet => without_bullet(&line).to_string(),
+                None => line,
             },
             kind: if heading {
                 LineKind::Heading
