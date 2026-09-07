@@ -6,8 +6,8 @@
 use std::io::Cursor;
 
 use docx_rs::{
-    AbstractNumbering, Docx, DocxError, IndentLevel, Level, LevelJc, LevelText, NumberFormat,
-    Numbering, NumberingId, Paragraph, Run, Start,
+    AbstractNumbering, Docx, DocxError, Hyperlink, HyperlinkType, IndentLevel, Level, LevelJc,
+    LevelText, NumberFormat, Numbering, NumberingId, Paragraph, Run, Start,
 };
 
 use super::dates::DateFormat;
@@ -199,12 +199,25 @@ fn write_docx_work(mut docx: Docx, work: &[Work], date_format: DateFormat) -> Do
             w.name.clone()
         };
 
-        let mut title_run = Run::new().add_text(role).bold().size(22);
+        let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
+        if !w.url.is_empty() {
+            p = p.add_hyperlink(
+                Hyperlink::new(&w.url, HyperlinkType::External)
+                    .add_run(Run::new().add_text(role).bold().size(22)),
+            );
+        } else {
+            p = p.add_run(Run::new().add_text(role).bold().size(22));
+        }
         if !w.location.is_empty() {
-            title_run = title_run.add_text(format!(" ({})", w.location));
+            p = p.add_run(
+                Run::new()
+                    .add_text(format!(" ({})", w.location))
+                    .bold()
+                    .size(22),
+            );
         }
 
-        docx = docx.add_paragraph(Paragraph::new().add_run(title_run));
+        docx = docx.add_paragraph(p);
 
         let date_str = format_date_range(&w.start_date, &w.end_date, date_format);
         if !date_str.is_empty() {
@@ -241,22 +254,23 @@ fn write_docx_education(mut docx: Docx, edu: &[Education], date_format: DateForm
             e.institution.clone()
         };
 
-        docx = docx.add_paragraph(
-            Paragraph::new()
-                .outline_lvl(ENTRY_OUTLINE_LEVEL)
-                .add_run(Run::new().add_text(heading).bold().size(22)),
-        );
+        let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
+        if !e.url.is_empty() {
+            p = p.add_hyperlink(
+                Hyperlink::new(&e.url, HyperlinkType::External)
+                    .add_run(Run::new().add_text(heading).bold().size(22)),
+            );
+        } else {
+            p = p.add_run(Run::new().add_text(heading).bold().size(22));
+        }
+
+        docx = docx.add_paragraph(p);
 
         let date_str = format_date_range(&e.start_date, &e.end_date, date_format);
         if !date_str.is_empty() {
             docx = docx.add_paragraph(
                 Paragraph::new().add_run(Run::new().add_text(date_str).italic().size(20)),
             );
-        }
-
-        if !e.url.is_empty() {
-            docx =
-                docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(&e.url).size(20)));
         }
 
         for hl in &e.highlights {
@@ -296,7 +310,15 @@ fn write_docx_skills(mut docx: Docx, skills: &[SkillGroup]) -> Docx {
 
 fn write_docx_certificates(mut docx: Docx, certs: &[Certificate], date_format: DateFormat) -> Docx {
     for c in certs {
-        let mut p = Paragraph::new().add_run(Run::new().add_text(&c.name).bold().size(22));
+        let mut p = Paragraph::new();
+        if !c.url.is_empty() {
+            p = p.add_hyperlink(
+                Hyperlink::new(&c.url, HyperlinkType::External)
+                    .add_run(Run::new().add_text(&c.name).bold().size(22)),
+            );
+        } else {
+            p = p.add_run(Run::new().add_text(&c.name).bold().size(22));
+        }
         if !c.issuer.is_empty() {
             p = p.add_run(Run::new().add_text(format!(" — {}", c.issuer)).size(22));
         }
@@ -308,9 +330,6 @@ fn write_docx_certificates(mut docx: Docx, certs: &[Certificate], date_format: D
                     .italic()
                     .size(20),
             );
-        }
-        if !c.url.is_empty() {
-            p = p.add_run(Run::new().add_text(format!(" ({})", c.url)).size(20));
         }
         docx = docx.add_paragraph(p);
     }
@@ -327,11 +346,16 @@ fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], date_format: DateForm
             v.organization.clone()
         };
 
-        docx = docx.add_paragraph(
-            Paragraph::new()
-                .outline_lvl(ENTRY_OUTLINE_LEVEL)
-                .add_run(Run::new().add_text(heading).bold().size(22)),
-        );
+        let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
+        if !v.url.is_empty() {
+            p = p.add_hyperlink(
+                Hyperlink::new(&v.url, HyperlinkType::External)
+                    .add_run(Run::new().add_text(heading).bold().size(22)),
+            );
+        } else {
+            p = p.add_run(Run::new().add_text(heading).bold().size(22));
+        }
+        docx = docx.add_paragraph(p);
 
         let date_str = format_date_range(&v.start_date, &v.end_date, date_format);
         if !date_str.is_empty() {
@@ -369,11 +393,16 @@ fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, date_format: DateFor
     };
 
     if !heading.is_empty() {
-        docx = docx.add_paragraph(
-            Paragraph::new()
-                .outline_lvl(ENTRY_OUTLINE_LEVEL)
-                .add_run(Run::new().add_text(heading).bold().size(22)),
-        );
+        let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
+        if !e.url.is_empty() {
+            p = p.add_hyperlink(
+                Hyperlink::new(&e.url, HyperlinkType::External)
+                    .add_run(Run::new().add_text(heading).bold().size(22)),
+            );
+        } else {
+            p = p.add_run(Run::new().add_text(heading).bold().size(22));
+        }
+        docx = docx.add_paragraph(p);
     }
 
     let date_str = format_date_range(&e.start_date, &e.end_date, date_format);
@@ -381,10 +410,6 @@ fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, date_format: DateFor
         docx = docx.add_paragraph(
             Paragraph::new().add_run(Run::new().add_text(date_str).italic().size(20)),
         );
-    }
-
-    if !e.url.is_empty() {
-        docx = docx.add_paragraph(Paragraph::new().add_run(Run::new().add_text(&e.url).size(20)));
     }
 
     for hl in &e.highlights {
@@ -423,22 +448,30 @@ mod tests {
             let docx_rs::DocumentChild::Paragraph(p) = child else {
                 continue;
             };
-            let text: String = p
-                .children
-                .iter()
-                .filter_map(|c| match c {
-                    docx_rs::ParagraphChild::Run(r) => Some(
-                        r.children
-                            .iter()
-                            .filter_map(|rc| match rc {
-                                docx_rs::RunChild::Text(t) => Some(t.text.clone()),
-                                _ => None,
-                            })
-                            .collect::<String>(),
-                    ),
-                    _ => None,
-                })
-                .collect();
+            let mut text = String::new();
+            for c in &p.children {
+                match c {
+                    docx_rs::ParagraphChild::Run(r) => {
+                        for rc in &r.children {
+                            if let docx_rs::RunChild::Text(t) = rc {
+                                text.push_str(&t.text);
+                            }
+                        }
+                    }
+                    docx_rs::ParagraphChild::Hyperlink(h) => {
+                        for rc in &h.children {
+                            if let docx_rs::ParagraphChild::Run(r) = rc {
+                                for rcc in &r.children {
+                                    if let docx_rs::RunChild::Text(t) = rcc {
+                                        text.push_str(&t.text);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
             all_text.push_str(&text);
             all_text.push('\n');
 

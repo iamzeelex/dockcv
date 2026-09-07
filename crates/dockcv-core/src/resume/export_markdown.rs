@@ -166,18 +166,24 @@ fn write_markdown_work(out: &mut String, work: &[Work], date_format: DateFormat)
             out.push('\n');
         }
         let role = if !w.position.is_empty() && !w.name.is_empty() {
-            format!("### {}, {}", w.position, w.name)
+            format!("{}, {}", w.position, w.name)
         } else if !w.position.is_empty() {
-            format!("### {}", w.position)
+            w.position.clone()
         } else {
-            format!("### {}", w.name)
+            w.name.clone()
         };
 
-        let mut heading = role;
+        let heading = if !w.url.is_empty() {
+            format!("### [{role}]({})", w.url)
+        } else {
+            format!("### {role}")
+        };
+
+        let mut heading_line = heading;
         if !w.location.is_empty() {
-            heading.push_str(&format!(" ({})", w.location));
+            heading_line.push_str(&format!(" ({})", w.location));
         }
-        let _ = writeln!(out, "{heading}");
+        let _ = writeln!(out, "{heading_line}");
 
         let date_str = format_date_range(&w.start_date, &w.end_date, date_format);
         if !date_str.is_empty() {
@@ -203,12 +209,18 @@ fn write_markdown_education(out: &mut String, edu: &[Education], date_format: Da
         if i > 0 {
             out.push('\n');
         }
-        let heading = if !e.study_type.is_empty() && !e.institution.is_empty() {
-            format!("### {}, {}", e.study_type, e.institution)
+        let text = if !e.study_type.is_empty() && !e.institution.is_empty() {
+            format!("{}, {}", e.study_type, e.institution)
         } else if !e.study_type.is_empty() {
-            format!("### {}", e.study_type)
+            e.study_type.clone()
         } else {
-            format!("### {}", e.institution)
+            e.institution.clone()
+        };
+
+        let heading = if !e.url.is_empty() {
+            format!("### [{text}]({})", e.url)
+        } else {
+            format!("### {text}")
         };
 
         let _ = writeln!(out, "{heading}");
@@ -218,10 +230,6 @@ fn write_markdown_education(out: &mut String, edu: &[Education], date_format: Da
             let _ = writeln!(out, "*{date_str}*\n");
         } else {
             out.push('\n');
-        }
-
-        if !e.url.is_empty() {
-            let _ = writeln!(out, "[{}]({})\n", e.url, e.url);
         }
 
         for hl in &e.highlights {
@@ -267,12 +275,18 @@ fn write_markdown_volunteer(out: &mut String, vol: &[Volunteer], date_format: Da
         if i > 0 {
             out.push('\n');
         }
-        let heading = if !v.position.is_empty() && !v.organization.is_empty() {
-            format!("### {}, {}", v.position, v.organization)
+        let text = if !v.position.is_empty() && !v.organization.is_empty() {
+            format!("{}, {}", v.position, v.organization)
         } else if !v.position.is_empty() {
-            format!("### {}", v.position)
+            v.position.clone()
         } else {
-            format!("### {}", v.organization)
+            v.organization.clone()
+        };
+
+        let heading = if !v.url.is_empty() {
+            format!("### [{text}]({})", v.url)
+        } else {
+            format!("### {text}")
         };
 
         let _ = writeln!(out, "{heading}");
@@ -301,15 +315,20 @@ fn write_markdown_custom(out: &mut String, cs: &ComposedCustomSection, date_form
 }
 
 fn write_markdown_custom_entry(out: &mut String, e: &CustomEntry, date_format: DateFormat) {
-    let heading = if !e.title.is_empty() && !e.subtitle.is_empty() {
-        format!("### {} — {}", e.title, e.subtitle)
+    let text = if !e.title.is_empty() && !e.subtitle.is_empty() {
+        format!("{} — {}", e.title, e.subtitle)
     } else if !e.title.is_empty() {
-        format!("### {}", e.title)
+        e.title.clone()
     } else {
-        format!("### {}", e.subtitle)
+        e.subtitle.clone()
     };
 
-    if !heading.is_empty() {
+    if !text.is_empty() {
+        let heading = if !e.url.is_empty() {
+            format!("### [{text}]({})", e.url)
+        } else {
+            format!("### {text}")
+        };
         let _ = writeln!(out, "{heading}");
     }
 
@@ -318,10 +337,6 @@ fn write_markdown_custom_entry(out: &mut String, e: &CustomEntry, date_format: D
         let _ = writeln!(out, "*{date_str}*\n");
     } else {
         out.push('\n');
-    }
-
-    if !e.url.is_empty() {
-        let _ = writeln!(out, "[{}]({})\n", e.url, e.url);
     }
 
     for hl in &e.highlights {
@@ -414,7 +429,9 @@ mod tests {
         assert!(md.contains("### Staff Software Engineer, Tech Corp (Mountain View, CA)"));
         assert!(md.contains("[DockCV](https://dockcv.com)"));
         assert!(md.contains("## Education"));
-        assert!(md.contains("### B.S. in Computer Science, State University"));
+        assert!(
+            md.contains("### [B.S. in Computer Science, State University](https://university.edu)")
+        );
         assert!(md.contains("## Skills"));
         assert!(md.contains("- **Languages:** Rust, C++, Go"));
         assert!(md.contains("## Certifications"));
@@ -422,7 +439,7 @@ mod tests {
         assert!(md.contains("## Organizations"));
         assert!(md.contains("### Core Maintainer, Open Source Collective"));
         assert!(md.contains("## Publications"));
-        assert!(md.contains("### High Performance Storage in Rust — ACM Systems Conference"));
+        assert!(md.contains("### [High Performance Storage in Rust — ACM Systems Conference](https://doi.org/10.1145/example)"));
     }
 
     #[test]

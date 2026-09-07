@@ -80,7 +80,7 @@ mod field_coverage {
         ];
         // The contract, spelled out: adding a variant without adding it here
         // fails, which is the moment to confirm a view draws it.
-        const VARIANTS: [&str; 43] = [
+        const VARIANTS: [&str; 45] = [
             "Name",
             "Label",
             "Summary",
@@ -94,6 +94,7 @@ mod field_coverage {
             "WorkName",
             "WorkPosition",
             "WorkLocation",
+            "WorkUrl",
             "WorkStart",
             "WorkEnd",
             "WorkSummary",
@@ -112,6 +113,7 @@ mod field_coverage {
             "CertUrl",
             "VolOrg",
             "VolPosition",
+            "VolUrl",
             "VolStart",
             "VolEnd",
             "VolHighlight",

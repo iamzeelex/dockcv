@@ -181,6 +181,7 @@ impl Root {
             f.push(self.field(cx, FieldId::WorkName(i), "Company"));
             f.extend(self.date_fields(cx, FieldId::WorkStart(i), FieldId::WorkEnd(i)));
             f.push(self.field(cx, FieldId::WorkLocation(i), "Location"));
+            f.push(self.field(cx, FieldId::WorkUrl(i), "URL"));
             f.push(self.field(cx, FieldId::WorkSummary(i), "Summary"));
             // C-5: one "Highlights" list, not a `Highlight 1`/`Highlight 2`…
             // row each.
@@ -347,6 +348,7 @@ impl Root {
             f.push(self.field(cx, FieldId::VolPosition(i), "Role"));
             f.push(self.field(cx, FieldId::VolOrg(i), "Organization"));
             f.extend(self.date_fields(cx, FieldId::VolStart(i), FieldId::VolEnd(i)));
+            f.push(self.field(cx, FieldId::VolUrl(i), "URL"));
             let highlight_fields: Vec<FieldId> = (0..v.highlights.len())
                 .map(|j| FieldId::VolHighlight(i, j))
                 .collect();

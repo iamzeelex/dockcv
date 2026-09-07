@@ -98,3 +98,4 @@ serde_json = "1.0"
 # here. Dev-only: this crate never touches a file, and `vault.rs` in the binary
 # is what actually reads and writes them.
 toml = "0.8"
+zip = { version = "8", default-features = false }

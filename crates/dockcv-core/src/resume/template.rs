@@ -133,16 +133,31 @@ const RENDERER: &str = r##"
   else { body }
 }
 
+// The small indicator saying there is something to follow.
+//
+// Drawn in Geist explicitly, never in the document's own font: Newsreader and
+// PT Serif lack U+2197, and Typst answers a missing glyph by falling back to
+// system fonts rather than by erroring — exactly the silent substitution L-11
+// was written against. Geist is always bundled and covers it.
+#let link-mark = text(font: "Geist", size: 0.85em, " ↗")
+
 // A dated entry: title, subtitle, and the date/location pair.
 //
 // `trailing` arrives in document order (date, location); `entry-meta-order`
 // decides whether it prints that way. Empty parts are dropped by `meta`, so a
 // job with no location reads the same under either order.
-#let entry(el, title, subtitle, trailing) = {
+#let entry(el, title, subtitle, trailing, url: "") = {
   let ordered = if el.order == "location-first" { trailing.rev() } else { trailing }
-  let head = text(size: size-entry, {
+  let head-inner = {
     text(weight: "bold", title)
     if subtitle != "" { styled(el.subtitle, ", " + subtitle) }
+  }
+  let head = text(size: size-entry, {
+    if url != "" {
+      link(url)[#head-inner#link-mark]
+    } else {
+      head-inner
+    }
   })
   if el.position == "below" {
     // Its own line: the title is never squeezed by a long date range, at the
@@ -186,16 +201,31 @@ const RENDERER: &str = r##"
   })
   v(2pt)
 
-  let links = b.at("profiles", default: ()).map(p => p.at("url", default: ""))
+  let email-item = {
+    let em = b.at("email", default: "")
+    if em != "" { link("mailto:" + em)[#em] } else { none }
+  }
+  let phone-item = {
+    let ph = b.at("phone", default: "")
+    if ph != "" { link("tel:" + ph)[#ph] } else { none }
+  }
+  let url-item = {
+    let u = b.at("url", default: "")
+    if u != "" { link(u)[#u] } else { none }
+  }
+  let profile-items = b.at("profiles", default: ()).map(p => {
+    let u = p.at("url", default: "")
+    if u != "" { link(u)[#u] } else { none }
+  })
   // Empty parts are dropped here rather than in each branch below, so a CV
   // with no phone leaves no gap and no stray separator whichever shape is
   // chosen.
   let details = (
     b.at("location", default: ""),
-    b.at("email", default: ""),
-    b.at("phone", default: ""),
-    b.at("url", default: ""),
-    ..links,
+    email-item,
+    phone-item,
+    url-item,
+    ..profile-items,
   ).filter(x => x != none and x != "")
 
   if details.len() > 0 {
@@ -243,6 +273,7 @@ const RENDERER: &str = r##"
         w.at("name", default: ""),
         (daterange(w.at("startDate", default: ""), w.at("endDate", default: "")),
          w.at("location", default: "")),
+        url: w.at("url", default: ""),
       )
       let s = w.at("summary", default: none)
       if s != none { if el.indent { pad(left: 0.9em, s) } else { s } }
@@ -264,6 +295,7 @@ const RENDERER: &str = r##"
         e.at("studyType", default: ""),
         e.at("institution", default: ""),
         (daterange(e.at("startDate", default: ""), e.at("endDate", default: "")),),
+        url: e.at("url", default: ""),
       )
       let hs = e.at("highlights", default: ())
       if hs.len() > 0 { bullets(el, hs) }
@@ -369,16 +401,17 @@ const RENDERER: &str = r##"
     section("certificates", heading("Certificates", "Certifications"))
     let el = entry-of("certificates")
     for c in certs {
+      let u = c.at("url", default: "")
       entry(
         el,
         c.at("name", default: ""),
         c.at("issuer", default: ""),
         (c.at("date", default: ""),),
+        url: u,
       )
       // The link was stored, saved and editable, and the page never printed
       // it — a value that reaches the model and not the output. Custom
       // sections have shown theirs all along; this is the same line.
-      let u = c.at("url", default: "")
       if u != "" { meta((u,)) }
       v(2pt)
     }
@@ -396,6 +429,7 @@ const RENDERER: &str = r##"
         o.at("position", default: ""),
         o.at("organization", default: ""),
         (daterange(o.at("startDate", default: ""), o.at("endDate", default: "")),),
+        url: o.at("url", default: ""),
       )
       let hs = o.at("highlights", default: ())
       if hs.len() > 0 { bullets(el, hs) }
@@ -421,15 +455,16 @@ const RENDERER: &str = r##"
         section("custom" + str(id), cs.at("title", default: ""))
         let el = entry-of("custom" + str(id))
         for it in items {
+          let u = it.at("url", default: "")
           entry(
             el,
             it.at("title", default: ""),
             it.at("subtitle", default: ""),
             (daterange(it.at("startDate", default: ""), it.at("endDate", default: "")),),
+            url: u,
           )
           let hs = it.at("highlights", default: ())
           if hs.len() > 0 { bullets(el, hs) }
-          let u = it.at("url", default: "")
           if u != "" { meta((u,)) }
           v(3pt)
         }
@@ -797,6 +832,7 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
             field(s, 6, "location", &w.location);
             field(s, 6, "startDate", &w.start_date.display(dates));
             field(s, 6, "endDate", &w.end_date.display(dates));
+            field(s, 6, "url", &w.url);
             content(s, 6, "summary", &w.summary);
             highlights(s, 6, &w.highlights);
             s.push_str("    ),\n");
@@ -859,6 +895,7 @@ fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat) {
             field(s, 6, "position", &v.position);
             field(s, 6, "startDate", &v.start_date.display(dates));
             field(s, 6, "endDate", &v.end_date.display(dates));
+            field(s, 6, "url", &v.url);
             highlights(s, 6, &v.highlights);
             s.push_str("    ),\n");
         }
@@ -1805,6 +1842,7 @@ mod tests {
                     "Cut p99 latency in half.".into(),
                     "Rewrote the ingest.".into(),
                 ],
+                ..Default::default()
             }],
             ..Default::default()
         };
@@ -2219,6 +2257,66 @@ mod tests {
         );
         let engine = crate::typst_engine::TypstEngine::new(source);
         assert!(engine.compile_with_diagnostics(1.0).result.is_ok());
+    }
+
+    /// G1: Work and Volunteer entries can carry a URL, serialized into the
+    /// Typst dict and rendered with a followable indicator mark `↗` styled in Geist.
+    #[test]
+    fn entry_links_reach_the_page_and_render_indicator() {
+        use crate::resume::model::{Education, Resume, Volunteer, Work};
+
+        let resume = Resume {
+            work: vec![Work {
+                name: "Acme Corp".into(),
+                position: "Senior Engineer".into(),
+                url: "https://acme.example.com".into(),
+                ..Default::default()
+            }],
+            education: vec![Education {
+                institution: "MIT".into(),
+                study_type: "B.S.".into(),
+                url: "https://mit.edu".into(),
+                ..Default::default()
+            }],
+            volunteer: vec![Volunteer {
+                organization: "Red Cross".into(),
+                position: "Volunteer".into(),
+                url: "https://redcross.org".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let source = generate(&resume);
+        assert!(
+            source.contains(r#"url: "https://acme.example.com""#),
+            "work url was not serialized"
+        );
+        assert!(
+            source.contains(r#"url: "https://mit.edu""#),
+            "education url was not serialized"
+        );
+        assert!(
+            source.contains(r#"url: "https://redcross.org""#),
+            "volunteer url was not serialized"
+        );
+
+        assert!(
+            RENDERER.contains(r#"#let link-mark = text(font: "Geist", size: 0.85em, " ↗")"#),
+            "renderer must define link-mark using Geist font"
+        );
+        assert!(
+            RENDERER.contains("link(url)[#head-inner#link-mark]"),
+            "entry must wrap heading with link(url) and link-mark"
+        );
+
+        let engine = crate::typst_engine::TypstEngine::new(source);
+        let report = engine.compile_with_diagnostics(1.0);
+        assert!(
+            report.result.is_ok(),
+            "document with links must compile: {:?}",
+            report.diagnostics
+        );
     }
 
     #[test]

@@ -330,6 +330,7 @@ pub(super) fn apply(
                 start_date: at(2).into(),
                 end_date: at(3).into(),
                 highlights: split(&at(4)),
+                ..Default::default()
             },
         ),
         SectionKind::Profile | SectionKind::Custom(_) => return false,

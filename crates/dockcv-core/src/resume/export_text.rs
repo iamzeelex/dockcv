@@ -183,6 +183,9 @@ fn write_work_section(out: &mut String, work: &[Work], date_format: DateFormat) 
         if !w.location.is_empty() {
             line.push_str(&format!(" ({})", w.location));
         }
+        if !w.url.is_empty() {
+            line.push_str(&format!(" ({})", w.url));
+        }
         write_wrapped(out, &line, 0, 0);
 
         let date_str = format_date_range(&w.start_date, &w.end_date, date_format);
@@ -207,23 +210,22 @@ fn write_education_section(out: &mut String, edu: &[Education], date_format: Dat
         if i > 0 {
             out.push('\n');
         }
-        let heading = if !e.study_type.is_empty() && !e.institution.is_empty() {
+        let mut heading = if !e.study_type.is_empty() && !e.institution.is_empty() {
             format!("{}, {}", e.study_type, e.institution)
         } else if !e.study_type.is_empty() {
             e.study_type.clone()
         } else {
             e.institution.clone()
         };
+        if !e.url.is_empty() {
+            heading.push_str(&format!(" ({})", e.url));
+        }
 
         write_wrapped(out, &heading, 0, 0);
 
         let date_str = format_date_range(&e.start_date, &e.end_date, date_format);
         if !date_str.is_empty() {
             let _ = writeln!(out, "{date_str}");
-        }
-
-        if !e.url.is_empty() {
-            let _ = writeln!(out, "{}", e.url);
         }
 
         for hl in &e.highlights {
@@ -258,10 +260,10 @@ fn write_certificates_section(out: &mut String, certs: &[Certificate], date_form
         if !date_str.is_empty() {
             line.push_str(&format!(" ({date_str})"));
         }
-        write_wrapped(out, &line, 0, 0);
         if !c.url.is_empty() {
-            let _ = writeln!(out, "  {}", c.url);
+            line.push_str(&format!(" ({})", c.url));
         }
+        write_wrapped(out, &line, 0, 0);
     }
 }
 
@@ -270,13 +272,16 @@ fn write_volunteer_section(out: &mut String, vol: &[Volunteer], date_format: Dat
         if i > 0 {
             out.push('\n');
         }
-        let heading = if !v.position.is_empty() && !v.organization.is_empty() {
+        let mut heading = if !v.position.is_empty() && !v.organization.is_empty() {
             format!("{}, {}", v.position, v.organization)
         } else if !v.position.is_empty() {
             v.position.clone()
         } else {
             v.organization.clone()
         };
+        if !v.url.is_empty() {
+            heading.push_str(&format!(" ({})", v.url));
+        }
 
         write_wrapped(out, &heading, 0, 0);
 
@@ -302,13 +307,16 @@ fn write_custom_section(out: &mut String, cs: &ComposedCustomSection, date_forma
 }
 
 fn write_custom_entry(out: &mut String, e: &CustomEntry, date_format: DateFormat) {
-    let heading = if !e.title.is_empty() && !e.subtitle.is_empty() {
+    let mut heading = if !e.title.is_empty() && !e.subtitle.is_empty() {
         format!("{} - {}", e.title, e.subtitle)
     } else if !e.title.is_empty() {
         e.title.clone()
     } else {
         e.subtitle.clone()
     };
+    if !e.url.is_empty() {
+        heading.push_str(&format!(" ({})", e.url));
+    }
 
     if !heading.is_empty() {
         write_wrapped(out, &heading, 0, 0);
@@ -317,10 +325,6 @@ fn write_custom_entry(out: &mut String, e: &CustomEntry, date_format: DateFormat
     let date_str = format_date_range(&e.start_date, &e.end_date, date_format);
     if !date_str.is_empty() {
         let _ = writeln!(out, "{date_str}");
-    }
-
-    if !e.url.is_empty() {
-        let _ = writeln!(out, "{}", e.url);
     }
 
     for hl in &e.highlights {

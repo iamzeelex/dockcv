@@ -405,6 +405,7 @@ fn read_volunteering(t: &Table) -> Vec<Volunteer> {
                 start_date: t.get(row, "Started On").into(),
                 end_date: t.get(row, "Finished On").into(),
                 highlights,
+                ..Default::default()
             }
         })
         .filter(|v| !(v.organization.is_empty() && v.position.is_empty()))

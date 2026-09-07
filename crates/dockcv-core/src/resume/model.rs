@@ -74,6 +74,9 @@ pub struct Work {
     pub location: String,
     pub start_date: ResumeDate,
     pub end_date: ResumeDate,
+    /// Optional employer or project URL.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub url: String,
     /// Optional one-line summary (Typst markup).
     pub summary: String,
     /// Bullet points (Typst markup each).
@@ -115,6 +118,9 @@ pub struct Volunteer {
     pub position: String,
     pub start_date: ResumeDate,
     pub end_date: ResumeDate,
+    /// Optional organization or initiative URL.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub url: String,
     pub highlights: Vec<String>,
 }
 

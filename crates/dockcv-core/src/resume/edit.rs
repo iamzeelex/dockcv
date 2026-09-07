@@ -30,6 +30,7 @@ pub enum FieldId {
     WorkLocation(usize),
     WorkStart(usize),
     WorkEnd(usize),
+    WorkUrl(usize),
     WorkSummary(usize),
     WorkHighlight(usize, usize),
     // education[i]
@@ -56,6 +57,7 @@ pub enum FieldId {
     VolPosition(usize),
     VolStart(usize),
     VolEnd(usize),
+    VolUrl(usize),
     VolHighlight(usize, usize),
     // custom_sections (D-9): the section's own title, plus its entries.
     CustomSectionTitle(CustomSectionId),
@@ -107,6 +109,7 @@ impl FieldId {
             | WorkLocation(_)
             | WorkStart(_)
             | WorkEnd(_)
+            | WorkUrl(_)
             | WorkSummary(_)
             | WorkHighlight(_, _) => SectionKind::Work,
             EduInstitution(_)
@@ -117,9 +120,12 @@ impl FieldId {
             | EduHighlight(_, _) => SectionKind::Education,
             SkillName(_) | SkillKeyword(_, _) => SectionKind::Skills,
             CertName(_) | CertIssuer(_) | CertDate(_) | CertUrl(_) => SectionKind::Certificates,
-            VolOrg(_) | VolPosition(_) | VolStart(_) | VolEnd(_) | VolHighlight(_, _) => {
-                SectionKind::Organizations
-            }
+            VolOrg(_)
+            | VolPosition(_)
+            | VolStart(_)
+            | VolEnd(_)
+            | VolUrl(_)
+            | VolHighlight(_, _) => SectionKind::Organizations,
             CustomSectionTitle(id)
             | CustomEntryTitle(id, _)
             | CustomEntrySubtitle(id, _)
@@ -152,6 +158,7 @@ impl FieldId {
                 WorkLocation(i),
                 WorkStart(i),
                 WorkEnd(i),
+                WorkUrl(i),
                 WorkSummary(i),
             ]);
             out.extend((0..work.highlights.len()).map(|j| WorkHighlight(i, j)));
@@ -176,7 +183,7 @@ impl FieldId {
             out.extend([CertName(i), CertIssuer(i), CertDate(i), CertUrl(i)]);
         }
         for (i, entry) in doc.volunteer.active().iter().enumerate() {
-            out.extend([VolPosition(i), VolOrg(i), VolStart(i), VolEnd(i)]);
+            out.extend([VolPosition(i), VolOrg(i), VolStart(i), VolEnd(i), VolUrl(i)]);
             out.extend((0..entry.highlights.len()).map(|j| VolHighlight(i, j)));
         }
         for section in &doc.custom_sections {
@@ -224,6 +231,7 @@ impl FieldId {
             WorkLocation(i) => &doc.work.active().get(i)?.location,
             WorkStart(i) => &doc.work.active().get(i)?.start_date.text,
             WorkEnd(i) => &doc.work.active().get(i)?.end_date.text,
+            WorkUrl(i) => &doc.work.active().get(i)?.url,
             WorkSummary(i) => &doc.work.active().get(i)?.summary,
             WorkHighlight(i, j) => doc.work.active().get(i)?.highlights.get(j)?,
             EduInstitution(i) => &doc.education.active().get(i)?.institution,
@@ -242,6 +250,7 @@ impl FieldId {
             VolPosition(i) => &doc.volunteer.active().get(i)?.position,
             VolStart(i) => &doc.volunteer.active().get(i)?.start_date.text,
             VolEnd(i) => &doc.volunteer.active().get(i)?.end_date.text,
+            VolUrl(i) => &doc.volunteer.active().get(i)?.url,
             VolHighlight(i, j) => doc.volunteer.active().get(i)?.highlights.get(j)?,
             CustomSectionTitle(id) => &doc.custom_section(id)?.title,
             CustomEntryTitle(id, i) => &doc.custom_section(id)?.content.active().get(i)?.title,
@@ -295,6 +304,7 @@ impl FieldId {
             WorkLocation(i) => &mut doc.work.active_mut().get_mut(i)?.location,
             WorkStart(i) => &mut doc.work.active_mut().get_mut(i)?.start_date.text,
             WorkEnd(i) => &mut doc.work.active_mut().get_mut(i)?.end_date.text,
+            WorkUrl(i) => &mut doc.work.active_mut().get_mut(i)?.url,
             WorkSummary(i) => &mut doc.work.active_mut().get_mut(i)?.summary,
             WorkHighlight(i, j) => doc.work.active_mut().get_mut(i)?.highlights.get_mut(j)?,
             EduInstitution(i) => &mut doc.education.active_mut().get_mut(i)?.institution,
@@ -318,6 +328,7 @@ impl FieldId {
             VolPosition(i) => &mut doc.volunteer.active_mut().get_mut(i)?.position,
             VolStart(i) => &mut doc.volunteer.active_mut().get_mut(i)?.start_date.text,
             VolEnd(i) => &mut doc.volunteer.active_mut().get_mut(i)?.end_date.text,
+            VolUrl(i) => &mut doc.volunteer.active_mut().get_mut(i)?.url,
             VolHighlight(i, j) => doc
                 .volunteer
                 .active_mut()

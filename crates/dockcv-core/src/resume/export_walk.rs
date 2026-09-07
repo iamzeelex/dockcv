@@ -124,6 +124,7 @@ pub(crate) fn sample_resume() -> super::model::Resume {
             name: "Tech Corp".into(),
             position: "Staff Software Engineer".into(),
             location: "Mountain View, CA".into(),
+            url: String::new(),
             start_date: ResumeDate::new("2021-03-01"),
             end_date: ResumeDate::new("2024-01-01"),
             summary: "Lead storage engine architecture.".into(),
@@ -156,6 +157,7 @@ pub(crate) fn sample_resume() -> super::model::Resume {
         volunteer: vec![Volunteer {
             organization: "Open Source Collective".into(),
             position: "Core Maintainer".into(),
+            url: String::new(),
             start_date: ResumeDate::new("2020-01-01"),
             end_date: ResumeDate::new("2023-01-01"),
             highlights: vec!["Maintain networking libraries.".into()],
@@ -295,17 +297,175 @@ mod tests {
         for child in docx.document.children {
             if let docx_rs::DocumentChild::Paragraph(p) = child {
                 for p_child in p.children {
-                    if let docx_rs::ParagraphChild::Run(r) = p_child {
-                        for r_child in r.children {
-                            if let docx_rs::RunChild::Text(t) = r_child {
-                                out.push_str(&t.text);
+                    match p_child {
+                        docx_rs::ParagraphChild::Run(r) => {
+                            for r_child in r.children {
+                                if let docx_rs::RunChild::Text(t) = r_child {
+                                    out.push_str(&t.text);
+                                }
                             }
                         }
+                        docx_rs::ParagraphChild::Hyperlink(h) => {
+                            for h_child in h.children {
+                                if let docx_rs::ParagraphChild::Run(r) = h_child {
+                                    for r_child in r.children {
+                                        if let docx_rs::RunChild::Text(t) = r_child {
+                                            out.push_str(&t.text);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 out.push('\n');
             }
         }
         out
+    }
+
+    /// G1: Every Track A exporter formats entry links according to its own idiom:
+    /// - Plain text: appends `(url)` to the entry heading
+    /// - Markdown: formats heading as `### [Title](url)`
+    /// - DOCX: writes an interactive Hyperlink run for the heading
+    /// - JSON Resume: preserves `url` on Work and Volunteer entries
+    /// - Typst: generates `#link(url)[#head#link-mark]`
+    #[test]
+    fn entry_links_reach_all_track_a_exporters_in_their_own_idiom() {
+        let mut resume = sample_resume();
+        resume.work[0].url = "https://techcorp.example.com".into();
+        resume.volunteer[0].url = "https://opensource.example.org".into();
+
+        // 1. Plain Text: heading (url)
+        let text = crate::resume::export_text::export_plain_text(&resume);
+        assert!(
+            text.contains("Staff Software Engineer, Tech Corp (Mountain View, CA)")
+                && text.contains("techcorp.example.com"),
+            "Plain text must include work url in parentheses after heading, got:\n{text}"
+        );
+        assert!(
+            text.contains("B.S. in Computer Science, State University (https://university.edu)"),
+            "Plain text must include education url in parentheses after heading, got:\n{text}"
+        );
+        assert!(
+            text.contains(
+                "Core Maintainer, Open Source Collective (https://opensource.example.org)"
+            ),
+            "Plain text must include volunteer url in parentheses after heading, got:\n{text}"
+        );
+
+        // 2. Markdown: ### [Heading](url)
+        let md = crate::resume::export_markdown::export_markdown(&resume);
+        assert!(
+            md.contains("### [Staff Software Engineer, Tech Corp](https://techcorp.example.com) (Mountain View, CA)"),
+            "Markdown must format work heading as inline link, got:\n{md}"
+        );
+        assert!(
+            md.contains("### [B.S. in Computer Science, State University](https://university.edu)"),
+            "Markdown must format education heading as inline link, got:\n{md}"
+        );
+        assert!(
+            md.contains(
+                "### [Core Maintainer, Open Source Collective](https://opensource.example.org)"
+            ),
+            "Markdown must format volunteer heading as inline link, got:\n{md}"
+        );
+
+        // 3. DOCX: contains text and links
+        #[cfg(feature = "docx")]
+        {
+            let docx_bytes = crate::resume::export_docx::export_docx(&resume).expect("docx export");
+            let read = docx_rs::read_docx(&docx_bytes).expect("docx read");
+            let mut hyperlink_texts: Vec<String> = Vec::new();
+            for child in read.document.children {
+                if let docx_rs::DocumentChild::Paragraph(p) = child {
+                    for pc in p.children {
+                        if let docx_rs::ParagraphChild::Hyperlink(h) = pc {
+                            let mut text = String::new();
+                            for hc in &h.children {
+                                if let docx_rs::ParagraphChild::Run(r) = hc {
+                                    for rc in &r.children {
+                                        if let docx_rs::RunChild::Text(t) = rc {
+                                            text.push_str(&t.text);
+                                        }
+                                    }
+                                }
+                            }
+                            hyperlink_texts.push(text);
+                        }
+                    }
+                }
+            }
+            assert!(
+                hyperlink_texts
+                    .iter()
+                    .any(|t| t.contains("Staff Software Engineer, Tech Corp")),
+                "DOCX must contain work heading as hyperlink: {hyperlink_texts:?}"
+            );
+            assert!(
+                hyperlink_texts
+                    .iter()
+                    .any(|t| t.contains("State University")),
+                "DOCX must contain education heading as hyperlink: {hyperlink_texts:?}"
+            );
+            assert!(
+                hyperlink_texts
+                    .iter()
+                    .any(|t| t.contains("Open Source Collective")),
+                "DOCX must contain volunteer heading as hyperlink: {hyperlink_texts:?}"
+            );
+
+            // Verify the actual external URLs are stored in the Word relationship parts:
+            let mut archive =
+                zip::ZipArchive::new(std::io::Cursor::new(&docx_bytes)).expect("docx zip archive");
+            let mut rels = String::new();
+            std::io::Read::read_to_string(
+                &mut archive
+                    .by_name("word/_rels/document.xml.rels")
+                    .expect("docx rels"),
+                &mut rels,
+            )
+            .expect("read rels");
+            assert!(
+                rels.contains("techcorp.example.com"),
+                "DOCX rels must contain work url target"
+            );
+            assert!(
+                rels.contains("university.edu"),
+                "DOCX rels must contain education url target"
+            );
+            assert!(
+                rels.contains("opensource.example.org"),
+                "DOCX rels must contain volunteer url target"
+            );
+        }
+
+        // 4. JSON Resume: exports work and volunteer url
+        let json_resume =
+            crate::resume::export_json_resume::export_json_resume(&resume).expect("json resume");
+        assert!(
+            json_resume.contains("https://techcorp.example.com"),
+            "JSON Resume must contain work url"
+        );
+        assert!(
+            json_resume.contains("https://opensource.example.org"),
+            "JSON Resume must contain volunteer url"
+        );
+
+        // 5. Typst: contains url and link-mark
+        let typst_src = crate::resume::template::generate(&resume);
+        assert!(
+            typst_src.contains(r#"url: "https://techcorp.example.com""#),
+            "Typst dict must contain work url"
+        );
+        assert!(
+            typst_src.contains(r#"#let link-mark = text(font: "Geist", size: 0.85em, " ↗")"#),
+            "Typst template must contain link-mark"
+        );
+        assert!(
+            typst_src.contains("link(url)[#head-inner#link-mark]"),
+            "Typst entry must wrap with link(url)"
+        );
     }
 }

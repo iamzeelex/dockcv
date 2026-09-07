@@ -1790,6 +1790,7 @@ dependencies = [
  "typst-svg",
  "unicode-segmentation",
  "unicode-width",
+ "zip",
 ]
 
 [[package]]

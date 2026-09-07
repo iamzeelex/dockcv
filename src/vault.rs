@@ -836,6 +836,67 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// G1: Work and Volunteer urls round-trip cleanly, and empty URLs are omitted
+    /// from TOML serialization to preserve clean, diffable files.
+    #[test]
+    fn entry_urls_round_trip_cleanly_through_toml() {
+        use crate::resume::model::{Resume, ResumeDoc, Volunteer, Work};
+
+        let resume = Resume {
+            work: vec![
+                Work {
+                    name: "Acme Corp".into(),
+                    position: "Senior Engineer".into(),
+                    url: "https://acme.example.com".into(),
+                    ..Default::default()
+                },
+                Work {
+                    name: "Beta Inc".into(),
+                    position: "Junior Engineer".into(),
+                    url: String::new(),
+                    ..Default::default()
+                },
+            ],
+            volunteer: vec![Volunteer {
+                organization: "Open Source".into(),
+                position: "Maintainer".into(),
+                url: "https://oss.example.org".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let doc = ResumeDoc::from_resume(resume, "Base");
+
+        let toml_str = super::to_toml(&doc).expect("serializes to toml");
+        assert!(
+            toml_str.contains("url = \"https://acme.example.com\""),
+            "non-empty work url must be serialized in TOML"
+        );
+        assert!(
+            toml_str.contains("url = \"https://oss.example.org\""),
+            "non-empty volunteer url must be serialized in TOML"
+        );
+
+        // Empty URL on Beta Inc must NOT be serialized as `url = ""`
+        let beta_block = toml_str
+            .split("[[work.variants.data]]")
+            .find(|b| b.contains("Beta Inc"))
+            .expect("Beta Inc block");
+        let beta_entry = beta_block.split("\n[").next().unwrap();
+        assert!(
+            !beta_entry.contains("url ="),
+            "empty url must be skipped when serializing TOML, got:\n{beta_entry}"
+        );
+
+        let loaded: ResumeDoc = toml::from_str(&toml_str).expect("deserializes from toml");
+        let work = loaded.work.active();
+        assert_eq!(work[0].url, "https://acme.example.com");
+        assert_eq!(work[1].url, "");
+        let vol = loaded.volunteer.active();
+        assert_eq!(vol[0].url, "https://oss.example.org");
+    }
+
     /// The trash exists to make deletion reversible, so a delete must never
     /// destroy something already in it. `fs::rename` replaces the destination
     /// silently on Unix, so this was a real way to lose a document permanently

@@ -398,7 +398,7 @@ fn convert_work(w: &CoreWork) -> SchemaWork {
     SchemaWork {
         name: w.name.clone(),
         position: w.position.clone(),
-        url: String::new(),
+        url: w.url.clone(),
         start_date: w.start_date.text.clone(),
         end_date: w.end_date.text.clone(),
         summary: strip_typst_markup(&w.summary),
@@ -411,7 +411,7 @@ fn convert_volunteer(v: &CoreVol) -> SchemaVolunteer {
     SchemaVolunteer {
         organization: v.organization.clone(),
         position: v.position.clone(),
-        url: String::new(),
+        url: v.url.clone(),
         start_date: v.start_date.text.clone(),
         end_date: v.end_date.text.clone(),
         summary: String::new(),

@@ -143,6 +143,7 @@ struct Work_ {
 struct Volunteer_ {
     organization: String,
     position: String,
+    url: String,
     start_date: String,
     end_date: String,
     summary: String,
@@ -276,13 +277,11 @@ impl JsonResume {
                 name: w.name,
                 position: w.position,
                 location: w.location,
+                url: w.url,
                 start_date: w.start_date.into(),
                 end_date: w.end_date.into(),
                 summary: w.summary,
-                // `Work` has no url field. The employer's site is not lost —
-                // it goes to the head of the bullets, where the entry's own
-                // prose already lives.
-                highlights: prepend_summary(w.url, w.highlights),
+                highlights: w.highlights,
             })
             .collect();
 
@@ -292,6 +291,7 @@ impl JsonResume {
             .map(|v| Volunteer {
                 organization: v.organization,
                 position: v.position,
+                url: v.url,
                 start_date: v.start_date.into(),
                 end_date: v.end_date.into(),
                 // The spec gives a volunteer entry both a summary and
@@ -682,6 +682,7 @@ mod tests {
         for (b, a) in jobs_before.iter().zip(jobs_after) {
             assert_eq!(a.name, b.name);
             assert_eq!(a.position, b.position);
+            assert_eq!(a.url, b.url, "job url");
             assert_eq!(a.start_date.text, b.start_date.text, "job start date");
             assert_eq!(a.end_date.text, b.end_date.text, "job end date");
             assert_eq!(a.summary, b.summary);
@@ -720,6 +721,7 @@ mod tests {
         for (b, a) in vol_before.iter().zip(vol_after) {
             assert_eq!(a.organization, b.organization);
             assert_eq!(a.position, b.position);
+            assert_eq!(a.url, b.url, "volunteer url");
             assert_eq!(a.start_date.text, b.start_date.text, "volunteer start date");
         }
 

@@ -1112,11 +1112,12 @@ mod font_tests {
         ];
 
         // Latin with the accents a European CV carries; Ukrainian, which needs
+        // Latin with the accents a European CV carries; Ukrainian, which needs
         // the four letters Russian does not have; and the punctuation the
-        // template and the package emit — `–` `—` `…` `•` `·` `§` `©` `→` `≈`.
+        // template and the package emit — `–` `—` `…` `•` `·` `§` `©` `→` `≈` `↗`.
         const REPERTOIRE: &str = "AZaz09 éòäûüñçßÅØ ĀŁŐ \
                                   Софія Медведенко ЄІЇҐ ЁЪЫЭ \
-                                  –—…•·§©→≈×±≤≥ €₴ №";
+                                  –—…•·§©→≈×±≤≥ €₴ № ↗";
 
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -1153,6 +1154,80 @@ mod font_tests {
                  silently set them in another face"
             );
         }
+    }
+
+    /// G1: The followable mark `↗` (U+2197) is drawn in Geist, because Newsreader
+    /// and PT Serif lack it and Typst falls back silently.
+    /// Geist must cover U+2197 in both desktop and web subsets.
+    #[test]
+    fn link_mark_glyph_is_present_in_bundled_font() {
+        let engine = TypstEngine::new(String::new());
+        let geist_faces: Vec<&Font> = engine
+            .fonts
+            .iter()
+            .filter(|f| f.info().family.to_lowercase().contains("geist"))
+            .collect();
+        assert!(
+            !geist_faces.is_empty(),
+            "Geist font must be loaded in TypstEngine"
+        );
+        for face in geist_faces {
+            assert!(
+                face.info().coverage.contains('↗' as u32),
+                "Geist face {:?} lacks U+2197 (↗)",
+                face.info().family
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "pdf")]
+    fn compiled_pdf_contains_interactive_links_for_entries_and_contacts() {
+        use crate::resume::model::{Basics, NetworkProfile, Resume, Work};
+        use crate::resume::template;
+
+        let resume = Resume {
+            basics: Basics {
+                name: "Ada Lovelace".into(),
+                email: "ada@example.com".into(),
+                url: "https://ada.example.com".into(),
+                profiles: vec![NetworkProfile {
+                    network: "GitHub".into(),
+                    username: "adalove".into(),
+                    url: "https://github.com/adalove".into(),
+                }],
+                ..Default::default()
+            },
+            work: vec![Work {
+                name: "Babbage Engines".into(),
+                position: "Analyst".into(),
+                url: "https://analytical-engine.org".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let source = template::generate(&resume);
+        let engine = TypstEngine::new(source);
+        let pdf = engine.compile_to_pdf().expect("compile to pdf");
+        let pdf_str = String::from_utf8_lossy(&pdf);
+
+        assert!(
+            pdf_str.contains("/Subtype /Link") || pdf_str.contains("/Subtype/Link"),
+            "PDF must contain link annotations"
+        );
+        assert!(
+            pdf_str.contains("analytical-engine.org"),
+            "PDF must contain entry link target"
+        );
+        assert!(
+            pdf_str.contains("ada@example.com"),
+            "PDF must contain email link"
+        );
+        assert!(
+            pdf_str.contains("github.com/adalove"),
+            "PDF must contain profile link"
+        );
     }
 
     /// The overflow chip does arithmetic on these numbers, so a non-finite
