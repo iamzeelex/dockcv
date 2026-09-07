@@ -64,12 +64,143 @@ pub fn import_pdf(path: &Path) -> Result<ImportedDoc, ImportError> {
 /// handed a path and returns an owned `String` — so `AssertUnwindSafe` is
 /// carrying a fact here, not a hope.
 fn extract_text(path: &Path) -> Result<String, String> {
-    match catch_unwind(AssertUnwindSafe(|| pdf_extract::extract_text(path))) {
+    match catch_unwind(AssertUnwindSafe(|| read_pages(path))) {
         Ok(result) => result.map_err(|e| format!("Could not read this PDF: {e}")),
         Err(_) => Err("This PDF uses a construct the reader can't handle. \
              Try exporting it again as PDF from the original app, or import \
              the DOCX instead."
             .to_string()),
+    }
+}
+
+fn read_pages(path: &Path) -> Result<String, pdf_extract::OutputError> {
+    let mut doc = pdf_extract::Document::load(path)?;
+    if doc.is_encrypted() {
+        // An empty password is what an owner-password-only document opens
+        // with, which is most of the "protected" CVs people are sent.
+        doc.decrypt("")
+            .map_err(pdf_extract::OutputError::PdfError)?;
+    }
+    let mut lines = Lines::default();
+    pdf_extract::output_doc(&doc, &mut lines)?;
+    Ok(lines.text)
+}
+
+/// The text of a page, with its lines taken from the **baseline**.
+///
+/// `pdf_extract::PlainTextOutput` decides where a line ends mostly from
+/// horizontal motion: it breaks when the pen moves back to the left of where
+/// the last glyph ended. That needs the glyph widths, and it reads zero for the
+/// subset CID fonts Typst writes — so "where the last glyph ended" collapses to
+/// where it *began*, and a heading set flush left never breaks from the
+/// paragraph beneath it, which starts at the same x. Every DockCV CV with
+/// left-aligned headings came out of its own PDF as
+/// `ProfileEngineer turned engineering lead`, with the section boundary gone
+/// and the document behind it: one section, no work history.
+///
+/// A baseline cannot be got wrong the same way. Two glyphs on the same baseline
+/// are on the same line whatever the widths say, and a new baseline is a new
+/// line. Horizontal position is still read, but only for the one thing it is
+/// needed for — telling a gap the producer left instead of a space character
+/// from the ordinary advance between two letters.
+#[derive(Default)]
+struct Lines {
+    text: String,
+    /// Flips PDF's upward y so that "down the page" is increasing.
+    flip: pdf_extract::Transform,
+    /// Baseline and pen position of the glyph before this one.
+    last_y: f64,
+    last_x: f64,
+    /// Where the last glyph could have ended, when its width was legible.
+    last_end: f64,
+    started: bool,
+}
+
+impl Lines {
+    /// A baseline this far from the last one is a new line, measured in the
+    /// current font's size. Line leading is at least one whole size; a
+    /// superscript rises by about a third of one. Half separates them.
+    const NEW_LINE: f64 = 0.5;
+    /// And a pen this far past the end of the last glyph skipped something —
+    /// a producer that positions its words instead of writing spaces.
+    const GAP: f64 = 0.25;
+}
+
+impl pdf_extract::OutputDev for Lines {
+    fn begin_page(
+        &mut self,
+        _page: u32,
+        media_box: &pdf_extract::MediaBox,
+        _art_box: Option<(f64, f64, f64, f64)>,
+    ) -> Result<(), pdf_extract::OutputError> {
+        self.flip =
+            pdf_extract::Transform::row_major(1., 0., 0., -1., 0., media_box.ury - media_box.lly);
+        // A page starts a line, and never continues the one the page before it
+        // ended on.
+        if self.started {
+            self.text.push('\n');
+        }
+        self.started = false;
+        Ok(())
+    }
+
+    fn end_page(&mut self) -> Result<(), pdf_extract::OutputError> {
+        Ok(())
+    }
+
+    fn output_character(
+        &mut self,
+        trm: &pdf_extract::Transform,
+        width: f64,
+        _spacing: f64,
+        font_size: f64,
+        glyph: &str,
+    ) -> Result<(), pdf_extract::OutputError> {
+        let position = trm.post_transform(&self.flip);
+        let (x, y) = (position.m31, position.m32);
+        // The size the glyph is actually drawn at, text matrix included.
+        let scale = (trm.m11 * trm.m22 - trm.m12 * trm.m21).abs().sqrt();
+        let size = if scale > 0.0 {
+            scale * font_size
+        } else {
+            font_size
+        };
+
+        if self.started {
+            if (y - self.last_y).abs() > size * Self::NEW_LINE {
+                self.text.push('\n');
+            } else if x > self.last_end + size * Self::GAP
+                && !glyph.starts_with(char::is_whitespace)
+                && !self.text.ends_with(char::is_whitespace)
+            {
+                // Only where there is not a space there already: a document
+                // whose widths read as zero reports a gap between every pair of
+                // words, and doubling the space it already wrote turned
+                // `Copenhagen, Denmark` into `Copenhagen,  Denmark`.
+                self.text.push(' ');
+            }
+        }
+
+        self.text.push_str(glyph);
+        self.started = true;
+        self.last_y = y;
+        self.last_x = x;
+        // Zero is not a width, it is a width we could not read; fall back to
+        // the pen position so the gap test compares like with like.
+        self.last_end = if width > 0.0 { x + width * size } else { x };
+        Ok(())
+    }
+
+    fn begin_word(&mut self) -> Result<(), pdf_extract::OutputError> {
+        Ok(())
+    }
+
+    fn end_word(&mut self) -> Result<(), pdf_extract::OutputError> {
+        Ok(())
+    }
+
+    fn end_line(&mut self) -> Result<(), pdf_extract::OutputError> {
+        Ok(())
     }
 }
 
@@ -105,6 +236,76 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&file);
+    }
+
+    /// A heading set flush left is still a line of its own.
+    ///
+    /// `pdf_extract`'s own reader ends a line when the pen moves back to the
+    /// left of where the last glyph ended, and it reads the glyph widths of a
+    /// Typst subset font as zero — so "where the last glyph ended" becomes
+    /// "where it began", and a heading at the same x as the paragraph under it
+    /// never breaks from it. Every DockCV CV with left-aligned headings came
+    /// back as `PROFILEEngineer turned engineering lead`, with the section
+    /// boundaries gone and the whole document in one section behind them.
+    ///
+    /// `rule-to-margin` is the style that is *always* flush left, whatever the
+    /// alignment says, so it is the one asserted here.
+    #[test]
+    fn a_left_aligned_heading_is_a_line_of_its_own() {
+        use crate::resume::model::{
+            Basics, HeadingLayout, HeadingStyle, LayoutSettings, Resume, ResumeDate, Work,
+        };
+        use crate::resume::template;
+        use crate::typst_engine::TypstEngine;
+
+        let resume = Resume {
+            basics: Basics {
+                name: "Albert Einstein".into(),
+                summary: "Physicist, latterly of Princeton, with a long-standing interest in \
+                          the photoelectric effect and in gravitation."
+                    .into(),
+                ..Default::default()
+            },
+            work: vec![Work {
+                name: "Patent Office".into(),
+                position: "Examiner".into(),
+                start_date: ResumeDate::new("1902-06"),
+                end_date: ResumeDate::new("1909-10"),
+                highlights: vec!["Reviewed applications for electromechanical devices.".into()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let layout = LayoutSettings {
+            headings: HeadingLayout {
+                style: HeadingStyle::RuleToMargin,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let source = template::generate_with_layout(&resume, &layout);
+        let bytes = TypstEngine::new(source)
+            .compile_to_pdf()
+            .expect("the document compiles");
+
+        let dir = std::env::temp_dir().join(format!("dockcv-pdf-heading-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let file = dir.join("left.pdf");
+        std::fs::write(&file, bytes).expect("write");
+        let text = extract_text(&file).expect("extraction succeeds");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        for heading in ["PROFILE", "WORK EXPERIENCE"] {
+            assert!(
+                text.lines().any(|l| l.trim() == heading),
+                "{heading:?} is not on a line of its own; got:\n{text}"
+            );
+        }
+        assert!(
+            !text.contains("PROFILEPhysicist"),
+            "the heading was fused to the paragraph under it:\n{text}"
+        );
     }
 
     /// The regression I-02: a scanned CV has a text layer and it is empty.

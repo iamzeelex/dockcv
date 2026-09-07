@@ -53,6 +53,8 @@ struct KeywordEntry {
 struct IndexedTaxonomy {
     exact_map: std::collections::HashMap<String, String>,
     entries: Vec<KeywordEntry>,
+    /// Every word any keyword is made of — see [`every_word_names_a_section`].
+    vocabulary: std::collections::HashSet<String>,
 }
 
 static TAXONOMY: OnceLock<Taxonomy> = OnceLock::new();
@@ -85,7 +87,20 @@ fn get_indexed_taxonomy() -> &'static IndexedTaxonomy {
             }
         }
 
-        IndexedTaxonomy { exact_map, entries }
+        // Every individual word any keyword is built from, so a heading a
+        // person composed out of two of them is still recognisable as one.
+        let vocabulary = entries
+            .iter()
+            .flat_map(|e| e.clean.split(|c: char| !c.is_alphanumeric()))
+            .filter(|w| !w.is_empty())
+            .map(str::to_string)
+            .collect();
+
+        IndexedTaxonomy {
+            exact_map,
+            entries,
+            vocabulary,
+        }
     })
 }
 
@@ -493,6 +508,36 @@ pub fn is_only_dates(line: &str) -> bool {
 }
 
 /// Does the line *name* a section, taken whole?
+/// Every word of `clean` is a word the taxonomy uses for some section.
+///
+/// The whole-line rules below cannot see a heading somebody wrote themselves
+/// out of two words the corpus knows separately: `Leadership Experience` is
+/// neither an entry nor within two edits of one, so a CV that renames its work
+/// section that way had no Work heading at all, and its whole history went
+/// wherever the section above it ended. `classify_header` reads it correctly —
+/// it is *finding* the heading that failed.
+///
+/// Asking that **every** word count is what keeps this from being the substring
+/// rule that was rejected: `Completed while working full-time` contains *work*
+/// and would pass a substring test, and fails here on its first word.
+fn every_word_names_a_section(clean: &str) -> bool {
+    /// Words that join two nouns and belong to neither.
+    const CONNECTORS: [&str; 6] = ["and", "&", "of", "the", "in", "amp"];
+
+    let vocabulary = &get_indexed_taxonomy().vocabulary;
+    let mut counted = 0usize;
+    for word in clean.split(|c: char| !c.is_alphanumeric()) {
+        if word.is_empty() || CONNECTORS.contains(&word) {
+            continue;
+        }
+        if !vocabulary.contains(word) {
+            return false;
+        }
+        counted += 1;
+    }
+    counted >= 2
+}
+
 pub fn names_a_section(clean: &str) -> bool {
     let tax = get_indexed_taxonomy();
     if tax.exact_map.contains_key(clean) {
@@ -619,7 +664,9 @@ fn is_section_header(line: &str) -> bool {
     // *work*, so a line of a CV's own prose became a Work heading and moved the
     // section boundary under it.
     let clean = sanitize_header_line(trimmed);
-    if !get_single_date_regex().is_match(trimmed) && names_a_section(&clean) {
+    if !get_single_date_regex().is_match(trimmed)
+        && (names_a_section(&clean) || every_word_names_a_section(&clean))
+    {
         return true;
     }
     // A heading the taxonomy has never seen is still a heading if the document
