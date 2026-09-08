@@ -79,8 +79,18 @@ impl Root {
                                 .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::JsonResume => {
-                            let json = crate::resume::export_json_resume(&composed)
-                                .map_err(|e| format!("JSON Resume generation failed: {e}"))?;
+                            // The timestamp is ours to supply: `dockcv-core`
+                            // has no clock, deliberately, so that an export is
+                            // the same bytes twice running.
+                            let meta = crate::resume::ResumeMeta {
+                                last_modified: chrono::Utc::now()
+                                    .format("%Y-%m-%dT%H:%M:%SZ")
+                                    .to_string(),
+                                ..Default::default()
+                            };
+                            let json =
+                                crate::resume::export_json_resume_with_meta(&composed, &meta)
+                                    .map_err(|e| format!("JSON Resume generation failed: {e}"))?;
                             std::fs::write(&write_path, json.as_bytes())
                                 .map_err(|e| format!("write failed: {e}"))
                         }

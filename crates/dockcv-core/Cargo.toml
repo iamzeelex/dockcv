@@ -99,3 +99,7 @@ serde_json = "1.0"
 # is what actually reads and writes them.
 toml = "0.8"
 zip = { version = "8", default-features = false }
+# The JSON Resume schema validates its dates with a regular expression, and the
+# test that keeps the exporter honest checks against that expression verbatim.
+# Dev-only: nothing in the crate itself matches a pattern.
+regex = "1"

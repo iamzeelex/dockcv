@@ -66,6 +66,45 @@ struct JsonResume {
     interests: Vec<Interest>,
     references: Vec<Reference>,
     projects: Vec<Project>,
+    meta: Meta,
+}
+
+/// The `meta` block, for the one field of it that carries résumé content.
+///
+/// The spec's date pattern has no way to write "still there", so an exporter
+/// that respects the pattern has to drop the end date and say so somewhere the
+/// schema allows extensions. DockCV writes `meta.availability`; reading it back
+/// is what makes the round trip whole, and a file from anywhere else simply
+/// has no such block.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct Meta {
+    availability: Availability,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct Availability {
+    /// RFC 6901 pointers — `/work/0`, `/volunteer/1` — at the entries whose end
+    /// date was open.
+    ongoing: Vec<String>,
+}
+
+impl Availability {
+    /// Whether the entry at `index` of `section` was left open.
+    fn is_ongoing(&self, section: &str, index: usize) -> bool {
+        let pointer = format!("/{section}/{index}");
+        self.ongoing.contains(&pointer)
+    }
+}
+
+/// The end date to store: what the file said, or `Present` when the file could
+/// only say it in `meta`.
+fn end_date_of(text: String, availability: &Availability, section: &str, index: usize) -> String {
+    if text.trim().is_empty() && availability.is_ongoing(section, index) {
+        return "Present".to_string();
+    }
+    text
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -270,16 +309,19 @@ impl JsonResume {
             })
             .collect();
 
+        let availability = self.meta.availability;
+
         resume.work = self
             .work
             .into_iter()
-            .map(|w| Work {
+            .enumerate()
+            .map(|(index, w)| Work {
                 name: w.name,
                 position: w.position,
                 location: w.location,
                 url: w.url,
                 start_date: w.start_date.into(),
-                end_date: w.end_date.into(),
+                end_date: end_date_of(w.end_date, &availability, "work", index).into(),
                 summary: w.summary,
                 highlights: w.highlights,
             })
@@ -288,12 +330,13 @@ impl JsonResume {
         resume.volunteer = self
             .volunteer
             .into_iter()
-            .map(|v| Volunteer {
+            .enumerate()
+            .map(|(index, v)| Volunteer {
                 organization: v.organization,
                 position: v.position,
                 url: v.url,
                 start_date: v.start_date.into(),
-                end_date: v.end_date.into(),
+                end_date: end_date_of(v.end_date, &availability, "volunteer", index).into(),
                 // The spec gives a volunteer entry both a summary and
                 // highlights; ours has only highlights, so the summary leads
                 // them rather than being dropped.
@@ -304,7 +347,8 @@ impl JsonResume {
         resume.education = self
             .education
             .into_iter()
-            .map(|e| {
+            .enumerate()
+            .map(|(index, e)| {
                 // `area` is the field of study and `studyType` the level. Ours
                 // has one line for both, and "BSc, Computer Science" is how a
                 // CV prints it.
@@ -321,7 +365,7 @@ impl JsonResume {
                     institution: e.institution,
                     study_type: study,
                     start_date: e.start_date.into(),
-                    end_date: e.end_date.into(),
+                    end_date: end_date_of(e.end_date, &availability, "education", index).into(),
                     url: e.url,
                     highlights,
                 }

@@ -282,6 +282,48 @@ fn every_text_format_survives_being_exported_and_imported_again() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A job that has not ended still has not ended after a round trip.
+///
+/// JSON Resume validates every date against a subset of ISO 8601, so `Present`
+/// cannot be written in `endDate` at all — the field is dropped and the fact
+/// recorded in `meta.availability`, which the spec leaves open for exactly
+/// this. Writing that and not reading it back would be a format that loses the
+/// most useful thing a CV says.
+#[test]
+fn a_job_still_held_survives_json_resume() {
+    let dir = std::env::temp_dir().join(format!("dockcv-roundtrip-present-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let mut original = fixture();
+    original.work.active_mut()[1].end_date = ResumeDate::new("Present");
+    original.volunteer.active_mut()[0].end_date = ResumeDate::new("Present");
+
+    let path = dir.join("cv.json");
+    let json = dockcv_core::resume::export_json_resume(&original.compose()).expect("json resume");
+    assert!(
+        !json.contains("Present"),
+        "a validator refuses `Present` in a date field, so it must not be there:\n{json}"
+    );
+    std::fs::write(&path, json).expect("write json");
+
+    let imported = import_file(&path).expect("the JSON Resume imports");
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let work = imported.doc.work.active();
+    assert!(
+        work[1].end_date.names_the_present(),
+        "the job still held came back ended: {:?}",
+        work[1].end_date
+    );
+    assert_eq!(
+        work[0].end_date.text, "1909-10",
+        "a job that did ended, ended"
+    );
+    assert!(imported.doc.volunteer.active()[0]
+        .end_date
+        .names_the_present());
+}
+
 /// The contact block, which every format writes differently and all of them
 /// used to lose most of.
 #[test]

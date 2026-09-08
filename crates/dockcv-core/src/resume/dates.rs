@@ -48,6 +48,29 @@ impl ResumeDate {
         parse_date(self.text.trim())
     }
 
+    /// Whether this date says "still there" rather than naming a day.
+    ///
+    /// `Present` is the one thing a CV writes in an end-date field that is not
+    /// a date, and interchange formats have nowhere to put it: JSON Resume
+    /// validates its dates against a subset of ISO 8601, so the field has to be
+    /// dropped and the fact recorded elsewhere. Asking here rather than in the
+    /// emitter keeps the vocabulary in one place.
+    pub fn names_the_present(&self) -> bool {
+        const PRESENT: [&str; 7] = [
+            "present",
+            "current",
+            "ongoing",
+            "now",
+            "to date",
+            "настоящее время",
+            "н.в.",
+        ];
+        let text = self.text.trim().trim_end_matches('.').to_lowercase();
+        PRESENT
+            .iter()
+            .any(|word| text == *word || text == format!("по {word}"))
+    }
+
     /// The text to print for this date under `format`.
     ///
     /// Falls back to the raw text whenever it cannot be parsed — a CV that

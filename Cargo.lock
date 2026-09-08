@@ -1779,6 +1779,7 @@ dependencies = [
  "comemo",
  "docx-rs",
  "icu_segmenter",
+ "regex",
  "serde",
  "serde_json",
  "toml 0.8.23",

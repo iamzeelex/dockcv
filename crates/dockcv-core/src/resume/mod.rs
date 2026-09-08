@@ -21,7 +21,7 @@ pub mod template;
 
 #[cfg(feature = "docx")]
 pub use export_docx::{export_docx, export_docx_with_date_format};
-pub use export_json_resume::export_json_resume;
+pub use export_json_resume::{export_json_resume, export_json_resume_with_meta, ResumeMeta};
 pub use export_markdown::{export_markdown, export_markdown_with_date_format};
 pub use export_names::{disambiguate_filename, plan_batch, OnCollision, PlannedExport};
 pub use export_text::{export_plain_text, export_plain_text_with_date_format};
