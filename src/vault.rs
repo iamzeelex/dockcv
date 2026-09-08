@@ -366,7 +366,9 @@ pub fn new_doc_path(vault_dir: &Path, base: &str) -> PathBuf {
 /// Create a new document file from `doc` and return its path.
 pub fn create_document(vault_dir: &Path, doc: &ResumeDoc, base: &str) -> Result<PathBuf, String> {
     let path = new_doc_path(vault_dir, base);
-    save(doc, &path)?;
+    // Nothing there yet — and if something is, the name was taken between
+    // choosing it and writing it, which is a conflict like any other.
+    save(doc, &path, OnDisk::ABSENT).map_err(|e| e.message())?;
     Ok(path)
 }
 
@@ -755,20 +757,204 @@ pub fn to_toml(doc: &ResumeDoc) -> Result<String, String> {
     toml::to_string_pretty(doc).map_err(|e| format!("serialize: {e}"))
 }
 
+/// The contents of a document's file, as whoever holds it in memory last
+/// agreed with them.
+///
+/// The promise this exists to keep is the one on the front of the README: the
+/// vault is plain text you can read without this app and edit in any editor.
+/// A held document plus an unconditional write breaks it silently — DockCV
+/// keeps a document in memory for as long as it is open and writes the whole
+/// of it on a 600 ms debounce, so an edit made in another editor, by a `git
+/// checkout`, or by a sync client between two of those writes was replaced by
+/// whatever the app happened to be holding, with nothing said. That is the
+/// lost update, and the fix is the ordinary one: remember what you read, and
+/// refuse to replace anything else.
+///
+/// A hash rather than an mtime because an mtime answers a different question.
+/// Filesystem timestamps have a granularity, clocks move, and a sync client
+/// can restore a file's old timestamp along with its contents; the bytes
+/// cannot be wrong about themselves. It never leaves memory, so the hasher's
+/// instability across Rust releases costs nothing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct OnDisk(Option<u64>);
+
+impl OnDisk {
+    /// No file — a document made in the app and not yet written. The first
+    /// save creates it, and finding a file where this says there is none is
+    /// itself a conflict: something else wrote one.
+    pub const ABSENT: Self = Self(None);
+
+    /// What is at `path` now.
+    ///
+    /// A file that cannot be read counts as absent, deliberately: this is the
+    /// same call the holder made when it took its copy, so the two agree and
+    /// no phantom conflict is raised over a file neither of them can see. A
+    /// document whose file is unreadable never reached an editor in the first
+    /// place — `Shell` refuses to open it (`report_unreadable`).
+    pub fn read(path: &Path) -> Self {
+        fs::read_to_string(path)
+            .map(|text| Self::of(&text))
+            .unwrap_or(Self::ABSENT)
+    }
+
+    fn of(text: &str) -> Self {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hasher);
+        Self(Some(hasher.finish()))
+    }
+}
+
+/// Why a document was not written.
+#[derive(Debug)]
+pub enum SaveError {
+    /// The file is not the one the caller read. **Nothing was written**, and
+    /// both versions still exist: the file's, on disk, and the caller's, in
+    /// memory. Only a person can say which one is wanted.
+    Conflict,
+    /// The write itself failed — a full disk, a read-only folder, a volume
+    /// that has been unmounted.
+    Failed(String),
+}
+
+impl SaveError {
+    pub fn message(&self) -> String {
+        match self {
+            Self::Conflict => "the file changed on disk since DockCV read it".to_string(),
+            Self::Failed(message) => message.clone(),
+        }
+    }
+}
+
 /// Atomically save a document to a TOML file (write to a temp file, then
 /// rename) so a crash mid-write can't corrupt the existing file.
-pub fn save(doc: &ResumeDoc, path: &Path) -> Result<(), String> {
-    let text = to_toml(doc)?;
+///
+/// `seen` is what the caller believes is on disk — from [`load_seen`], or from
+/// the [`OnDisk`] this returned the last time it wrote. A file that no longer
+/// matches it is left alone; see [`OnDisk`] for why that matters.
+///
+/// Returns what is on disk afterwards, for the caller to hold until next time.
+pub fn save(doc: &ResumeDoc, path: &Path, seen: OnDisk) -> Result<OnDisk, SaveError> {
+    let text = to_toml(doc).map_err(SaveError::Failed)?;
+    let current = OnDisk::read(path);
+    if current != seen {
+        return Err(SaveError::Conflict);
+    }
+
+    // Already what we would write. Returning early keeps DockCV from touching
+    // a file it has no changes for — opening a document and leaving used to
+    // rewrite it, which is a modification as far as git, a sync client or a
+    // file watcher is concerned.
+    let written = OnDisk::of(&text);
+    if written == current {
+        return Ok(current);
+    }
+
     let tmp = path.with_extension("toml.tmp");
-    fs::write(&tmp, text).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, path).map_err(|e| format!("rename {}: {e}", path.display()))?;
-    Ok(())
+    fs::write(&tmp, text)
+        .map_err(|e| SaveError::Failed(format!("write {}: {e}", tmp.display())))?;
+    fs::rename(&tmp, path)
+        .map_err(|e| SaveError::Failed(format!("rename {}: {e}", path.display())))?;
+    Ok(written)
+}
+
+/// Read a document and what its file held, for a caller that is going to keep
+/// the document and write it back later.
+pub fn load_seen(path: &Path) -> Result<(ResumeDoc, OnDisk), String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let doc = toml::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))?;
+    Ok((doc, OnDisk::of(&text)))
 }
 
 #[cfg(test)]
 mod tests {
     use crate::resume::model::{Diary, Library, Work};
     use crate::resume::{altacv, model::ResumeDoc};
+
+    /// The lost update, which happened to a real vault.
+    ///
+    /// DockCV held a document open, the file was edited in another editor, and
+    /// the next debounced write replaced it with what the app was holding —
+    /// silently. The whole promise on the front of the README is that the
+    /// vault is plain text you can edit anywhere, so this is the one write
+    /// that must never happen.
+    #[test]
+    fn a_file_changed_outside_the_app_is_not_overwritten() {
+        use crate::vault::{load_seen, save, OnDisk, SaveError};
+
+        let dir = std::env::temp_dir().join(format!("dockcv-lost-update-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("cv.toml");
+
+        let mut doc = ResumeDoc::default();
+        doc.profile.active_mut().name = "Albert Einstein".into();
+        save(&doc, &path, OnDisk::ABSENT).expect("the first write creates the file");
+
+        // What an editor does: read it, and keep it.
+        let (mut held, seen) = load_seen(&path).expect("load");
+
+        // What somebody else does, meanwhile.
+        let outside = std::fs::read_to_string(&path)
+            .expect("read")
+            .replace("Albert Einstein", "Marie Curie");
+        std::fs::write(&path, &outside).expect("the other editor writes");
+
+        // And what the app tries next.
+        held.profile.active_mut().label = "Principal Systems Architect".into();
+        assert!(
+            matches!(save(&held, &path, seen), Err(SaveError::Conflict)),
+            "a file that is no longer the one we read must not be replaced"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            outside,
+            "the other editor's version is still exactly as they left it"
+        );
+
+        // And the way out: agree with the file, then write.
+        let (_, now) = load_seen(&path).expect("reload");
+        save(&held, &path, now).expect("a write that knows what it is replacing");
+        assert!(std::fs::read_to_string(&path)
+            .expect("read")
+            .contains("Principal Systems Architect"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A document nobody edited is a document nobody writes.
+    ///
+    /// Opening a CV and leaving used to rewrite its file from memory, which is
+    /// a modification to git, to a sync client and to anything watching the
+    /// folder — and it is what made the lost update above so easy to hit, since
+    /// merely having the document open was enough to arm it.
+    #[test]
+    fn writing_a_document_that_has_not_changed_leaves_the_file_alone() {
+        use crate::vault::{load_seen, save, OnDisk};
+
+        let dir = std::env::temp_dir().join(format!("dockcv-idle-write-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("cv.toml");
+
+        let mut doc = ResumeDoc::default();
+        doc.profile.active_mut().name = "Albert Einstein".into();
+        save(&doc, &path, OnDisk::ABSENT).expect("write");
+        let written_at = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .expect("mtime");
+
+        let (held, seen) = load_seen(&path).expect("load");
+        save(&held, &path, seen).expect("write");
+
+        assert_eq!(
+            std::fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .expect("mtime"),
+            written_at,
+            "the file was rewritten with the bytes it already had"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn list_documents_excludes_reserved_notebooks() {
@@ -994,7 +1180,7 @@ mod tests {
             crate::resume::model::Resume::default(),
             "Base",
         );
-        super::save(&doc, &path).expect("save");
+        super::save(&doc, &path, crate::vault::OnDisk::read(&path)).expect("save");
         let text = std::fs::read_to_string(&path).expect("read");
         let without: String = text
             .lines()
@@ -1014,7 +1200,7 @@ mod tests {
         // And a chosen style round-trips.
         let mut doc = loaded;
         doc.layout.skills.style = SkillsStyle::Bubbles;
-        super::save(&doc, &path).expect("save");
+        super::save(&doc, &path, crate::vault::OnDisk::read(&path)).expect("save");
         assert_eq!(
             super::load(&path).expect("reload").layout.skills.style,
             SkillsStyle::Bubbles
@@ -1821,7 +2007,7 @@ mod tests {
 
         let mut with_custom = back;
         let id = with_custom.add_custom_section("Languages");
-        super::save(&with_custom, &path).expect("save");
+        super::save(&with_custom, &path, crate::vault::OnDisk::read(&path)).expect("save");
         let reloaded = super::load(&path).expect("load");
         assert_eq!(reloaded.custom_sections.len(), 1);
         assert_eq!(reloaded.custom_sections[0].title, "Languages");
@@ -1992,7 +2178,7 @@ path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
         ));
         std::fs::create_dir_all(&dir).expect("scratch");
         let path = dir.join("northwind-em.toml");
-        super::save(&doc, &path).expect("save");
+        super::save(&doc, &path, crate::vault::OnDisk::read(&path)).expect("save");
 
         let meta = super::meta_from(&path, Some(&doc));
 

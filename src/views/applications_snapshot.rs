@@ -290,12 +290,22 @@ mod tests {
                 hidden: Vec::new(),
             },
         ];
-        vault::save(&with_presets, &dir.join("albert-senior-swe.toml")).expect("save");
+        vault::save(
+            &with_presets,
+            &dir.join("albert-senior-swe.toml"),
+            crate::vault::OnDisk::read(&dir.join("albert-senior-swe.toml")),
+        )
+        .expect("save");
 
         // No presets, and no person name either — the label must fall back to
         // the file stem rather than rendering an empty menu item.
         let bare = ResumeDoc::from_resume(Resume::default(), "Base");
-        vault::save(&bare, &dir.join("draft-cv.toml")).expect("save");
+        vault::save(
+            &bare,
+            &dir.join("draft-cv.toml"),
+            crate::vault::OnDisk::read(&dir.join("draft-cv.toml")),
+        )
+        .expect("save");
 
         let metas: Vec<vault::DocMeta> = vault::load_all(&dir)
             .into_iter()

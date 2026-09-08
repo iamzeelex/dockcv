@@ -192,7 +192,7 @@ mod tests {
         // Somebody else writes the file. No revision bump — DockCV never knew.
         let mut doc = vault::load(&path).expect("load");
         doc.profile.active_mut().name = "Someone Else Entirely".into();
-        vault::save(&doc, &path).expect("save");
+        vault::save(&doc, &path, crate::vault::OnDisk::read(&path)).expect("save");
 
         cache.refresh(Some(&dir), 0);
         assert_ne!(cache.metadata()[0].name, before);

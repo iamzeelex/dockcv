@@ -793,8 +793,16 @@ impl Shell {
         // Two statements, not one: `record` needs `cx` mutably and `read` holds
         // it immutably, and `flush_save` returning an owned `Result` is what
         // lets the first borrow end before the second begins.
-        let result = editor.read(cx).flush_save();
-        save_status::record(cx, "document", result);
+        let (path, seen, result) = {
+            let editor = editor.read(cx);
+            (
+                editor.doc_path.clone(),
+                editor.seen_on_disk(),
+                editor.flush_save(),
+            )
+        };
+        let now = save_status::record_document(cx, &path, seen, result);
+        editor.update(cx, |editor, _| editor.on_disk = now);
     }
 
     /// Write out whatever is open, whoever is asking.
@@ -809,8 +817,12 @@ impl Shell {
                 self.flush_editor(&editor, cx);
             }
             Screen::PresetMatrix(pm) => {
-                let result = vault::save(&pm.doc, &pm.path);
-                save_status::record(cx, "document", result);
+                let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
+                let (path, seen) = (pm.path.clone(), pm.on_disk);
+                let now = save_status::record_document(cx, &path, seen, result);
+                if let Screen::PresetMatrix(pm) = &mut self.screen {
+                    pm.on_disk = now;
+                }
             }
             // Every other screen writes synchronously as it edits; there is no
             // pending state to lose.
@@ -907,7 +919,9 @@ impl Shell {
             {
                 *slot = value;
             }
-            save_status::record(cx, "document", vault::save(&pm.doc, &pm.path));
+            let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
+            let (path, seen) = (pm.path.clone(), pm.on_disk);
+            pm.on_disk = save_status::record_document(cx, &path, seen, result);
         }
         cx.notify();
     }
@@ -930,7 +944,9 @@ impl Shell {
             hidden,
         });
 
-        save_status::record(cx, "document", vault::save(&pm.doc, &pm.path));
+        let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
+        let (path, seen) = (pm.path.clone(), pm.on_disk);
+        pm.on_disk = save_status::record_document(cx, &path, seen, result);
         cx.notify();
     }
 
@@ -1039,8 +1055,9 @@ impl Shell {
                             let mut config = config::load();
                             config.remember_export_destination(&pm.path, &folder);
                             config::save(&config);
-                            let result = vault::save(&pm.doc, &pm.path);
-                            save_status::record(cx, "document", result);
+                            let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
+                            let (path, seen) = (pm.path.clone(), pm.on_disk);
+                            pm.on_disk = save_status::record_document(cx, &path, seen, result);
                         }
                     }
                     Err(message) => {
@@ -1123,7 +1140,9 @@ impl Shell {
                 }
             }
         }
-        save_status::record(cx, "document", vault::save(&pm.doc, &pm.path));
+        let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
+        let (path, seen) = (pm.path.clone(), pm.on_disk);
+        pm.on_disk = save_status::record_document(cx, &path, seen, result);
         cx.notify();
     }
 

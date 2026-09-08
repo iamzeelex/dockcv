@@ -181,8 +181,8 @@ impl Shell {
         let library = vault::load_library(&vault);
 
         for target in review.targets.iter().filter(|t| t.selected) {
-            let mut doc = match vault::load(&target.path) {
-                Ok(doc) => doc,
+            let (mut doc, seen) = match vault::load_seen(&target.path) {
+                Ok(pair) => pair,
                 Err(message) => {
                     save_status::record(cx, "a CV", Err(message));
                     continue;
@@ -196,7 +196,12 @@ impl Shell {
                 review.index,
             );
             if rewritten > 0 {
-                save_status::record(cx, "a CV", vault::save(&doc, &target.path));
+                save_status::record_document(
+                    cx,
+                    &target.path,
+                    seen,
+                    vault::save(&doc, &target.path, seen),
+                );
             }
         }
 

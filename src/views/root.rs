@@ -252,6 +252,12 @@ pub struct Root {
     pub(super) recompile_task: Option<Task<()>>,
     /// Where this document lives in the cvault, and the in-flight debounced save.
     pub(super) doc_path: PathBuf,
+    /// What `doc_path` held when this editor took its copy, or when it last
+    /// wrote one. An open document is held in memory for as long as the screen
+    /// is up, and every write replaces the whole file — so without this, an
+    /// edit made in another editor between two debounced saves was overwritten
+    /// with no sign that it had ever been there. See [`vault::OnDisk`].
+    pub(super) on_disk: vault::OnDisk,
     pub(super) save_task: Option<Task<()>>,
     /// Structural history — see [`super::root_undo`]. Whole-document
     /// snapshots, taken before a change rather than after it.
@@ -378,7 +384,13 @@ impl Root {
             &doc.compose(),
         ))));
 
+        // Read here rather than taken as an argument: `Root::new` already owns
+        // the path, and every caller that builds an editor would otherwise have
+        // to remember to carry the fingerprint alongside the document.
+        let on_disk = vault::OnDisk::read(&doc_path);
+
         Self {
+            on_disk,
             engine,
             doc,
             rendered: None,
@@ -777,13 +789,18 @@ impl Root {
         let path = self.doc_path.clone();
         let executor = cx.background_executor().clone();
 
-        self.save_task = Some(cx.spawn(async move |_this, cx| {
+        let seen = self.on_disk;
+        self.save_task = Some(cx.spawn(async move |this, cx| {
             executor.timer(SAVE_DEBOUNCE).await;
             let result = executor
-                .spawn(async move { vault::save(&doc, &path) })
+                .spawn({
+                    let path = path.clone();
+                    async move { vault::save(&doc, &path, seen) }
+                })
                 .await;
             cx.update(|cx| {
-                save_status::record(cx, "document", result);
+                let now = save_status::record_document(cx, &path, seen, result);
+                let _ = this.update(cx, |this, _| this.on_disk = now);
                 // The banner lives on `Shell`'s frame, which nothing else here
                 // touches, so this write needs its own repaint request.
                 cx.refresh_windows();
@@ -797,8 +814,13 @@ impl Root {
     /// the window is closing, or `Shell` is swapping the screen out from under
     /// it. Dropping the entity cancels [`Root::save_task`], so without this the
     /// last 600 ms of typing goes nowhere.
-    pub fn flush_save(&self) -> Result<(), String> {
-        vault::save(&self.doc, &self.doc_path)
+    pub fn flush_save(&self) -> Result<vault::OnDisk, vault::SaveError> {
+        vault::save(&self.doc, &self.doc_path, self.on_disk)
+    }
+
+    /// What this editor believes is on disk, for whoever flushes on its behalf.
+    pub fn seen_on_disk(&self) -> vault::OnDisk {
+        self.on_disk
     }
 
     /// Synchronous compile, used once for the first frame so the preview is not
