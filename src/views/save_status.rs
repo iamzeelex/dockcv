@@ -49,7 +49,23 @@ pub struct SaveStatus {
     revision: u64,
 }
 
+/// Whether a notice is a problem or a fact.
+///
+/// The banner was written for failures and is drawn in `danger` throughout,
+/// which is the wrong voice for "your file was reloaded" — that is not a
+/// problem, it is the app doing what it should and saying so. One field rather
+/// than a second banner: it is the same shape in the same place, and two
+/// banners would eventually disagree about which one wins.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tone {
+    /// Something went wrong and nothing will fix itself.
+    Alarm,
+    /// Something happened that the user should know about.
+    Note,
+}
+
 struct Notice {
+    tone: Tone,
     /// What a later success clears. A successful write of the *same* thing is
     /// evidence this particular failure is over; a successful write of
     /// something else is not — a read-only `library.toml` must not be cleared
@@ -95,6 +111,7 @@ impl SaveStatus {
             Err(message) => {
                 self.notice = Some(Notice {
                     key: what,
+                    tone: Tone::Alarm,
                     title: format!("Couldn't save your {what}"),
                     detail: message,
                     hint: WRITE_HINT,
@@ -150,20 +167,7 @@ pub fn record_document(
             now
         }
         Err(vault::SaveError::Conflict) => {
-            let name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("this document")
-                .to_string();
-            log::warn!("refused to overwrite {}: changed on disk", path.display());
-            cx.default_global::<SaveStatus>().notice = Some(Notice {
-                key: "document",
-                title: format!("{name} was changed outside DockCV"),
-                detail: "Something else — another editor, a sync client, a `git checkout` — \
-                     wrote to this file after DockCV opened it."
-                    .to_string(),
-                hint: CONFLICT_HINT,
-            });
+            report_conflict(cx, path);
             seen
         }
         Err(error) => {
@@ -171,6 +175,60 @@ pub fn record_document(
             seen
         }
     }
+}
+
+/// Say that a file changed under a document we are holding, and that both
+/// versions are still here.
+///
+/// Reported from two places: a write that was refused, and the watcher finding
+/// the change while the editor has unsaved edits of its own. Same situation,
+/// same words.
+pub fn report_conflict(cx: &mut App, path: &Path) {
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("this document")
+        .to_string();
+    log::warn!(
+        "{} changed on disk under an edited document",
+        path.display()
+    );
+    cx.default_global::<SaveStatus>().notice = Some(Notice {
+        tone: Tone::Alarm,
+        key: "document",
+        title: format!("{name} was changed outside DockCV"),
+        detail: "Something else — another editor, a sync client, a `git checkout` — wrote to \
+             this file after DockCV opened it."
+            .to_string(),
+        hint: CONFLICT_HINT,
+    });
+}
+
+/// Shown after a document was re-read because its file changed underneath it.
+const RELOADED_HINT: &str = "DockCV had no unsaved changes of its own, so it took the \
+     file's version. Undo puts back what was on screen before.";
+
+/// Say that a document on screen has been replaced by the file's version.
+///
+/// The app watches the vault, so an edit made in another editor — or by an
+/// assistant working on the TOML directly — appears here without anyone
+/// reopening anything. It still has to be *said*: a document that changes
+/// while you are looking at it, with no explanation, is indistinguishable from
+/// one that changed by itself.
+pub fn report_reloaded(cx: &mut App, path: &Path) {
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("This document")
+        .to_string();
+    log::info!("reloaded {} after an edit outside DockCV", path.display());
+    cx.default_global::<SaveStatus>().notice = Some(Notice {
+        tone: Tone::Note,
+        key: "document",
+        title: format!("{name} was edited outside DockCV"),
+        detail: "The version on disk is now the one on screen.".to_string(),
+        hint: RELOADED_HINT,
+    });
 }
 
 /// How many successful vault writes this process has made.
@@ -195,6 +253,7 @@ pub fn report_unreadable(cx: &mut App, path: &Path, message: String) {
         .unwrap_or("this document");
     log::error!("could not open {}: {message}", path.display());
     cx.default_global::<SaveStatus>().notice = Some(Notice {
+        tone: Tone::Alarm,
         key: OPEN,
         title: format!("Couldn't open “{name}”"),
         detail: message,
@@ -223,6 +282,11 @@ pub fn banner(cx: &mut App) -> Option<AnyElement> {
     let title: SharedString = notice.title.clone().into();
     let detail: SharedString = notice.detail.clone().into();
     let hint = notice.hint;
+    // A fact is not an alarm. Tokens either way — see `CLAUDE.md`'s theme rule.
+    let accent = match notice.tone {
+        Tone::Alarm => theme.danger,
+        Tone::Note => theme.accent,
+    };
 
     Some(
         div()
@@ -246,7 +310,7 @@ pub fn banner(cx: &mut App) -> Option<AnyElement> {
                     .rounded(theme.radius_md())
                     .bg(theme.elevated)
                     .border_1()
-                    .border_color(theme.danger)
+                    .border_color(accent)
                     .shadow_lg()
                     .child(
                         div()
@@ -258,7 +322,7 @@ pub fn banner(cx: &mut App) -> Option<AnyElement> {
                             .child(
                                 div()
                                     .text_style(TextStyle::control())
-                                    .text_color(theme.danger)
+                                    .text_color(accent)
                                     .child(title),
                             )
                             .child(
@@ -340,6 +404,7 @@ mod tests {
         let mut status = SaveStatus {
             revision: 0,
             notice: Some(Notice {
+                tone: Tone::Alarm,
                 key: OPEN,
                 title: "Couldn't open “broken”".into(),
                 detail: "parse error".into(),

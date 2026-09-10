@@ -39,11 +39,11 @@ use crate::vault::{self, DocMeta};
 /// Modification time is taken in nanoseconds where the platform offers them;
 /// length is carried alongside because a one-second-granularity filesystem
 /// would otherwise hide a same-second edit.
-#[derive(PartialEq, Eq, Default)]
-struct Fingerprint(Vec<(PathBuf, u128, u64)>);
+#[derive(Clone, PartialEq, Eq, Default)]
+pub(super) struct Fingerprint(Vec<(PathBuf, u128, u64)>);
 
 impl Fingerprint {
-    fn of(dir: &Path) -> Self {
+    pub(super) fn of(dir: &Path) -> Self {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return Self::default();
         };

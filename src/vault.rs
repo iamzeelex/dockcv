@@ -797,6 +797,17 @@ impl OnDisk {
             .unwrap_or(Self::ABSENT)
     }
 
+    /// What `doc` would leave on disk if it were written now.
+    ///
+    /// Comparing this against what a holder last agreed with is how it answers
+    /// "do I have anything unsaved" without keeping a dirty flag — a flag is a
+    /// second copy of the truth, and it drifts.
+    pub fn of_document(doc: &ResumeDoc) -> Self {
+        to_toml(doc)
+            .map(|text| Self::of(&text))
+            .unwrap_or(Self::ABSENT)
+    }
+
     fn of(text: &str) -> Self {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -858,6 +869,38 @@ pub fn save(doc: &ResumeDoc, path: &Path, seen: OnDisk) -> Result<OnDisk, SaveEr
     Ok(written)
 }
 
+/// What a holder should do about the file under the document it is keeping.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ExternalChange {
+    /// The file is still the one we agreed with. Nothing happened, or we wrote
+    /// it ourselves.
+    None,
+    /// The file changed and the holder has nothing unsaved, so taking the
+    /// file's version costs nothing and settles it.
+    Adopt,
+    /// Both changed. Two versions of the document exist and neither is a
+    /// superset of the other, so only a person can say which is wanted.
+    Conflict,
+}
+
+/// Decide what an open document should do about its file.
+///
+/// Its own function, and tested, because the two mistakes it could make are
+/// both silent. Adopting when the holder has unsaved edits throws away work
+/// nobody was warned about; treating an ordinary external edit as a conflict
+/// leaves the app showing a version of a file that no longer exists and says
+/// the wrong thing about why.
+pub fn external_change(doc: &ResumeDoc, path: &Path, seen: OnDisk) -> ExternalChange {
+    if OnDisk::read(path) == seen {
+        return ExternalChange::None;
+    }
+    if OnDisk::of_document(doc) == seen {
+        ExternalChange::Adopt
+    } else {
+        ExternalChange::Conflict
+    }
+}
+
 /// Read a document and what its file held, for a caller that is going to keep
 /// the document and write it back later.
 pub fn load_seen(path: &Path) -> Result<(ResumeDoc, OnDisk), String> {
@@ -917,6 +960,49 @@ mod tests {
         assert!(std::fs::read_to_string(&path)
             .expect("read")
             .contains("Principal Systems Architect"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The three answers, and the two that are silent when wrong.
+    #[test]
+    fn an_external_edit_is_adopted_only_when_there_is_nothing_to_lose() {
+        use crate::vault::{external_change, load_seen, save, ExternalChange, OnDisk};
+
+        let dir = std::env::temp_dir().join(format!("dockcv-external-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("cv.toml");
+
+        let mut doc = ResumeDoc::default();
+        doc.profile.active_mut().name = "Albert Einstein".into();
+        save(&doc, &path, OnDisk::ABSENT).expect("write");
+        let (held, seen) = load_seen(&path).expect("load");
+
+        assert_eq!(
+            external_change(&held, &path, seen),
+            ExternalChange::None,
+            "an untouched file is not a change"
+        );
+
+        // Somebody else writes; we have typed nothing.
+        let theirs = std::fs::read_to_string(&path)
+            .expect("read")
+            .replace("Albert Einstein", "Marie Curie");
+        std::fs::write(&path, &theirs).expect("write");
+        assert_eq!(
+            external_change(&held, &path, seen),
+            ExternalChange::Adopt,
+            "with nothing unsaved, the file's version is free to take"
+        );
+
+        // And now with something of our own on screen.
+        let mut edited = held.clone();
+        edited.profile.active_mut().label = "Principal Systems Architect".into();
+        assert_eq!(
+            external_change(&edited, &path, seen),
+            ExternalChange::Conflict,
+            "two versions, and taking either one silently loses the other"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

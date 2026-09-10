@@ -40,7 +40,7 @@ use super::library_link::PushReview;
 use super::preset_matrix_export::BatchExportSheet;
 use super::save_status;
 use super::update_notice::UpdateState;
-use super::vault_cache::VaultCache;
+use super::vault_cache::{Fingerprint, VaultCache};
 use super::{EditorEvent, Root};
 
 /// Pixels-per-point for gallery thumbnails (small + cheap).
@@ -88,6 +88,8 @@ pub struct Shell {
     pub(super) batch_export: Option<super::preset_matrix_export::BatchExportSheet>,
     /// The active vault directory once chosen.
     pub(super) vault: Option<PathBuf>,
+    /// Watches the vault for edits made outside DockCV. See [`Shell::watch_vault`].
+    vault_watch: Option<Task<()>>,
     /// Which document the gallery is renaming inline, if any.
     pub(super) renaming_doc: Option<PathBuf>,
     /// The rename box. One field reused across cards — only one rename can be
@@ -189,7 +191,84 @@ pub struct Shell {
     pub(super) cache: VaultCache,
 }
 
+/// How often the vault is checked for edits made outside DockCV.
+///
+/// A directory of a few TOML files, stat'd on a background thread: the cost is
+/// microseconds, and it is only paid while a vault is open. Half a second is
+/// under what reads as "immediately" for a change somebody made in another
+/// window, and far above anything that would show up in a battery graph.
+const VAULT_WATCH_INTERVAL: Duration = Duration::from_millis(500);
+
 impl Shell {
+    /// Notice edits made to the vault by anything that is not DockCV.
+    ///
+    /// The README's promise is that the vault is plain text you can edit in any
+    /// editor, and half of keeping it is not overwriting those edits
+    /// (`vault::save`). This is the other half: seeing them. Without it the
+    /// cache only re-read on the next frame — which happens when somebody moves
+    /// the mouse, not when the file changes — so a document rewritten by
+    /// another editor, or by an assistant working on the TOML directly, sat
+    /// there stale until the window was touched.
+    ///
+    /// Polling rather than a filesystem-event API, and deliberately. A vault is
+    /// a handful of small files, so the poll is free; events are not delivered
+    /// reliably on the network and cloud-synced folders a vault is most likely
+    /// to live in, which is exactly where somebody else's edit comes from; and
+    /// every backend would have to be bridged onto GPUI's executor anyway. The
+    /// cheap thing that always works beats the clever thing that usually does.
+    fn watch_vault(&mut self, cx: &mut Context<Self>) {
+        let executor = cx.background_executor().clone();
+        self.vault_watch = Some(cx.spawn(async move |this, cx| {
+            // The first reading is a baseline, not a change: everything on disk
+            // at that moment is what we just loaded.
+            let mut seen: Option<Fingerprint> = None;
+            loop {
+                executor.timer(VAULT_WATCH_INTERVAL).await;
+                let Ok(Some(dir)) = this.read_with(cx, |shell, _| shell.vault.clone()) else {
+                    // No vault yet, or the window has gone. Only the second is
+                    // a reason to stop.
+                    if this.read_with(cx, |_, _| ()).is_err() {
+                        return;
+                    }
+                    continue;
+                };
+                let taken = executor.spawn(async move { Fingerprint::of(&dir) }).await;
+                if seen.as_ref() == Some(&taken) {
+                    continue;
+                }
+                let first = seen.is_none();
+                seen = Some(taken);
+                if first {
+                    continue;
+                }
+                if this
+                    .update(cx, |this, cx| this.vault_changed_on_disk(cx))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }));
+    }
+
+    /// Something in the vault is not what it was.
+    ///
+    /// Two things follow, and only one of them is this method's own work. The
+    /// notify makes a frame happen, and `Shell::render` re-reads the vault into
+    /// the cache as it always has — so the gallery, library, diary and
+    /// applications all update by the path they already used. The editor is
+    /// separate because it holds a document of its own; it is told to look, and
+    /// looks on its next frame, where it has the `Window` a recompile needs.
+    fn vault_changed_on_disk(&mut self, cx: &mut Context<Self>) {
+        if let Screen::Editor(editor) = &self.screen {
+            editor.update(cx, |editor, cx| {
+                editor.external_change_pending = true;
+                cx.notify();
+            });
+        }
+        cx.notify();
+    }
+
     pub fn new(cx: &mut Context<Self>) -> Self {
         // `~/.config`, not the vault: a small file in a directory macOS does
         // not gate. Reading it here is what lets the *vault* wait.
@@ -220,6 +299,7 @@ impl Shell {
             batch_export: None,
             screen: Screen::Opening,
             vault: None,
+            vault_watch: None,
             renaming_doc: None,
             rename_field: None,
             gallery_creating: false,
@@ -632,6 +712,7 @@ impl Shell {
                 log::info!("vault restored: {} ({documents} documents)", dir.display());
                 self.vault = Some(dir);
                 self.screen = Screen::Gallery;
+                self.watch_vault(cx);
             }
             None => {
                 log::info!("no usable vault recorded — starting at Welcome");
@@ -655,6 +736,7 @@ impl Shell {
         self.vault = Some(vault_dir);
         self.gallery_creating = is_empty;
         self.screen = Screen::Gallery;
+        self.watch_vault(cx);
         cx.notify();
     }
 

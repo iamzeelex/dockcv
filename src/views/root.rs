@@ -258,6 +258,11 @@ pub struct Root {
     /// edit made in another editor between two debounced saves was overwritten
     /// with no sign that it had ever been there. See [`vault::OnDisk`].
     pub(super) on_disk: vault::OnDisk,
+    /// Set by the vault watcher when `doc_path` changed on disk. Acted on in
+    /// `render` rather than where it is set, because taking the file's version
+    /// means recompiling the preview and that needs a `Window` — the same
+    /// reason `fields_stale` is a flag and not a call.
+    pub(super) external_change_pending: bool,
     pub(super) save_task: Option<Task<()>>,
     /// Structural history — see [`super::root_undo`]. Whole-document
     /// snapshots, taken before a change rather than after it.
@@ -391,6 +396,7 @@ impl Root {
 
         Self {
             on_disk,
+            external_change_pending: false,
             engine,
             doc,
             rendered: None,
@@ -816,6 +822,55 @@ impl Root {
     /// last 600 ms of typing goes nowhere.
     pub fn flush_save(&self) -> Result<vault::OnDisk, vault::SaveError> {
         vault::save(&self.doc, &self.doc_path, self.on_disk)
+    }
+
+    /// Take the file's version of this document, when there is nothing of ours
+    /// to lose by it.
+    ///
+    /// The vault is plain text and the README says so, which means somebody —
+    /// a person in another editor, an assistant working on the TOML, a `git
+    /// checkout` — will change a file while it is open here. Refusing to
+    /// overwrite it (`vault::save`) keeps their work; this is the other half,
+    /// which puts it on screen.
+    ///
+    /// Only when the editor has nothing unsaved. Then adopting the file is
+    /// lossless and needs no decision from anyone. When both have changed it is
+    /// a real conflict, and a conflict is reported rather than resolved: only a
+    /// person knows which version they want.
+    pub(super) fn adopt_external_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match vault::external_change(&self.doc, &self.doc_path, self.on_disk) {
+            // Some other file in the vault moved, or this one was written by us.
+            vault::ExternalChange::None => return,
+            vault::ExternalChange::Conflict => {
+                save_status::report_conflict(cx, &self.doc_path);
+                return;
+            }
+            vault::ExternalChange::Adopt => {}
+        }
+
+        let (doc, seen) = match vault::load_seen(&self.doc_path) {
+            Ok(loaded) => loaded,
+            // Half-written, or being rewritten as we looked. Nothing is lost by
+            // waiting: the watcher fires again on the next change, and until
+            // then the version on screen is still the one we last agreed with.
+            Err(message) => {
+                log::debug!(
+                    "{} changed but would not parse: {message}",
+                    self.doc_path.display()
+                );
+                return;
+            }
+        };
+
+        // A checkpoint first, so ⌘Z puts back what was on screen. The document
+        // changing under you is exactly the moment you might want that.
+        self.checkpoint();
+        self.doc = doc;
+        self.on_disk = seen;
+        self.fields_stale = true;
+        self.schedule_recompile(window, cx);
+        save_status::report_reloaded(cx, &self.doc_path);
+        cx.notify();
     }
 
     /// What this editor believes is on disk, for whoever flushes on its behalf.
@@ -1390,6 +1445,10 @@ impl Render for Root {
             self.initialized = true;
             self.focus_handle.focus(window, cx);
             self.recompile_now(window);
+        }
+        if self.external_change_pending {
+            self.external_change_pending = false;
+            self.adopt_external_change(window, cx);
         }
         self.sync_fields(window, cx);
         self.ensure_layout_sliders(window, cx);
