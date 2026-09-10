@@ -1751,7 +1751,7 @@ dependencies = [
 
 [[package]]
 name = "dockcv"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "csv",
@@ -1774,7 +1774,7 @@ dependencies = [
 
 [[package]]
 name = "dockcv-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "comemo",
  "docx-rs",
@@ -1796,7 +1796,7 @@ dependencies = [
 
 [[package]]
 name = "dockcv-ui-components"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -1809,7 +1809,7 @@ dependencies = [
 
 [[package]]
 name = "dockcv-wasm"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "dockcv-core",
  "serde_json",
