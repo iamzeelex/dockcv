@@ -141,7 +141,9 @@ jobs:
             xvfb \
             mesa-vulkan-drivers \
             libgl1-mesa-dri \
-            libegl1
+            libegl1 \
+            libvulkan1 \
+            vulkan-tools
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
@@ -152,9 +154,26 @@ jobs:
       - name: Run Workspace Tests
         run: cargo test --workspace
 
+      # Not a gate — a witness. When the smoke test below fails to reach a
+      # first frame, the question is always "what renderer did it find", and
+      # answering it from a log beats another round trip.
+      - name: What the runner can render with (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a --server-args="-screen 0 1280x1024x24" vulkaninfo --summary || true
+
+      # `-screen … x24`: `xvfb-run`'s own default depth has been 8 bits in some
+      # versions, and nothing that draws with a GPU API survives an 8-bit
+      # visual. `LIBGL_ALWAYS_SOFTWARE`, because Xvfb offers no DRI3 device —
+      # the first run of this got as far as starting the app and then sat there
+      # until the watchdog, with `libEGL warning: DRI3 error` above it. There is
+      # no GPU on a runner; saying so is faster than letting Mesa find out.
       - name: Desktop GUI Smoke Test (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run -a cargo run --locked -- --smoke-test
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 1
+        run: >
+          xvfb-run -a --server-args="-screen 0 1280x1024x24"
+          cargo run --locked -- --smoke-test
 
       - name: Desktop GUI Smoke Test (Windows)
         if: runner.os == 'Windows'
