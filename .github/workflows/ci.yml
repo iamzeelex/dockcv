@@ -120,6 +120,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # `libegl1`, not `libegl1-mesa`: the latter was a transitional package and
+      # is gone from Ubuntu 24.04, which is what `ubuntu-latest` now is — the
+      # first run of this job died on `Unable to locate package`. The dispatch
+      # library is `libegl1`; the Mesa implementation behind it arrives with
+      # `libgl1-mesa-dri`, which also carries the software rasteriser a runner
+      # with no GPU falls back to.
       - name: Install Linux Dependencies
         if: runner.os == 'Linux'
         run: |
@@ -134,7 +140,8 @@ jobs:
             libwayland-dev \
             xvfb \
             mesa-vulkan-drivers \
-            libegl1-mesa
+            libgl1-mesa-dri \
+            libegl1
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
