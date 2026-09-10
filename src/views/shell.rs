@@ -88,8 +88,12 @@ pub struct Shell {
     pub(super) batch_export: Option<super::preset_matrix_export::BatchExportSheet>,
     /// The active vault directory once chosen.
     pub(super) vault: Option<PathBuf>,
-    /// Watches the vault for edits made outside DockCV. See [`Shell::watch_vault`].
+    /// Watches the vault for edits made outside DockCV, while the window is in
+    /// front. See [`Shell::watch_vault`].
     vault_watch: Option<Task<()>>,
+    /// Starts and stops that watch as the window comes and goes. Registered on
+    /// the first frame, because it needs a `Window`.
+    vault_watch_activation: Option<Subscription>,
     /// Which document the gallery is renaming inline, if any.
     pub(super) renaming_doc: Option<PathBuf>,
     /// The rename box. One field reused across cards — only one rename can be
@@ -191,12 +195,21 @@ pub struct Shell {
     pub(super) cache: VaultCache,
 }
 
-/// How often the vault is checked for edits made outside DockCV.
+/// How often the vault is checked for edits made outside DockCV, **while the
+/// window is in front**.
 ///
-/// A directory of a few TOML files, stat'd on a background thread: the cost is
-/// microseconds, and it is only paid while a vault is open. Half a second is
-/// under what reads as "immediately" for a change somebody made in another
-/// window, and far above anything that would show up in a battery graph.
+/// The work is genuinely small — a directory of nine TOML files fingerprints in
+/// 18 µs on a background thread, which at two ticks a second is 0.004% of one
+/// core and 130 ms of CPU an hour. What is not small is doing it forever: a
+/// timer that fires twice a second keeps waking a process that has nothing to
+/// do, and a wakeup costs more than the work in it. Almost every one of those
+/// ticks finds nothing, because almost nobody edits the vault from outside.
+///
+/// So it runs while somebody is looking at the app and not otherwise, which is
+/// the honest reading of what it is for: nobody needs a preview refreshed on a
+/// window they are not in front of. Coming back to the window checks once,
+/// immediately — so switching from the editor you made the change in to DockCV
+/// always shows the change, whatever the tick was doing.
 const VAULT_WATCH_INTERVAL: Duration = Duration::from_millis(500);
 
 impl Shell {
@@ -217,6 +230,9 @@ impl Shell {
     /// every backend would have to be bridged onto GPUI's executor anyway. The
     /// cheap thing that always works beats the clever thing that usually does.
     fn watch_vault(&mut self, cx: &mut Context<Self>) {
+        if self.vault_watch.is_some() {
+            return;
+        }
         let executor = cx.background_executor().clone();
         self.vault_watch = Some(cx.spawn(async move |this, cx| {
             // The first reading is a baseline, not a change: everything on disk
@@ -249,6 +265,29 @@ impl Shell {
                 }
             }
         }));
+    }
+
+    /// Follow the window: watch while it is in front, stop when it is not, and
+    /// look once on the way back in.
+    ///
+    /// Registered from `render`, which is the only place with a `Window`. The
+    /// same reason `ensure_inputs` lives there.
+    pub(super) fn ensure_vault_watch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.vault_watch_activation.is_some() {
+            return;
+        }
+        self.vault_watch_activation =
+            Some(cx.observe_window_activation(window, |this, window, cx| {
+                if window.is_window_active() {
+                    // Whatever happened while we were away, happened. Read it
+                    // now rather than up to one interval later: this is the
+                    // moment somebody looks.
+                    this.vault_changed_on_disk(cx);
+                    this.watch_vault(cx);
+                } else {
+                    this.vault_watch = None;
+                }
+            }));
     }
 
     /// Something in the vault is not what it was.
@@ -300,6 +339,7 @@ impl Shell {
             screen: Screen::Opening,
             vault: None,
             vault_watch: None,
+            vault_watch_activation: None,
             renaming_doc: None,
             rename_field: None,
             gallery_creating: false,
@@ -469,6 +509,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.ensure_inputs(window, cx);
+        self.ensure_vault_watch(window, cx);
         if let Some(field) = self.library_search.clone() {
             field.update(cx, |field, cx| field.seed(query, window, cx));
         }
@@ -712,7 +753,6 @@ impl Shell {
                 log::info!("vault restored: {} ({documents} documents)", dir.display());
                 self.vault = Some(dir);
                 self.screen = Screen::Gallery;
-                self.watch_vault(cx);
             }
             None => {
                 log::info!("no usable vault recorded — starting at Welcome");
@@ -736,7 +776,6 @@ impl Shell {
         self.vault = Some(vault_dir);
         self.gallery_creating = is_empty;
         self.screen = Screen::Gallery;
-        self.watch_vault(cx);
         cx.notify();
     }
 
@@ -1496,6 +1535,7 @@ impl Shell {
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_inputs(window, cx);
+        self.ensure_vault_watch(window, cx);
         // Before anything draws. Every screen below reads `self.cache` rather
         // than the disk, so this one call is the whole of the vault I/O in a
         // frame — and it does nothing at all unless the directory moved.

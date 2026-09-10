@@ -891,10 +891,26 @@ pub enum ExternalChange {
 /// leaves the app showing a version of a file that no longer exists and says
 /// the wrong thing about why.
 pub fn external_change(doc: &ResumeDoc, path: &Path, seen: OnDisk) -> ExternalChange {
-    if OnDisk::read(path) == seen {
+    let current = OnDisk::read(path);
+    if current == seen {
+        // Nothing outside has touched it — including while the holder is
+        // mid-edit with a write still pending, which is most of a typing
+        // session.
         return ExternalChange::None;
     }
-    if OnDisk::of_document(doc) == seen {
+
+    let ours = OnDisk::of_document(doc);
+    if current == ours {
+        // The file already says what this document says, so whoever wrote it
+        // wrote our version — us, a moment ago. `seen` catches up when the
+        // write reports back; a debounced save lands on a background thread
+        // and the state that records it is applied on the next update, and a
+        // watch tick in between would otherwise read its own work as somebody
+        // else's and raise a conflict over nothing.
+        return ExternalChange::None;
+    }
+
+    if ours == seen {
         ExternalChange::Adopt
     } else {
         ExternalChange::Conflict
@@ -1002,6 +1018,40 @@ mod tests {
             external_change(&edited, &path, seen),
             ExternalChange::Conflict,
             "two versions, and taking either one silently loses the other"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Our own write is not somebody else's edit.
+    ///
+    /// A debounced save lands on a background thread and the state recording
+    /// it is applied afterwards. A watch tick in that gap sees a file that no
+    /// longer matches what the holder last agreed with — and the naive reading
+    /// of that is "two versions exist", which would put a conflict banner in
+    /// front of somebody who had done nothing but type.
+    #[test]
+    fn a_write_we_have_not_finished_recording_is_not_a_conflict() {
+        use crate::vault::{external_change, load_seen, save, ExternalChange, OnDisk};
+
+        let dir = std::env::temp_dir().join(format!("dockcv-own-write-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("cv.toml");
+
+        let mut doc = ResumeDoc::default();
+        doc.profile.active_mut().name = "Albert Einstein".into();
+        save(&doc, &path, OnDisk::ABSENT).expect("write");
+        let (mut held, seen) = load_seen(&path).expect("load");
+
+        // Typed, and written — but `seen` is still the state from before it,
+        // which is exactly the window the watcher can land in.
+        held.profile.active_mut().label = "Principal Systems Architect".into();
+        save(&held, &path, seen).expect("write");
+
+        assert_eq!(
+            external_change(&held, &path, seen),
+            ExternalChange::None,
+            "the file holds what this document holds; nobody else has been here"
         );
 
         let _ = std::fs::remove_dir_all(&dir);
