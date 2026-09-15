@@ -67,6 +67,65 @@ the top, dated the day the tag is cut.
   plainly — an honest "internal only" beats invented significance.
 - Match the register of the entries already in the file: plain, specific, no marketing.
 
+## What 0.3.0 cost, so the next one does not
+
+Every line here was a real stop on a release where the code was ready and the
+process was not. The local gate was green throughout; none of these showed up in
+it.
+
+**The notes and the version bump are one change.** `Version & Changelog
+Integrity` runs `scripts/release.sh --check` on every push *and* every pull
+request, and it compares in both directions. A pull request that adds
+`## [x.y.z]` without bumping `[workspace.package]` is red by construction, and
+no amount of waiting fixes it. Do not plan to land notes first and bump after
+merge — that plan cannot go green. Bump in the same branch, and leave only the
+tag for afterwards.
+
+**The pull request title is a checked artefact.** `Pull request title` enforces
+Conventional Commits. `Release 0.3.0: …` fails it. Title the PR the way you
+would title the commit — `fix(vault): …`, `feat(export): …` — and check it
+against the workflow's own pattern before opening, not after.
+
+**Required status checks go stale when a job is renamed.** Branch protection on
+`main` names contexts as strings. Rename a job in `ci.yml` and the old names are
+still required and will never arrive again: the pull request sits `BLOCKED` with
+every check green, and so does every pull request after it. Before opening the
+release PR, compare the two lists:
+
+```bash
+gh api repos/<owner>/<repo>/branches/main/protection --jq '.required_status_checks.contexts'
+gh run view <recent run id> --json jobs -q '.jobs[].name'
+```
+
+They must agree. If they do not, say so — fixing branch protection is the
+maintainer's call, and merging with `--admin` to get past it is not a fix, it is
+the check being switched off at the moment it finally mattered.
+
+**A workflow that has never run is not a passing workflow.** The cross-platform
+matrix landed one release before it was first executed, and its first run found
+three separate failures — a package that no longer exists on the runner image, a
+default screen depth nothing can draw on, a watchdog written against hardware
+that is not there — and one hang nobody has explained yet. If `ci.yml` changed
+since the last tag, its first real run *is* part of the release, and the time it
+takes is release work, not a formality. Plan for it rather than discovering it.
+
+**A gate that cannot pass is not a gate.** When a check is stuck on the
+environment rather than the code, the honest move is to narrow what it claims,
+record what is no longer covered where somebody will read it — the workflow
+itself, not only an issue — and open the issue with the log, the ruled-out list
+and a reproduction. Do not keep raising timeouts. Do not keep guessing. And do
+not quietly drop the coverage: reducing what a release claims is the
+maintainer's decision, so bring it to them with the evidence and a
+recommendation.
+
+**A bug introduced and fixed inside one unreleased window never happened.** It
+gets no line under `Fixed` — a reader cannot have suffered it. Fold the working
+result into the `Added` entry for the feature it belongs to. Apply this evenly:
+the release this rule came from had two such bugs written up as fixes and one
+correctly folded, which is worse than either choice made consistently. Check
+with `git log --diff-filter=A -- <file>` when you are unsure whether the code
+the bug lived in has ever shipped.
+
 ## Cutting it
 
 Only once every check above has passed and the entry is written and reviewed:
