@@ -191,7 +191,7 @@ impl Shell {
         }
         let (path, stem, entry_index) = (choice.path.clone(), choice.stem.clone(), sheet.entry);
 
-        let mut doc = match vault::load(&path) {
+        let (mut doc, seen) = match vault::load_seen(&path) {
             Ok(doc) => doc,
             Err(message) => {
                 save_status::report_unreadable(cx, &path, message);
@@ -203,7 +203,7 @@ impl Shell {
             return;
         };
         job.highlights.push(text);
-        save_status::record(cx, "document", vault::save(&doc, &path));
+        save_status::record_document(cx, &path, seen, vault::save(&doc, &path, seen));
 
         // The reverse half: the entry now knows it has been used, so the
         // diary can answer "did I ever use this?" without opening every CV.

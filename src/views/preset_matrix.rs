@@ -25,6 +25,10 @@ use super::shell::Shell;
 pub struct PresetMatrix {
     pub path: PathBuf,
     pub doc: ResumeDoc,
+    /// What `path` held when this screen took its copy — the same guard the
+    /// editor carries, for the same reason: this screen holds a whole document
+    /// in memory and writes all of it back. See [`crate::vault::OnDisk`].
+    pub on_disk: crate::vault::OnDisk,
     pub active_preset_idx: usize,
     pub compare_preset_idx: Option<usize>,
     /// Whichever preset is mid-rename. One at a time, like the editor's
@@ -45,6 +49,7 @@ pub struct PresetRename {
 
 impl PresetMatrix {
     pub fn new(path: PathBuf, doc: ResumeDoc) -> Self {
+        let on_disk = crate::vault::OnDisk::read(&path);
         let compare_preset_idx = if doc.presets.len() > 1 {
             Some(1)
         } else {
@@ -54,6 +59,7 @@ impl PresetMatrix {
         Self {
             path,
             doc,
+            on_disk,
             active_preset_idx: 0,
             compare_preset_idx,
             renaming_preset: None,

@@ -70,15 +70,40 @@ pub fn run() {
             cx.activate(true);
 
             if smoke {
-                std::thread::spawn(|| {
-                    std::thread::sleep(std::time::Duration::from_secs(15));
+                let budget = smoke_test_budget();
+                std::thread::spawn(move || {
+                    std::thread::sleep(budget);
                     log::error!(
-                        "Smoke test watchdog timed out after 15 seconds without completing initial frame"
+                        "Smoke test watchdog timed out after {} seconds without completing \
+                         initial frame",
+                        budget.as_secs()
                     );
                     std::process::exit(1);
                 });
             }
         });
+}
+
+/// How long the smoke test waits for a first frame.
+///
+/// Fifteen seconds is a generous budget on a GPU and not obviously one at all
+/// on a software rasteriser: a CI runner has no graphics card, so Vulkan
+/// resolves to llvmpipe and the first frame — which composes a document,
+/// compiles it with Typst and rasterises a whole page — is doing on two shared
+/// cores what a GPU does in parallel.
+///
+/// So the budget is the caller's to set, and the default stays tight. A
+/// watchdog that is generous everywhere stops being a watchdog: it is there to
+/// turn a hang into a failure, and a hang nobody notices for two minutes is a
+/// hang that wasted two minutes.
+fn smoke_test_budget() -> std::time::Duration {
+    const DEFAULT_SECONDS: u64 = 15;
+    let seconds = std::env::var("DOCKCV_SMOKE_TEST_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|seconds| *seconds > 0)
+        .unwrap_or(DEFAULT_SECONDS);
+    std::time::Duration::from_secs(seconds)
 }
 
 /// Whether the application was launched in automated smoke-test mode.
@@ -597,6 +622,26 @@ mod tests {
             Some(WindowDecorations::Server),
             "Linux must request server-side decorations"
         );
+    }
+
+    /// The budget is the caller's, and a nonsense value is not a budget.
+    #[test]
+    fn the_smoke_test_budget_defaults_tight_and_ignores_rubbish() {
+        use std::time::Duration;
+        assert_eq!(smoke_test_budget(), Duration::from_secs(15));
+
+        unsafe { std::env::set_var("DOCKCV_SMOKE_TEST_SECONDS", "90") };
+        assert_eq!(smoke_test_budget(), Duration::from_secs(90));
+
+        for rubbish in ["0", "", "soon", "-5"] {
+            unsafe { std::env::set_var("DOCKCV_SMOKE_TEST_SECONDS", rubbish) };
+            assert_eq!(
+                smoke_test_budget(),
+                Duration::from_secs(15),
+                "{rubbish:?} is not a number of seconds; the default stands"
+            );
+        }
+        unsafe { std::env::remove_var("DOCKCV_SMOKE_TEST_SECONDS") };
     }
 
     #[test]

@@ -252,6 +252,17 @@ pub struct Root {
     pub(super) recompile_task: Option<Task<()>>,
     /// Where this document lives in the cvault, and the in-flight debounced save.
     pub(super) doc_path: PathBuf,
+    /// What `doc_path` held when this editor took its copy, or when it last
+    /// wrote one. An open document is held in memory for as long as the screen
+    /// is up, and every write replaces the whole file — so without this, an
+    /// edit made in another editor between two debounced saves was overwritten
+    /// with no sign that it had ever been there. See [`vault::OnDisk`].
+    pub(super) on_disk: vault::OnDisk,
+    /// Set by the vault watcher when `doc_path` changed on disk. Acted on in
+    /// `render` rather than where it is set, because taking the file's version
+    /// means recompiling the preview and that needs a `Window` — the same
+    /// reason `fields_stale` is a flag and not a call.
+    pub(super) external_change_pending: bool,
     pub(super) save_task: Option<Task<()>>,
     /// Structural history — see [`super::root_undo`]. Whole-document
     /// snapshots, taken before a change rather than after it.
@@ -378,7 +389,14 @@ impl Root {
             &doc.compose(),
         ))));
 
+        // Read here rather than taken as an argument: `Root::new` already owns
+        // the path, and every caller that builds an editor would otherwise have
+        // to remember to carry the fingerprint alongside the document.
+        let on_disk = vault::OnDisk::read(&doc_path);
+
         Self {
+            on_disk,
+            external_change_pending: false,
             engine,
             doc,
             rendered: None,
@@ -777,13 +795,18 @@ impl Root {
         let path = self.doc_path.clone();
         let executor = cx.background_executor().clone();
 
-        self.save_task = Some(cx.spawn(async move |_this, cx| {
+        let seen = self.on_disk;
+        self.save_task = Some(cx.spawn(async move |this, cx| {
             executor.timer(SAVE_DEBOUNCE).await;
             let result = executor
-                .spawn(async move { vault::save(&doc, &path) })
+                .spawn({
+                    let path = path.clone();
+                    async move { vault::save(&doc, &path, seen) }
+                })
                 .await;
             cx.update(|cx| {
-                save_status::record(cx, "document", result);
+                let now = save_status::record_document(cx, &path, seen, result);
+                let _ = this.update(cx, |this, _| this.on_disk = now);
                 // The banner lives on `Shell`'s frame, which nothing else here
                 // touches, so this write needs its own repaint request.
                 cx.refresh_windows();
@@ -797,8 +820,62 @@ impl Root {
     /// the window is closing, or `Shell` is swapping the screen out from under
     /// it. Dropping the entity cancels [`Root::save_task`], so without this the
     /// last 600 ms of typing goes nowhere.
-    pub fn flush_save(&self) -> Result<(), String> {
-        vault::save(&self.doc, &self.doc_path)
+    pub fn flush_save(&self) -> Result<vault::OnDisk, vault::SaveError> {
+        vault::save(&self.doc, &self.doc_path, self.on_disk)
+    }
+
+    /// Take the file's version of this document, when there is nothing of ours
+    /// to lose by it.
+    ///
+    /// The vault is plain text and the README says so, which means somebody —
+    /// a person in another editor, an assistant working on the TOML, a `git
+    /// checkout` — will change a file while it is open here. Refusing to
+    /// overwrite it (`vault::save`) keeps their work; this is the other half,
+    /// which puts it on screen.
+    ///
+    /// Only when the editor has nothing unsaved. Then adopting the file is
+    /// lossless and needs no decision from anyone. When both have changed it is
+    /// a real conflict, and a conflict is reported rather than resolved: only a
+    /// person knows which version they want.
+    pub(super) fn adopt_external_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match vault::external_change(&self.doc, &self.doc_path, self.on_disk) {
+            // Some other file in the vault moved, or this one was written by us.
+            vault::ExternalChange::None => return,
+            vault::ExternalChange::Conflict => {
+                save_status::report_conflict(cx, &self.doc_path);
+                return;
+            }
+            vault::ExternalChange::Adopt => {}
+        }
+
+        let (doc, seen) = match vault::load_seen(&self.doc_path) {
+            Ok(loaded) => loaded,
+            // Half-written, or being rewritten as we looked. Nothing is lost by
+            // waiting: the watcher fires again on the next change, and until
+            // then the version on screen is still the one we last agreed with.
+            Err(message) => {
+                log::debug!(
+                    "{} changed but would not parse: {message}",
+                    self.doc_path.display()
+                );
+                return;
+            }
+        };
+
+        // A checkpoint first, so ⌘Z puts back what was on screen. The document
+        // changing under you is exactly the moment you might want that.
+        self.checkpoint();
+        self.doc = doc;
+        self.on_disk = seen;
+        self.fields_stale = true;
+        self.schedule_recompile(window, cx);
+        save_status::report_reloaded(cx, &self.doc_path);
+        cx.notify();
+    }
+
+    /// What this editor believes is on disk, for whoever flushes on its behalf.
+    pub fn seen_on_disk(&self) -> vault::OnDisk {
+        self.on_disk
     }
 
     /// Synchronous compile, used once for the first frame so the preview is not
@@ -1368,6 +1445,10 @@ impl Render for Root {
             self.initialized = true;
             self.focus_handle.focus(window, cx);
             self.recompile_now(window);
+        }
+        if self.external_change_pending {
+            self.external_change_pending = false;
+            self.adopt_external_change(window, cx);
         }
         self.sync_fields(window, cx);
         self.ensure_layout_sliders(window, cx);

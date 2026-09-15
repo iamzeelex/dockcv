@@ -119,7 +119,13 @@ impl Root {
                         let mut config = config::load();
                         config.remember_export_destination(&this.doc_path, &folder);
                         config::save(&config);
-                        save_status::record(cx, "document", vault::save(&this.doc, &this.doc_path));
+                        let seen = this.on_disk;
+                        this.on_disk = save_status::record_document(
+                            cx,
+                            &this.doc_path,
+                            seen,
+                            vault::save(&this.doc, &this.doc_path, seen),
+                        );
                     }
                     Err(message) => {
                         // A failed export has to reach the screen. The banner

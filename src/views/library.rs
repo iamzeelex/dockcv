@@ -1044,7 +1044,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let library = self.cache.library().clone();
-        let mut doc = match vault::load(path) {
+        let (mut doc, seen) = match vault::load_seen(path) {
             Ok(doc) => doc,
             Err(message) => {
                 save_status::report_unreadable(cx, path, message);
@@ -1067,7 +1067,7 @@ impl Shell {
             Profile | Custom(_) => return,
         }
 
-        save_status::record(cx, "document", vault::save(&doc, path));
+        save_status::record_document(cx, path, seen, vault::save(&doc, path, seen));
         cx.notify();
     }
 
