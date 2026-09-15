@@ -97,9 +97,18 @@ pub fn run() {
 /// turn a hang into a failure, and a hang nobody notices for two minutes is a
 /// hang that wasted two minutes.
 fn smoke_test_budget() -> std::time::Duration {
+    budget_from(std::env::var("DOCKCV_SMOKE_TEST_SECONDS").ok().as_deref())
+}
+
+/// The parsing half, taking the value rather than reading it.
+///
+/// Split so its test needs no environment. `set_var` is `unsafe` because the
+/// C library's environment is not thread-safe, and `cargo test` runs threads:
+/// a test that writes one while another reads `HOME` is a data race, and it
+/// showed up as a failure somewhere else entirely.
+fn budget_from(value: Option<&str>) -> std::time::Duration {
     const DEFAULT_SECONDS: u64 = 15;
-    let seconds = std::env::var("DOCKCV_SMOKE_TEST_SECONDS")
-        .ok()
+    let seconds = value
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|seconds| *seconds > 0)
         .unwrap_or(DEFAULT_SECONDS);
@@ -112,7 +121,16 @@ fn smoke_test_budget() -> std::time::Duration {
 /// In smoke-test mode, the app boots, opens the window, renders the first frame,
 /// and exits cleanly with code 0 (or exits 1 on watchdog timeout).
 pub fn is_smoke_test() -> bool {
-    std::env::args().any(|a| a == "--smoke-test") || std::env::var_os("DOCKCV_SMOKE_TEST").is_some()
+    smoke_test_requested(
+        std::env::args(),
+        std::env::var_os("DOCKCV_SMOKE_TEST").is_some(),
+    )
+}
+
+/// The decision, taking its inputs rather than reading them. Same reason as
+/// [`budget_from`]: a test must not write the process environment.
+fn smoke_test_requested(mut args: impl Iterator<Item = String>, env_set: bool) -> bool {
+    env_set || args.any(|argument| argument == "--smoke-test")
 }
 
 /// Register every bundled face so the UI can ask for it by family name.
@@ -628,26 +646,37 @@ mod tests {
     #[test]
     fn the_smoke_test_budget_defaults_tight_and_ignores_rubbish() {
         use std::time::Duration;
-        assert_eq!(smoke_test_budget(), Duration::from_secs(15));
-
-        unsafe { std::env::set_var("DOCKCV_SMOKE_TEST_SECONDS", "90") };
-        assert_eq!(smoke_test_budget(), Duration::from_secs(90));
+        assert_eq!(budget_from(None), Duration::from_secs(15));
+        assert_eq!(budget_from(Some("90")), Duration::from_secs(90));
 
         for rubbish in ["0", "", "soon", "-5"] {
-            unsafe { std::env::set_var("DOCKCV_SMOKE_TEST_SECONDS", rubbish) };
             assert_eq!(
-                smoke_test_budget(),
+                budget_from(Some(rubbish)),
                 Duration::from_secs(15),
                 "{rubbish:?} is not a number of seconds; the default stands"
             );
         }
-        unsafe { std::env::remove_var("DOCKCV_SMOKE_TEST_SECONDS") };
     }
 
+    /// Either route asks for it, and neither is read from the process here —
+    /// `logging.rs` states the rule this used to break: tests share a process,
+    /// and one writing the environment while another reads it is a data race
+    /// that surfaces as a failure somewhere else entirely.
     #[test]
     fn smoke_test_flag_detection() {
-        unsafe { std::env::set_var("DOCKCV_SMOKE_TEST", "1") };
-        assert!(is_smoke_test());
-        unsafe { std::env::remove_var("DOCKCV_SMOKE_TEST") };
+        let none = || std::iter::empty::<String>();
+        let flag = || ["dockcv".to_string(), "--smoke-test".to_string()].into_iter();
+
+        assert!(
+            smoke_test_requested(none(), true),
+            "the variable alone asks"
+        );
+        assert!(smoke_test_requested(flag(), false), "the flag alone asks");
+        assert!(smoke_test_requested(flag(), true));
+        assert!(!smoke_test_requested(none(), false));
+        assert!(
+            !smoke_test_requested(["dockcv".to_string()].into_iter(), false),
+            "an ordinary launch is not a smoke test"
+        );
     }
 }
