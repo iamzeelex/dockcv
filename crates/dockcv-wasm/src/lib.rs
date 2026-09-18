@@ -19,7 +19,7 @@
 use wasm_bindgen::prelude::*;
 
 use dockcv_core::resume::model::{Resume, ResumeDoc};
-use dockcv_core::resume::{altacv, template};
+use dockcv_core::resume::{altacv, parse_document_toml, template};
 use dockcv_core::typst_engine::TypstEngine;
 
 /// Read whatever the visitor pasted.
@@ -30,7 +30,7 @@ use dockcv_core::typst_engine::TypstEngine;
 /// other formats outright, so the order only decides which error the visitor
 /// sees when nothing matches.
 fn parse(input: &str) -> Result<ResumeDoc, String> {
-    if let Ok(doc) = toml::from_str::<ResumeDoc>(input) {
+    if let Ok(doc) = parse_document_toml(input) {
         return Ok(doc);
     }
     if let Ok(resume) = toml::from_str::<Resume>(input) {

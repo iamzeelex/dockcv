@@ -17,7 +17,7 @@ use dockcv_ui_components::{
     TextField, TextFieldState, CHROME_HEIGHT, MONO, SANS,
 };
 
-use crate::resume::model::{ResumeDoc, SectionKind};
+use crate::resume::model::{ResumeDoc, SectionKind, VariantId};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use super::shell::Shell;
@@ -120,8 +120,13 @@ impl PresetMatrix {
         }
     }
 
-    /// Return a map of (SectionKind, VariantName) -> SelectionStatus for Preset A and Preset B.
-    pub fn compute_diff(&self) -> HashMap<SectionKind, (String, Option<String>)> {
+    /// What each of the two presets pins for each section, by id.
+    ///
+    /// Ids rather than names since C0: a cell has to be able to say "this
+    /// preset selected a cut of Skills that has since been deleted", and a
+    /// name cannot tell that apart from a variant that was merely renamed.
+    /// [`Self::variant_label`] is what turns an id back into something to read.
+    pub fn compute_diff(&self) -> HashMap<SectionKind, (VariantId, Option<VariantId>)> {
         let mut map = HashMap::new();
 
         let preset_a = self.doc.presets.get(self.active_preset_idx);
@@ -131,16 +136,11 @@ impl PresetMatrix {
 
         for section in self.doc.sections() {
             let active_a = preset_a
-                .and_then(|p| p.selection.iter().find(|(s, _)| *s == section))
-                .map(|(_, v)| v.clone())
-                .unwrap_or_else(|| self.active_variant_for_section(section));
+                .and_then(|p| p.variant_for(section))
+                .or_else(|| self.doc.active_variant_id(section))
+                .unwrap_or_default();
 
-            let active_b = preset_b.and_then(|p| {
-                p.selection
-                    .iter()
-                    .find(|(s, _)| *s == section)
-                    .map(|(_, v)| v.clone())
-            });
+            let active_b = preset_b.and_then(|p| p.variant_for(section));
 
             map.insert(section, (active_a, active_b));
         }
@@ -156,16 +156,19 @@ impl PresetMatrix {
             .is_some_and(|p| p.hidden.contains(&section))
     }
 
-    pub fn active_variant_for_section(&self, section: SectionKind) -> String {
-        match section {
-            SectionKind::Profile => self.doc.profile.active_name().to_string(),
-            SectionKind::Work => self.doc.work.active_name().to_string(),
-            SectionKind::Education => self.doc.education.active_name().to_string(),
-            SectionKind::Skills => self.doc.skills.active_name().to_string(),
-            SectionKind::Certificates => self.doc.certificates.active_name().to_string(),
-            SectionKind::Organizations => self.doc.volunteer.active_name().to_string(),
-            SectionKind::Custom(_) => self.doc.variant_name(section).clone(),
-        }
+    /// The name to print for a pinned id.
+    ///
+    /// `None` when nothing in the section carries it, which is a preset
+    /// pinning a variant that has been deleted. The cell says so rather than
+    /// showing the variant the document happens to be on, because those are
+    /// different facts and only one of them is about the preset.
+    pub fn variant_label(&self, section: SectionKind, id: VariantId) -> Option<String> {
+        let index = self
+            .doc
+            .variant_ids(section)
+            .iter()
+            .position(|v| *v == id)?;
+        self.doc.variant_names(section).get(index).cloned()
     }
 
     fn variant_detail(&self, section: SectionKind, variant_name: &str) -> Option<String> {
@@ -474,7 +477,9 @@ impl PresetMatrix {
         for section in self.doc.sections() {
             let section_label = self.doc.section_title(section);
 
-            let (sel_a, sel_b) = diff_map.get(&section).cloned().unwrap_or_default();
+            let (pin_a, pin_b) = diff_map.get(&section).copied().unwrap_or_default();
+            let name_a = self.variant_label(section, pin_a);
+            let name_b = pin_b.map(|b| self.variant_label(section, b));
             // O-13 is modelled now, so the design's `— hidden —` is real: it
             // says this preset leaves the section out of the document, which
             // `ResumeDoc::compose` honours all the way to the PDF.
@@ -482,25 +487,32 @@ impl PresetMatrix {
             let hidden_b = self
                 .compare_preset_idx
                 .is_some_and(|i| self.preset_hides(i, section));
-            let is_diff = hidden_a != hidden_b || sel_b.as_ref().is_some_and(|b| b != &sel_a);
+            let is_diff = hidden_a != hidden_b || pin_b.is_some_and(|b| b != pin_a);
 
-            let detail_a = self.variant_detail(section, &sel_a);
-            let detail_b = sel_b.as_ref().and_then(|b| self.variant_detail(section, b));
+            let detail_a = name_a
+                .as_deref()
+                .and_then(|n| self.variant_detail(section, n));
+            let detail_b = name_b
+                .as_ref()
+                .and_then(|b| b.as_deref())
+                .and_then(|n| self.variant_detail(section, n));
 
-            // A preset that names no variant for this section pins nothing
-            // here — it is not the design's `— hidden —`, which is section
-            // visibility (O-13) and does not exist in the model. Saying
-            // "hidden" would invent an intent the file never recorded.
-            let cell_b_text = if hidden_b {
-                "— hidden —".to_string()
-            } else {
-                sel_b.clone().unwrap_or_else(|| "not pinned".to_string())
+            // Three different things a cell can say, and the third is new with
+            // C0. `— hidden —` is section visibility (O-13). `not pinned` is a
+            // preset that names no variant here at all, which
+            // `reconcile_presets` now prevents but a hand-edited file can still
+            // produce. `— deleted variant —` is a pin that resolves to nothing:
+            // the preset selected a cut of this section that no longer exists,
+            // which used to be indistinguishable from the document simply being
+            // on something else. Clicking the cell repairs it.
+            let label = |hidden: bool, name: Option<Option<String>>| match (hidden, name) {
+                (true, _) => "— hidden —".to_string(),
+                (_, None) => "not pinned".to_string(),
+                (_, Some(None)) => "— deleted variant —".to_string(),
+                (_, Some(Some(name))) => name,
             };
-            let cell_a_text = if hidden_a {
-                "— hidden —".to_string()
-            } else {
-                sel_a.clone()
-            };
+            let cell_a_text = label(hidden_a, Some(name_a.clone()));
+            let cell_b_text = label(hidden_b, name_b.clone());
 
             let row = div()
                 .flex()
@@ -662,41 +674,71 @@ mod tests {
     use super::*;
     use crate::resume::model::{Preset, ResumeDoc, SectionKind};
 
+    /// Two presets that differ on Work and agree on Profile, pinned by id and
+    /// read back as names.
     #[test]
     fn test_preset_matrix_diff_computation() {
-        let doc = ResumeDoc {
-            presets: vec![
-                Preset {
-                    name: "Preset A".into(),
-                    selection: vec![
-                        (SectionKind::Profile, "Base".into()),
-                        (SectionKind::Work, "FAANG".into()),
-                    ],
-                    hidden: Vec::new(),
-                },
-                Preset {
-                    name: "Preset B".into(),
-                    selection: vec![
-                        (SectionKind::Profile, "Base".into()),
-                        (SectionKind::Work, "Startup".into()),
-                    ],
-                    hidden: Vec::new(),
-                },
-            ],
-            ..Default::default()
-        };
+        let mut doc = ResumeDoc::default();
+        doc.work.variants[0].name = "FAANG".into();
+        let faang = doc.work.active_id();
+        doc.add_variant(SectionKind::Work); // "FAANG copy", now active
+        doc.work.variants[1].name = "Startup".into();
+        let startup = doc.work.active_id();
+        let base = doc.profile.active_id();
+
+        doc.presets = vec![
+            Preset {
+                name: "Preset A".into(),
+                selection: vec![(SectionKind::Profile, base), (SectionKind::Work, faang)],
+                hidden: Vec::new(),
+            },
+            Preset {
+                name: "Preset B".into(),
+                selection: vec![(SectionKind::Profile, base), (SectionKind::Work, startup)],
+                hidden: Vec::new(),
+            },
+        ];
 
         let mut matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
         matrix.active_preset_idx = 0;
         matrix.compare_preset_idx = Some(1);
 
         let diff = matrix.compute_diff();
-        let (prof_a, prof_b) = diff.get(&SectionKind::Profile).unwrap();
-        assert_eq!(prof_a, "Base");
-        assert_eq!(prof_b.as_deref(), Some("Base"));
+        let (prof_a, prof_b) = diff.get(&SectionKind::Profile).copied().unwrap();
+        assert_eq!(prof_a, base);
+        assert_eq!(prof_b, Some(base));
 
-        let (work_a, work_b) = diff.get(&SectionKind::Work).unwrap();
-        assert_eq!(work_a, "FAANG");
-        assert_eq!(work_b.as_deref(), Some("Startup"));
+        let (work_a, work_b) = diff.get(&SectionKind::Work).copied().unwrap();
+        assert_eq!(work_a, faang);
+        assert_eq!(work_b, Some(startup));
+        assert_eq!(
+            matrix.variant_label(SectionKind::Work, work_a).as_deref(),
+            Some("FAANG")
+        );
+    }
+
+    /// A preset pinning a variant that has been deleted is a cell that says so.
+    ///
+    /// The whole reason pins are ids: before C0 this cell showed whichever
+    /// variant the *document* happened to be on, which is a different fact
+    /// about a different object, and the user had no way to tell.
+    #[test]
+    fn a_pin_to_a_deleted_variant_is_labelled_rather_than_guessed_at() {
+        let mut doc = ResumeDoc::default();
+        doc.add_variant(SectionKind::Work); // "Base copy", now active
+        doc.work.variants[1].name = "Infra".into();
+        let infra = doc.work.active_id();
+        doc.add_preset("Infra-heavy");
+
+        doc.remove_variant(SectionKind::Work, 1);
+        assert_eq!(doc.work.variants.len(), 1);
+
+        let matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+        assert_eq!(matrix.variant_label(SectionKind::Work, infra), None);
+        assert_eq!(
+            matrix.doc.unresolved_pins(0),
+            vec![SectionKind::Work],
+            "the preset still names the cut that was deleted, and says which"
+        );
     }
 }

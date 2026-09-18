@@ -1221,7 +1221,7 @@ impl Shell {
             return;
         };
 
-        let variants = pm.doc.variant_names(section);
+        let variants = pm.doc.variant_ids(section);
         if variants.is_empty() {
             return;
         }
@@ -1229,7 +1229,7 @@ impl Shell {
             return;
         };
         let hidden = preset.hidden.contains(&section);
-        let current = preset.variant_for(section).map(|v| v.to_string());
+        let current = preset.variant_for(section);
 
         // The cycle runs variant → variant → … → hidden → first variant, so
         // "leave this section out of this preset" (O-13) is reachable from the
@@ -1253,7 +1253,7 @@ impl Shell {
         match next_index {
             Some(i) => {
                 preset.hidden.retain(|s| *s != section);
-                preset.set(section, variants[i].clone());
+                preset.set(section, variants[i]);
             }
             None => {
                 if !preset.hidden.contains(&section) {

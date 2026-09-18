@@ -91,13 +91,12 @@ serde = { version = "1.0.228", features = ["derive"] }
 # is a build whose promise nobody can verify. `dockcv-wasm` already carries
 # serde_json for its own boundary, so this costs the browser build nothing.
 serde_json = "1.0"
+# The document format is part of the engine boundary, not only desktop I/O:
+# `dockcv-wasm` accepts the same human-readable files as the app. Keeping the
+# compatibility parser here ensures every host applies the same migrations.
+toml = "0.8"
 
 [dev-dependencies]
-# TOML is the wire format the model is shaped around — field order, defaults,
-# what a migration must keep reading — so the round-trip assertions belong
-# here. Dev-only: this crate never touches a file, and `vault.rs` in the binary
-# is what actually reads and writes them.
-toml = "0.8"
 zip = { version = "8", default-features = false }
 # The JSON Resume schema validates its dates with a regular expression, and the
 # test that keeps the exporter honest checks against that expression verbatim.

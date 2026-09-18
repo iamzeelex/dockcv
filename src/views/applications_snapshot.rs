@@ -278,15 +278,16 @@ mod tests {
             },
             "Base",
         );
+        let base = with_presets.profile.active_id();
         with_presets.presets = vec![
             Preset {
                 name: "FAANG · concise".into(),
-                selection: vec![(SectionKind::Profile, "Base".into())],
+                selection: vec![(SectionKind::Profile, base)],
                 hidden: Vec::new(),
             },
             Preset {
                 name: "Infra-heavy".into(),
-                selection: vec![(SectionKind::Profile, "Base".into())],
+                selection: vec![(SectionKind::Profile, base)],
                 hidden: Vec::new(),
             },
         ];

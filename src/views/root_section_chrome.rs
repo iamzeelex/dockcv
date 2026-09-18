@@ -92,6 +92,10 @@ impl Root {
         let candidate = self.trim_candidate_for(section)?;
         let theme = *cx.theme();
         let variant = candidate.variant.clone();
+        // Switch by id, not by the name on the chip: the two are the same
+        // variant today and stop being so the moment somebody renames it
+        // between the render and the click.
+        let target = candidate.id;
 
         Some(
             Button::new(SharedString::from(format!("trim-{section:?}")))
@@ -104,7 +108,7 @@ impl Root {
                     "Switch to “{variant}”, a shorter cut you already wrote"
                 ))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.doc.set_active_variant_by_name(section, &variant);
+                    this.doc.set_active_variant_by_id(section, target);
                     this.after_layout_change(window, cx);
                 }))
                 .child("trim candidate")

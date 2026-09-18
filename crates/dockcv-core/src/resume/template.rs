@@ -2805,7 +2805,7 @@ mod date_format_tests {
         doc.presets = vec![
             Preset {
                 name: "FAANG · concise".into(),
-                selection: vec![(SectionKind::Profile, "FAANG rewrite".into())],
+                selection: vec![(SectionKind::Profile, doc.profile.active_id())],
                 hidden: vec![SectionKind::Organizations],
             },
             Preset {

@@ -749,7 +749,18 @@ pub fn load(path: &Path) -> Result<ResumeDoc, String> {
         }
     }
     let text = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    toml::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))
+    parse(&text).map_err(|e| format!("parse {}: {e}", path.display()))
+}
+
+/// Turn a document's text into a [`ResumeDoc`].
+///
+/// **The only way a document enters memory from a file**, and the reason it is
+/// one function rather than a `toml::from_str` at each call site: a document
+/// written before 0.4.0 does not deserialize at all until
+/// [`crate::resume::parse_document_toml`] has run over it. The parser lives in
+/// `dockcv-core` because the browser engine accepts the same files.
+pub fn parse(text: &str) -> Result<ResumeDoc, toml::de::Error> {
+    crate::resume::parse_document_toml(text)
 }
 
 /// Serialize a document to its TOML representation.
@@ -921,7 +932,7 @@ pub fn external_change(doc: &ResumeDoc, path: &Path, seen: OnDisk) -> ExternalCh
 /// the document and write it back later.
 pub fn load_seen(path: &Path) -> Result<(ResumeDoc, OnDisk), String> {
     let text = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let doc = toml::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))?;
+    let doc = parse(&text).map_err(|e| format!("parse {}: {e}", path.display()))?;
     Ok((doc, OnDisk::of(&text)))
 }
 
@@ -2301,7 +2312,7 @@ path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
         doc.profile.variants[0].name = "Short".into();
         doc.presets = vec![Preset {
             name: "FAANG".into(),
-            selection: vec![(SectionKind::Profile, "Short".into())],
+            selection: vec![(SectionKind::Profile, doc.profile.active_id())],
             hidden: vec![],
         }];
 

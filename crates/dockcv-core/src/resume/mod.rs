@@ -5,6 +5,7 @@ pub mod altacv;
 pub mod altacv_package;
 pub mod dates;
 pub mod diagnostics;
+mod document_toml;
 pub mod edit;
 #[cfg(feature = "docx")]
 pub mod export_docx;
@@ -19,6 +20,7 @@ pub mod links;
 pub mod model;
 pub mod template;
 
+pub use document_toml::parse_document_toml;
 #[cfg(feature = "docx")]
 pub use export_docx::{export_docx, export_docx_with_date_format};
 pub use export_json_resume::{export_json_resume, export_json_resume_with_meta, ResumeMeta};

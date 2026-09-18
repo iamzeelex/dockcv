@@ -178,23 +178,46 @@ impl Root {
                             .get(active)
                             .cloned()
                             .unwrap_or_default();
+                        let Some(target) = this.doc.active_variant_id(section) else {
+                            return;
+                        };
+                        let affected = this.doc.presets_pinning(section, target);
+                        let fallback = match affected.as_slice() {
+                            [] => "No preset selects this variant.".to_string(),
+                            [one] => format!(
+                                "Preset “{one}” will have a deleted selection and fall back to the section’s first variant."
+                            ),
+                            many => format!(
+                                "Presets {} will have a deleted selection and fall back to the section’s first variant.",
+                                many.iter()
+                                    .map(|name| format!("“{name}”"))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                        };
                         confirm::destructive(
                             format!("Delete the “{name}” variant?"),
                             format!(
-                                "{} The section keeps its other variants, and any preset \
-                                 that selected this one falls back to the section's first.",
-                                confirm::CANNOT_UNDO
+                                "{} The section keeps its other variants. {fallback}",
+                                confirm::CANNOT_UNDO,
                             ),
                             "Delete",
                             window,
                             cx,
                             move |this, window, cx| {
-                                // Re-read rather than closing over `active`: the
-                                // dialog is modal, but the selection is state and
-                                // reading it late is free.
+                                // Delete the variant named by the dialog, even
+                                // if another view changed the active chip while
+                                // the confirmation was open.
+                                let Some(index) = this
+                                    .doc
+                                    .variant_ids(section)
+                                    .iter()
+                                    .position(|id| *id == target)
+                                else {
+                                    return;
+                                };
                                 this.checkpoint();
-                                let active = this.doc.active_variant(section);
-                                this.doc.remove_variant(section, active);
+                                this.doc.remove_variant(section, index);
                                 this.schedule_save(cx);
                                 this.fields_stale = true;
                                 cx.notify();

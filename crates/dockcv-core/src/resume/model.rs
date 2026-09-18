@@ -791,20 +791,77 @@ pub struct Library {
 // exactly one is active. The rendered document is the composition of every
 // section's active variant — see [`ResumeDoc::compose`].
 
+/// A stable identifier for one variant of one section.
+///
+/// [`CustomSectionId`]'s argument, one level down and for the same reader:
+/// `Preset::selection`. A `Vec` position re-points at a different variant the
+/// moment an earlier one is deleted, and a *name* re-points at nothing at all
+/// the moment it is edited — which is what a preset pinned until 0.4.0, so
+/// renaming a variant left every preset that selected it quietly reading
+/// whatever happened to be active instead. Measured, not supposed:
+/// `a_renamed_variant_does_not_strand_the_presets_that_pin_it`.
+///
+/// Unique within its **section**, not within the document: `(SectionKind,
+/// VariantId)` is the pair a preset pins, and per-section counters keep the
+/// numbers small enough that the TOML still reads.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
+pub struct VariantId(u32);
+
+impl VariantId {
+    /// The number behind the id, for the jobs that have to spell one out: the
+    /// vault's migration of documents written before ids existed, and the
+    /// tests that read one back. Nothing on screen should care.
+    pub fn as_u32(self) -> u32 {
+        self.0
+    }
+
+    /// An id from a raw number, for a fixture.
+    ///
+    /// Test-only, which is stricter than [`CustomSectionId::from_u32`] and for
+    /// the same reason held harder: real ids come from [`Versioned::mint`],
+    /// which cannot reissue one, and a constructor reachable from the app is
+    /// how two variants of a section come to share an id — the exact failure
+    /// this type was added to end.
+    #[cfg(test)]
+    pub(crate) const fn from_u32(id: u32) -> Self {
+        Self(id)
+    }
+}
+
 /// A single named variant of a section's content.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Variant<T> {
+    /// Stable for the life of the variant: a rename never touches it, and a
+    /// deletion never hands it to somebody else.
+    ///
+    /// `#[serde(default)]` exists for documents written before ids did, and
+    /// `VariantId(0)` is the only value that never belongs to a real variant —
+    /// ids are minted from 1. [`crate::resume::parse_document_toml`] fills them
+    /// in before an old document is deserialized, so a zero here means a
+    /// `ResumeDoc` built straight out of TOML rather than through that boundary;
+    /// [`Versioned::mint`] stays correct anyway rather than trusting that.
+    #[serde(default)]
+    pub id: VariantId,
     pub name: String,
     pub data: T,
 }
 
 /// A section's variants with one always active. Invariant: `variants` is
-/// non-empty and `active` is always in range.
+/// non-empty, `active` is always in range, and no two variants share an id.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Versioned<T> {
-    // `active` (a scalar) is declared before `variants` (a table array) so TOML
-    // serialization emits it before the `[[...]]` sections.
+    // `active` and `next_id` (scalars) are declared before `variants` (a table
+    // array) so TOML serialization emits them before the `[[...]]` sections.
     pub active: usize,
+    /// The id to hand to the *next* variant. Monotonic, never rewound, so a
+    /// deleted variant's id is never reissued — `next_custom_section_id`'s
+    /// rule, kept here for `Preset::selection`'s benefit: a reissued id would
+    /// silently re-point a preset at content it never selected, which is the
+    /// bug ids were added to end.
+    #[serde(default)]
+    pub next_id: u32,
     pub variants: Vec<Variant<T>>,
 }
 
@@ -818,11 +875,44 @@ impl<T: Clone> Versioned<T> {
     pub fn single(name: impl Into<String>, data: T) -> Self {
         Self {
             variants: vec![Variant {
+                id: VariantId(1),
                 name: name.into(),
                 data,
             }],
             active: 0,
+            next_id: 2,
         }
+    }
+
+    /// Hand out the next id.
+    ///
+    /// Takes the counter *or* one past the highest id present, whichever is
+    /// larger, rather than trusting the counter alone: a document hand-edited
+    /// in a text editor, or built in a test straight from TOML, can arrive with
+    /// a counter behind its own variants, and a reissued id is precisely the
+    /// failure ids exist to prevent.
+    fn mint(&mut self) -> VariantId {
+        let floor = self.variants.iter().map(|v| v.id.0).max().unwrap_or(0) + 1;
+        let id = VariantId(self.next_id.max(floor));
+        self.next_id = id.0 + 1;
+        id
+    }
+
+    /// Every variant's id, in the order the variants are stored — the index
+    /// side of the pair, for callers that already work in indices.
+    pub fn ids(&self) -> Vec<VariantId> {
+        self.variants.iter().map(|v| v.id).collect()
+    }
+
+    /// Where `id` sits, or `None` when nothing in this section carries it —
+    /// which is a preset pinning a variant that has since been deleted, and is
+    /// reported rather than guessed at (see [`ResumeDoc::unresolved_pins`]).
+    pub fn index_of_id(&self, id: VariantId) -> Option<usize> {
+        self.variants.iter().position(|v| v.id == id)
+    }
+
+    pub fn active_id(&self) -> VariantId {
+        self.variants[self.active].id
     }
 
     pub fn active(&self) -> &T {
@@ -851,20 +941,14 @@ impl<T: Clone> Versioned<T> {
         }
     }
 
-    pub fn index_of(&self, name: &str) -> Option<usize> {
-        self.variants.iter().position(|v| v.name == name)
-    }
-
-    /// Activate the variant with the given name, if present.
-    pub fn set_active_by_name(&mut self, name: &str) {
-        if let Some(index) = self.index_of(name) {
-            self.active = index;
-        }
-    }
-
     /// Duplicate the active variant and switch to the copy.
+    ///
+    /// The copy is a new variant, so it takes a new id: presets that pinned the
+    /// original keep pointing at the original, which is the only reading of
+    /// "duplicate" that does not quietly edit other presets.
     pub fn duplicate_active(&mut self) {
         let mut copy = self.variants[self.active].clone();
+        copy.id = self.mint();
         copy.name = format!("{} copy", copy.name);
         self.variants.push(copy);
         self.active = self.variants.len() - 1;
@@ -924,20 +1008,35 @@ pub enum SectionKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrimCandidate {
     pub section: SectionKind,
-    /// The leaner variant that already exists.
+    /// The leaner variant that already exists — its id, because that is what
+    /// switching to it needs.
+    pub id: VariantId,
+    /// Its name, because that is what the chip says. Carrying both is not one
+    /// fact in two places: a candidate is recomputed from the document every
+    /// time it is asked for and never stored.
     pub variant: String,
     /// Characters of printed text switching to it would remove.
     pub saved_chars: usize,
 }
 
-/// A named, document-wide preset: a chosen variant (by name) for each section.
+/// A named, document-wide preset: a chosen variant (by [`VariantId`]) for each
+/// section.
 /// Applying it switches every section's active variant in one click —
 /// e.g. a "GE Vernova" preset that picks the tailored Profile and Work variants
 /// while leaving Education on its shared one.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Preset {
     pub name: String,
-    pub selection: Vec<(SectionKind, String)>,
+    /// One pin per section the document has — every one of them, which
+    /// [`ResumeDoc::reconcile_presets`] is what keeps true. A preset silent
+    /// about a section is not a reading of the document, it is an instruction
+    /// whose result depends on what the user happened to be looking at last.
+    ///
+    /// Pinned by id, never by name: see [`VariantId`]. On disk this reads
+    /// `[["Work", 2]]`, and the name that goes with id 2 is a few lines up in
+    /// the same file, beside the variant that owns it.
+    #[serde(default)]
+    pub selection: Vec<(SectionKind, VariantId)>,
     /// Sections this preset leaves out of the document entirely.
     ///
     /// Visibility is part of what a preset *selects*, not a document-level
@@ -953,8 +1052,7 @@ pub struct Preset {
 /// A preset holds selections and never content, so this is the only kind of
 /// edit it has — and the Preset Matrix screen is where a user makes it.
 impl Preset {
-    pub fn set(&mut self, section: SectionKind, variant: impl Into<String>) {
-        let variant = variant.into();
+    pub fn set(&mut self, section: SectionKind, variant: VariantId) {
         match self.selection.iter_mut().find(|(s, _)| *s == section) {
             Some((_, existing)) => *existing = variant,
             None => self.selection.push((section, variant)),
@@ -962,11 +1060,17 @@ impl Preset {
     }
 
     /// The variant this preset pins for `section`, if it pins one at all.
-    pub fn variant_for(&self, section: SectionKind) -> Option<&str> {
+    ///
+    /// `None` means the preset does not name the section — which after
+    /// [`ResumeDoc::reconcile_presets`] only happens for a section that is not
+    /// in the document either. A pin naming a variant that has been *deleted*
+    /// is a different answer and a visible one: see
+    /// [`ResumeDoc::unresolved_pins`].
+    pub fn variant_for(&self, section: SectionKind) -> Option<VariantId> {
         self.selection
             .iter()
             .find(|(s, _)| *s == section)
-            .map(|(_, v)| v.as_str())
+            .map(|(_, v)| *v)
     }
 }
 
@@ -2706,41 +2810,128 @@ impl ResumeDoc {
                 }],
             ),
         });
+        // Every preset names every section (`reconcile_presets`), so a section
+        // added now joins the presets that already exist rather than being
+        // absent from them until somebody notices.
+        self.reconcile_presets();
         id
     }
 
-    /// Remove a custom section (every variant of it). Any stale reference
-    /// left behind in `section_order` or a `Preset` is repaired away by
-    /// [`Self::sections`] / read through [`Self::variant_name`]'s safe
-    /// fallback rather than causing a panic elsewhere.
+    /// Remove a custom section (every variant of it). A stale reference left
+    /// behind in `section_order` is repaired away by [`Self::sections`]; one
+    /// left in a `Preset` is repaired here, by [`Self::reconcile_presets`],
+    /// rather than lingering as a pin to a section nothing can show.
     pub fn remove_custom_section(&mut self, id: CustomSectionId) {
         self.custom_sections.retain(|s| s.id != id);
+        self.reconcile_presets();
     }
 
-    /// Activate the named variant of a section, if it exists.
-    pub fn set_active_variant_by_name(&mut self, section: SectionKind, name: &str) {
+    /// Every variant id of a section, in stored order. The one dispatcher the
+    /// id-based operations need; the rest are written in terms of it and
+    /// [`Self::set_active_variant`].
+    pub fn variant_ids(&self, section: SectionKind) -> Vec<VariantId> {
         use SectionKind::*;
         match section {
-            Profile => self.profile.set_active_by_name(name),
-            Work => self.work.set_active_by_name(name),
-            Education => self.education.set_active_by_name(name),
-            Skills => self.skills.set_active_by_name(name),
-            Certificates => self.certificates.set_active_by_name(name),
-            Organizations => self.volunteer.set_active_by_name(name),
-            Custom(id) => {
-                if let Some(s) = self.custom_section_mut(id) {
-                    s.content.set_active_by_name(name);
-                }
-            }
+            Profile => self.profile.ids(),
+            Work => self.work.ids(),
+            Education => self.education.ids(),
+            Skills => self.skills.ids(),
+            Certificates => self.certificates.ids(),
+            Organizations => self.volunteer.ids(),
+            Custom(id) => self
+                .custom_section(id)
+                .map(|s| s.content.ids())
+                .unwrap_or_default(),
         }
     }
 
-    /// The current active-variant name for every section, built-in and
-    /// custom alike, in the document's own order.
-    pub fn current_selection(&self) -> Vec<(SectionKind, String)> {
+    /// The active variant's id, or `None` for a `Custom` id with no matching
+    /// section — [`Self::variant_name`]'s fallback, in the other direction.
+    pub fn active_variant_id(&self, section: SectionKind) -> Option<VariantId> {
+        self.variant_ids(section)
+            .get(self.active_variant(section))
+            .copied()
+    }
+
+    /// Activate a section's variant by id. Answers whether it resolved, so a
+    /// caller that cares about a broken pin can say so instead of leaving the
+    /// section wherever it happened to be — which is what the name-based
+    /// version did, silently, for every preset that pinned a renamed variant.
+    pub fn set_active_variant_by_id(&mut self, section: SectionKind, id: VariantId) -> bool {
+        match self.variant_ids(section).iter().position(|v| *v == id) {
+            Some(index) => {
+                self.set_active_variant(section, index);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The active variant's id for every section, built-in and custom alike, in
+    /// the document's own order — what a preset saves.
+    pub fn current_selection(&self) -> Vec<(SectionKind, VariantId)> {
         self.sections()
             .into_iter()
-            .map(|s| (s, self.variant_name(s).clone()))
+            .filter_map(|s| self.active_variant_id(s).map(|id| (s, id)))
+            .collect()
+    }
+
+    /// Make every preset name every section the document has, and no others.
+    ///
+    /// Run on load and after any change to the *set* of sections. Two repairs,
+    /// and both are about totality rather than about resolvability:
+    ///
+    /// - a section added after a preset was saved joins it, pinned to whatever
+    ///   that section currently reads. Excel's Custom Views shipped the other
+    ///   answer in 1993 — a view silently does not cover a sheet added later —
+    ///   and it is the reason nobody trusts them;
+    /// - a pin naming a section the document no longer has is dropped, the same
+    ///   repair [`Self::sections`] already makes to `section_order`.
+    ///
+    /// A pin naming a *deleted variant* is left exactly where it is. That is
+    /// not untidiness: it is the difference between "this preset has nothing to
+    /// say about Skills" and "this preset selected a cut of Skills you threw
+    /// away", and only the second one is worth telling somebody about.
+    pub fn reconcile_presets(&mut self) {
+        let current: Vec<(SectionKind, VariantId)> = self.current_selection();
+        let known: Vec<SectionKind> = current.iter().map(|(s, _)| *s).collect();
+        for preset in &mut self.presets {
+            preset.selection.retain(|(s, _)| known.contains(s));
+            for (section, active) in &current {
+                if preset.variant_for(*section).is_none() {
+                    preset.selection.push((*section, *active));
+                }
+            }
+            preset.hidden.retain(|s| known.contains(s));
+        }
+    }
+
+    /// The sections where preset `index` pins a variant that no longer exists.
+    ///
+    /// The one thing a preset can be wrong about after
+    /// [`Self::reconcile_presets`], and the reason it is reported rather than
+    /// repaired: repairing it would mean choosing a cut of that section on the
+    /// user's behalf and never mentioning it.
+    pub fn unresolved_pins(&self, index: usize) -> Vec<SectionKind> {
+        let Some(preset) = self.presets.get(index) else {
+            return Vec::new();
+        };
+        preset
+            .selection
+            .iter()
+            .filter(|(section, id)| !self.variant_ids(*section).contains(id))
+            .map(|(section, _)| *section)
+            .collect()
+    }
+
+    /// Which presets pin this exact variant — what the delete confirmation has
+    /// to name before it removes one, the way `library_link.rs` names the CVs
+    /// an edited block would reach.
+    pub fn presets_pinning(&self, section: SectionKind, id: VariantId) -> Vec<&str> {
+        self.presets
+            .iter()
+            .filter(|p| p.variant_for(section) == Some(id))
+            .map(|p| p.name.as_str())
             .collect()
     }
 
@@ -2765,8 +2956,17 @@ impl ResumeDoc {
         let Some(preset) = self.presets.get(index).cloned() else {
             return;
         };
-        for (section, variant_name) in preset.selection {
-            self.set_active_variant_by_name(section, &variant_name);
+        for (section, variant) in preset.selection {
+            // A pin that does not resolve falls back to the section's first
+            // variant — which is what the delete confirmation has promised
+            // since it was written, and what nothing implemented: the
+            // name-based version simply did nothing, leaving the section on
+            // whatever the previous reading had selected. Falling back is a
+            // guess too, but it is the same guess every time, and
+            // `unresolved_pins` is what says so on screen.
+            if !self.set_active_variant_by_id(section, variant) {
+                self.set_active_variant(section, 0);
+            }
         }
         // Visibility is part of the selection (O-13), so applying a preset
         // restores it wholesale — including *un*-hiding what this preset does
@@ -2801,11 +3001,10 @@ impl ResumeDoc {
         {
             return false;
         }
-        preset.selection.iter().all(|(section, name)| {
-            self.variant_names(*section)
-                .get(self.active_variant(*section))
-                .is_some_and(|active| active == name)
-        })
+        preset
+            .selection
+            .iter()
+            .all(|(section, id)| self.active_variant_id(*section) == Some(*id))
     }
 
     pub fn remove_preset(&mut self, index: usize) {
@@ -3038,6 +3237,7 @@ impl ResumeDoc {
                     .min_by_key(|(_, w)| *w)?;
                 Some(TrimCandidate {
                     section: kind,
+                    id: *self.variant_ids(kind).get(index)?,
                     variant: names.get(index)?.clone(),
                     saved_chars: current - weight,
                 })
@@ -3346,12 +3546,18 @@ mod custom_section_tests {
         let text = toml::to_string_pretty(&doc).expect("serializes");
         let mut back: ResumeDoc = toml::from_str(&text).expect("round-trips");
 
+        let tailored = back
+            .custom_section(id)
+            .and_then(|s| s.content.variants.iter().find(|v| v.name == "Tailored"))
+            .map(|v| v.id)
+            .expect("the tailored variant survives the round trip");
+
         assert_eq!(back.presets.len(), 1);
         assert!(
             back.presets[0]
                 .selection
                 .iter()
-                .any(|(s, name)| *s == SectionKind::Custom(id) && name == "Tailored"),
+                .any(|(s, pinned)| *s == SectionKind::Custom(id) && *pinned == tailored),
             "preset selection lost its custom-section entry across a TOML round trip"
         );
 
@@ -3385,18 +3591,23 @@ mod custom_section_tests {
     /// what the document renders.
     #[test]
     fn pinning_a_section_twice_replaces_rather_than_duplicates() {
+        let (detailed, concise, infra) = (
+            VariantId::from_u32(1),
+            VariantId::from_u32(2),
+            VariantId::from_u32(7),
+        );
         let mut preset = Preset {
             name: "FAANG · concise".into(),
-            selection: vec![(SectionKind::Work, "Detailed".into())],
+            selection: vec![(SectionKind::Work, detailed)],
             hidden: Vec::new(),
         };
 
-        preset.set(SectionKind::Work, "Concise");
-        preset.set(SectionKind::Skills, "Infra-heavy");
+        preset.set(SectionKind::Work, concise);
+        preset.set(SectionKind::Skills, infra);
 
         assert_eq!(preset.selection.len(), 2);
-        assert_eq!(preset.variant_for(SectionKind::Work), Some("Concise"));
-        assert_eq!(preset.variant_for(SectionKind::Skills), Some("Infra-heavy"));
+        assert_eq!(preset.variant_for(SectionKind::Work), Some(concise));
+        assert_eq!(preset.variant_for(SectionKind::Skills), Some(infra));
         // A section nobody pinned stays unpinned — the matrix renders that as
         // "not pinned", never as the design's `— hidden —` (O-13).
         assert_eq!(preset.variant_for(SectionKind::Education), None);
@@ -3418,6 +3629,78 @@ mod custom_section_tests {
             "got {sections:?}"
         );
         assert_eq!(selection.len(), doc.sections().len());
+    }
+
+    /// A display-name edit cannot change what a preset means. Before C0 the
+    /// pin itself was that name, so this exact edit stranded it.
+    #[test]
+    fn a_renamed_variant_does_not_strand_the_presets_that_pin_it() {
+        let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        doc.add_variant(SectionKind::Work);
+        let pinned = doc.work.active_id();
+        doc.work.active_name_mut().clone_from(&"Infra".into());
+        doc.add_preset("Platform");
+
+        doc.work.active_name_mut().clone_from(&"Infra-heavy".into());
+        doc.set_active_variant(SectionKind::Work, 0);
+        doc.apply_preset(0);
+
+        assert_eq!(doc.work.active_id(), pinned);
+        assert_eq!(doc.work.active_name(), "Infra-heavy");
+        assert!(doc.is_preset_active(0));
+    }
+
+    /// Adding a section changes the set a preset has to account for. It joins
+    /// every existing preset at the current variant instead of inheriting
+    /// whichever state another reading happened to leave behind.
+    #[test]
+    fn a_new_section_joins_every_existing_preset() {
+        let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        doc.add_preset("Concise");
+        let id = doc.add_custom_section("Publications");
+        let active = doc.active_variant_id(SectionKind::Custom(id)).unwrap();
+
+        assert_eq!(
+            doc.presets[0].variant_for(SectionKind::Custom(id)),
+            Some(active)
+        );
+        assert_eq!(doc.presets[0].selection.len(), doc.sections().len());
+    }
+
+    /// Deletion does not rewrite history into a different selection. The pin
+    /// stays visibly unresolved, and applying it has one deterministic fallback.
+    #[test]
+    fn deleting_a_pinned_variant_is_loud_and_falls_back_to_the_first() {
+        let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        doc.add_variant(SectionKind::Work);
+        let deleted = doc.work.active_id();
+        doc.work.active_name_mut().clone_from(&"Infra".into());
+        doc.add_preset("Platform");
+
+        doc.remove_variant(SectionKind::Work, 1);
+        assert_eq!(
+            doc.presets[0].variant_for(SectionKind::Work),
+            Some(deleted),
+            "the broken fact remains inspectable"
+        );
+        assert_eq!(doc.unresolved_pins(0), vec![SectionKind::Work]);
+
+        doc.apply_preset(0);
+        assert_eq!(doc.work.active, 0);
+    }
+
+    /// A deleted id is never handed to the next copy: doing so would quietly
+    /// make every dangling preset pin refer to unrelated new content.
+    #[test]
+    fn a_deleted_variant_id_is_never_reissued() {
+        let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        doc.add_variant(SectionKind::Work);
+        let deleted = doc.work.active_id();
+        doc.remove_variant(SectionKind::Work, 1);
+        doc.add_variant(SectionKind::Work);
+
+        assert_ne!(doc.work.active_id(), deleted);
+        assert!(doc.work.active_id().as_u32() > deleted.as_u32());
     }
 
     /// "Trim candidate" means one specific thing: a **shorter variant you
@@ -3580,19 +3863,21 @@ mod applications_tests {
             ..Default::default()
         };
         let mut doc = ResumeDoc::from_resume(resume, "Base");
-        doc.profile.variants.push(crate::resume::model::Variant {
-            name: "Short".into(),
-            data: Basics::default(),
-        });
+        let base = doc.profile.active_id();
+        doc.add_variant(SectionKind::Profile); // "Base copy", now active
+        let short = doc.profile.active_id();
+        doc.profile.variants[1].name = "Short".into();
+        doc.profile.variants[1].data = Basics::default();
+        doc.set_active_variant(SectionKind::Profile, 0);
         doc.presets = vec![
             Preset {
                 name: "Short profile".into(),
-                selection: vec![(SectionKind::Profile, "Short".into())],
+                selection: vec![(SectionKind::Profile, short)],
                 hidden: vec![],
             },
             Preset {
                 name: "Base profile".into(),
-                selection: vec![(SectionKind::Profile, "Base".into())],
+                selection: vec![(SectionKind::Profile, base)],
                 hidden: vec![],
             },
             Preset {
