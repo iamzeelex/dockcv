@@ -1102,7 +1102,78 @@ pub fn classify_raw_text(format_name: &str, raw_text: &str) -> ImportedDoc {
         // joined into one.
         get_date_range_regex().is_match(l) || ends_with_parenthesised_date(l)
     });
-    classify_lines(format_name, lines)
+    classify_lines(format_name, join_split_entry_headers(lines))
+}
+
+/// Put an entry's dates back on its title.
+///
+/// Templates routinely give the dates a cell, a paragraph or a column of their
+/// own — styled `Dates`, styled `Heading2` with the title in a plain run beside
+/// it, or simply a table with the years down the left. Split that way neither
+/// half is a usable entry header: the title carries no date to place it, and
+/// the dates carry no title to name them.
+///
+/// This lived in the DOCX engine, on the reasoning that scattering an entry
+/// across cells is a fact about Word. It is not. A PDF exported from the same
+/// Word template arrives with the date on its own line for exactly the same
+/// reason, and a CV built as a two-column table — which is most of the Word
+/// gallery — imported as two jobs that had dates and no employer, no title and
+/// no bullets. Both directions are handled: the dates can precede their entry
+/// or follow it.
+pub fn join_split_entry_headers(lines: Vec<layout::LogicalLine>) -> Vec<layout::LogicalLine> {
+    let mut out: Vec<layout::LogicalLine> = Vec::with_capacity(lines.len());
+    let mut pending_dates: Option<String> = None;
+
+    for line in lines {
+        if line.kind != layout::LineKind::Heading && is_only_dates(&line.text) {
+            match out.last_mut() {
+                // The line above claims the dates whenever it is one that could
+                // own them. That is the order DockCV's own exporter writes —
+                // title, dates, bullets — and holding them for the *next* line
+                // stapled them to the entry's first bullet instead, leaving the
+                // entry itself undated.
+                Some(prev)
+                    if prev.kind != layout::LineKind::Heading
+                        && prev.kind != layout::LineKind::Bullet =>
+                {
+                    prev.text = format!("{} {}", prev.text, line.text);
+                    prev.kind = layout::LineKind::EntryHeader;
+                }
+                // A section heading or a list above, so nothing there can own
+                // them: this template printed the dates first, and the entry is
+                // on the line below.
+                _ => pending_dates = Some(line.text.clone()),
+            }
+            continue;
+        }
+        match pending_dates.take() {
+            // The line after a bare date is the entry that date belongs to —
+            // unless it is a list item, which is content under an entry and
+            // never an entry itself.
+            Some(dates)
+                if line.kind != layout::LineKind::Heading
+                    && line.kind != layout::LineKind::Bullet =>
+            {
+                out.push(layout::LogicalLine::new(
+                    format!("{} {}", line.text, dates),
+                    layout::LineKind::EntryHeader,
+                ))
+            }
+            // A heading or a bullet follows: the dates belonged to the entry
+            // above them.
+            Some(dates) => {
+                if let Some(prev) = out
+                    .last_mut()
+                    .filter(|p| p.kind == layout::LineKind::EntryHeader)
+                {
+                    prev.text = format!("{} {}", prev.text, dates);
+                }
+                out.push(line);
+            }
+            None => out.push(line),
+        }
+    }
+    out
 }
 
 /// The part of the document a contact detail may come from.
@@ -1212,6 +1283,26 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
     }
 
     let mut current_section = SectionKind::Unknown;
+    // A CV with no section headings at all is a real template — the
+    // minimalist one — and it used to import as a name, an email and a couple
+    // of lines the wizard offered to adopt. Everything else was read as part
+    // of the contact block and dropped, because `current_section` never left
+    // `Unknown` and the arm for `Unknown` is the contact block.
+    //
+    // With nothing to segment on, the shape of a line is all there is: the
+    // first one carrying a date range ends the contact block and opens the
+    // work history. Filing a degree under Work is wrong and is *visibly*
+    // wrong, where losing it is neither — so the reading is stated in a note
+    // rather than performed quietly.
+    let has_headings = lines.iter().any(|l| l.kind == layout::LineKind::Heading);
+    let implicit_work_at = if has_headings {
+        None
+    } else {
+        lines
+            .iter()
+            .position(|l| !l.is_bullet() && get_date_range_regex().is_match(&l.text))
+    };
+
     let mut first_lines: Vec<&str> = Vec::new();
     let mut custom: Vec<(String, Vec<CustomEntry>)> = Vec::new();
     let mut seen: Vec<SectionKind> = Vec::new();
@@ -1236,6 +1327,10 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
         let next_is_dates = lines
             .get(idx + 1)
             .is_some_and(|l| l.kind != layout::LineKind::Heading && is_only_dates(&l.text));
+        if Some(idx) == implicit_work_at {
+            current_section = SectionKind::Work;
+            seen.push(SectionKind::Work);
+        }
         if entry.kind == layout::LineKind::Heading {
             current_section = classify_header(&entry.text);
             // A document never has two Work sections. When a second heading
@@ -1713,6 +1808,13 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
         };
         if empty {
             imported.note(part, Note::Empty);
+        }
+    }
+
+    if implicit_work_at.is_some() {
+        let entries = imported.doc.work.active().len();
+        if entries > 0 {
+            imported.note(Part::Work, Note::ReadWithoutHeadings { entries });
         }
     }
 

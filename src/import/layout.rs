@@ -517,13 +517,27 @@ impl EntryHeader {
                 rest[..whole.start()].to_string(),
                 rest[whole.end()..].to_string(),
             );
-            // Anything after the dates is location-ish; a `|` may or may not
-            // separate it.
-            let tail = after.trim().trim_start_matches('|').trim();
-            if !tail.is_empty() {
-                header.location = tail.to_string();
+            // Which side of the dates the entry is on depends on which side
+            // has anything on it.
+            //
+            // Dates last is the ordinary shape and what this used to assume:
+            // `Senior Engineer, Acme 2019 – 2022 | Dublin`, where everything
+            // after them is location-ish. But a CV laid out as a table — most
+            // of the Word gallery, and every template with a column of years
+            // down the left — extracts as `2021-02 – Present Principal
+            // Engineer, Atlantic Systems`, and reading *that* tail as a
+            // location filed the job title and the employer under where the
+            // person worked, leaving the entry itself nameless. Two jobs with
+            // dates and nothing else is what a Word-template CV imported as.
+            if before.trim().is_empty() && !after.trim().is_empty() {
+                rest = after;
+            } else {
+                let tail = after.trim().trim_start_matches('|').trim();
+                if !tail.is_empty() {
+                    header.location = tail.to_string();
+                }
+                rest = before;
             }
-            rest = before;
         }
 
         // `|` is a field separator, and what the fields *are* depends on how

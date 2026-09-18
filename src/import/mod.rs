@@ -6,6 +6,8 @@
 
 pub mod classifier;
 pub mod error;
+#[cfg(test)]
+pub mod foreign_cvs;
 pub mod layout;
 pub mod model;
 pub mod notes;

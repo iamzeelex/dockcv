@@ -600,3 +600,83 @@ fn a_text_cv_saved_the_way_notepad_saves_one() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A CV from somebody else's template gives up what it states.
+///
+/// The corpus is `import::foreign_cvs`: a sidebar down the left, the whole
+/// document inside a table, the contact block in a running header, dates in a
+/// gutter, no section headings at all, and a right-to-left script. Each is
+/// compiled to a real PDF and imported, and every fact the file states plainly
+/// has to come back — whatever the layout was doing when it stated it.
+///
+/// Two of these were failing when the corpus was written, and both were fixed
+/// rather than recorded: a table's entry line arrives with its dates *first*
+/// and had its title and employer filed as a location, and a CV with no
+/// headings had everything below the contact block dropped.
+#[test]
+fn a_cv_from_somebody_elses_template_gives_up_what_it_states() {
+    let dir = std::env::temp_dir().join(format!("dockcv-foreign-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    for cv in crate::import::foreign_cvs::all() {
+        let pdf = dockcv_core::typst_engine::TypstEngine::new(cv.source.to_string())
+            .compile_to_pdf()
+            .unwrap_or_else(|why| panic!("“{}” does not compile: {why}", cv.name));
+        let path = dir.join(format!("{}.pdf", cv.name.replace(' ', "-")));
+        std::fs::write(&path, &pdf).expect("write");
+
+        let imported =
+            import_file(&path).unwrap_or_else(|e| panic!("“{}” did not import: {e}", cv.name));
+        let doc = imported.doc.compose();
+        let everything = format!("{doc:?}");
+        let missing: Vec<&str> = cv
+            .must_recover
+            .iter()
+            .filter(|fact| !everything.contains(*fact))
+            .copied()
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "“{}” lost {missing:?}.\n    That layout is: {}",
+            cv.name,
+            cv.shape
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A CV with no headings says so rather than filing a degree as a job in
+/// silence.
+#[test]
+fn a_cv_with_no_headings_is_read_by_shape_and_says_so() {
+    let dir = std::env::temp_dir().join(format!("dockcv-no-headings-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let cv = crate::import::foreign_cvs::all()
+        .into_iter()
+        .find(|c| c.name == "no headings at all")
+        .expect("the corpus carries one");
+    let pdf = dockcv_core::typst_engine::TypstEngine::new(cv.source.to_string())
+        .compile_to_pdf()
+        .expect("compiles");
+    let path = dir.join("cv.pdf");
+    std::fs::write(&path, &pdf).expect("write");
+
+    let imported = import_file(&path).expect("imports");
+    assert_eq!(
+        imported.doc.work.active().len(),
+        3,
+        "every dated entry should have come out"
+    );
+    assert!(
+        imported.notes.iter().any(|(_, note)| matches!(
+            note,
+            crate::import::notes::Note::ReadWithoutHeadings { .. }
+        )),
+        "a degree read as a job has to be said out loud: {:?}",
+        imported.notes
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
