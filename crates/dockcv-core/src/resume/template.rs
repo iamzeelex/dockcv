@@ -685,7 +685,16 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
     let _ = write!(
         out,
         r##"#set page(paper: "{paper}", fill: white, margin: (x: {x}mm, top: {top}mm, bottom: {bottom}mm))
-#set text(font: "{font}", size: {size}pt, fill: rgb("#1a1a1a"))
+#set text(font: "{font}", size: {size}pt, fill: rgb("#1a1a1a"), hyphenate: false)
+// Hyphenation off, and measured rather than preferred. Typst hyphenates by
+// default when a paragraph is justified, and it does it correctly: the break
+// is a *soft* hyphen, U+00AD, which is exactly what the character is for. No
+// extractor strips it. All seven readings of a CV whose bullet broke the word
+// `counterparties` across a line lost that whole sentence — content order,
+// sorted, the structure tree, `pdftotext` in all three modes, pdfminer and
+// PDFBox alike. A CV is a page of short prose at a wide measure, so the
+// typographic cost is a little more air between words; the cost of leaving it
+// on is a bullet no parser can read. See `src/ats/adversarial.rs`.
 #set par(justify: true, leading: {leading}em)
 
 // Section bars are `heading` elements so the exported PDF carries an `/H2`

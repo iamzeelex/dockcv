@@ -11,6 +11,8 @@
 //! confident number invented by a language model is the thing this exists to
 //! be an answer to. See `docs/design/ats.md`.
 
+#[cfg(test)]
+pub mod adversarial;
 pub mod docx;
 pub mod external;
 pub mod fields;

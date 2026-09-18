@@ -27,6 +27,10 @@ use dockcv_core::resume::model::{
 use dockcv_core::resume::template;
 use dockcv_core::typst_engine::TypstEngine;
 
+use dockcv_core::resume::ats;
+use dockcv_core::resume::edit::FieldId;
+
+use super::adversarial;
 use super::docx;
 use super::external;
 use super::fields::{self, Pinned};
@@ -423,4 +427,74 @@ fn the_word_file_says_what_its_headings_and_its_lists_are() {
             );
         }
     }
+}
+
+/// Every attack that lands is one the lint saw coming.
+///
+/// This is the tie between the two halves of the track, and it is the property
+/// that keeps either half from rotting. The adversarial documents in
+/// `ats::adversarial` are written to break the pipeline; each one that still
+/// takes a field must have a lint finding pointing at *that field*, so the
+/// author is told before they send it rather than after nobody replies.
+///
+/// A failure here means one of three things, and all three are worth stopping
+/// for: a new defect in the export, a rule the lint is missing, or an attack
+/// that has been fixed and whose expectation should now be that it lands on
+/// nothing.
+#[test]
+fn every_attack_that_lands_is_one_the_lint_saw_coming() {
+    let mut unpredicted: Vec<String> = Vec::new();
+
+    for adversary in adversarial::all() {
+        let pinned = fields::pin(&adversary.resume);
+        let warned: Vec<FieldId> = ats::lint(&adversary.resume)
+            .into_iter()
+            .filter_map(|f| f.at)
+            .collect();
+
+        let pdf = TypstEngine::new(template::generate(&adversary.resume))
+            .compile_to_pdf()
+            .unwrap_or_else(|why| panic!("“{}” does not compile at all: {why}", adversary.name));
+        let path = std::env::temp_dir().join(format!(
+            "dockcv-adv-{}.pdf",
+            adversary.name.replace(' ', "-")
+        ));
+        std::fs::write(&path, &pdf).expect("write");
+
+        let bytes = dockcv_core::resume::export_docx::export_docx(&adversary.resume)
+            .unwrap_or_else(|why| panic!("“{}” does not export to .docx: {why}", adversary.name));
+        let word_path = std::env::temp_dir().join(format!(
+            "dockcv-adv-{}.docx",
+            adversary.name.replace(' ', "-")
+        ));
+        std::fs::write(&word_path, &bytes).expect("write");
+
+        let readings = readings(&pdf, &path)
+            .into_iter()
+            .map(|(engine, text)| (format!("PDF {engine}"), text))
+            .chain(
+                word_readings(&word_path, &bytes)
+                    .into_iter()
+                    .map(|(engine, text)| (format!("DOCX {engine}"), text)),
+            );
+
+        for (engine, text) in readings {
+            for lost in pinned.iter().filter(|p| !p.recovered(&text)) {
+                let predicted = lost.at.is_some_and(|at| warned.contains(&at));
+                if !predicted {
+                    unpredicted.push(format!(
+                        "{} · {engine} · {} — and the lint says nothing about it.\n                             That document exists to test: {}",
+                        adversary.name, lost.what, adversary.attacks
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        unpredicted.is_empty(),
+        "{} field(s) an adversary took without warning:\n{}",
+        unpredicted.len(),
+        unpredicted.join("\n")
+    );
 }

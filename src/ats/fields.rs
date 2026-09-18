@@ -18,6 +18,7 @@
 //! No score is computed anywhere, here or above. A field is recovered or it is
 //! not, and the report names the ones that are not.
 
+use dockcv_core::resume::edit::FieldId;
 use dockcv_core::resume::model::{Resume, SectionKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +33,11 @@ pub struct Pinned {
     pub what: String,
     pub needle: String,
     pub expect: Expect,
+    /// The field this came from, when it came from one. It is what lets a lost
+    /// field be matched against the lint finding that predicted it — and, when
+    /// the ATS screen is built, what lets a reading that lost something put the
+    /// cursor where it went missing.
+    pub at: Option<FieldId>,
 }
 
 impl Pinned {
@@ -40,7 +46,13 @@ impl Pinned {
             what: what.into(),
             needle: needle.into(),
             expect: Expect::Contains,
+            at: None,
         }
+    }
+
+    fn at(mut self, field: FieldId) -> Self {
+        self.at = Some(field);
+        self
     }
 
     /// Is this field in this reading?
@@ -51,14 +63,33 @@ impl Pinned {
         }
         match self.expect {
             Expect::Contains => normalize(reading).contains(&needle),
-            Expect::OwnLine => reading.lines().map(normalize).any(|line| {
-                // The marker is the list's, not the item's: every extractor
-                // decides differently whether to keep it, drop it or put it on
-                // a line of its own, and none of that is the defect being
-                // looked for.
-                let line = line.trim_start_matches(['•', '-', '–', '*', '·', '‣', ' ']);
-                line == needle || line.starts_with(&format!("{needle} "))
-            }),
+            // Two things at once, because either alone is not the property:
+            // the text has to be **intact**, and it has to **begin a line**.
+            //
+            // Beginning a line is not the same as being one. A bullet worth
+            // writing runs past the measure and wraps, and an extractor wraps
+            // it where the page did — so the line that starts it is a *prefix*
+            // of it rather than the whole of it. Demanding the whole of it was
+            // a defect in this check and not in any document: it passed only
+            // because the first fixture's bullets were short enough to fit.
+            Expect::OwnLine => {
+                if !normalize(reading).contains(&needle) {
+                    return false;
+                }
+                reading.lines().map(normalize).any(|line| {
+                    // The marker is the list's, not the item's: every extractor
+                    // decides differently whether to keep it, drop it or put it
+                    // on a line of its own, and none of that is the defect
+                    // being looked for.
+                    let line = line.trim_start_matches(['•', '-', '–', '*', '·', '‣', ' ']);
+                    if line == needle || line.starts_with(&format!("{needle} ")) {
+                        return true;
+                    }
+                    // A wrapped opening line. Long enough that a stray word
+                    // cannot pass for the start of a sentence.
+                    needle.starts_with(line) && line.chars().count() >= 12
+                })
+            }
         }
     }
 }
@@ -124,18 +155,21 @@ pub fn pin(resume: &Resume) -> Vec<Pinned> {
     let mut out = Vec::new();
     let b = &resume.basics;
 
-    out.push(Pinned::contains("name", &b.name));
-    out.push(Pinned::contains("role", &b.label));
-    out.push(Pinned::contains("email", &b.email));
-    out.push(Pinned::contains("phone", &b.phone));
-    out.push(Pinned::contains("location", &b.location));
+    out.push(Pinned::contains("name", &b.name).at(FieldId::Name));
+    out.push(Pinned::contains("role", &b.label).at(FieldId::Label));
+    out.push(Pinned::contains("email", &b.email).at(FieldId::Email));
+    out.push(Pinned::contains("phone", &b.phone).at(FieldId::Phone));
+    out.push(Pinned::contains("location", &b.location).at(FieldId::Location));
     if !b.summary.trim().is_empty() {
         // The first clause only: a summary is re-wrapped by every extractor at
         // a different width, and a line break inside it is not a defect.
-        out.push(Pinned::contains(
-            "summary opens",
-            b.summary.split(',').next().unwrap_or_default().trim(),
-        ));
+        out.push(
+            Pinned::contains(
+                "summary opens",
+                b.summary.split(',').next().unwrap_or_default().trim(),
+            )
+            .at(FieldId::Summary),
+        );
     }
 
     for kind in [
@@ -163,48 +197,55 @@ pub fn pin(resume: &Resume) -> Vec<Pinned> {
                 what: format!("heading “{title}”"),
                 needle: title,
                 expect: Expect::OwnLine,
+                at: None,
             });
         }
     }
 
     for (i, job) in resume.work.iter().enumerate() {
-        out.push(Pinned::contains(
-            format!("work {i} position"),
-            &job.position,
-        ));
-        out.push(Pinned::contains(format!("work {i} employer"), &job.name));
+        out.push(
+            Pinned::contains(format!("work {i} position"), &job.position)
+                .at(FieldId::WorkPosition(i)),
+        );
+        out.push(
+            Pinned::contains(format!("work {i} employer"), &job.name).at(FieldId::WorkName(i)),
+        );
         for (j, bullet) in job.highlights.iter().enumerate() {
             out.push(Pinned {
                 what: format!("work {i} bullet {j}"),
                 needle: bullet.clone(),
                 expect: Expect::OwnLine,
+                at: Some(FieldId::WorkHighlight(i, j)),
             });
         }
     }
 
     for (i, school) in resume.education.iter().enumerate() {
-        out.push(Pinned::contains(
-            format!("education {i} study"),
-            &school.study_type,
-        ));
-        out.push(Pinned::contains(
-            format!("education {i} institution"),
-            &school.institution,
-        ));
+        out.push(
+            Pinned::contains(format!("education {i} study"), &school.study_type)
+                .at(FieldId::EduStudyType(i)),
+        );
+        out.push(
+            Pinned::contains(format!("education {i} institution"), &school.institution)
+                .at(FieldId::EduInstitution(i)),
+        );
     }
 
-    for group in &resume.skills {
-        for keyword in &group.keywords {
-            out.push(Pinned::contains(format!("skill “{keyword}”"), keyword));
+    for (i, group) in resume.skills.iter().enumerate() {
+        for (j, keyword) in group.keywords.iter().enumerate() {
+            out.push(
+                Pinned::contains(format!("skill “{keyword}”"), keyword)
+                    .at(FieldId::SkillKeyword(i, j)),
+            );
         }
     }
 
     for (i, cert) in resume.certificates.iter().enumerate() {
-        out.push(Pinned::contains(format!("certificate {i}"), &cert.name));
-        out.push(Pinned::contains(
-            format!("certificate {i} issuer"),
-            &cert.issuer,
-        ));
+        out.push(Pinned::contains(format!("certificate {i}"), &cert.name).at(FieldId::CertName(i)));
+        out.push(
+            Pinned::contains(format!("certificate {i} issuer"), &cert.issuer)
+                .at(FieldId::CertIssuer(i)),
+        );
     }
 
     out.retain(|p| !p.needle.trim().is_empty());
@@ -221,6 +262,7 @@ mod tests {
             what: "heading".into(),
             needle: "Education".into(),
             expect: Expect::OwnLine,
+            at: None,
         };
         assert!(heading.recovered("EDUCATION\nM.Sc. in Computer Science"));
         // The defect the harness exists to catch, and the reason `normalize`
@@ -234,6 +276,7 @@ mod tests {
             what: "heading".into(),
             needle: "Work Experience".into(),
             expect: Expect::OwnLine,
+            at: None,
         };
         assert!(heading.recovered("WORK EXPERIENCE\nSenior Software Engineer"));
         assert!(!heading.recovered("WORK EXPERIENCESenior Software Engineer"));

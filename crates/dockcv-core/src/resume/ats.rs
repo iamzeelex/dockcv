@@ -58,22 +58,54 @@ pub enum Rule {
     /// Neither an email address nor a telephone number. A parser that cannot
     /// key a candidate on one of the two has nowhere to file the application.
     NoWayToReachThePerson,
-    /// Markup the text exports cannot resolve, so a parser reads the source
-    /// rather than the sentence.
+    /// Markup that never renders anywhere: not on the page, not in any export.
     ///
-    /// Measured rather than assumed, and narrower than it first looked.
-    /// `*bold*` and `_italic_` come out as their words — the page and the text
-    /// say the same thing, and there is nothing to report. A *function* call
-    /// does not: `strip_typst_markup` leaves `#strong[p99]` exactly as typed,
-    /// because it cannot know what an arbitrary function renders as, so the
-    /// plain-text, Markdown and Word exports all carry the source into the
-    /// file a parser reads.
-    MarkupThatReachesTheParserAsSource { text: String, in_the_text: String },
+    /// Measured twice, and wrong the first time. `*bold*` and `_italic_` are
+    /// live — they set as emphasis and come back as their words, so there is
+    /// nothing to report. A *function* call is not: `template.rs::neutralize`
+    /// escapes `#` before Typst sees it, deliberately, because `C#` and `$1.2M`
+    /// are things people write and a live `#` takes the whole document down
+    /// with it. So `#strong[p99]` prints as `#strong[p99]` on the page, and
+    /// `strip_typst_markup` leaves it alone in the text, Markdown and Word
+    /// exports too.
+    ///
+    /// Which makes this the mildest rule here and still worth having: nothing
+    /// is lost, but the author typed something meaning bold and has not been
+    /// told that a person and a parser will both read it out as source.
+    MarkupThatNeverRenders { text: String, in_the_text: String },
     /// A bullet typed with its own marker, inside a list that already draws
     /// one. The reader gets the glyph twice, or gets it where it expects the
     /// first word.
     ListMarkerTypedIntoTheText { text: String },
+    /// Characters no bundled face can set. The page prints holes where they
+    /// should be and the text layer disagrees with itself between extractors —
+    /// measured on a Japanese CV, whose PDF embeds Libertinus and a maths face
+    /// and not one glyph of kanji.
+    CharactersNoFaceCanSet { text: String, missing: Vec<char> },
+    /// Whitespace that is not a space: a non-breaking space inside a telephone
+    /// number, a thin space between digit groups, a tab in a field. Invisible
+    /// to the author, and measured to cost the field — `pdftotext -raw` returns
+    /// a phone number written with thin spaces as one unbroken run of digits,
+    /// which is not the number anybody searched for.
+    WhitespaceNobodySees { text: String, characters: Vec<char> },
 }
+
+/// Whitespace a reader cannot see and a parser cannot ignore: the no-break
+/// space, the three thin ones, the zero-width joiner and its friends, and a
+/// tab. A space typed as one of these is a space to the eye and a different
+/// character to every exact match ever written.
+const INVISIBLE: &[char] = &[
+    '\u{0009}', // tab
+    '\u{00a0}', // no-break space
+    '\u{2007}', // figure space
+    '\u{2009}', // thin space
+    '\u{200a}', // hair space
+    '\u{200b}', // zero-width space
+    '\u{200c}', // zero-width non-joiner
+    '\u{200d}', // zero-width joiner
+    '\u{202f}', // narrow no-break space
+    '\u{feff}', // byte-order mark, which arrives by paste
+];
 
 /// The names a section can be printed under and still be recognised.
 ///
@@ -165,6 +197,115 @@ const KNOWN_HEADINGS: &[(SectionKind, &[&str])] = &[
     ),
 ];
 
+/// Every printed string in the document, with the field it came from.
+///
+/// One walk rather than a rule each: two of the six are about *characters*
+/// rather than about structure, and a second traversal of the same fields is
+/// how the two drift apart.
+fn printed_fields(resume: &Resume) -> Vec<(SectionKind, FieldId, String)> {
+    let mut out: Vec<(SectionKind, FieldId, String)> = vec![
+        (
+            SectionKind::Profile,
+            FieldId::Name,
+            resume.basics.name.clone(),
+        ),
+        (
+            SectionKind::Profile,
+            FieldId::Label,
+            resume.basics.label.clone(),
+        ),
+        (
+            SectionKind::Profile,
+            FieldId::Summary,
+            resume.basics.summary.clone(),
+        ),
+        (
+            SectionKind::Profile,
+            FieldId::Email,
+            resume.basics.email.clone(),
+        ),
+        (
+            SectionKind::Profile,
+            FieldId::Phone,
+            resume.basics.phone.clone(),
+        ),
+        (
+            SectionKind::Profile,
+            FieldId::Location,
+            resume.basics.location.clone(),
+        ),
+    ];
+    for (i, job) in resume.work.iter().enumerate() {
+        out.push((
+            SectionKind::Work,
+            FieldId::WorkPosition(i),
+            job.position.clone(),
+        ));
+        out.push((SectionKind::Work, FieldId::WorkName(i), job.name.clone()));
+        out.push((
+            SectionKind::Work,
+            FieldId::WorkLocation(i),
+            job.location.clone(),
+        ));
+        out.push((
+            SectionKind::Work,
+            FieldId::WorkSummary(i),
+            job.summary.clone(),
+        ));
+        for (j, h) in job.highlights.iter().enumerate() {
+            out.push((SectionKind::Work, FieldId::WorkHighlight(i, j), h.clone()));
+        }
+    }
+    for (i, school) in resume.education.iter().enumerate() {
+        out.push((
+            SectionKind::Education,
+            FieldId::EduInstitution(i),
+            school.institution.clone(),
+        ));
+        out.push((
+            SectionKind::Education,
+            FieldId::EduStudyType(i),
+            school.study_type.clone(),
+        ));
+    }
+    for (i, group) in resume.skills.iter().enumerate() {
+        out.push((
+            SectionKind::Skills,
+            FieldId::SkillName(i),
+            group.name.clone(),
+        ));
+        for (j, kw) in group.keywords.iter().enumerate() {
+            out.push((SectionKind::Skills, FieldId::SkillKeyword(i, j), kw.clone()));
+        }
+    }
+    for (i, cert) in resume.certificates.iter().enumerate() {
+        out.push((
+            SectionKind::Certificates,
+            FieldId::CertName(i),
+            cert.name.clone(),
+        ));
+        out.push((
+            SectionKind::Certificates,
+            FieldId::CertIssuer(i),
+            cert.issuer.clone(),
+        ));
+    }
+    for (i, role) in resume.volunteer.iter().enumerate() {
+        out.push((
+            SectionKind::Organizations,
+            FieldId::VolPosition(i),
+            role.position.clone(),
+        ));
+        out.push((
+            SectionKind::Organizations,
+            FieldId::VolOrg(i),
+            role.organization.clone(),
+        ));
+    }
+    out.retain(|(_, _, text)| !text.trim().is_empty());
+    out
+}
+
 /// Every finding in this document, in the order a reader meets them.
 ///
 /// The composed résumé, not the document: what a parser sees is the active
@@ -210,6 +351,36 @@ pub fn lint(resume: &Resume) -> Vec<Finding> {
                 },
                 section: kind,
                 at: None,
+            });
+        }
+    }
+
+    for (section, at, text) in printed_fields(resume) {
+        let missing = crate::typst_engine::characters_no_bundled_face_can_set(&text);
+        if !missing.is_empty() {
+            out.push(Finding {
+                rule: Rule::CharactersNoFaceCanSet {
+                    text: text.clone(),
+                    missing,
+                },
+                section,
+                at: Some(at),
+            });
+        }
+        let invisible: Vec<char> = text
+            .chars()
+            .filter(|c| INVISIBLE.contains(c))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        if !invisible.is_empty() {
+            out.push(Finding {
+                rule: Rule::WhitespaceNobodySees {
+                    text,
+                    characters: invisible,
+                },
+                section,
+                at: Some(at),
             });
         }
     }
@@ -359,7 +530,7 @@ fn check_markup(text: &str, section: SectionKind, at: FieldId, out: &mut Vec<Fin
         return;
     }
     out.push(Finding {
-        rule: Rule::MarkupThatReachesTheParserAsSource {
+        rule: Rule::MarkupThatNeverRenders {
             text: text.to_string(),
             in_the_text: stripped,
         },
@@ -562,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn markup_that_reaches_the_parser_as_source() {
+    fn markup_that_never_renders() {
         let mut resume = clean();
         resume.work[0].highlights[0] = "Halved #strong[p99] latency.".into();
         let found = lint(&resume);
@@ -570,7 +741,7 @@ mod tests {
             matches!(
                 found.as_slice(),
                 [Finding {
-                    rule: Rule::MarkupThatReachesTheParserAsSource { in_the_text, .. },
+                    rule: Rule::MarkupThatNeverRenders { in_the_text, .. },
                     at: Some(FieldId::WorkHighlight(0, 0)),
                     ..
                 }] if in_the_text.contains("#strong[p99]")
@@ -642,6 +813,62 @@ mod tests {
         // wolf, and both are worth stopping for.
         let resume = crate::resume::altacv::import(crate::resume::altacv::ALTACV_SAMPLE)
             .expect("the AltaCV fixture parses");
+        assert_eq!(lint(&resume), Vec::new());
+    }
+    #[test]
+    fn characters_no_bundled_face_can_set() {
+        // A Japanese CV compiles, and the PDF it produces embeds Libertinus, a
+        // maths face, and not one glyph of kanji. The page has holes in it and
+        // the extractors disagree with each other about what is left.
+        let mut resume = clean();
+        resume.basics.name = "山田太郎".into();
+        let found = lint(&resume);
+        assert!(
+            matches!(
+                found.as_slice(),
+                [Finding {
+                    rule: Rule::CharactersNoFaceCanSet { missing, .. },
+                    at: Some(FieldId::Name),
+                    ..
+                }] if missing.contains(&'山')
+            ),
+            "{found:?}"
+        );
+
+        // Cyrillic is covered by four of the five document faces and must not
+        // be reported — a lint that fires on Ukrainian is a lint nobody reads.
+        let mut resume = clean();
+        resume.basics.name = "Олена Ковальчук".into();
+        resume.work[0].highlights[0] = "Скоротила затримку p99 удвічі.".into();
+        assert_eq!(lint(&resume), Vec::new());
+
+        // Nor do the shapes a CV is actually full of.
+        let mut resume = clean();
+        resume.basics.label = "C++ & .NET Architect — 40% ↑ 3×".into();
+        resume.work[0].highlights[0] = "Saved $1.2M/year (≈18 000 lines).".into();
+        assert_eq!(lint(&resume), Vec::new());
+    }
+
+    #[test]
+    fn whitespace_nobody_sees() {
+        let mut resume = clean();
+        resume.basics.phone = "+48\u{00a0}22\u{2009}555\u{2009}0100".into();
+        let found = lint(&resume);
+        assert!(
+            matches!(
+                found.as_slice(),
+                [Finding {
+                    rule: Rule::WhitespaceNobodySees { characters, .. },
+                    at: Some(FieldId::Phone),
+                    ..
+                }] if characters.contains(&'\u{00a0}') && characters.contains(&'\u{2009}')
+            ),
+            "{found:?}"
+        );
+
+        // An ordinary space, however many of them, is not this.
+        let mut resume = clean();
+        resume.basics.phone = "+48  22 555 0100".into();
         assert_eq!(lint(&resume), Vec::new());
     }
 }
