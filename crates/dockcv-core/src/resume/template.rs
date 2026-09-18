@@ -224,7 +224,13 @@ const RENDERER: &str = r##"
   let head-align = if header-align == "left" { left } else { center }
 
   align(head-align, {
-    text(size: size-name, weight: "bold", b.at("name", default: ""))
+    // Level 1, and the section bars below are level 2: the name is this
+    // document's title, and a heading tree that starts at level 2 is the one
+    // thing PDF/UA-1 refuses the file for. The `#show heading` rule keeps the
+    // element from bringing any styling of its own, so the name sets exactly
+    // as it did.
+    heading(level: 1, outlined: false,
+      text(size: size-name, weight: "bold", b.at("name", default: "")))
     if b.at("label", default: "") != "" {
       h(8pt)
       text(size: size-title, style: "italic", fill: muted, b.at("label", default: ""))

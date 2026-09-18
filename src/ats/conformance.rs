@@ -36,7 +36,56 @@ use super::readers;
 ///
 /// Every line here is a defect DockCV ships today, measured rather than
 /// guessed. Deleting a line is how a fix is declared.
-const KNOWN_GAPS: &[Gap] = &[];
+///
+/// The six below are one defect seen in six layouts, and it is **ours rather
+/// than the file's**: `pdf-extract` joins the first bullet of a job to the
+/// entry summary above it (`…owns the event-sourcing stack.• Migrated a…`),
+/// where the seven other readings — including the file's own content order and
+/// its structure tree, which tags the list as `L / LI / Lbl / LBody` — put it
+/// on a line of its own. So the page is right and the reader is wrong, and the
+/// fix belongs in the importer rather than in the template: changing the
+/// spacing on every CV anyone exports to suit one extractor's line heuristic
+/// is the tail wagging the dog. Recorded here so it cannot be forgotten, and
+/// so the day `pdf-extract` or its replacement stops doing it, these lines
+/// have to go.
+const KNOWN_GAPS: &[Gap] = &[
+    Gap {
+        scenario: "default",
+        engine: "sorted",
+        what: "work 0 bullet 0",
+        owner: "B5, import side",
+    },
+    Gap {
+        scenario: "headings as typed",
+        engine: "sorted",
+        what: "work 0 bullet 0",
+        owner: "B5, import side",
+    },
+    Gap {
+        scenario: "heading rule to margin",
+        engine: "sorted",
+        what: "work 0 bullet 0",
+        owner: "B5, import side",
+    },
+    Gap {
+        scenario: "heading band",
+        engine: "sorted",
+        what: "work 0 bullet 0",
+        owner: "B5, import side",
+    },
+    Gap {
+        scenario: "contacts in two columns",
+        engine: "sorted",
+        what: "work 0 bullet 0",
+        owner: "B5, import side",
+    },
+    Gap {
+        scenario: "skills as pills",
+        engine: "sorted",
+        what: "work 0 bullet 0",
+        owner: "B5, import side",
+    },
+];
 
 #[derive(Debug, PartialEq, Eq)]
 struct Gap {
@@ -270,5 +319,19 @@ fn every_section_the_page_prints_is_a_heading_in_the_structure_tree() {
             pinned.needle,
             tagged_headings
         );
+    }
+}
+
+#[test]
+fn every_layout_we_offer_exports_a_file_pdf_ua1_accepts() {
+    let resume = fixture();
+    for (scenario, layout) in scenarios() {
+        let engine = TypstEngine::new(template::generate_with_layout(&resume, &layout));
+        if let Err(why) = engine.compile_to_pdf_ua1() {
+            panic!(
+                "“{scenario}” would export a file PDF/UA-1 refuses, and its rules are \
+                 most of what a parser needs too:\n{why}"
+            );
+        }
     }
 }

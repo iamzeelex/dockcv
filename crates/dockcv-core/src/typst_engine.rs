@@ -586,6 +586,31 @@ impl TypstEngine {
         typst_pdf::pdf(&document, &typst_pdf::PdfOptions::default()).map_err(join_diagnostics)
     }
 
+    /// The same PDF, refused unless it conforms to **PDF/UA-1**.
+    ///
+    /// Not what the app exports — it is a second opinion, and a free one.
+    /// UA-1's rules are written for a screen reader, and a screen reader wants
+    /// what a CV parser wants: a heading tree that does not skip a level, a
+    /// document title, every figure carrying text, and nothing meaningful left
+    /// in an untagged artifact. Typst validates all of that at export and
+    /// refuses the file with a reason rather than writing something subtly
+    /// wrong, so a test that calls this is a standards body reviewing the
+    /// template for us on every commit.
+    ///
+    /// Errors are the validator's own words. See `src/ats/conformance.rs`.
+    #[cfg(feature = "pdf")]
+    pub fn compile_to_pdf_ua1(&self) -> Result<Vec<u8>, String> {
+        let Warned { output, .. } = typst::compile(self);
+        let document = output.map_err(join_diagnostics)?;
+        let standards = typst_pdf::PdfStandards::new(&[typst_pdf::PdfStandard::Ua_1])
+            .map_err(|e| format!("PDF/UA-1 is not a standard this build can ask for: {e:?}"))?;
+        let options = typst_pdf::PdfOptions {
+            standards,
+            ..Default::default()
+        };
+        typst_pdf::pdf(&document, &options).map_err(join_diagnostics)
+    }
+
     /// Compile and rasterize like [`Self::compile_to_pixels`], but return
     /// every diagnostic instead of collapsing them into one error string —
     /// see [`CompileAttempt`]. Duplicates that method's rasterization step

@@ -8,9 +8,12 @@
 //! Two kinds of expectation, because section headings are not data:
 //!
 //! - [`Expect::Contains`] — the field's own text appears, unbroken. Data.
-//! - [`Expect::OwnLine`] — the heading starts a line of its own. Headings are
-//!   what every parser segments a CV on, so one fused to the paragraph under it
-//!   (`EXPERIENCEBackend engineer with…`) costs the whole section, not a line.
+//! - [`Expect::OwnLine`] — it starts a line of its own, after any list marker.
+//!   Section headings are what every parser segments a CV on, so one fused to
+//!   the paragraph under it (`EXPERIENCEBackend engineer with…`) costs the
+//!   whole section rather than a line. A bullet is the same argument one level
+//!   down: an achievement glued to the sentence above it stops being an item
+//!   in a list and becomes the tail of a paragraph.
 //!
 //! No score is computed anywhere, here or above. A field is recovered or it is
 //! not, and the report names the ones that are not.
@@ -48,10 +51,14 @@ impl Pinned {
         }
         match self.expect {
             Expect::Contains => normalize(reading).contains(&needle),
-            Expect::OwnLine => reading
-                .lines()
-                .map(normalize)
-                .any(|line| line == needle || line.starts_with(&format!("{needle} "))),
+            Expect::OwnLine => reading.lines().map(normalize).any(|line| {
+                // The marker is the list's, not the item's: every extractor
+                // decides differently whether to keep it, drop it or put it on
+                // a line of its own, and none of that is the defect being
+                // looked for.
+                let line = line.trim_start_matches(['•', '-', '–', '*', '·', '‣', ' ']);
+                line == needle || line.starts_with(&format!("{needle} "))
+            }),
         }
     }
 }
@@ -167,7 +174,11 @@ pub fn pin(resume: &Resume) -> Vec<Pinned> {
         ));
         out.push(Pinned::contains(format!("work {i} employer"), &job.name));
         for (j, bullet) in job.highlights.iter().enumerate() {
-            out.push(Pinned::contains(format!("work {i} bullet {j}"), bullet));
+            out.push(Pinned {
+                what: format!("work {i} bullet {j}"),
+                needle: bullet.clone(),
+                expect: Expect::OwnLine,
+            });
         }
     }
 
