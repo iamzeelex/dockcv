@@ -253,8 +253,10 @@ Took the API from three customers to nine hundred.
     #v(6pt)
     #text(size: 11pt, weight: "bold")[#heading(level: 1, outlined: false)[Top Skills]]
     #v(2pt)
-    Airflow \
-    Kubernetes \
+    Airflow
+
+    Kubernetes
+
     Terraform
     #v(6pt)
     #text(size: 11pt, weight: "bold")[#heading(level: 1, outlined: false)[Languages]]
@@ -298,6 +300,11 @@ Took the API from three customers to nine hundred.
                 "Data Platform Engineer",
                 "Rebuilt the ingestion layer that every internal dashboard reads from.",
                 "Cardiff University",
+                // The sidebar, which is the half of this shape that only the
+                // tag tree can tell apart from the column beside it.
+                "Airflow",
+                "Kubernetes",
+                "Terraform",
             ],
         },
         ForeignCv {

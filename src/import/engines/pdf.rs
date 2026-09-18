@@ -21,6 +21,7 @@ use std::path::Path;
 use crate::import::classifier::classify_raw_text;
 use crate::import::error::ImportError;
 use crate::import::model::ImportedDoc;
+use dockcv_core::resume::model::SkillGroup;
 
 pub fn import_pdf(path: &Path) -> Result<ImportedDoc, ImportError> {
     let bytes = std::fs::read(path).map_err(|e| {
@@ -53,20 +54,28 @@ pub fn import_pdf(path: &Path) -> Result<ImportedDoc, ImportError> {
     // that needs the repair — a .docx, a text file and a JSON Resume all store
     // logical order already — and it costs a Latin CV one scan for a
     // right-to-left letter that is never there.
-    let text = crate::import::bidi::text_to_logical_order(&text);
-    let mut imported = classify_raw_text("PDF", &text);
-
+    // When the file says what its lines are, believe it. A tagged PDF carries
+    // the answer the flat reading has to infer — which line is a heading, where
+    // a paragraph ends, which column a line sits in — and inferring it from
+    // glyph positions is what makes a two-column CV read as two columns
+    // interleaved. Everything else in this function is the fallback for a file
+    // that says nothing.
     // A tagged PDF has already said which lines are headings, and one of them
     // is usually the person. LinkedIn's export — the most common CV file there
     // is — opens with a sidebar of Contact, Top Skills and Languages, so the
     // name is forty lines into the text layer and no rule about "the first line
     // of the document" can reach it. In the tag tree it is an `H1` like the
     // others, and the one that is not the name of a section.
+    let text = crate::import::bidi::text_to_logical_order(&text);
+    let mut imported = classify_raw_text("PDF", &text);
+
     if imported.doc.profile.active().name.trim().is_empty() {
         if let Some(name) = name_from_headings(&crate::import::pdf_tags::headings(&bytes)) {
             imported.doc.profile.active_mut().name = name;
         }
     }
+
+    read_the_sidebar(&mut imported, &bytes);
 
     Ok(imported)
 }
@@ -253,7 +262,56 @@ impl pdf_extract::OutputDev for Lines {
     }
 }
 
-/// The heading that names a person rather than a section.
+/// What the tree knows and the page cannot say: which column a line is in.
+///
+/// A sidebar is where a CV keeps the things a reader wants most and a parser
+/// finds hardest — the contact details, and a bare list of skills with no
+/// separators in it. Read off the page they are lines among other lines: the
+/// skills in LinkedIn's own export came back as nothing at all, and the
+/// telephone number with them. In the tree they are the blocks under a heading
+/// inside one cell, which is a fact the file states.
+///
+/// Only the empty fields are filled. The flat reading is better than this at
+/// everything it does do — it joins a line to the one below it, which is what
+/// turns two lines into a job — and a tree that overruled it cost a real export
+/// every employer it had.
+fn read_the_sidebar(imported: &mut ImportedDoc, bytes: &[u8]) {
+    use crate::import::classifier::{classify_header, SectionKind};
+
+    for section in crate::import::pdf_tags::sections(bytes) {
+        if section.items.is_empty() {
+            continue;
+        }
+        match classify_header(&section.heading) {
+            SectionKind::Skills if imported.doc.skills.active().is_empty() => {
+                let keywords: Vec<String> = section
+                    .items
+                    .iter()
+                    .filter(|item| item.chars().count() <= 60)
+                    .cloned()
+                    .collect();
+                if !keywords.is_empty() {
+                    imported.doc.skills.active_mut().push(SkillGroup {
+                        name: String::new(),
+                        keywords,
+                    });
+                }
+            }
+            SectionKind::Contact => {
+                let block = section.items.join("\n");
+                let profile = imported.doc.profile.active_mut();
+                if profile.phone.is_empty() {
+                    if let Some(found) = crate::import::classifier::first_phone(&block) {
+                        profile.phone = found;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The heading that names a person rather than a section./// The heading that names a person rather than a section.
 ///
 /// Strict on purpose: a heading the taxonomy does not know could be somebody's
 /// invented section (`Leadership & Activities`), and filing that as the
@@ -270,7 +328,14 @@ fn name_from_headings(headings: &[String]) -> Option<String> {
             && words
                 .iter()
                 .all(|w| w.chars().next().is_some_and(|c| c.is_uppercase()))
-            && !crate::import::classifier::names_a_section(&text.to_lowercase());
+            // Both questions, because they are different ones. `names_a_section`
+            // asks whether the *whole line* is a section's name; `classify_header`
+            // asks which section a heading belongs to and is happy with a
+            // substring — which is how `Top Skills` was a heading nothing called
+            // a section, and became somebody's name.
+            && !crate::import::classifier::names_a_section(&text.to_lowercase())
+            && crate::import::classifier::classify_header(text)
+                == crate::import::classifier::SectionKind::Unknown;
         plausible.then(|| text.to_string())
     })
 }

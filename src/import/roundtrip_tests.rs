@@ -1023,3 +1023,48 @@ sys.exit(1 if errors else 0)\n";
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The sidebar is read as a sidebar.
+///
+/// A column of skills with no separators in it is the hardest thing on a CV to
+/// read off a page: the lines are lines, and whether they belong to the list
+/// beside them or the one under them is a guess. A tagged PDF does not guess —
+/// `Table`, `TR` and `TD` say which column a line is in, and the heading above
+/// it says what the column is — and this is the one question the importer asks
+/// the tag tree, because it is the one the flat reading cannot answer.
+///
+/// Only the fields the flat reading left empty are filled. Replacing it
+/// outright was tried and measured: a real LinkedIn export lost every employer
+/// it had, because reading a document is more than knowing where its lines are.
+#[test]
+fn a_tagged_sidebar_gives_up_its_skills() {
+    let dir = std::env::temp_dir().join(format!("dockcv-sidebar-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let cv = crate::import::foreign_cvs::all()
+        .into_iter()
+        .find(|c| c.name == "linkedin's own export")
+        .expect("the corpus carries one");
+    let pdf = dockcv_core::typst_engine::TypstEngine::new(cv.source.to_string())
+        .compile_to_pdf()
+        .expect("compiles");
+    let path = dir.join("cv.pdf");
+    std::fs::write(&path, &pdf).expect("write");
+
+    let doc = import_file(&path).expect("imports").doc.compose();
+
+    let skills: Vec<String> = doc.skills.iter().flat_map(|s| s.keywords.clone()).collect();
+    assert_eq!(
+        skills,
+        vec!["Airflow", "Kubernetes", "Terraform"],
+        "the sidebar's skills should come back as three skills, not as one line \
+         of prose or as nothing at all"
+    );
+
+    // And the column beside it is still read the way it always was.
+    assert_eq!(doc.basics.name, "Rowan Llewellyn");
+    assert_eq!(doc.work.len(), 1, "one job: {:?}", doc.work);
+    assert_eq!(doc.work[0].highlights.len(), 2, "both descriptions");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

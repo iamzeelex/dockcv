@@ -159,6 +159,7 @@ fn collect_marked(doc: &Document, page_id: ObjectId, out: &mut BTreeMap<(ObjectI
     // force is the innermost one that has an id at all.
     let mut open: Vec<Option<u32>> = Vec::new();
     let mut encoding = None;
+    let mut pending_break = false;
 
     for op in &content.operations {
         match op.operator.as_ref() {
@@ -175,13 +176,31 @@ fn collect_marked(doc: &Document, page_id: ObjectId, out: &mut BTreeMap<(ObjectI
                     .and_then(|name| encodings.get(name));
             }
             "Tj" | "TJ" | "'" | "\"" => {
+                // `'` and `"` are "move to the next line and show it" — the
+                // one place a content stream states a line break rather than
+                // implying it with a position. Everything else that separates
+                // one run from another is separated already, because each run
+                // is its own marked content and `gather` puts them back
+                // together with a space between.
+                if matches!(op.operator.as_ref(), "'" | "\"") {
+                    pending_break = true;
+                }
                 let Some(enc) = encoding else { continue };
                 let Some(mcid) = open.iter().rev().find_map(|m| *m) else {
                     continue;
                 };
                 let text = show(enc, &op.operands);
                 if !text.is_empty() {
-                    out.entry((page_id, mcid)).or_default().push_str(&text);
+                    let slot = out.entry((page_id, mcid)).or_default();
+                    if pending_break
+                        && !slot.is_empty()
+                        && !slot.ends_with(char::is_whitespace)
+                        && !text.starts_with(char::is_whitespace)
+                    {
+                        slot.push(' ');
+                    }
+                    slot.push_str(&text);
+                    pending_break = false;
                 }
             }
             _ => {}
@@ -296,6 +315,18 @@ fn gather(
     match deref(doc, kids) {
         Object::Integer(mcid) => {
             if let Some(found) = page.and_then(|p| marked.get(&(p, *mcid as u32))) {
+                // Each marked run is its own thing — a line, or a word set
+                // differently — and several of them under one element are not
+                // one word. Concatenated flat they became `SparkAirflowSnowflake`
+                // out of three skills, and a contact line with an email, a
+                // telephone number and a city run together. The guard is what
+                // keeps `a **bold** word` from gaining a second space.
+                if !text.is_empty()
+                    && !text.ends_with(char::is_whitespace)
+                    && !found.starts_with(char::is_whitespace)
+                {
+                    text.push(' ');
+                }
                 text.push_str(found);
             }
         }
@@ -343,4 +374,133 @@ pub fn headings(pdf: &[u8]) -> Vec<String> {
         .map(|t| t.text.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|t| !t.is_empty())
         .collect()
+}
+
+/// A heading a tagged PDF declares, and the blocks that follow it **inside the
+/// same cell**.
+///
+/// This is the one thing a structure tree knows that no amount of reading the
+/// page can recover: which column a line is in. A CV with a sidebar — LinkedIn's
+/// own export, Canva's, half the Word gallery — puts `Top Skills` and three
+/// skills in one cell and the work history in the next, and a reader working
+/// from glyph positions has to guess where one stops. The file already said.
+///
+/// Deliberately *not* a second way to read the whole document. The flat reading
+/// does that well, including the joining of a line to the one below it that
+/// turns two lines into an entry, and replacing it wholesale with the tree made
+/// every job in a real export lose its employer. This answers a narrower
+/// question — what is in the sidebar — and the importer asks it only about the
+/// fields the flat reading left empty.
+#[derive(Debug, Clone)]
+pub struct TaggedSection {
+    pub heading: String,
+    pub items: Vec<String>,
+}
+
+pub fn sections(pdf: &[u8]) -> Vec<TaggedSection> {
+    let Ok(tree) = structure(pdf) else {
+        return Vec::new();
+    };
+
+    let mut out: Vec<TaggedSection> = Vec::new();
+    // The cell a node is in, as the depth of the nearest `TD` above it. A
+    // heading closes when the cell changes and not only when another heading
+    // arrives: the last skill in a sidebar is followed by the main column
+    // rather than by a heading of its own.
+    let mut cell: Option<usize> = None;
+    let mut open: Option<TaggedSection> = None;
+
+    let mut at = 0;
+    while at < tree.len() {
+        let node = &tree[at];
+
+        if node.tag == "TD" || node.tag == "TH" {
+            if cell.is_none_or(|d| node.depth <= d) {
+                if let Some(section) = open.take() {
+                    out.push(section);
+                }
+                cell = Some(node.depth);
+            }
+            at += 1;
+            continue;
+        }
+
+        // A block is counted once, as itself, and its insides are its text —
+        // never items of their own. Counting the container *and* what it holds
+        // gave three skills back seven times over, once whole and twice each.
+        //
+        // Unless it *holds a heading*. Producers differ about where a heading
+        // sits: LinkedIn hangs it off the cell, and Typst wraps it in the
+        // paragraph it interrupts — and a paragraph swallowed whole takes the
+        // heading with it, so the section it opens never opens and everything
+        // under it belongs to nobody.
+        let swallows_a_heading = is_block(&node.tag) && subtree_has_heading(&tree, at);
+        if (is_heading(&node.tag) || is_block(&node.tag)) && !swallows_a_heading {
+            let text = subtree_text(&tree, at);
+            let end = end_of_subtree(&tree, at);
+            if !text.is_empty() {
+                if is_heading(&node.tag) {
+                    if let Some(section) = open.take() {
+                        out.push(section);
+                    }
+                    open = Some(TaggedSection {
+                        heading: text,
+                        items: Vec::new(),
+                    });
+                } else if let Some(section) = open.as_mut() {
+                    section.items.push(text);
+                }
+            }
+            at = end;
+            continue;
+        }
+
+        at += 1;
+    }
+    out.extend(open);
+    out
+}
+
+/// A tag that holds text rather than other blocks. `Span` and `Link` are in it
+/// for the producer that hangs one straight off a cell; a `Span` inside a
+/// paragraph is never reached, because the paragraph was taken whole.
+fn is_block(tag: &str) -> bool {
+    matches!(tag, "P" | "LI" | "LBody" | "Caption" | "Span" | "Link")
+}
+
+fn subtree_has_heading(tree: &[Tagged], at: usize) -> bool {
+    let depth = tree[at].depth;
+    tree[at + 1..]
+        .iter()
+        .take_while(|n| n.depth > depth)
+        .any(|n| is_heading(&n.tag))
+}
+
+fn end_of_subtree(tree: &[Tagged], at: usize) -> usize {
+    let depth = tree[at].depth;
+    at + 1
+        + tree[at + 1..]
+            .iter()
+            .take_while(|n| n.depth > depth)
+            .count()
+}
+
+fn is_heading(tag: &str) -> bool {
+    matches!(tag, "H" | "Title")
+        || (tag.len() == 2 && tag.starts_with('H') && tag.as_bytes()[1].is_ascii_digit())
+}
+
+/// A block's own text with everything nested in it, which is how a producer's
+/// several spans of one sentence come back as the sentence.
+fn subtree_text(tree: &[Tagged], at: usize) -> String {
+    let mut text = tree[at].text.clone();
+    let depth = tree[at].depth;
+    for node in tree[at + 1..].iter().take_while(|n| n.depth > depth) {
+        if !node.text.is_empty() {
+            text.push(' ');
+            text.push_str(&node.text);
+        }
+    }
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    crate::import::bidi::to_logical_order(&text).into_owned()
 }

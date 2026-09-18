@@ -51,7 +51,7 @@ he = ["השכלה", "השכלה אקדמית", "לימודים"]
 ar = ["التعليم", "المؤهلات العلمية", "الدراسة"]
 
 [skills]
-en = ["skill", "skills", "technologies", "tech stack", "tools", "competencies", "core competencies", "technical skills", "skills & tools"]
+en = ["skill", "skills", "top skills", "technologies", "tech stack", "tools", "competencies", "core competencies", "technical skills", "skills & tools"]
 ru = ["навыки", "ключевые навыки", "стек", "технологии", "инструменты", "компетенции"]
 de = ["kenntnisse", "fähigkeiten", "qualifikationen", "technologien", "skills"]
 fr = ["compétences", "compétences techniques", "technologies", "outils"]

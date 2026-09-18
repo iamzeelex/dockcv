@@ -808,6 +808,16 @@ fn every_word_names_a_section(clean: &str) -> bool {
     counted >= 2
 }
 
+/// The first telephone number in a block of text, if there is one.
+///
+/// The regex is this module's; the sidebar reader needs the answer and has no
+/// business knowing how it is arrived at.
+pub fn first_phone(text: &str) -> Option<String> {
+    get_phone_regex()
+        .find(text)
+        .map(|m| m.as_str().trim().to_string())
+}
+
 pub fn names_a_section(clean: &str) -> bool {
     let tax = get_indexed_taxonomy();
     if tax.exact_map.contains_key(clean) {
@@ -912,7 +922,7 @@ fn matches_keywords_clean(input: &str, keywords: &[&str]) -> bool {
 /// A body line that reads like a keyword is far more common than a heading that
 /// reads like a sentence, so a line only gets to be classified once it looks
 /// like a heading at all: not a bullet, not a sentence, and short.
-fn is_section_header(line: &str) -> bool {
+pub fn is_section_header(line: &str) -> bool {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.len() > 60 {
         return false;
