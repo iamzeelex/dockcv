@@ -151,9 +151,24 @@ fn get_phone_regex() -> &'static Regex {
         // pattern that demanded a three-digit group in the middle read straight
         // past it. Nothing writes a date range with a leading `+`, so there is
         // no ambiguity left for the group widths to resolve.
-        Regex::new(
-            r"(?:\+\d{1,3}(?:[ .-]?\(?\d{2,4}\)?){2,6}|\(?\d{2,4}\)?[ .-]?\d{3,4}[ .-]\d{3,4})",
-        )
+        // And the groups after a `+` may be one digit wide, because national
+        // numbering plans have one-digit area codes: `+353 1 555 0100` is how
+        // Dublin is written and how DockCV's own plain-text export writes it,
+        // and demanding two digits read straight past the whole number —
+        // leaving a CV that had just been exported with no telephone number on
+        // the way back in.
+        // The separator class carries the marks a *typesetter* puts in a
+        // number as well as the ones a keyboard does: a non-breaking hyphen
+        // (U+2011) is what a considerate author writes so `555-0134` never
+        // breaks across a line, and `[ .-]` stopped dead at it — `+1 (415)
+        // 555‑0134` imported as `+1 (415) 555`, a number that reaches nobody.
+        // The no-break and thin spaces are here for the same reason. The en
+        // dash is deliberately *not*: it is what separates the two ends of a
+        // date range.
+        const SEP: &str = r"[ .\-\u{00a0}\u{2009}\u{202f}\u{2010}\u{2011}]";
+        Regex::new(&format!(
+            r"(?:\+\d{{1,3}}(?:{SEP}?\(?\d{{1,4}}\)?){{2,6}}|\(?\d{{2,4}}\)?{SEP}?\d{{3,4}}{SEP}\d{{3,4}})"
+        ))
         .unwrap()
     })
 }
@@ -476,6 +491,29 @@ fn absorb_contact(line: &str, resume: &mut Resume) -> bool {
                     resume.basics.location = candidate;
                     absorbed = true;
                     break 'search;
+                }
+            }
+        }
+
+        // `Dublin` with nothing after it is a place too, and most CVs write the
+        // city alone — but a bare word is also a name, a job title and half the
+        // other things on a header line, so it counts only where a place
+        // belongs: *among* the contact details rather than in front of them.
+        // `A Person | person@example.com | Dublin` gives up its city and keeps
+        // its name; `A Person | Senior Engineer` gives up neither.
+        //
+        // After the shape with a region in it, never before: `Bern,
+        // Switzerland` is two parts and its first part is a bare place, so a
+        // bare reading that ran first would take the city and drop the country.
+        if resume.basics.location.is_empty() {
+            for (at, part) in parts.iter().enumerate() {
+                if is_other_field(part) || !parts[..at].iter().any(is_other_field) {
+                    continue;
+                }
+                if looks_like_bare_place(part) {
+                    resume.basics.location = (*part).to_string();
+                    absorbed = true;
+                    break;
                 }
             }
         }
@@ -942,6 +980,24 @@ fn network_of(url: &str) -> &'static str {
 /// Deliberately narrow: a short line, one comma, no digits and no `@`. A CV's
 /// contact block is the only place this runs, and anything it declines simply
 /// stays reported rather than being filed as a location it is not.
+/// A city on its own — `Dublin`, `San Francisco`, `Київ`.
+///
+/// Deliberately strict about shape, because it is only ever asked about a part
+/// that already sits among contact details: a word or three, each of them
+/// capitalised, no digits and nothing that belongs to another field.
+fn looks_like_bare_place(line: &str) -> bool {
+    let line = line.trim();
+    let words: Vec<&str> = line.split_whitespace().collect();
+    !line.is_empty()
+        && line.len() <= 32
+        && (1..=3).contains(&words.len())
+        && !line.contains(['@', ',', ':', '/'])
+        && !line.chars().any(|c| c.is_ascii_digit())
+        && words
+            .iter()
+            .all(|w| w.chars().next().is_some_and(|c| c.is_uppercase()))
+}
+
 fn looks_like_place(line: &str) -> bool {
     let line = line.trim();
     // One comma is the `City, Region` shape. Digits are allowed — a postcode is
@@ -1126,7 +1182,17 @@ pub fn join_split_entry_headers(lines: Vec<layout::LogicalLine>) -> Vec<layout::
 
     for line in lines {
         if line.kind != layout::LineKind::Heading && is_only_dates(&line.text) {
-            match out.last_mut() {
+            // An entry's own address sits on a line of its own between the
+            // title and the dates — both the Word and the Markdown readers put
+            // it there so `attach_entry_url` can pick it up — and it is not a
+            // line that can own dates. Gluing them to it made `ethz.ch 1896-10
+            // - 1900-07`, which is no longer an address, so the school's link
+            // was dropped and the string became an entry of its own.
+            let owner = match out.last() {
+                Some(last) if layout::is_lone_address(&last.text) => out.len().checked_sub(2),
+                _ => out.len().checked_sub(1),
+            };
+            match owner.and_then(|at| out.get_mut(at)) {
                 // The line above claims the dates whenever it is one that could
                 // own them. That is the order DockCV's own exporter writes —
                 // title, dates, bullets — and holding them for the *next* line
@@ -1758,11 +1824,19 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
     // floor: every CV written the way DockCV writes one — name, title, contacts,
     // then the summary — imported with no summary at all.
     if resume.basics.summary.is_empty() {
-        if let Some(prose) = first_lines
-            .iter()
-            .skip(1)
-            .find(|l| l.split_whitespace().count() >= 8 && !looks_like_contact_line(l))
-        {
+        // Eight words was the old test, and it was a test about English. A
+        // summary in Ukrainian says the same thing in seven — «Інженерка з
+        // восьмирічним досвідом у розподілених системах.» — and so does a short
+        // one in English, so both were dropped on the floor while the same CV
+        // in longer words came through. What a summary *is* travels better than
+        // how many words it takes: it is a sentence, and it ends like one.
+        let is_prose = |l: &&&str| {
+            !looks_like_contact_line(l)
+                && (l.split_whitespace().count() >= 8
+                    || (l.chars().count() >= 30
+                        && l.trim_end().ends_with(['.', '!', '?', '。', '！', '？'])))
+        };
+        if let Some(prose) = first_lines.iter().skip(1).find(is_prose) {
             resume.basics.summary = (*prose).to_string();
             if resume.basics.label == **prose {
                 resume.basics.label.clear();

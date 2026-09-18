@@ -182,6 +182,7 @@ fn logical_lines(content: &str) -> Vec<LogicalLine> {
         }
 
         if let Some((level, text)) = atx_heading(line.trim_start()) {
+            let heading_body = text;
             let text = inline_text(text);
             if text.is_empty() {
                 continue;
@@ -196,6 +197,21 @@ fn logical_lines(content: &str) -> Vec<LogicalLine> {
                 _ => LineKind::EntryHeader,
             };
             seen_heading |= kind == LineKind::Heading;
+
+            // A heading that is nothing but a link carries an entry's address,
+            // not a sentence about one. Rendered as prose it became part of the
+            // title — `Diploma, Mathematics and Physics, ETH Zurich
+            // (https://ethz.ch)` — with the entry's `url` left empty and the
+            // institution swallowed whole. Split back apart, the label is the
+            // heading and the target is a line of its own, which is the shape
+            // `classifier::attach_entry_url` already knows how to put back on
+            // the entry above it.
+            if let Some((label, target)) = lone_link(heading_body) {
+                out.push(LogicalLine::new(label, kind));
+                out.push(LogicalLine::new(target, LineKind::Text));
+                continue;
+            }
+
             out.push(LogicalLine::new(text, kind));
             continue;
         }
@@ -223,4 +239,25 @@ fn logical_lines(content: &str) -> Vec<LogicalLine> {
         out.push(LogicalLine::new(text, LineKind::Text));
     }
     out
+}
+
+/// A heading whose whole content is one Markdown link: its label and its
+/// target.
+///
+/// Anything else — a link inside a sentence, two links, a label with words
+/// around it — is prose and goes through `inline_text` like the rest.
+fn lone_link(body: &str) -> Option<(String, String)> {
+    let body = body.trim();
+    let inner = body.strip_prefix('[')?;
+    let close = inner.find("](")?;
+    let end = inner.rfind(')')?;
+    if end < close + 2 || !inner[end + 1..].trim().is_empty() {
+        return None;
+    }
+    let label = inline_text(&inner[..close]);
+    let target = inner[close + 2..end].trim();
+    if label.is_empty() || target.is_empty() || label.contains("](") {
+        return None;
+    }
+    Some((label, target.to_string()))
 }

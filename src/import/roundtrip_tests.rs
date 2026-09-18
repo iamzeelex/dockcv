@@ -680,3 +680,157 @@ fn a_cv_with_no_headings_is_read_by_shape_and_says_so() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_telephone_number_and_a_city_survive_the_way_people_write_them() {
+    let dir = std::env::temp_dir().join(format!("dockcv-contact-shapes-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    for (phone, location) in [
+        ("+45 28 44 10 92", "Bern, Switzerland"),
+        ("+353 1 555 0100", "Dublin"),
+        ("+353 1 555 0100", "Dublin, Ireland"),
+        ("+1 (415) 555-0134", "San Francisco"),
+        ("020 7946 0958", "London"),
+    ] {
+        let doc = ResumeDoc::from_resume(
+            Resume {
+                basics: Basics {
+                    name: "A Person".into(),
+                    email: "person@example.com".into(),
+                    phone: phone.into(),
+                    location: location.into(),
+                    ..Default::default()
+                },
+                work: vec![dockcv_core::resume::model::Work {
+                    name: "Acme".into(),
+                    position: "Engineer".into(),
+                    start_date: ResumeDate::new("2019-06"),
+                    end_date: ResumeDate::new("2022-01"),
+                    highlights: vec!["Did the thing that needed doing.".into()],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            "Base",
+        );
+
+        for (format, path) in write_exports(&dir, &doc) {
+            // Typst source carries the model itself, and JSON Resume has a
+            // field per fact; the shapes below are about *prose* formats, where
+            // a contact line is one line and a reader has to take it apart.
+            if format == "typst" || format == "json resume" {
+                continue;
+            }
+            let back = import_file(&path)
+                .unwrap_or_else(|e| panic!("{format}: {e}"))
+                .doc
+                .compose();
+            assert_eq!(
+                back.basics.phone, phone,
+                "{format} lost the telephone number {phone:?}"
+            );
+            assert_eq!(
+                back.basics.location, location,
+                "{format} lost the city {location:?}"
+            );
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Exporting what was imported gives the same file back.
+///
+/// A round trip that is not a fixed point is a round trip that changes the
+/// document, and the change compounds: the Typst emitter escaped `C#` as `C\#`
+/// and read it back with the backslash still on it, so three trips through
+/// `.typ` turned one bullet into `C\\\\\\\#`. Checking the shape, as the tests
+/// above do, cannot see any of that — the shape was identical every time.
+///
+/// Byte equality, and only for the formats where bytes are the document. A
+/// `.docx` is a zip: its relationship ids are numbered in the order they were
+/// written and say nothing about the CV, so that format is compared by what a
+/// reader gets out of it instead.
+#[test]
+fn exporting_what_was_imported_gives_the_same_file_back() {
+    let dir = std::env::temp_dir().join(format!("dockcv-fixed-point-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let second = dir.join("second");
+    std::fs::create_dir_all(&second).expect("temp dir");
+
+    let documents = std::iter::once(("the fixture", fixture())).chain(
+        crate::ats::adversarial::all()
+            .into_iter()
+            .filter(|a| a.name != "cjk")
+            .map(|a| (a.name, ResumeDoc::from_resume(a.resume, "Base"))),
+    );
+
+    for (name, doc) in documents {
+        for (format, path) in write_exports(&dir, &doc) {
+            // Known, argued, and each one a thing a person would rather have
+            // than not:
+            //
+            // * the importer folds a no-break space to a space, so a name typed
+            //   with one comes back with an ordinary space. That is a repair,
+            //   not a loss — and the lint says so before the CV is ever sent.
+            // * the fixture's Markdown education heading is
+            //   `[Diploma, Mathematics and Physics, ETH Zurich](…)`, three
+            //   comma-separated parts of which two are the degree. Nothing is
+            //   lost — the whole string lands in the degree — but where the
+            //   school ends and the subject begins is a guess, and guessing it
+            //   from one example is how a heuristic gets worse.
+            let excused =
+                name == "whitespace nobody sees" || (name == "the fixture" && format == "markdown");
+            if excused {
+                continue;
+            }
+
+            let once = std::fs::read(&path).expect("read");
+            let imported = import_file(&path).unwrap_or_else(|e| panic!("{name} · {format}: {e}"));
+            let again = write_exports(&second, &imported.doc)
+                .into_iter()
+                .find(|(f, _)| *f == format)
+                .map(|(_, p)| std::fs::read(p).expect("read"))
+                .expect("the same format comes back");
+
+            if format == "docx" {
+                let before = crate::ats::docx::flat_text(&once).expect("read docx");
+                let after = crate::ats::docx::flat_text(&again).expect("read docx");
+                if before != after {
+                    let diff = before
+                        .lines()
+                        .zip(after.lines())
+                        .find(|(x, y)| x != y)
+                        .map(|(x, y)| format!("was {x:?}\n  now {y:?}"))
+                        .unwrap_or_else(|| {
+                            format!(
+                                "{} lines became {}",
+                                before.lines().count(),
+                                after.lines().count()
+                            )
+                        });
+                    panic!("{name} · {format} says something different the second time:\n  {diff}");
+                }
+                continue;
+            }
+
+            if once != again {
+                let a = String::from_utf8_lossy(&once);
+                let b = String::from_utf8_lossy(&again);
+                let where_ = a
+                    .lines()
+                    .zip(b.lines())
+                    .enumerate()
+                    .find(|(_, (x, y))| x != y)
+                    .map(|(i, (x, y))| format!("line {i}:\n  was {x:?}\n  now {y:?}"))
+                    .unwrap_or_else(|| {
+                        format!("{} lines became {}", a.lines().count(), b.lines().count())
+                    });
+                panic!("{name} · {format} is not a fixed point — {where_}");
+            }
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

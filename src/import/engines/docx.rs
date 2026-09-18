@@ -217,6 +217,23 @@ fn push_paragraph(out: &mut Vec<LogicalLine>, p: &Paragraph, links: &HashMap<&st
             continue;
         }
         let kind = kind_of(&style, numbered, &text, out.is_empty());
+
+        // An entry's own address is a field, not part of its name. The link is
+        // on the heading — `Diploma, Mathematics and Physics, ETH Zurich`,
+        // linked to the school — and appending the address inline, which is
+        // right on a contact line, put it inside the degree's title instead:
+        // the CV came back naming a qualification that ended in `ethz.ch`.
+        // Split off, it is a line of its own, which is the shape
+        // `classifier::attach_entry_url` already knows how to put back on the
+        // entry above it.
+        if kind == LineKind::EntryHeader {
+            if let Some((title, address)) = split_trailing_address(&text, links) {
+                out.push(LogicalLine::new(title, kind));
+                out.push(LogicalLine::new(address, LineKind::Text));
+                continue;
+            }
+        }
+
         out.push(LogicalLine::new(
             if kind == LineKind::Bullet {
                 without_bullet(&text)
@@ -264,14 +281,56 @@ fn push_run(segments: &mut Vec<String>, run: &Run, target: Option<&str>) {
     } else {
         segments[before - 1..].join(" ")
     };
-    let bare = target.trim_start_matches("mailto:");
-    if !contributed.contains(bare) {
+    // What the link *says* is compared without the scheme, because that is how
+    // people write an address and how every emitter here prints one. Comparing
+    // the full target instead meant `GitHub: github.com/aeinstein`, linked to
+    // `https://github.com/aeinstein`, did not look like it already carried its
+    // own address — so the address was appended, the contact line came back
+    // holding the profile twice, and the next export printed both. A CV that
+    // went out, came back and went out again had grown a second GitHub.
+    let bare = strip_scheme(target);
+    if !strip_scheme(&contributed).contains(bare) {
         let last = segments.last_mut().expect("never empty");
         if !last.is_empty() {
             last.push(' ');
         }
         last.push_str(bare);
     }
+}
+
+/// A line that ends in one of this document's own link targets, split into
+/// what it says and where it points.
+fn split_trailing_address(text: &str, links: &HashMap<&str, &str>) -> Option<(String, String)> {
+    let mut best: Option<(String, String)> = None;
+    for target in links.values() {
+        let bare = strip_scheme(target);
+        if bare.is_empty() {
+            continue;
+        }
+        let Some(head) = text.strip_suffix(bare) else {
+            continue;
+        };
+        let head = head.trim();
+        if head.is_empty() {
+            continue;
+        }
+        // The longest address wins, so a document holding both `ethz.ch` and
+        // `research.ethz.ch` splits at the one the line actually ends with.
+        if best.as_ref().is_none_or(|(_, b)| b.len() < bare.len()) {
+            best = Some((head.to_string(), bare.to_string()));
+        }
+    }
+    best
+}
+
+/// An address as a person writes it: no scheme, no `www.`, no trailing slash.
+fn strip_scheme(text: &str) -> &str {
+    text.trim_start_matches("mailto:")
+        .trim_start_matches("tel:")
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("www.")
+        .trim_end_matches('/')
 }
 
 /// What a paragraph is, from its style and its words.
@@ -384,10 +443,11 @@ mod tests {
             Paragraph::new().add_hyperlink(link),
             &[("rId7", "https://linkedin.com/in/aeinstein")],
         );
-        assert_eq!(
-            texts(&lines),
-            vec!["LinkedIn https://linkedin.com/in/aeinstein"]
-        );
+        // The address is appended the way a person writes one and the way the
+        // model stores one — without the scheme. `links::href` puts the scheme
+        // back on the way out, and comparing the two forms is what stopped a
+        // contact line from coming back holding the same profile twice.
+        assert_eq!(texts(&lines), vec!["LinkedIn linkedin.com/in/aeinstein"]);
     }
 
     /// A link that already shows its own address gains nothing from having it
