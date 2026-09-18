@@ -4,6 +4,7 @@
 //! from **PDF** (via `pdf-extract`, pure Rust), **DOCX**, **JSON Resume**,
 //! **Plain Text/Markdown**, and a **LinkedIn data export** archive.
 
+pub mod bidi;
 pub mod classifier;
 pub mod error;
 #[cfg(test)]

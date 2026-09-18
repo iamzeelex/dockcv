@@ -11,6 +11,11 @@
 # section is not a job history, and filing it as one appended three projects to
 # somebody's last employer.
 #
+# The right-to-left rows — `he` and `ar` — are the common headings, and they
+# arrived with the bidi pass that made a Hebrew CV readable at all: a section
+# whose name nothing recognises is a section that cannot be filed. Adding more
+# of them, or another script, is editing this file.
+#
 # Adding a family is editing this file — no Rust changes. An unrecognised
 # heading is still imported: a line set in capitals is treated as a heading on
 # shape alone. The taxonomy only improves recall for title-case headings.
@@ -29,6 +34,8 @@ it = ["esperienza professionale", "esperienze lavorative", "percorso professiona
 pt = ["experiência profissional", "histórico profissional"]
 nl = ["werkervaring", "professionele ervaring"]
 pl = ["doświadczenie zawodowe", "historia zatrudnienia"]
+he = ["ניסיון תעסוקתי", "ניסיון מקצועי", "ניסיון עבודה", "תעסוקה"]
+ar = ["الخبرة العملية", "الخبرة المهنية", "الخبرات المهنية", "التوظيف"]
 
 [education]
 en = ["education", "academic", "qualification", "degrees", "educational background"]
@@ -40,6 +47,8 @@ it = ["istruzione", "formazione", "percorso di studi", "titoli di studio"]
 pt = ["educação", "formação acadêmica", "escolaridade"]
 nl = ["opleiding", "studies", "onderwijs"]
 pl = ["wykształcenie", "edukacja", "studia"]
+he = ["השכלה", "השכלה אקדמית", "לימודים"]
+ar = ["التعليم", "المؤهلات العلمية", "الدراسة"]
 
 [skills]
 en = ["skill", "skills", "technologies", "tech stack", "tools", "competencies", "core competencies", "technical skills", "skills & tools"]
@@ -51,6 +60,8 @@ it = ["competenze", "competenze tecniche", "tecnologie", "strumenti"]
 pt = ["habilidades", "competências", "conhecimentos técnicos", "tecnologias"]
 nl = ["vaardigheden", "competenties", "kennis", "technologieën"]
 pl = ["umiejętności", "kompetencje", "technologie"]
+he = ["כישורים", "מיומנויות", "יכולות"]
+ar = ["المهارات", "المهارات التقنية"]
 
 [certificates]
 en = ["certif", "certificate", "certificates", "license", "licenses", "courses", "coursework", "training", "professional development", "continuing education"]
@@ -62,6 +73,8 @@ it = ["certificazioni", "certificati", "corsi"]
 pt = ["certificações", "certificados", "cursos", "formação complementar"]
 nl = ["certificaten", "diploma's", "cursussen", "trainingen"]
 pl = ["certyfikaty", "kursy", "licencje", "szkolenia"]
+he = ["תעודות", "הסמכות", "קורסים"]
+ar = ["الشهادات", "الدورات التدريبية"]
 
 [volunteer]
 # `organizations` is DockCV's own printed name for this section, so a CV it
@@ -75,6 +88,8 @@ it = ["volontariato", "attività sociali"]
 pt = ["trabalho voluntário", "voluntariado"]
 nl = ["vrijwilligerswerk", "nevenactiviteiten"]
 pl = ["wolontariat", "działalność społeczna"]
+he = ["התנדבות", "פעילות התנדבותית"]
+ar = ["العمل التطوعي", "التطوع"]
 
 [summary]
 en = ["summary", "profile", "about", "about me", "executive summary", "professional summary", "objective", "career objective", "personal statement"]
@@ -86,6 +101,8 @@ it = ["chi sono", "profilo professionale", "sommario"]
 pt = ["sobre mim", "perfil profissional", "resumo"]
 nl = ["over mij", "profiel", "samenvatting"]
 pl = ["o mnie", "profil zawodowy", "podsumowanie"]
+he = ["תקציר", "אודות", "על עצמי", "פרופיל"]
+ar = ["نبذة", "الملخص", "نبذة عني"]
 
 [contact]
 # Not a section: its lines are the profile's own fields — email, phone,
@@ -99,6 +116,8 @@ it = ["contatti", "contatto"]
 pt = ["contato", "contactos"]
 nl = ["contact", "contactgegevens"]
 pl = ["kontakt", "dane kontaktowe"]
+he = ["פרטי קשר", "יצירת קשר"]
+ar = ["معلومات الاتصال", "بيانات التواصل"]
 
 # ---------------------------------------------------------------------------
 # Families with no built-in shape. Each becomes a custom section, under the
@@ -122,6 +141,8 @@ it = ["progetti"]
 pt = ["projetos"]
 nl = ["projecten"]
 pl = ["projekty"]
+he = ["פרויקטים"]
+ar = ["المشاريع"]
 
 [languages]
 en = ["languages", "language skills", "spoken languages"]
@@ -133,6 +154,8 @@ it = ["lingue", "conoscenze linguistiche"]
 pt = ["idiomas", "línguas"]
 nl = ["talen", "talenkennis"]
 pl = ["języki", "znajomość języków"]
+he = ["שפות"]
+ar = ["اللغات"]
 
 [interests]
 en = ["interests", "hobbies", "activities and interests", "interests and hobbies", "personal interests"]
@@ -144,6 +167,8 @@ it = ["interessi", "hobby"]
 pt = ["interesses", "hobbies"]
 nl = ["interesses", "hobby's"]
 pl = ["zainteresowania", "hobby"]
+he = ["תחומי עניין"]
+ar = ["الاهتمامات"]
 
 [publications]
 en = ["publications", "papers", "selected publications", "research", "research experience"]

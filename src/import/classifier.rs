@@ -251,16 +251,20 @@ fn title_case(heading: &str) -> String {
 }
 
 fn is_shouted(line: &str) -> bool {
-    let mut has_letter = false;
+    // A *cased* letter, not merely a letter. Hebrew, Arabic, Japanese, Chinese,
+    // Georgian and Devanagari have no capitals at all, so "no lower-case letter
+    // in it" was true of every line in them — and the rule this feeds says a
+    // shouted line is a section heading even when the taxonomy has never heard
+    // of it. The first line of a Hebrew CV is the person's name; read as a
+    // heading, it became a section with the whole document filed under it.
+    let mut has_case = false;
     for ch in line.chars() {
-        if ch.is_alphabetic() {
-            has_letter = true;
-            if ch.is_lowercase() {
-                return false;
-            }
+        if ch.is_lowercase() {
+            return false;
         }
+        has_case |= ch.is_uppercase();
     }
-    has_letter
+    has_case
 }
 
 /// Zero-allocation 1D Levenshtein distance with early-exit row thresholding.

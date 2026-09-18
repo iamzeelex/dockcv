@@ -228,10 +228,11 @@ Took the API from three customers to nine hundred.
         },
         ForeignCv {
             name: "right to left",
-            shape: "a Hebrew CV. Whether the bundle can set it at all is the first \
-                    question; whether the text layer comes back in logical order rather \
-                    than visual order is the second, and every naive extractor gets that \
-                    one wrong",
+            shape: "a Hebrew CV. A PDF records where glyphs landed and never the \
+                    order they were typed in, so the text layer comes back spelled \
+                    backwards — and a script with no capitals in it made every short \
+                    line look like a shouted section heading, so the person's name \
+                    became a section with the document filed under it",
             source: r#"
 #set page(paper: "a4", margin: 18mm)
 #set text(font: "Libertinus Serif", size: 11pt, dir: rtl)
@@ -245,7 +246,13 @@ daniel\@example.com
 #text(weight: "bold")[מהנדס תוכנה בכיר] \
 2019 – 2023
 "#,
-            must_recover: &["daniel@example.com"],
+            must_recover: &[
+                "daniel@example.com",
+                "דניאל כהן",
+                "מהנדס תוכנה בכיר",
+                "2019",
+                "2023",
+            ],
         },
     ]
 }

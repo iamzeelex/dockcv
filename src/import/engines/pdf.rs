@@ -45,6 +45,12 @@ pub fn import_pdf(path: &Path) -> Result<ImportedDoc, ImportError> {
             .remedy("Run the scan through OCR first, then import the result"));
     }
 
+    // A PDF records where glyphs landed, never the order they were typed in, so
+    // a Hebrew or Arabic CV arrives spelled backwards. This is the only engine
+    // that needs the repair — a .docx, a text file and a JSON Resume all store
+    // logical order already — and it costs a Latin CV one scan for a
+    // right-to-left letter that is never there.
+    let text = crate::import::bidi::text_to_logical_order(&text);
     Ok(classify_raw_text("PDF", &text))
 }
 
