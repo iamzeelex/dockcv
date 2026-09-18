@@ -15,6 +15,12 @@ TOOLS="$ROOT/target/ats-tools"
 # Pinned: an extractor that changes under us turns a regression into a mystery.
 PDFBOX_VERSION="3.0.4"
 PDFMINER_VERSION="20250506"
+# A .docx is the other file a CV gets sent as, and several ATS parse it better
+# than they parse a PDF. `python-docx` reads paragraph *styles*, which is what
+# a parser keys on when it looks for a heading; `docx2txt` is the crude end of
+# the same market and reads nothing but the runs.
+PYTHON_DOCX_VERSION="1.2.0"
+DOCX2TXT_VERSION="0.9"
 
 mkdir -p "$TOOLS"
 
@@ -41,7 +47,14 @@ if [ ! -x "$VENV/bin/pdf2txt.py" ]; then
   python3 -m venv "$VENV"
   "$VENV/bin/pip" install -q --disable-pip-version-check "pdfminer.six==$PDFMINER_VERSION"
 fi
+if [ ! -f "$VENV/lib/.docx-readers" ]; then
+  say "installing python-docx==$PYTHON_DOCX_VERSION and docx2txt==$DOCX2TXT_VERSION"
+  "$VENV/bin/pip" install -q --disable-pip-version-check \
+    "python-docx==$PYTHON_DOCX_VERSION" "docx2txt==$DOCX2TXT_VERSION"
+  touch "$VENV/lib/.docx-readers"
+fi
 say "pdfminer: $("$VENV/bin/python" -c 'import pdfminer; print(pdfminer.__version__)')"
+say "python-docx: $("$VENV/bin/python" -c 'import docx; print(docx.__version__)' 2>/dev/null || echo unknown)"
 
 # 3. Apache PDFBox — the Java stack under Tika and under a large share of
 #    in-house ATS parsing.

@@ -92,6 +92,48 @@ pub fn read_all(pdf_path: &Path) -> Vec<External> {
     out
 }
 
+/// Every external engine that is installed, over one `.docx` on disk.
+///
+/// `python-docx` is the reader most Python-side parsers are built on, and the
+/// point of running it is that it is not ours: it opens the archive, resolves
+/// the styles and segments the paragraphs by its own rules. `docx2txt` is the
+/// crude end of the same market and keeps nothing but the runs. What a
+/// *heading* is in this format is asked in process, where both the style and
+/// the outline level are visible — see `ats::docx`.
+pub fn read_all_docx(path: &Path) -> Vec<External> {
+    let python = tools_dir().join("venv/bin/python");
+    if !python.is_file() {
+        return Vec::new();
+    }
+    let path = path.to_string_lossy().to_string();
+    let mut out = Vec::new();
+
+    const PARAGRAPHS: &str = "\
+import sys, docx\n\
+for p in docx.Document(sys.argv[1]).paragraphs:\n\
+    if p.text.strip():\n\
+        print(p.text)\n";
+    if let Some(text) = run(
+        &python.to_string_lossy(),
+        &["-c", PARAGRAPHS, path.as_str()],
+    ) {
+        out.push(External {
+            engine: "python-docx",
+            text,
+        });
+    }
+
+    const FLAT: &str = "import sys, docx2txt; print(docx2txt.process(sys.argv[1]))";
+    if let Some(text) = run(&python.to_string_lossy(), &["-c", FLAT, path.as_str()]) {
+        out.push(External {
+            engine: "docx2txt",
+            text,
+        });
+    }
+
+    out
+}
+
 /// The pinned jar, whatever version the script last fetched.
 fn pdfbox_jar() -> Option<PathBuf> {
     std::fs::read_dir(tools_dir())

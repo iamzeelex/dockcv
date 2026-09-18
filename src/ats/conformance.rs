@@ -27,6 +27,7 @@ use dockcv_core::resume::model::{
 use dockcv_core::resume::template;
 use dockcv_core::typst_engine::TypstEngine;
 
+use super::docx;
 use super::external;
 use super::fields::{self, Pinned};
 use super::readers;
@@ -331,6 +332,94 @@ fn every_layout_we_offer_exports_a_file_pdf_ua1_accepts() {
             panic!(
                 "“{scenario}” would export a file PDF/UA-1 refuses, and its rules are \
                  most of what a parser needs too:\n{why}"
+            );
+        }
+    }
+}
+
+/// The Word file, read by three readers that are not each other.
+///
+/// `export_docx` takes a `Resume` and no layout, so there is one file here
+/// rather than six: the scenarios above are decisions about a page, and this
+/// format has none.
+fn word_readings(path: &std::path::Path, bytes: &[u8]) -> Vec<(String, String)> {
+    let mut out = vec![(
+        "paragraphs".to_string(),
+        docx::flat_text(bytes).unwrap_or_default(),
+    )];
+    for found in external::read_all_docx(path) {
+        out.push((found.engine.to_string(), found.text));
+    }
+    out
+}
+
+#[test]
+fn the_word_file_reads_the_same_way_whoever_reads_it() {
+    let resume = fixture();
+    let bytes = dockcv_core::resume::export_docx::export_docx(&resume)
+        .expect("the fixture exports to .docx");
+    let path = std::env::temp_dir().join("dockcv-ats.docx");
+    std::fs::write(&path, &bytes).expect("write the file the external readers open");
+
+    let mut failures = Vec::new();
+    for (engine, text) in word_readings(&path, &bytes) {
+        for pinned in fields::pin(&resume) {
+            if !pinned.recovered(&text) {
+                failures.push(format!("{engine} · {}", pinned.what));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} field(s) a reader of our .docx does not recover:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn the_word_file_says_what_its_headings_and_its_lists_are() {
+    let resume = fixture();
+    let bytes = dockcv_core::resume::export_docx::export_docx(&resume)
+        .expect("the fixture exports to .docx");
+    let paragraphs = docx::paragraphs(&bytes).expect("we can read back what we just wrote");
+
+    for pinned in fields::pin(&resume)
+        .iter()
+        .filter(|p| p.what.starts_with("heading"))
+    {
+        let needle = fields::normalize(&pinned.needle);
+        let found = paragraphs
+            .iter()
+            .find(|p| fields::normalize(&p.text) == needle);
+        let Some(found) = found else {
+            panic!("“{}” is not a paragraph of the .docx at all", pinned.needle);
+        };
+        assert!(
+            found.is_heading(),
+            "“{}” is printed as a section but is neither a heading style nor an \
+             outline level, so a reader looking for headings finds none. Style was \
+             {:?}, outline level {:?}",
+            pinned.needle,
+            found.style,
+            found.outline
+        );
+    }
+
+    for job in &resume.work {
+        for bullet in &job.highlights {
+            let needle = fields::normalize(bullet);
+            let found = paragraphs
+                .iter()
+                .find(|p| fields::normalize(&p.text) == needle);
+            let Some(found) = found else {
+                panic!("a bullet of {:?} is not a paragraph of the .docx", job.name);
+            };
+            assert!(
+                found.list,
+                "a bullet of {:?} carries no numbering property, so it is a paragraph \
+                 that happens to be short rather than an item in a list",
+                job.name
             );
         }
     }
