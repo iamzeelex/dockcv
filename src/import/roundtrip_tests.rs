@@ -834,3 +834,192 @@ fn exporting_what_was_imported_gives_the_same_file_back() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A LinkedIn export, with the quirks a real one has.
+///
+/// This is the archive a great many people start from, and it is the one
+/// format there is no way to fixture from our own emitters — nothing here
+/// writes a LinkedIn export, so the only test that means anything is one that
+/// builds a realistic archive and reads it. Realistic is the word doing the
+/// work: a byte-order mark, CRLF endings, a description quoted because it
+/// holds a comma and a newline, `Aug 2021` with an empty finish for a job
+/// still held, a nested folder from somebody who re-zipped the unpacked one, a
+/// CSV nobody models, and an empty one.
+#[test]
+fn a_linkedin_export_with_every_quirk_a_real_one_has() {
+    use std::io::Write;
+
+    let dir = std::env::temp_dir().join(format!("dockcv-linkedin-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("Basic_LinkedInDataExport.zip");
+
+    // The quirks a real export has and a hand-written fixture never does: a
+    // byte-order mark, CRLF endings, a description that is quoted because it
+    // holds a comma and a newline, dates as `Aug 2024` and an empty finish for
+    // a job still held, a nested folder, a CSV nobody models and one that is
+    // empty.
+    let file = std::fs::File::create(&path).expect("create");
+    let mut zip = zip::ZipWriter::new(file);
+    let opts: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
+
+    let mut put = |name: &str, body: &str, bom: bool| {
+        zip.start_file(name, opts).expect("start");
+        if bom {
+            zip.write_all(&[0xef, 0xbb, 0xbf]).expect("bom");
+        }
+        zip.write_all(body.replace('\n', "\r\n").as_bytes())
+            .expect("write");
+    };
+
+    put(
+        "Profile.csv",
+        "First Name,Last Name,Headline,Geo Location,Summary,Websites\n         Ada,Lovelace,Engineering Manager,\"Dublin, Ireland\",\"Builds teams, and the systems under them.\",[PERSONAL:https://ada.example.com]\n",
+        true,
+    );
+    put(
+        "Email Addresses.csv",
+        "Email Address,Confirmed,Primary\nada@example.com,Yes,Yes\n",
+        false,
+    );
+    put(
+        "Positions.csv",
+        "Company Name,Title,Description,Location,Started On,Finished On\n         Nimbus,Engineering Manager,\"Grew the platform group from four to nineteen.\nRan the migration off bare metal.\",Dublin,Aug 2021,\n         Cirrus,Senior Engineer,Owned the billing service end to end.,Dublin,Jan 2018,Jul 2021\n",
+        true,
+    );
+    put(
+        "folder/Education.csv",
+        "School Name,Start Date,End Date,Notes,Degree Name\n         Trinity College Dublin,2013,2017,,B.A. in Computer Science\n",
+        false,
+    );
+    put("Skills.csv", "Name\nRust\nKubernetes\n", false);
+    put(
+        "Ad_Targeting.csv",
+        "Member Age,Company Size\n25-34,1001+\n",
+        false,
+    );
+    put("Votes.csv", "", false);
+    zip.finish().expect("finish");
+
+    let imported = import_file(&path).expect("the archive imports");
+    let doc = imported.doc.compose();
+
+    assert_eq!(doc.basics.name, "Ada Lovelace");
+    assert_eq!(doc.basics.email, "ada@example.com");
+    assert_eq!(doc.basics.location, "Dublin, Ireland");
+    assert_eq!(
+        doc.basics.summary,
+        "Builds teams, and the systems under them."
+    );
+
+    assert_eq!(doc.work.len(), 2, "both positions");
+    assert_eq!(doc.work[0].position, "Engineering Manager");
+    assert_eq!(doc.work[0].name, "Nimbus");
+    assert_eq!(doc.work[0].start_date.text, "Aug 2021");
+    assert!(
+        doc.work[0].end_date.is_empty(),
+        "an empty finish is a job still held"
+    );
+    assert_eq!(
+        doc.work[0].highlights.len(),
+        2,
+        "a description quoted across two lines is two bullets: {:?}",
+        doc.work[0].highlights
+    );
+    assert_eq!(doc.work[0].location, "Dublin");
+
+    assert_eq!(doc.education.len(), 1);
+    assert_eq!(doc.education[0].institution, "Trinity College Dublin");
+    assert_eq!(doc.education[0].study_type, "B.A. in Computer Science");
+
+    assert_eq!(
+        doc.skills
+            .iter()
+            .flat_map(|s| s.keywords.clone())
+            .collect::<Vec<_>>(),
+        vec!["Rust", "Kubernetes"]
+    );
+
+    // A CSV this product does not model is reported rather than dropped, and
+    // an empty one is not reported at all.
+    assert!(
+        imported
+            .unplaced
+            .iter()
+            .any(|u| format!("{u:?}").contains("ad_targeting.csv")),
+        "an unmodelled table should be offered, not swallowed: {:?}",
+        imported.unplaced
+    );
+    assert!(
+        !imported
+            .unplaced
+            .iter()
+            .any(|u| format!("{u:?}").contains("votes.csv")),
+        "an empty table is not something to tell anybody about"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Every CV we export as JSON Resume is a JSON Resume.
+///
+/// DockCV claims the format, and the only thing that settles the claim is the
+/// document the format is defined by, checked by somebody else's validator.
+/// Our own reader agreeing with our own writer proves they agree, which is a
+/// different and much weaker fact — and the one the round-trip tests above
+/// establish.
+///
+/// The schema and the validator come from `scripts/ats-tools.sh`, like the PDF
+/// extractors; when they are not installed the test says so and passes, so a
+/// contributor without a Python environment still gets a green suite and CI,
+/// which runs the script, still gets the check.
+#[test]
+fn every_json_resume_we_write_is_one_the_schema_accepts() {
+    let tools = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/ats-tools");
+    let python = tools.join("venv/bin/python");
+    let schema = tools.join("json-resume-schema.json");
+    if !python.is_file() || !schema.is_file() {
+        eprintln!("json resume schema not fetched — run scripts/ats-tools.sh; skipping");
+        return;
+    }
+
+    // One statement per line and no indented block anywhere: a Rust string
+    // continued with `\` drops the leading whitespace of the next line, so a
+    // `for` body written the natural way arrives at Python with no indent at
+    // all and the script dies before it can validate anything.
+    const VALIDATE: &str = "\
+import json, sys, jsonschema\n\
+schema = json.load(open(sys.argv[1]))\n\
+doc = json.load(open(sys.argv[2]))\n\
+errors = sorted(jsonschema.Draft7Validator(schema).iter_errors(doc), key=lambda e: list(e.path))\n\
+print('\\n'.join(('/'.join(str(p) for p in e.path) or 'the document itself') + ': ' + e.message[:160] for e in errors[:8]))\n\
+sys.exit(1 if errors else 0)\n";
+
+    let dir = std::env::temp_dir().join(format!("dockcv-schema-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    for (name, doc) in std::iter::once(("the fixture", fixture())).chain(
+        crate::ats::adversarial::all()
+            .into_iter()
+            .map(|a| (a.name, ResumeDoc::from_resume(a.resume, "Base"))),
+    ) {
+        let json = dockcv_core::resume::export_json_resume(&doc.compose()).expect("json");
+        let path = dir.join("cv.json");
+        std::fs::write(&path, &json).expect("write");
+
+        let out = std::process::Command::new(&python)
+            .arg("-c")
+            .arg(VALIDATE)
+            .arg(&schema)
+            .arg(&path)
+            .output()
+            .expect("run the validator");
+        assert!(
+            out.status.success(),
+            "“{name}” is not valid JSON Resume:\n{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -101,6 +101,11 @@ jobs:
         run: ./scripts/ats-tools.sh
       - name: Conformance
         run: "cargo test --bin dockcv ats:: -- --nocapture"
+      # The importer's corpus needs the same tools: python-docx and docx2txt to
+      # read a Word file back, and JSON Resume's own schema to settle whether
+      # what we call a JSON Resume is one.
+      - name: Import, round trips and the schema
+        run: "cargo test --bin dockcv import:: -- --nocapture"
       - name: The table, whatever the result
         if: always()
         uses: actions/upload-artifact@v4

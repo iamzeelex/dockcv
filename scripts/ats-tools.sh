@@ -20,6 +20,7 @@ PDFMINER_VERSION="20250506"
 # a parser keys on when it looks for a heading; `docx2txt` is the crude end of
 # the same market and reads nothing but the runs.
 PYTHON_DOCX_VERSION="1.2.0"
+JSONSCHEMA_VERSION="4.25.1"
 DOCX2TXT_VERSION="0.9"
 
 mkdir -p "$TOOLS"
@@ -47,12 +48,24 @@ if [ ! -x "$VENV/bin/pdf2txt.py" ]; then
   python3 -m venv "$VENV"
   "$VENV/bin/pip" install -q --disable-pip-version-check "pdfminer.six==$PDFMINER_VERSION"
 fi
-if [ ! -f "$VENV/lib/.docx-readers" ]; then
-  say "installing python-docx==$PYTHON_DOCX_VERSION and docx2txt==$DOCX2TXT_VERSION"
+if [ ! -f "$VENV/lib/.readers-$PYTHON_DOCX_VERSION-$DOCX2TXT_VERSION-$JSONSCHEMA_VERSION" ]; then
+  say "installing python-docx, docx2txt and jsonschema"
   "$VENV/bin/pip" install -q --disable-pip-version-check \
-    "python-docx==$PYTHON_DOCX_VERSION" "docx2txt==$DOCX2TXT_VERSION"
-  touch "$VENV/lib/.docx-readers"
+    "python-docx==$PYTHON_DOCX_VERSION" "docx2txt==$DOCX2TXT_VERSION" \
+    "jsonschema==$JSONSCHEMA_VERSION"
+  touch "$VENV/lib/.readers-$PYTHON_DOCX_VERSION-$DOCX2TXT_VERSION-$JSONSCHEMA_VERSION"
 fi
+
+# 4. JSON Resume's own schema. DockCV claims to export the format; the only
+#    thing that settles whether it does is the document the format is defined
+#    by, validated by somebody else's validator.
+SCHEMA="$TOOLS/json-resume-schema.json"
+if [ ! -f "$SCHEMA" ]; then
+  say "downloading the JSON Resume schema"
+  curl -fsSL -o "$SCHEMA" \
+    "https://raw.githubusercontent.com/jsonresume/resume-schema/master/schema.json"
+fi
+say "json resume schema: $(wc -c < "$SCHEMA" | tr -d ' ') bytes"
 say "pdfminer: $("$VENV/bin/python" -c 'import pdfminer; print(pdfminer.__version__)')"
 say "python-docx: $("$VENV/bin/python" -c 'import docx; print(docx.__version__)' 2>/dev/null || echo unknown)"
 
