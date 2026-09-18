@@ -461,3 +461,142 @@ fn a_number_in_front_of_a_range() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A damaged file is refused, never a crash.
+///
+/// Import is the first thing a new user does, and the files they do it with
+/// come off downloads, sync clients and USB sticks. Two of the three parsers
+/// under this app answer a file that is *almost* right by panicking rather than
+/// by returning an error — `pdf-extract` on a construct it does not handle, and
+/// `read_docx` on a document part it did not expect — and a panic on the import
+/// worker is not contained by being on a worker: `async-task` resumes the
+/// unwind in the awaiting task, which is on the UI thread. One flipped byte in
+/// a valid .docx took the whole app down until this test was written.
+///
+/// So: forty-odd damaged files, and the only two acceptable outcomes are a
+/// document and a refusal that says something.
+#[test]
+fn a_damaged_file_is_refused_and_never_a_crash() {
+    let dir = std::env::temp_dir().join(format!("dockcv-damage-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let composed = fixture().compose();
+
+    let pdf = dockcv_core::typst_engine::TypstEngine::new(dockcv_core::resume::template::generate(
+        &composed,
+    ))
+    .compile_to_pdf()
+    .expect("pdf");
+    let docx = dockcv_core::resume::export_docx(&composed).expect("docx");
+    let text = dockcv_core::resume::export_plain_text(&composed).into_bytes();
+    let json = dockcv_core::resume::export_json_resume(&composed)
+        .expect("json")
+        .into_bytes();
+
+    let mut cases: Vec<(String, &'static str, Vec<u8>)> = Vec::new();
+    for (ext, whole) in [
+        ("pdf", &pdf),
+        ("docx", &docx),
+        ("txt", &text),
+        ("json", &json),
+    ] {
+        for cut in [
+            0usize,
+            1,
+            16,
+            whole.len() / 3,
+            whole.len() / 2,
+            whole.len() - 1,
+        ] {
+            cases.push((
+                format!("{ext} truncated to {cut}"),
+                ext,
+                whole[..cut].to_vec(),
+            ));
+        }
+        // Still the right length, still the right magic number, and no longer
+        // the file it says it is. This is the one that panicked.
+        let mut flipped = whole.to_vec();
+        let at = flipped.len() / 2;
+        flipped[at] ^= 0xff;
+        cases.push((format!("{ext} with a flipped byte"), ext, flipped));
+        // The right extension over somebody else's bytes.
+        cases.push((format!("{ext} that is really a PDF"), ext, pdf.clone()));
+    }
+    cases.push(("pdf of pure zeros".into(), "pdf", vec![0u8; 4096]));
+    cases.push((
+        "docx that is an empty zip".into(),
+        "docx",
+        b"PK\x05\x06".to_vec(),
+    ));
+
+    for (name, ext, bytes) in cases {
+        let path = dir.join(format!("damaged.{ext}"));
+        std::fs::write(&path, &bytes).expect("write");
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| import_file(&path)));
+        match outcome {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => assert!(
+                !e.to_string().trim().is_empty(),
+                "{name} was refused without saying why"
+            ),
+            Err(_) => panic!("{name} brought the app down instead of being refused"),
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Notepad's two encodings are not an error.
+///
+/// `read_to_string` takes UTF-8 and nothing else. Saving a CV from Notepad as
+/// "Unicode" writes UTF-16 with a byte-order mark, which was refused outright;
+/// saving it as "UTF-8" writes a mark too, which was *worse*, because it does
+/// not fail — the mark became the first character of the person's name and
+/// travelled into the vault where nothing on screen would ever show it.
+#[test]
+fn a_text_cv_saved_the_way_notepad_saves_one() {
+    let dir = std::env::temp_dir().join(format!("dockcv-encodings-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let plain = dockcv_core::resume::export_plain_text(&fixture().compose());
+
+    let utf16 = |big_endian: bool| {
+        let mut bytes = if big_endian {
+            vec![0xfe, 0xff]
+        } else {
+            vec![0xff, 0xfe]
+        };
+        for unit in plain.encode_utf16() {
+            bytes.extend_from_slice(&if big_endian {
+                unit.to_be_bytes()
+            } else {
+                unit.to_le_bytes()
+            });
+        }
+        bytes
+    };
+    let mut utf8_bom = vec![0xef, 0xbb, 0xbf];
+    utf8_bom.extend_from_slice(plain.as_bytes());
+
+    for (what, bytes) in [
+        ("UTF-16 little-endian", utf16(false)),
+        ("UTF-16 big-endian", utf16(true)),
+        ("UTF-8 with a mark", utf8_bom),
+        ("UTF-8", plain.clone().into_bytes()),
+    ] {
+        let path = dir.join("cv.txt");
+        std::fs::write(&path, &bytes).expect("write");
+        let imported = import_file(&path).unwrap_or_else(|e| panic!("{what}: {e}"));
+        let name = imported.doc.compose().basics.name;
+        assert_eq!(
+            name.trim(),
+            "Albert Einstein",
+            "{what} did not give back the person's own name"
+        );
+        assert!(
+            !name.starts_with('\u{feff}'),
+            "{what} left a byte-order mark inside the name"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

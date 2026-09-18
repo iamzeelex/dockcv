@@ -20,6 +20,7 @@ use docx_rs::{
     Table, TableCellContent, TableChild, TableRowChild,
 };
 use std::collections::HashMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
 use crate::import::classifier::{classify_lines, is_only_dates, names_a_section};
@@ -71,7 +72,26 @@ pub fn import_docx(path: &Path) -> Result<ImportedDoc, String> {
     }
     let buf = std::fs::read(path).map_err(|e| format!("Could not open DOCX file: {e}"))?;
     validate_docx_container(&buf)?;
-    let docx = read_docx(&buf).map_err(|e| format!("Failed to parse DOCX structure: {e}"))?;
+
+    // `read_docx` answers a file that is structurally a zip and not structurally
+    // a document by **panicking**, the same way `pdf-extract` does — an
+    // `unwrap` on an element it did not expect, somewhere under the XML reader.
+    // One flipped byte in the middle of a valid .docx is enough to reach it,
+    // which is a truncated download, a bad sync or a tired USB stick, and the
+    // whole app went down on the first thing a new user does (US-01).
+    //
+    // A panic on a worker thread is not contained by being there: `async-task`
+    // catches it and resumes the unwind in the awaiting task, which for the
+    // import flow is on the UI thread. So it is caught here, at the call, and
+    // turned into the refusal every other unreadable file already gets.
+    let docx = catch_unwind(AssertUnwindSafe(|| read_docx(&buf)))
+        .map_err(|_| {
+            "This .docx is damaged — the part that says what the document contains could \
+             not be read. If it came from a download or a sync, fetch it again; if you \
+             still have it open in Word, save a copy and import that."
+                .to_string()
+        })?
+        .map_err(|e| format!("Failed to parse DOCX structure: {e}"))?;
 
     // `r:id` → the URL behind it. A hyperlink's target lives in the document's
     // relationships, not on the element, so without this map the only thing a
