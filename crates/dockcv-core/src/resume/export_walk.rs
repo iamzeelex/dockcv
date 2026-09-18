@@ -83,7 +83,13 @@ pub fn format_date_range(start: &ResumeDate, end: &ResumeDate, date_format: Date
     if !start_str.is_empty() && !end_str.is_empty() {
         format!("{start_str} - {end_str}")
     } else if !start_str.is_empty() {
-        start_str
+        // An empty end date is how this model says "still there" — the page has
+        // read it that way since the beginning (`template.rs::daterange`) and
+        // every other export read it as a job that ended at an unstated time.
+        // A parser cannot tell the difference between the two from a bare start
+        // date, and "is this person available" is a question it is built to
+        // answer, so the word the page prints is the word they all print now.
+        format!("{start_str} - Present")
     } else if !end_str.is_empty() {
         end_str
     } else {

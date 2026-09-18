@@ -4,11 +4,15 @@
 //! from **PDF** (via `pdf-extract`, pure Rust), **DOCX**, **JSON Resume**,
 //! **Plain Text/Markdown**, and a **LinkedIn data export** archive.
 
+pub mod bidi;
 pub mod classifier;
 pub mod error;
+#[cfg(test)]
+pub mod foreign_cvs;
 pub mod layout;
 pub mod model;
 pub mod notes;
+pub mod pdf_tags;
 #[cfg(test)]
 mod roundtrip_tests;
 
@@ -28,13 +32,50 @@ use std::path::Path;
 
 const MAX_IMPORT_FILE_SIZE: u64 = 50 * 1024 * 1024; // 50 MB
 
+/// Decode a file's bytes as text, whichever of the three encodings a CV
+/// arrives in.
+///
+/// `read_to_string` takes UTF-8 and nothing else, which refused two files that
+/// are ordinary outside this project: Notepad's "Unicode" is UTF-16 with a
+/// byte-order mark, and its "UTF-8" writes a BOM too — which does not fail, and
+/// is worse, because the mark becomes the first character of the person's name
+/// and travels into the vault invisibly. Both are recognised here by their
+/// mark, which is what a mark is for.
+pub(crate) fn decode_text(bytes: Vec<u8>) -> Result<String, String> {
+    match bytes.as_slice() {
+        [0xff, 0xfe, rest @ ..] => decode_utf16(rest, u16::from_le_bytes),
+        [0xfe, 0xff, rest @ ..] => decode_utf16(rest, u16::from_be_bytes),
+        [0xef, 0xbb, 0xbf, rest @ ..] => String::from_utf8(rest.to_vec())
+            .map_err(|e| format!("stream did not contain valid UTF-8: {e}")),
+        _ => {
+            String::from_utf8(bytes).map_err(|e| format!("stream did not contain valid UTF-8: {e}"))
+        }
+    }
+}
+
+fn decode_utf16(bytes: &[u8], word: fn([u8; 2]) -> u16) -> Result<String, String> {
+    if !bytes.len().is_multiple_of(2) {
+        return Err("this looks like UTF-16 and stops in the middle of a character".into());
+    }
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|pair| word([pair[0], pair[1]]))
+        .collect();
+    String::from_utf16(&units).map_err(|e| format!("this is not valid UTF-16: {e}"))
+}
+
 /// Read a text file, or say what stopped us in the same voice as every other
 /// import refusal.
 fn read_text(path: &Path) -> Result<String, ImportError> {
-    std::fs::read_to_string(path).map_err(|e| {
+    let bytes = std::fs::read(path).map_err(|e| {
         ImportError::new("Could not read this file")
             .detail(format!("the system said: {e}"))
             .remedy("Check the file is still where you picked it from")
+    })?;
+    decode_text(bytes).map_err(|why| {
+        ImportError::new("Could not read this file")
+            .detail(why)
+            .remedy("Open it in the editor it came from and save it as UTF-8 text")
     })
 }
 

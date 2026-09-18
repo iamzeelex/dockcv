@@ -7,7 +7,7 @@ use std::io::Cursor;
 
 use docx_rs::{
     AbstractNumbering, Docx, DocxError, Hyperlink, HyperlinkType, IndentLevel, Level, LevelJc,
-    LevelText, NumberFormat, Numbering, NumberingId, Paragraph, Run, Start,
+    LevelText, NumberFormat, Numbering, NumberingId, Paragraph, Run, Start, Style, StyleType,
 };
 
 use super::dates::DateFormat;
@@ -31,6 +31,20 @@ const ENTRY_OUTLINE_LEVEL: usize = 1;
 /// paragraph reads as a bullet to a person and as punctuation to a parser, and
 /// this format exists to be parsed.
 const BULLET_NUMBERING: usize = 1;
+
+// Word records what a paragraph *is* two ways, and readers do not agree on
+// which one to look at. `outlineLvl` is what the navigation pane uses; a
+// paragraph *style* named `Heading1` is what most parsers key on — including
+// DockCV's own DOCX importer, which reads styles and never looked at the
+// outline level this file used to carry alone. Writing both costs a few lines
+// of styles.xml and makes the heading visible to either kind of reader.
+const SECTION_STYLE: &str = "Heading1";
+const ENTRY_STYLE: &str = "Heading2";
+const BULLET_STYLE: &str = "ListParagraph";
+// The name is the document's title, not its first section. A CV that styles it
+// `Heading1` is one our own importer has to guess its way out of (`kind_of`),
+// and so does everybody else's.
+const NAME_STYLE: &str = "Title";
 
 /// Export a composed [`Resume`] to DOCX binary bytes.
 pub fn export_docx(resume: &Resume) -> Result<Vec<u8>, DocxError> {
@@ -60,10 +74,48 @@ pub fn export_docx_with_date_format(
                 ),
             ),
         )
-        .add_numbering(Numbering::new(BULLET_NUMBERING, BULLET_NUMBERING));
+        .add_numbering(Numbering::new(BULLET_NUMBERING, BULLET_NUMBERING))
+        // Names are Word's own spelling of the built-in styles, because that is
+        // what a reader matches on: python-docx reports `w:name`, not the id.
+        // No formatting on any of them — the runs state theirs, and a style
+        // that also set a size would change how the document looks.
+        .add_style(
+            Style::new(SECTION_STYLE, StyleType::Paragraph)
+                .name("heading 1")
+                .based_on("Normal"),
+        )
+        .add_style(
+            Style::new(ENTRY_STYLE, StyleType::Paragraph)
+                .name("heading 2")
+                .based_on("Normal"),
+        )
+        .add_style(
+            Style::new(BULLET_STYLE, StyleType::Paragraph)
+                .name("List Paragraph")
+                .based_on("Normal"),
+        )
+        .add_style(
+            Style::new(NAME_STYLE, StyleType::Paragraph)
+                .name("Title")
+                .based_on("Normal"),
+        );
 
     // 1. Header / Basics
-    write_docx_basics(&mut docx, &resume.basics);
+    //
+    // The summary's own heading travels with it rather than with the section
+    // loop below: `ordered_sections` does not carry Profile, because the
+    // summary is written here beside the contact block, and a heading emitted
+    // in the loop would land *under* the paragraph it names. The page has
+    // printed one all along (`template.rs::section("profile", …)`) and this
+    // file printed none — a parser looking for where the summary starts found
+    // nothing in the Word version of the same CV.
+    let profile_heading = if section_heading_hidden(resume, SectionKind::Profile) {
+        None
+    } else {
+        let title = resolve_section_title(resume, SectionKind::Profile);
+        Some(title).filter(|t| !t.trim().is_empty())
+    };
+    write_docx_basics(&mut docx, &resume.basics, profile_heading.as_deref());
 
     // 2. Sections in order
     let sections = ordered_sections(resume);
@@ -90,6 +142,7 @@ pub fn export_docx_with_date_format(
                         // like a heading, and looking like one is exactly what
                         // an ATS cannot read.
                         .outline_lvl(SECTION_OUTLINE_LEVEL)
+                        .style(SECTION_STYLE)
                         .add_run(Run::new().add_text(title.to_uppercase()).bold().size(26)),
                 );
             }
@@ -128,10 +181,23 @@ pub fn export_docx_with_date_format(
     Ok(buf.into_inner())
 }
 
-fn write_docx_basics(docx: &mut Docx, b: &Basics) {
+/// Whether the document asks for this section's heading to be left off.
+fn section_heading_hidden(resume: &Resume, kind: SectionKind) -> bool {
+    resume
+        .section_overrides
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, o)| o.no_heading)
+        .unwrap_or(false)
+}
+
+fn write_docx_basics(docx: &mut Docx, b: &Basics, profile_heading: Option<&str>) {
     if !b.name.is_empty() {
-        *docx = std::mem::take(docx)
-            .add_paragraph(Paragraph::new().add_run(Run::new().add_text(&b.name).bold().size(36)));
+        *docx = std::mem::take(docx).add_paragraph(
+            Paragraph::new()
+                .style(NAME_STYLE)
+                .add_run(Run::new().add_text(&b.name).bold().size(36)),
+        );
     }
 
     if !b.label.is_empty() {
@@ -174,6 +240,14 @@ fn write_docx_basics(docx: &mut Docx, b: &Basics) {
     write_linked_line(docx, &prof_parts);
 
     if !b.summary.is_empty() {
+        if let Some(title) = profile_heading {
+            *docx = std::mem::take(docx).add_paragraph(
+                Paragraph::new()
+                    .outline_lvl(SECTION_OUTLINE_LEVEL)
+                    .style(SECTION_STYLE)
+                    .add_run(Run::new().add_text(title.to_uppercase()).bold().size(26)),
+            );
+        }
         let clean_summary = strip_typst_markup(&b.summary);
         *docx = std::mem::take(docx)
             .add_paragraph(Paragraph::new().add_run(Run::new().add_text(clean_summary).size(22)));
@@ -215,7 +289,9 @@ fn write_docx_work(mut docx: Docx, work: &[Work], date_format: DateFormat) -> Do
             w.name.clone()
         };
 
-        let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
+        let mut p = Paragraph::new()
+            .outline_lvl(ENTRY_OUTLINE_LEVEL)
+            .style(ENTRY_STYLE);
         // `Hyperlink` writes the target into the relationship part
         // verbatim, so a bare `dtu.dk` becomes a *relative* target and
         // Word looks for a file of that name next to the document.
@@ -256,6 +332,8 @@ fn write_docx_work(mut docx: Docx, work: &[Work], date_format: DateFormat) -> Do
             docx = docx.add_paragraph(
                 Paragraph::new()
                     .numbering(NumberingId::new(BULLET_NUMBERING), IndentLevel::new(0))
+                    .style(BULLET_STYLE)
+                    .style(BULLET_STYLE)
                     .add_run(Run::new().add_text(clean).size(22)),
             );
         }
@@ -273,7 +351,9 @@ fn write_docx_education(mut docx: Docx, edu: &[Education], date_format: DateForm
             e.institution.clone()
         };
 
-        let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
+        let mut p = Paragraph::new()
+            .outline_lvl(ENTRY_OUTLINE_LEVEL)
+            .style(ENTRY_STYLE);
         if let Some(href) = links::href(&e.url) {
             p = p.add_hyperlink(
                 Hyperlink::new(href, HyperlinkType::External)
@@ -297,6 +377,8 @@ fn write_docx_education(mut docx: Docx, edu: &[Education], date_format: DateForm
             docx = docx.add_paragraph(
                 Paragraph::new()
                     .numbering(NumberingId::new(BULLET_NUMBERING), IndentLevel::new(0))
+                    .style(BULLET_STYLE)
+                    .style(BULLET_STYLE)
                     .add_run(Run::new().add_text(clean).size(22)),
             );
         }
@@ -365,7 +447,9 @@ fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], date_format: DateForm
             v.organization.clone()
         };
 
-        let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
+        let mut p = Paragraph::new()
+            .outline_lvl(ENTRY_OUTLINE_LEVEL)
+            .style(ENTRY_STYLE);
         if let Some(href) = links::href(&v.url) {
             p = p.add_hyperlink(
                 Hyperlink::new(href, HyperlinkType::External)
@@ -388,6 +472,8 @@ fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], date_format: DateForm
             docx = docx.add_paragraph(
                 Paragraph::new()
                     .numbering(NumberingId::new(BULLET_NUMBERING), IndentLevel::new(0))
+                    .style(BULLET_STYLE)
+                    .style(BULLET_STYLE)
                     .add_run(Run::new().add_text(clean).size(22)),
             );
         }
@@ -412,7 +498,9 @@ fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, date_format: DateFor
     };
 
     if !heading.is_empty() {
-        let mut p = Paragraph::new().outline_lvl(ENTRY_OUTLINE_LEVEL);
+        let mut p = Paragraph::new()
+            .outline_lvl(ENTRY_OUTLINE_LEVEL)
+            .style(ENTRY_STYLE);
         if let Some(href) = links::href(&e.url) {
             p = p.add_hyperlink(
                 Hyperlink::new(href, HyperlinkType::External)
@@ -436,6 +524,7 @@ fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, date_format: DateFor
         docx = docx.add_paragraph(
             Paragraph::new()
                 .numbering(NumberingId::new(BULLET_NUMBERING), IndentLevel::new(0))
+                .style(BULLET_STYLE)
                 .add_run(Run::new().add_text(clean).size(22)),
         );
     }

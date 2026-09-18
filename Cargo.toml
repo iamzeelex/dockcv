@@ -58,6 +58,15 @@ toml = "0.8"
 # without one — see the note in src/import/engines/pdf.rs.
 pdf-extract = "0.12"
 docx-rs = "0.4"
+# The PDF object model, one level under `pdf-extract`, which already depends on
+# it — so this adds no crate to the graph. It is here rather than in
+# `[dev-dependencies]` because `ats::readers` reads a *tagged* PDF's structure
+# tree with it, and that is a runtime capability: the ATS screen shows what a
+# tag-aware parser sees, and the importer will read other people's tagged files
+# the same way. Flags mirror `pdf-extract`'s own request exactly
+# (`default-features = false`, `wasm_js`) so the two unify: lopdf's default
+# features would drag in chrono, jiff, rayon and time.
+lopdf = { version = "0.44", default-features = false, features = ["wasm_js"] }
 regex = "1.10"
 serde_json = "1"
 zip = "8"
@@ -86,13 +95,6 @@ gpui_platform = { git = "https://github.com/zed-industries/zed" }
 # build a document out of the sample résumé and `cargo build` still ships
 # without one — verified by the string sweep in `scripts/bundle.sh`.
 dockcv-core = { path = "crates/dockcv-core", features = ["fixtures"] }
-# Tests only — used to *build* a malformed PDF, so the guard against
-# `pdf-extract`'s panics is proven against a real file rather than asserted.
-# Flags mirror `pdf-extract`'s own request exactly (`default-features = false`,
-# `wasm_js`) so this resolves to the identical build already in the graph and
-# adds no crates: lopdf's default features would drag in chrono, jiff, rayon
-# and time.
-lopdf = { version = "0.44", default-features = false, features = ["wasm_js"] }
 
 [profile.dev]
 # GPUI's dependency tree is large; optimizing deps keeps the dev binary usable

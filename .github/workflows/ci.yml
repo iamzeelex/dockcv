@@ -83,6 +83,37 @@ jobs:
       - name: Run workspace tests
         run: cargo test --workspace
 
+  # The desktop `test` job runs the conformance harness too, but with only the
+  # three in-process readers: a developer machine has no poppler, no pdfminer
+  # and no Java, and a test that needs them would be a test that is usually
+  # skipped. This job installs all three and reads every exported PDF the way
+  # the stacks under a large part of the ATS market read one — so a template
+  # change that costs `pdftotext` or PDFBox a section heading fails here rather
+  # than in somebody's application. See `docs/design/ats.md`.
+  ats:
+    name: A parser can still read what we export
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - name: Fetch the external extractors
+        run: ./scripts/ats-tools.sh
+      - name: Conformance
+        run: "cargo test --bin dockcv ats:: -- --nocapture"
+      # The importer's corpus needs the same tools: python-docx and docx2txt to
+      # read a Word file back, and JSON Resume's own schema to settle whether
+      # what we call a JSON Resume is one.
+      - name: Import, round trips and the schema
+        run: "cargo test --bin dockcv import:: -- --nocapture"
+      - name: The table, whatever the result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ats-conformance
+          path: target/ats-conformance.md
+          if-no-files-found: warn
+
   # The engine is portable on purpose (docs/research/wasm-web-demo.md) and
   # nothing in an ordinary desktop build would notice it stopping: one
   # `std::fs` in the model, one clock call, and the browser demo is dead

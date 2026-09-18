@@ -371,3 +371,700 @@ fn the_contact_block_survives_every_format() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A CV DockCV exported, read back, when the CV is one written to break it.
+///
+/// The corpus is `ats::adversarial` — ligatures, a name in NFD, a hyphenating
+/// line, Ukrainian, `C++` and curly quotes, eight jobs over two pages,
+/// whitespace nobody can see. The export side of that corpus is measured in
+/// `ats::conformance`; this is the other direction, and it is the one that
+/// found the date bug below.
+///
+/// Japanese is excluded, and named rather than quietly skipped: a DockCV PDF
+/// cannot set kanji at all (no bundled face covers it, which the lint now says
+/// out loud), and the plain-text importer reads a Japanese entry line as a
+/// section of its own. Fixing the second without the first would be polishing a
+/// door on a house with no walls.
+#[test]
+fn every_adversary_survives_being_exported_and_imported_again() {
+    let dir = std::env::temp_dir().join(format!("dockcv-adv-rt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    for adversary in crate::ats::adversarial::all() {
+        if adversary.name == "cjk" {
+            continue;
+        }
+        let original = ResumeDoc::from_resume(adversary.resume.clone(), "Base");
+        let expected = shape_of(&original);
+        for (format, path) in write_exports(&dir, &original) {
+            let imported = import_file(&path)
+                .unwrap_or_else(|e| panic!("{} did not import as {format}: {e}", adversary.name));
+            assert_eq!(
+                shape_of(&imported.doc),
+                expected,
+                "“{}” did not survive {format}. That document exists to test: {}",
+                adversary.name,
+                adversary.attacks
+            );
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A number in front of a date range used to eat its year.
+///
+/// `Company Number 4` above `2019-06 - 2022-01` parsed as the range `4 2019` to
+/// `06 - 2022`, so every job in the document came back with dates that were
+/// never in it. The trigger is any digit before the range — an employer ending
+/// in a number, a job title with a grade in it, a street address — and the
+/// cause was two permissive pieces of one regex meeting: `[0-9]{1,2}[\s./-]+`
+/// before a year made `4 2019` a date, and a *run* of separators made
+/// `06 - 2022` another. A real date's parts are held by one mark; ` - ` is what
+/// separates the two ends of a range.
+///
+/// Found by exporting the two-page adversary and reading it back, not by a
+/// report — which is the point of that corpus.
+#[test]
+fn a_number_in_front_of_a_range() {
+    let dir = std::env::temp_dir().join(format!("dockcv-number-range-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let doc = ResumeDoc::from_resume(
+        Resume {
+            basics: Basics {
+                name: "A Person".into(),
+                ..Default::default()
+            },
+            work: vec![dockcv_core::resume::model::Work {
+                name: "Company Number 4".into(),
+                position: "Engineer Grade 3".into(),
+                start_date: ResumeDate::new("2019-06"),
+                end_date: ResumeDate::new("2022-01"),
+                highlights: vec!["Did the thing that needed doing.".into()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        "Base",
+    );
+
+    for (format, path) in write_exports(&dir, &doc) {
+        let back = import_file(&path).unwrap_or_else(|e| panic!("{format}: {e}"));
+        let job = &back.doc.work.active()[0];
+        assert_eq!(
+            (job.start_date.text.as_str(), job.end_date.text.as_str()),
+            ("2019-06", "2022-01"),
+            "{format} read the dates out of the employer's number"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A damaged file is refused, never a crash.
+///
+/// Import is the first thing a new user does, and the files they do it with
+/// come off downloads, sync clients and USB sticks. Two of the three parsers
+/// under this app answer a file that is *almost* right by panicking rather than
+/// by returning an error — `pdf-extract` on a construct it does not handle, and
+/// `read_docx` on a document part it did not expect — and a panic on the import
+/// worker is not contained by being on a worker: `async-task` resumes the
+/// unwind in the awaiting task, which is on the UI thread. One flipped byte in
+/// a valid .docx took the whole app down until this test was written.
+///
+/// So: forty-odd damaged files, and the only two acceptable outcomes are a
+/// document and a refusal that says something.
+#[test]
+fn a_damaged_file_is_refused_and_never_a_crash() {
+    let dir = std::env::temp_dir().join(format!("dockcv-damage-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let composed = fixture().compose();
+
+    let pdf = dockcv_core::typst_engine::TypstEngine::new(dockcv_core::resume::template::generate(
+        &composed,
+    ))
+    .compile_to_pdf()
+    .expect("pdf");
+    let docx = dockcv_core::resume::export_docx(&composed).expect("docx");
+    let text = dockcv_core::resume::export_plain_text(&composed).into_bytes();
+    let json = dockcv_core::resume::export_json_resume(&composed)
+        .expect("json")
+        .into_bytes();
+
+    let mut cases: Vec<(String, &'static str, Vec<u8>)> = Vec::new();
+    for (ext, whole) in [
+        ("pdf", &pdf),
+        ("docx", &docx),
+        ("txt", &text),
+        ("json", &json),
+    ] {
+        for cut in [
+            0usize,
+            1,
+            16,
+            whole.len() / 3,
+            whole.len() / 2,
+            whole.len() - 1,
+        ] {
+            cases.push((
+                format!("{ext} truncated to {cut}"),
+                ext,
+                whole[..cut].to_vec(),
+            ));
+        }
+        // Still the right length, still the right magic number, and no longer
+        // the file it says it is. This is the one that panicked.
+        let mut flipped = whole.to_vec();
+        let at = flipped.len() / 2;
+        flipped[at] ^= 0xff;
+        cases.push((format!("{ext} with a flipped byte"), ext, flipped));
+        // The right extension over somebody else's bytes.
+        cases.push((format!("{ext} that is really a PDF"), ext, pdf.clone()));
+    }
+    cases.push(("pdf of pure zeros".into(), "pdf", vec![0u8; 4096]));
+    cases.push((
+        "docx that is an empty zip".into(),
+        "docx",
+        b"PK\x05\x06".to_vec(),
+    ));
+
+    for (name, ext, bytes) in cases {
+        let path = dir.join(format!("damaged.{ext}"));
+        std::fs::write(&path, &bytes).expect("write");
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| import_file(&path)));
+        match outcome {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => assert!(
+                !e.to_string().trim().is_empty(),
+                "{name} was refused without saying why"
+            ),
+            Err(_) => panic!("{name} brought the app down instead of being refused"),
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Notepad's two encodings are not an error.
+///
+/// `read_to_string` takes UTF-8 and nothing else. Saving a CV from Notepad as
+/// "Unicode" writes UTF-16 with a byte-order mark, which was refused outright;
+/// saving it as "UTF-8" writes a mark too, which was *worse*, because it does
+/// not fail — the mark became the first character of the person's name and
+/// travelled into the vault where nothing on screen would ever show it.
+#[test]
+fn a_text_cv_saved_the_way_notepad_saves_one() {
+    let dir = std::env::temp_dir().join(format!("dockcv-encodings-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let plain = dockcv_core::resume::export_plain_text(&fixture().compose());
+
+    let utf16 = |big_endian: bool| {
+        let mut bytes = if big_endian {
+            vec![0xfe, 0xff]
+        } else {
+            vec![0xff, 0xfe]
+        };
+        for unit in plain.encode_utf16() {
+            bytes.extend_from_slice(&if big_endian {
+                unit.to_be_bytes()
+            } else {
+                unit.to_le_bytes()
+            });
+        }
+        bytes
+    };
+    let mut utf8_bom = vec![0xef, 0xbb, 0xbf];
+    utf8_bom.extend_from_slice(plain.as_bytes());
+
+    for (what, bytes) in [
+        ("UTF-16 little-endian", utf16(false)),
+        ("UTF-16 big-endian", utf16(true)),
+        ("UTF-8 with a mark", utf8_bom),
+        ("UTF-8", plain.clone().into_bytes()),
+    ] {
+        let path = dir.join("cv.txt");
+        std::fs::write(&path, &bytes).expect("write");
+        let imported = import_file(&path).unwrap_or_else(|e| panic!("{what}: {e}"));
+        let name = imported.doc.compose().basics.name;
+        assert_eq!(
+            name.trim(),
+            "Albert Einstein",
+            "{what} did not give back the person's own name"
+        );
+        assert!(
+            !name.starts_with('\u{feff}'),
+            "{what} left a byte-order mark inside the name"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A CV from somebody else's template gives up what it states.
+///
+/// The corpus is `import::foreign_cvs`: a sidebar down the left, the whole
+/// document inside a table, the contact block in a running header, dates in a
+/// gutter, no section headings at all, and a right-to-left script. Each is
+/// compiled to a real PDF and imported, and every fact the file states plainly
+/// has to come back — whatever the layout was doing when it stated it.
+///
+/// Two of these were failing when the corpus was written, and both were fixed
+/// rather than recorded: a table's entry line arrives with its dates *first*
+/// and had its title and employer filed as a location, and a CV with no
+/// headings had everything below the contact block dropped.
+#[test]
+fn a_cv_from_somebody_elses_template_gives_up_what_it_states() {
+    let dir = std::env::temp_dir().join(format!("dockcv-foreign-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    for cv in crate::import::foreign_cvs::all() {
+        let pdf = dockcv_core::typst_engine::TypstEngine::new(cv.source.to_string())
+            .compile_to_pdf()
+            .unwrap_or_else(|why| panic!("“{}” does not compile: {why}", cv.name));
+        let path = dir.join(format!("{}.pdf", cv.name.replace(' ', "-")));
+        std::fs::write(&path, &pdf).expect("write");
+
+        let imported =
+            import_file(&path).unwrap_or_else(|e| panic!("“{}” did not import: {e}", cv.name));
+        let doc = imported.doc.compose();
+        let everything = format!("{doc:?}");
+        let missing: Vec<&str> = cv
+            .must_recover
+            .iter()
+            .filter(|fact| !everything.contains(*fact))
+            .copied()
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "“{}” lost {missing:?}.\n    That layout is: {}",
+            cv.name,
+            cv.shape
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A CV with no headings says so rather than filing a degree as a job in
+/// silence.
+#[test]
+fn a_cv_with_no_headings_is_read_by_shape_and_says_so() {
+    let dir = std::env::temp_dir().join(format!("dockcv-no-headings-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let cv = crate::import::foreign_cvs::all()
+        .into_iter()
+        .find(|c| c.name == "no headings at all")
+        .expect("the corpus carries one");
+    let pdf = dockcv_core::typst_engine::TypstEngine::new(cv.source.to_string())
+        .compile_to_pdf()
+        .expect("compiles");
+    let path = dir.join("cv.pdf");
+    std::fs::write(&path, &pdf).expect("write");
+
+    let imported = import_file(&path).expect("imports");
+    assert_eq!(
+        imported.doc.work.active().len(),
+        3,
+        "every dated entry should have come out"
+    );
+    assert!(
+        imported.notes.iter().any(|(_, note)| matches!(
+            note,
+            crate::import::notes::Note::ReadWithoutHeadings { .. }
+        )),
+        "a degree read as a job has to be said out loud: {:?}",
+        imported.notes
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_telephone_number_and_a_city_survive_the_way_people_write_them() {
+    let dir = std::env::temp_dir().join(format!("dockcv-contact-shapes-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    for (phone, location) in [
+        ("+45 28 44 10 92", "Bern, Switzerland"),
+        ("+353 1 555 0100", "Dublin"),
+        ("+353 1 555 0100", "Dublin, Ireland"),
+        ("+1 (415) 555-0134", "San Francisco"),
+        ("020 7946 0958", "London"),
+    ] {
+        let doc = ResumeDoc::from_resume(
+            Resume {
+                basics: Basics {
+                    name: "A Person".into(),
+                    email: "person@example.com".into(),
+                    phone: phone.into(),
+                    location: location.into(),
+                    ..Default::default()
+                },
+                work: vec![dockcv_core::resume::model::Work {
+                    name: "Acme".into(),
+                    position: "Engineer".into(),
+                    start_date: ResumeDate::new("2019-06"),
+                    end_date: ResumeDate::new("2022-01"),
+                    highlights: vec!["Did the thing that needed doing.".into()],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            "Base",
+        );
+
+        for (format, path) in write_exports(&dir, &doc) {
+            // Typst source carries the model itself, and JSON Resume has a
+            // field per fact; the shapes below are about *prose* formats, where
+            // a contact line is one line and a reader has to take it apart.
+            if format == "typst" || format == "json resume" {
+                continue;
+            }
+            let back = import_file(&path)
+                .unwrap_or_else(|e| panic!("{format}: {e}"))
+                .doc
+                .compose();
+            assert_eq!(
+                back.basics.phone, phone,
+                "{format} lost the telephone number {phone:?}"
+            );
+            assert_eq!(
+                back.basics.location, location,
+                "{format} lost the city {location:?}"
+            );
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Exporting what was imported gives the same file back.
+///
+/// A round trip that is not a fixed point is a round trip that changes the
+/// document, and the change compounds: the Typst emitter escaped `C#` as `C\#`
+/// and read it back with the backslash still on it, so three trips through
+/// `.typ` turned one bullet into `C\\\\\\\#`. Checking the shape, as the tests
+/// above do, cannot see any of that — the shape was identical every time.
+///
+/// Byte equality, and only for the formats where bytes are the document. A
+/// `.docx` is a zip: its relationship ids are numbered in the order they were
+/// written and say nothing about the CV, so that format is compared by what a
+/// reader gets out of it instead.
+#[test]
+fn exporting_what_was_imported_gives_the_same_file_back() {
+    let dir = std::env::temp_dir().join(format!("dockcv-fixed-point-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let second = dir.join("second");
+    std::fs::create_dir_all(&second).expect("temp dir");
+
+    let documents = std::iter::once(("the fixture", fixture())).chain(
+        crate::ats::adversarial::all()
+            .into_iter()
+            .filter(|a| a.name != "cjk")
+            .map(|a| (a.name, ResumeDoc::from_resume(a.resume, "Base"))),
+    );
+
+    for (name, doc) in documents {
+        for (format, path) in write_exports(&dir, &doc) {
+            // Known, argued, and each one a thing a person would rather have
+            // than not:
+            //
+            // * the importer folds a no-break space to a space, so a name typed
+            //   with one comes back with an ordinary space. That is a repair,
+            //   not a loss — and the lint says so before the CV is ever sent.
+            // * the fixture's Markdown education heading is
+            //   `[Diploma, Mathematics and Physics, ETH Zurich](…)`, three
+            //   comma-separated parts of which two are the degree. Nothing is
+            //   lost — the whole string lands in the degree — but where the
+            //   school ends and the subject begins is a guess, and guessing it
+            //   from one example is how a heuristic gets worse.
+            let excused =
+                name == "whitespace nobody sees" || (name == "the fixture" && format == "markdown");
+            if excused {
+                continue;
+            }
+
+            let once = std::fs::read(&path).expect("read");
+            let imported = import_file(&path).unwrap_or_else(|e| panic!("{name} · {format}: {e}"));
+            let again = write_exports(&second, &imported.doc)
+                .into_iter()
+                .find(|(f, _)| *f == format)
+                .map(|(_, p)| std::fs::read(p).expect("read"))
+                .expect("the same format comes back");
+
+            if format == "docx" {
+                let before = crate::ats::docx::flat_text(&once).expect("read docx");
+                let after = crate::ats::docx::flat_text(&again).expect("read docx");
+                if before != after {
+                    let diff = before
+                        .lines()
+                        .zip(after.lines())
+                        .find(|(x, y)| x != y)
+                        .map(|(x, y)| format!("was {x:?}\n  now {y:?}"))
+                        .unwrap_or_else(|| {
+                            format!(
+                                "{} lines became {}",
+                                before.lines().count(),
+                                after.lines().count()
+                            )
+                        });
+                    panic!("{name} · {format} says something different the second time:\n  {diff}");
+                }
+                continue;
+            }
+
+            if once != again {
+                let a = String::from_utf8_lossy(&once);
+                let b = String::from_utf8_lossy(&again);
+                let where_ = a
+                    .lines()
+                    .zip(b.lines())
+                    .enumerate()
+                    .find(|(_, (x, y))| x != y)
+                    .map(|(i, (x, y))| format!("line {i}:\n  was {x:?}\n  now {y:?}"))
+                    .unwrap_or_else(|| {
+                        format!("{} lines became {}", a.lines().count(), b.lines().count())
+                    });
+                panic!("{name} · {format} is not a fixed point — {where_}");
+            }
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A LinkedIn export, with the quirks a real one has.
+///
+/// This is the archive a great many people start from, and it is the one
+/// format there is no way to fixture from our own emitters — nothing here
+/// writes a LinkedIn export, so the only test that means anything is one that
+/// builds a realistic archive and reads it. Realistic is the word doing the
+/// work: a byte-order mark, CRLF endings, a description quoted because it
+/// holds a comma and a newline, `Aug 2021` with an empty finish for a job
+/// still held, a nested folder from somebody who re-zipped the unpacked one, a
+/// CSV nobody models, and an empty one.
+#[test]
+fn a_linkedin_export_with_every_quirk_a_real_one_has() {
+    use std::io::Write;
+
+    let dir = std::env::temp_dir().join(format!("dockcv-linkedin-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("Basic_LinkedInDataExport.zip");
+
+    // The quirks a real export has and a hand-written fixture never does: a
+    // byte-order mark, CRLF endings, a description that is quoted because it
+    // holds a comma and a newline, dates as `Aug 2024` and an empty finish for
+    // a job still held, a nested folder, a CSV nobody models and one that is
+    // empty.
+    let file = std::fs::File::create(&path).expect("create");
+    let mut zip = zip::ZipWriter::new(file);
+    let opts: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
+
+    let mut put = |name: &str, body: &str, bom: bool| {
+        zip.start_file(name, opts).expect("start");
+        if bom {
+            zip.write_all(&[0xef, 0xbb, 0xbf]).expect("bom");
+        }
+        zip.write_all(body.replace('\n', "\r\n").as_bytes())
+            .expect("write");
+    };
+
+    put(
+        "Profile.csv",
+        "First Name,Last Name,Headline,Geo Location,Summary,Websites\n         Ada,Lovelace,Engineering Manager,\"Dublin, Ireland\",\"Builds teams, and the systems under them.\",[PERSONAL:https://ada.example.com]\n",
+        true,
+    );
+    put(
+        "Email Addresses.csv",
+        "Email Address,Confirmed,Primary\nada@example.com,Yes,Yes\n",
+        false,
+    );
+    put(
+        "Positions.csv",
+        "Company Name,Title,Description,Location,Started On,Finished On\n         Nimbus,Engineering Manager,\"Grew the platform group from four to nineteen.\nRan the migration off bare metal.\",Dublin,Aug 2021,\n         Cirrus,Senior Engineer,Owned the billing service end to end.,Dublin,Jan 2018,Jul 2021\n",
+        true,
+    );
+    put(
+        "folder/Education.csv",
+        "School Name,Start Date,End Date,Notes,Degree Name\n         Trinity College Dublin,2013,2017,,B.A. in Computer Science\n",
+        false,
+    );
+    put("Skills.csv", "Name\nRust\nKubernetes\n", false);
+    put(
+        "Ad_Targeting.csv",
+        "Member Age,Company Size\n25-34,1001+\n",
+        false,
+    );
+    put("Votes.csv", "", false);
+    zip.finish().expect("finish");
+
+    let imported = import_file(&path).expect("the archive imports");
+    let doc = imported.doc.compose();
+
+    assert_eq!(doc.basics.name, "Ada Lovelace");
+    assert_eq!(doc.basics.email, "ada@example.com");
+    assert_eq!(doc.basics.location, "Dublin, Ireland");
+    assert_eq!(
+        doc.basics.summary,
+        "Builds teams, and the systems under them."
+    );
+
+    assert_eq!(doc.work.len(), 2, "both positions");
+    assert_eq!(doc.work[0].position, "Engineering Manager");
+    assert_eq!(doc.work[0].name, "Nimbus");
+    assert_eq!(doc.work[0].start_date.text, "Aug 2021");
+    assert!(
+        doc.work[0].end_date.is_empty(),
+        "an empty finish is a job still held"
+    );
+    assert_eq!(
+        doc.work[0].highlights.len(),
+        2,
+        "a description quoted across two lines is two bullets: {:?}",
+        doc.work[0].highlights
+    );
+    assert_eq!(doc.work[0].location, "Dublin");
+
+    assert_eq!(doc.education.len(), 1);
+    assert_eq!(doc.education[0].institution, "Trinity College Dublin");
+    assert_eq!(doc.education[0].study_type, "B.A. in Computer Science");
+
+    assert_eq!(
+        doc.skills
+            .iter()
+            .flat_map(|s| s.keywords.clone())
+            .collect::<Vec<_>>(),
+        vec!["Rust", "Kubernetes"]
+    );
+
+    // A CSV this product does not model is reported rather than dropped, and
+    // an empty one is not reported at all.
+    assert!(
+        imported
+            .unplaced
+            .iter()
+            .any(|u| format!("{u:?}").contains("ad_targeting.csv")),
+        "an unmodelled table should be offered, not swallowed: {:?}",
+        imported.unplaced
+    );
+    assert!(
+        !imported
+            .unplaced
+            .iter()
+            .any(|u| format!("{u:?}").contains("votes.csv")),
+        "an empty table is not something to tell anybody about"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Every CV we export as JSON Resume is a JSON Resume.
+///
+/// DockCV claims the format, and the only thing that settles the claim is the
+/// document the format is defined by, checked by somebody else's validator.
+/// Our own reader agreeing with our own writer proves they agree, which is a
+/// different and much weaker fact — and the one the round-trip tests above
+/// establish.
+///
+/// The schema and the validator come from `scripts/ats-tools.sh`, like the PDF
+/// extractors; when they are not installed the test says so and passes, so a
+/// contributor without a Python environment still gets a green suite and CI,
+/// which runs the script, still gets the check.
+#[test]
+fn every_json_resume_we_write_is_one_the_schema_accepts() {
+    let tools = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/ats-tools");
+    let python = tools.join("venv/bin/python");
+    let schema = tools.join("json-resume-schema.json");
+    if !python.is_file() || !schema.is_file() {
+        eprintln!("json resume schema not fetched — run scripts/ats-tools.sh; skipping");
+        return;
+    }
+
+    // One statement per line and no indented block anywhere: a Rust string
+    // continued with `\` drops the leading whitespace of the next line, so a
+    // `for` body written the natural way arrives at Python with no indent at
+    // all and the script dies before it can validate anything.
+    const VALIDATE: &str = "\
+import json, sys, jsonschema\n\
+schema = json.load(open(sys.argv[1]))\n\
+doc = json.load(open(sys.argv[2]))\n\
+errors = sorted(jsonschema.Draft7Validator(schema).iter_errors(doc), key=lambda e: list(e.path))\n\
+print('\\n'.join(('/'.join(str(p) for p in e.path) or 'the document itself') + ': ' + e.message[:160] for e in errors[:8]))\n\
+sys.exit(1 if errors else 0)\n";
+
+    let dir = std::env::temp_dir().join(format!("dockcv-schema-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    for (name, doc) in std::iter::once(("the fixture", fixture())).chain(
+        crate::ats::adversarial::all()
+            .into_iter()
+            .map(|a| (a.name, ResumeDoc::from_resume(a.resume, "Base"))),
+    ) {
+        let json = dockcv_core::resume::export_json_resume(&doc.compose()).expect("json");
+        let path = dir.join("cv.json");
+        std::fs::write(&path, &json).expect("write");
+
+        let out = std::process::Command::new(&python)
+            .arg("-c")
+            .arg(VALIDATE)
+            .arg(&schema)
+            .arg(&path)
+            .output()
+            .expect("run the validator");
+        assert!(
+            out.status.success(),
+            "“{name}” is not valid JSON Resume:\n{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The sidebar is read as a sidebar.
+///
+/// A column of skills with no separators in it is the hardest thing on a CV to
+/// read off a page: the lines are lines, and whether they belong to the list
+/// beside them or the one under them is a guess. A tagged PDF does not guess —
+/// `Table`, `TR` and `TD` say which column a line is in, and the heading above
+/// it says what the column is — and this is the one question the importer asks
+/// the tag tree, because it is the one the flat reading cannot answer.
+///
+/// Only the fields the flat reading left empty are filled. Replacing it
+/// outright was tried and measured: a real LinkedIn export lost every employer
+/// it had, because reading a document is more than knowing where its lines are.
+#[test]
+fn a_tagged_sidebar_gives_up_its_skills() {
+    let dir = std::env::temp_dir().join(format!("dockcv-sidebar-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let cv = crate::import::foreign_cvs::all()
+        .into_iter()
+        .find(|c| c.name == "linkedin's own export")
+        .expect("the corpus carries one");
+    let pdf = dockcv_core::typst_engine::TypstEngine::new(cv.source.to_string())
+        .compile_to_pdf()
+        .expect("compiles");
+    let path = dir.join("cv.pdf");
+    std::fs::write(&path, &pdf).expect("write");
+
+    let doc = import_file(&path).expect("imports").doc.compose();
+
+    let skills: Vec<String> = doc.skills.iter().flat_map(|s| s.keywords.clone()).collect();
+    assert_eq!(
+        skills,
+        vec!["Airflow", "Kubernetes", "Terraform"],
+        "the sidebar's skills should come back as three skills, not as one line \
+         of prose or as nothing at all"
+    );
+
+    // And the column beside it is still read the way it always was.
+    assert_eq!(doc.basics.name, "Rowan Llewellyn");
+    assert_eq!(doc.work.len(), 1, "one job: {:?}", doc.work);
+    assert_eq!(doc.work[0].highlights.len(), 2, "both descriptions");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

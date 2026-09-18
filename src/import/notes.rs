@@ -72,6 +72,12 @@ pub enum Note {
     /// A "keyword" long enough to be a sentence, which means a line was split
     /// on the wrong thing.
     KeywordIsASentence { longest: usize },
+    /// The document had no section headings at all, so what each line *is* was
+    /// read from its shape rather than from what it sat under. Everything
+    /// dated came out as work history, which is right for most of a CV written
+    /// that way and wrong for the degree in the middle of it — and only a
+    /// person can say which.
+    ReadWithoutHeadings { entries: usize },
 }
 
 impl Note {
@@ -104,6 +110,10 @@ impl Note {
             ),
             Note::KeywordIsASentence { longest } => format!(
                 "One skill is {longest} characters long, so a line was probably split wrongly"
+            ),
+            Note::ReadWithoutHeadings { entries } => format!(
+                "This CV has no section headings, so its {entries} dated entries were all \
+                 read as jobs — check whether any of them is a degree or a certificate"
             ),
         }
     }

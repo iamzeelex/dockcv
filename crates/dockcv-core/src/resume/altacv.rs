@@ -93,6 +93,11 @@ fn extract(source: &Source, dict: ast::Dict) -> Resume {
         set(source, entry, "startDate", &mut e.start_date.text);
         set(source, entry, "endDate", &mut e.end_date.text);
         set(source, entry, "url", &mut e.url);
+        // Work and volunteering read theirs and education did not, so a
+        // thesis, a dissertation or a line of coursework — everything
+        // `EduHighlight` exists to hold, and everything the template prints —
+        // was written by our own Typst emitter and dropped by our own reader.
+        e.highlights = string_list(source, named(entry, "highlights"));
         resume.education.push(e);
     }
 
@@ -222,12 +227,40 @@ fn as_string(source: &Source, expr: ast::Expr) -> String {
 fn content_markup(source: &Source, node: &SyntaxNode) -> String {
     let raw = raw_text(source, node);
     let trimmed = raw.trim();
-    trimmed
+    let inner = trimmed
         .strip_prefix('[')
         .and_then(|s| s.strip_suffix(']'))
         .unwrap_or(trimmed)
-        .trim()
-        .to_string()
+        .trim();
+    unescape_markup(inner)
+}
+
+/// Undo the escaping the Typst emitter applies, so a round trip is a round
+/// trip.
+///
+/// `template.rs::neutralize` escapes the six characters a résumé's own prose
+/// collides with — `\ @ # $ [ ]` — because `C#` in a bullet is a language and
+/// not code mode. Reading the markup back verbatim left the backslashes in the
+/// model, and the next export escaped *those*: `C\#` became `C\\\#` and then
+/// `C\\\\\\\#`, so a CV exported and reimported three times had a bullet full
+/// of backslashes. Only those six are undone; a backslash in front of anything
+/// else is somebody else's markup and is left alone.
+fn unescape_markup(markup: &str) -> String {
+    let mut out = String::with_capacity(markup.len());
+    let mut chars = markup.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.peek() {
+                if matches!(next, '\\' | '@' | '#' | '$' | '[' | ']') {
+                    out.push(*next);
+                    chars.next();
+                    continue;
+                }
+            }
+        }
+        out.push(ch);
+    }
+    out
 }
 
 /// The exact source text covered by a node.
