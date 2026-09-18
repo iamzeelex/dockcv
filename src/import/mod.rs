@@ -12,6 +12,7 @@ pub mod foreign_cvs;
 pub mod layout;
 pub mod model;
 pub mod notes;
+pub mod pdf_tags;
 #[cfg(test)]
 mod roundtrip_tests;
 

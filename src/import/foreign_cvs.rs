@@ -8,6 +8,11 @@
 //! contact block in a running header, the dates in a gutter, no section
 //! headings at all.
 //!
+//! One of them is modelled on a real file rather than on a category — the PDF
+//! LinkedIn hands you from your own profile, which is the file more people
+//! import than any other. The shape is copied; the person is invented, and no
+//! real CV is or will be checked in here.
+//!
 //! These are written as Typst source rather than checked in as binaries on
 //! purpose. A fixture nobody can read is a fixture nobody will change, and the
 //! *shape* is what is being tested, not any particular file's bytes — so the
@@ -224,6 +229,75 @@ Took the API from three customers to nine hundred.
                 "Vistula Systems",
                 "Rebuilt the scheduler that every batch job in the company runs on.",
                 "Jagiellonian University",
+            ],
+        },
+        ForeignCv {
+            name: "linkedin's own export",
+            shape: "the shape of the file more people import than any other: a sidebar \
+                    of Contact, Top Skills and Languages that comes *first* in reading \
+                    order, so the person's name is forty lines into the text layer; the \
+                    employer above the job title rather than beside it; a date range \
+                    with a duration after it in brackets and no-break spaces inside it; \
+                    and bullets marked `∙`, which is a mathematics character",
+            source: r#"
+#set page(paper: "a4", margin: 14mm)
+#set text(font: "Libertinus Serif", size: 10pt)
+#show heading: it => it.body
+#table(
+  columns: (30%, 1fr), stroke: none, column-gutter: 8mm,
+  [
+    #text(size: 11pt, weight: "bold")[#heading(level: 1, outlined: false)[Contact]]
+    #v(2pt)
+    rowan\@example.com \
+    www.linkedin.com/in/rowan
+    #v(6pt)
+    #text(size: 11pt, weight: "bold")[#heading(level: 1, outlined: false)[Top Skills]]
+    #v(2pt)
+    Airflow \
+    Kubernetes \
+    Terraform
+    #v(6pt)
+    #text(size: 11pt, weight: "bold")[#heading(level: 1, outlined: false)[Languages]]
+    #v(2pt)
+    Welsh (Native) \
+    English (Full Professional)
+  ],
+  [
+    #text(size: 20pt)[#heading(level: 1, outlined: false)[Rowan Llewellyn]]
+    #v(1pt)
+    Data Platform Engineer
+    #v(1pt)
+    Cardiff, Wales, United Kingdom
+    #v(6pt)
+    #text(size: 13pt, weight: "bold")[#heading(level: 1, outlined: false)[Experience]]
+    #v(3pt)
+    #text(weight: "bold")[Severn Data]
+    #linebreak()
+    Data Platform Engineer
+    #linebreak()
+    March 2021 - Present (4 years)
+    #linebreak()
+    Cardiff, Wales
+    #v(2pt)
+    ∙ Rebuilt the ingestion layer that every internal dashboard reads from.
+    #linebreak()
+    ∙ Cut the nightly batch from nine hours to forty minutes.
+    #v(5pt)
+    #text(size: 13pt, weight: "bold")[#heading(level: 1, outlined: false)[Education]]
+    #v(3pt)
+    #text(weight: "bold")[Cardiff University]
+    #linebreak()
+    B.Sc., Computer Science · (2014 - 2018)
+  ],
+)
+"#,
+            must_recover: &[
+                "Rowan Llewellyn",
+                "rowan@example.com",
+                "Severn Data",
+                "Data Platform Engineer",
+                "Rebuilt the ingestion layer that every internal dashboard reads from.",
+                "Cardiff University",
             ],
         },
         ForeignCv {

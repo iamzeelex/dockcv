@@ -16,7 +16,11 @@ pub mod adversarial;
 pub mod docx;
 pub mod external;
 pub mod fields;
-pub mod readers;
+// The tag reader moved to `import::pdf_tags` when the importer started using
+// it: reading a tagged PDF's structure is a capability of the app and not a
+// fixture of its tests. The harness still calls it `readers`, which is what it
+// is from here.
+pub use crate::import::pdf_tags as readers;
 
 #[cfg(test)]
 mod conformance;

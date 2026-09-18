@@ -77,7 +77,12 @@ impl LogicalLine {
 /// they open ranges and footnotes far more often than lists in this position,
 /// and a mis-read bullet is worse than a missed one — it changes the shape of
 /// the entry rather than the text of one line.
-const BULLET_GLYPHS: [char; 5] = ['•', '▪', '‣', '◦', '·'];
+// `∙` is U+2219 BULLET OPERATOR, which is a mathematics character and is what
+// LinkedIn's own PDF export marks every bullet with — so every description in
+// the most common CV file in the world arrived as unmarked prose. `●` and `▸`
+// come from the Word gallery. The en dash is deliberately absent: it separates
+// the two ends of a date range.
+const BULLET_GLYPHS: [char; 8] = ['•', '▪', '‣', '◦', '·', '∙', '●', '▸'];
 
 /// The ASCII markers a list uses when it has no glyph to spare — which is what
 /// a plain-text CV, DockCV's own included, is written with.

@@ -23,6 +23,9 @@ use crate::import::error::ImportError;
 use crate::import::model::ImportedDoc;
 
 pub fn import_pdf(path: &Path) -> Result<ImportedDoc, ImportError> {
+    let bytes = std::fs::read(path).map_err(|e| {
+        ImportError::new("Could not open this PDF").detail(format!("the system said: {e}"))
+    })?;
     let text = extract_text(path).map_err(ImportError::from)?;
 
     // A scanned or photographed CV *has* a text layer — it is simply empty.
@@ -51,7 +54,21 @@ pub fn import_pdf(path: &Path) -> Result<ImportedDoc, ImportError> {
     // logical order already — and it costs a Latin CV one scan for a
     // right-to-left letter that is never there.
     let text = crate::import::bidi::text_to_logical_order(&text);
-    Ok(classify_raw_text("PDF", &text))
+    let mut imported = classify_raw_text("PDF", &text);
+
+    // A tagged PDF has already said which lines are headings, and one of them
+    // is usually the person. LinkedIn's export — the most common CV file there
+    // is — opens with a sidebar of Contact, Top Skills and Languages, so the
+    // name is forty lines into the text layer and no rule about "the first line
+    // of the document" can reach it. In the tag tree it is an `H1` like the
+    // others, and the one that is not the name of a section.
+    if imported.doc.profile.active().name.trim().is_empty() {
+        if let Some(name) = name_from_headings(&crate::import::pdf_tags::headings(&bytes)) {
+            imported.doc.profile.active_mut().name = name;
+        }
+    }
+
+    Ok(imported)
 }
 
 /// Pull the document's text out in reading order.
@@ -234,6 +251,28 @@ impl pdf_extract::OutputDev for Lines {
     fn end_line(&mut self) -> Result<(), pdf_extract::OutputError> {
         Ok(())
     }
+}
+
+/// The heading that names a person rather than a section.
+///
+/// Strict on purpose: a heading the taxonomy does not know could be somebody's
+/// invented section (`Leadership & Activities`), and filing that as the
+/// author's name would be worse than having no name at all. Two to four words,
+/// each of them capitalised, no digits, and short.
+fn name_from_headings(headings: &[String]) -> Option<String> {
+    headings.iter().find_map(|heading| {
+        let text = heading.trim();
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let plausible = (2..=4).contains(&words.len())
+            && text.chars().count() <= 48
+            && !text.chars().any(|c| c.is_ascii_digit())
+            && !text.contains(['@', ':', '/', '&', ','])
+            && words
+                .iter()
+                .all(|w| w.chars().next().is_some_and(|c| c.is_uppercase()))
+            && !crate::import::classifier::names_a_section(&text.to_lowercase());
+        plausible.then(|| text.to_string())
+    })
 }
 
 #[cfg(test)]

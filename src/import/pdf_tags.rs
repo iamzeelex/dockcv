@@ -1,3 +1,16 @@
+//! A PDF read as a document rather than as a picture of one.
+//!
+//! Most of this is the tag tree: when a PDF carries a `/StructTreeRoot` it has
+//! said, in the file, what each run of text *is* — a heading, a paragraph, a
+//! list item, a cell. Word writes those tags. LinkedIn's own export writes
+//! them. Typst writes them, so DockCV's does too. A reader that ignores them
+//! and infers structure from where the glyphs landed is throwing away the
+//! answer and then guessing it.
+//!
+//! The other readings here exist for the conformance harness, which asks a
+//! different question — not "what does this file say" but "do the several ways
+//! of reading it agree".
+//!
 //! The four ways a résumé PDF gets read, in process.
 //!
 //! An ATS does not have a PDF reader of its own. It has one of a small number
@@ -20,6 +33,7 @@
 //! mechanism the importer will use on other people's tagged files (B5).
 
 use std::collections::BTreeMap;
+#[cfg(test)]
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use lopdf::content::Content;
@@ -40,6 +54,7 @@ pub struct Tagged {
 /// This is the strictest of the three: nothing is sorted, nothing is inferred,
 /// the text arrives in the order the page paints it. A layout that reads
 /// correctly here reads correctly everywhere.
+#[cfg(test)] // the conformance harness's reading, not the importer's
 pub fn content_order(pdf: &[u8]) -> Result<String, String> {
     let doc = load(pdf)?;
     let pages: Vec<u32> = doc.get_pages().keys().copied().collect();
@@ -53,6 +68,7 @@ pub fn content_order(pdf: &[u8]) -> Result<String, String> {
 /// `pdf-extract` answers constructs it does not handle by panicking rather
 /// than by returning an error (see `import/engines/pdf.rs` for the full note),
 /// so the call is caught the same way the importer catches it.
+#[cfg(test)] // the conformance harness's reading, not the importer's
 pub fn sorted(pdf: &[u8]) -> Result<String, String> {
     catch_unwind(AssertUnwindSafe(|| pdf_extract::extract_text_from_mem(pdf)))
         .map_err(|_| "sorted extraction panicked inside pdf-extract".to_string())?
@@ -90,6 +106,7 @@ pub fn structure(pdf: &[u8]) -> Result<Vec<Tagged>, String> {
 
 /// [`structure`] rendered the way the other personalities return their
 /// reading, one element to a line, so the harness can compare like with like.
+#[cfg(test)] // the conformance harness's reading, not the importer's
 pub fn structure_text(pdf: &[u8]) -> Result<String, String> {
     Ok(structure(pdf)?
         .iter()
@@ -309,4 +326,21 @@ fn gather(
         }
         _ => {}
     }
+}
+
+/// Every heading a tagged PDF declares, in document order.
+///
+/// Empty for an untagged file, which is the signal to fall back to inference:
+/// a heading is a claim the document makes about itself, and where it makes
+/// none there is nothing here to report.
+pub fn headings(pdf: &[u8]) -> Vec<String> {
+    structure(pdf)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|t| {
+            t.tag.len() == 2 && t.tag.starts_with('H') && t.tag.as_bytes()[1].is_ascii_digit()
+        })
+        .map(|t| t.text.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|t| !t.is_empty())
+        .collect()
 }
