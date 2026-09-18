@@ -371,3 +371,93 @@ fn the_contact_block_survives_every_format() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A CV DockCV exported, read back, when the CV is one written to break it.
+///
+/// The corpus is `ats::adversarial` — ligatures, a name in NFD, a hyphenating
+/// line, Ukrainian, `C++` and curly quotes, eight jobs over two pages,
+/// whitespace nobody can see. The export side of that corpus is measured in
+/// `ats::conformance`; this is the other direction, and it is the one that
+/// found the date bug below.
+///
+/// Japanese is excluded, and named rather than quietly skipped: a DockCV PDF
+/// cannot set kanji at all (no bundled face covers it, which the lint now says
+/// out loud), and the plain-text importer reads a Japanese entry line as a
+/// section of its own. Fixing the second without the first would be polishing a
+/// door on a house with no walls.
+#[test]
+fn every_adversary_survives_being_exported_and_imported_again() {
+    let dir = std::env::temp_dir().join(format!("dockcv-adv-rt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    for adversary in crate::ats::adversarial::all() {
+        if adversary.name == "cjk" {
+            continue;
+        }
+        let original = ResumeDoc::from_resume(adversary.resume.clone(), "Base");
+        let expected = shape_of(&original);
+        for (format, path) in write_exports(&dir, &original) {
+            let imported = import_file(&path)
+                .unwrap_or_else(|e| panic!("{} did not import as {format}: {e}", adversary.name));
+            assert_eq!(
+                shape_of(&imported.doc),
+                expected,
+                "“{}” did not survive {format}. That document exists to test: {}",
+                adversary.name,
+                adversary.attacks
+            );
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A number in front of a date range used to eat its year.
+///
+/// `Company Number 4` above `2019-06 - 2022-01` parsed as the range `4 2019` to
+/// `06 - 2022`, so every job in the document came back with dates that were
+/// never in it. The trigger is any digit before the range — an employer ending
+/// in a number, a job title with a grade in it, a street address — and the
+/// cause was two permissive pieces of one regex meeting: `[0-9]{1,2}[\s./-]+`
+/// before a year made `4 2019` a date, and a *run* of separators made
+/// `06 - 2022` another. A real date's parts are held by one mark; ` - ` is what
+/// separates the two ends of a range.
+///
+/// Found by exporting the two-page adversary and reading it back, not by a
+/// report — which is the point of that corpus.
+#[test]
+fn a_number_in_front_of_a_range() {
+    let dir = std::env::temp_dir().join(format!("dockcv-number-range-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let doc = ResumeDoc::from_resume(
+        Resume {
+            basics: Basics {
+                name: "A Person".into(),
+                ..Default::default()
+            },
+            work: vec![dockcv_core::resume::model::Work {
+                name: "Company Number 4".into(),
+                position: "Engineer Grade 3".into(),
+                start_date: ResumeDate::new("2019-06"),
+                end_date: ResumeDate::new("2022-01"),
+                highlights: vec!["Did the thing that needed doing.".into()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        "Base",
+    );
+
+    for (format, path) in write_exports(&dir, &doc) {
+        let back = import_file(&path).unwrap_or_else(|e| panic!("{format}: {e}"));
+        let job = &back.doc.work.active()[0];
+        assert_eq!(
+            (job.start_date.text.as_str(), job.end_date.text.as_str()),
+            ("2019-06", "2022-01"),
+            "{format} read the dates out of the employer's number"
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

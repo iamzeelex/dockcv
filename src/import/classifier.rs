@@ -177,8 +177,16 @@ fn get_date_range_regex() -> &'static Regex {
         // 2021-01-01` was read as no range at all, and the title of every entry
         // in a CV written with ISO dates came back as `Project  -01-01 –
         // 2021-01-01`. It is one of DockCV's own date formats.
+        // One separator, not a run of them. `[\s./-]+` let `06 - 2022` read as
+        // a single date, and with `[0-9]{1,2}[\s./-]+{year}` in the same
+        // alternation a stray digit in front of a range swallowed its year:
+        // `Company Number 4` above `2019-06 - 2022-01` parsed as `4 2019` to
+        // `06 - 2022`, and every job in a CV whose employer ends in a digit
+        // came back with the wrong dates. A real date's parts are held together
+        // by one mark, never by ` - `, which is what separates the two ends of
+        // a range — see `roundtrip_tests::a_number_in_front_of_a_range`.
         let date_elem = format!(
-            r"(?:(?:{months}[\s./-]*{year})|(?:{year}[\s./-]+[0-9]{{1,2}}[\s./-]+[0-9]{{1,2}})|(?:{year}[\s./-]+[0-9]{{1,2}})|(?:[0-9]{{1,2}}[\s./-]+{year})|(?:{year}))"
+            r"(?:(?:{months}[\s./-]*{year})|(?:{year}[\s./-][0-9]{{1,2}}[\s./-][0-9]{{1,2}})|(?:{year}[\s./-][0-9]{{1,2}})|(?:[0-9]{{1,2}}[\s./-]{year})|(?:{year}))"
         );
         let present = r"(?:present|current|till now|ongoing|настоящее время|н\.в\.|по н\.в\.|по настоящее время)";
         let pattern = format!(r"(?i)(\b{date_elem}\b)\s*(?:–|—|-|~|to|по)\s*(\b{date_elem}\b|{present})");
