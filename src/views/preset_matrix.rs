@@ -50,19 +50,37 @@ pub struct PresetRename {
 impl PresetMatrix {
     pub fn new(path: PathBuf, doc: ResumeDoc) -> Self {
         let on_disk = crate::vault::OnDisk::read(&path);
-        let compare_preset_idx = if doc.presets.len() > 1 {
-            Some(1)
-        } else {
-            Some(0)
+        let active_preset_idx = doc
+            .active_preset_index()
+            .or_else(|| doc.nearest_preset_index())
+            .unwrap_or(0);
+        let compare_preset_idx = match doc.presets.len() {
+            0 => None,
+            1 => Some(0),
+            _ => (0..doc.presets.len()).find(|index| *index != active_preset_idx),
         };
 
         Self {
             path,
             doc,
             on_disk,
-            active_preset_idx: 0,
+            active_preset_idx,
             compare_preset_idx,
             renaming_preset: None,
+        }
+    }
+
+    /// The mark carried by a preset column relative to the working copy.
+    ///
+    /// Exact equality wins and only the first identical preset is active. If
+    /// none is exact, the nearest preset receives `EDITED`; distance and ties
+    /// are defined by `ResumeDoc`, so editor and matrix cannot disagree.
+    pub fn working_copy_mark(&self, index: usize) -> Option<&'static str> {
+        match self.doc.active_preset_index() {
+            Some(active) if active == index => Some("ACTIVE"),
+            Some(_) => None,
+            None if self.doc.nearest_preset_index() == Some(index) => Some("EDITED"),
+            None => None,
         }
     }
 
@@ -284,6 +302,10 @@ impl PresetMatrix {
             .and_then(|idx| self.doc.presets.get(idx))
             .map(|p| p.name.clone())
             .unwrap_or_else(|| "Preset B".to_string());
+        let preset_a_mark = self.working_copy_mark(self.active_preset_idx);
+        let preset_b_mark = self
+            .compare_preset_idx
+            .and_then(|index| self.working_copy_mark(index));
 
         // Header Toolbar matching mockup lines 1381-1392
         let header_toolbar = div()
@@ -450,11 +472,28 @@ impl PresetMatrix {
                         .bg(theme.surface)
                         .px(px(16.0))
                         .py(px(12.0))
+                        .flex()
+                        .items_center()
+                        .justify_between()
                         .font_family(SANS)
                         .text_size(px(13.0))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text)
-                        .child(preset_a_name),
+                        .child(preset_a_name)
+                        .when_some(preset_a_mark, |header, mark| {
+                            header.child(
+                                div()
+                                    .font_family(MONO)
+                                    .text_size(px(10.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(if mark == "EDITED" {
+                                        theme.warning
+                                    } else {
+                                        theme.accent
+                                    })
+                                    .child(mark),
+                            )
+                        }),
                 )
                 .child(
                     div()
@@ -463,11 +502,28 @@ impl PresetMatrix {
                         .bg(theme.surface)
                         .px(px(16.0))
                         .py(px(12.0))
+                        .flex()
+                        .items_center()
+                        .justify_between()
                         .font_family(SANS)
                         .text_size(px(13.0))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text)
-                        .child(preset_b_name),
+                        .child(preset_b_name)
+                        .when_some(preset_b_mark, |header, mark| {
+                            header.child(
+                                div()
+                                    .font_family(MONO)
+                                    .text_size(px(10.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(if mark == "EDITED" {
+                                        theme.warning
+                                    } else {
+                                        theme.accent
+                                    })
+                                    .child(mark),
+                            )
+                        }),
                 ),
         );
 
@@ -666,79 +722,5 @@ impl PresetMatrix {
             .bg(theme.background)
             .child(header_toolbar)
             .child(matrix_body)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::resume::model::{Preset, ResumeDoc, SectionKind};
-
-    /// Two presets that differ on Work and agree on Profile, pinned by id and
-    /// read back as names.
-    #[test]
-    fn test_preset_matrix_diff_computation() {
-        let mut doc = ResumeDoc::default();
-        doc.work.variants[0].name = "FAANG".into();
-        let faang = doc.work.active_id();
-        doc.add_variant(SectionKind::Work); // "FAANG copy", now active
-        doc.work.variants[1].name = "Startup".into();
-        let startup = doc.work.active_id();
-        let base = doc.profile.active_id();
-
-        doc.presets = vec![
-            Preset {
-                name: "Preset A".into(),
-                selection: vec![(SectionKind::Profile, base), (SectionKind::Work, faang)],
-                hidden: Vec::new(),
-            },
-            Preset {
-                name: "Preset B".into(),
-                selection: vec![(SectionKind::Profile, base), (SectionKind::Work, startup)],
-                hidden: Vec::new(),
-            },
-        ];
-
-        let mut matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
-        matrix.active_preset_idx = 0;
-        matrix.compare_preset_idx = Some(1);
-
-        let diff = matrix.compute_diff();
-        let (prof_a, prof_b) = diff.get(&SectionKind::Profile).copied().unwrap();
-        assert_eq!(prof_a, base);
-        assert_eq!(prof_b, Some(base));
-
-        let (work_a, work_b) = diff.get(&SectionKind::Work).copied().unwrap();
-        assert_eq!(work_a, faang);
-        assert_eq!(work_b, Some(startup));
-        assert_eq!(
-            matrix.variant_label(SectionKind::Work, work_a).as_deref(),
-            Some("FAANG")
-        );
-    }
-
-    /// A preset pinning a variant that has been deleted is a cell that says so.
-    ///
-    /// The whole reason pins are ids: before C0 this cell showed whichever
-    /// variant the *document* happened to be on, which is a different fact
-    /// about a different object, and the user had no way to tell.
-    #[test]
-    fn a_pin_to_a_deleted_variant_is_labelled_rather_than_guessed_at() {
-        let mut doc = ResumeDoc::default();
-        doc.add_variant(SectionKind::Work); // "Base copy", now active
-        doc.work.variants[1].name = "Infra".into();
-        let infra = doc.work.active_id();
-        doc.add_preset("Infra-heavy");
-
-        doc.remove_variant(SectionKind::Work, 1);
-        assert_eq!(doc.work.variants.len(), 1);
-
-        let matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
-        assert_eq!(matrix.variant_label(SectionKind::Work, infra), None);
-        assert_eq!(
-            matrix.doc.unresolved_pins(0),
-            vec![SectionKind::Work],
-            "the preset still names the cut that was deleted, and says which"
-        );
     }
 }

@@ -196,7 +196,7 @@ impl Root {
     /// `Export` handler has — the same reason `open_capture_sheet` takes one.
     pub(super) fn open_export_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let preset_name = self
-            .active_preset
+            .active_preset()
             .and_then(|idx| self.doc.presets.get(idx))
             .map(|p| p.name.clone());
         let seeded = self
@@ -224,7 +224,7 @@ impl Root {
 
         self.export_sheet = Some(ExportSheetState {
             format: ExportFormat::Pdf,
-            preset_index: self.active_preset,
+            preset_index: self.active_preset(),
             // Where this document went last time, remembered on this machine
             // rather than in the document (A11, and the storage rules).
             folder: config::load()

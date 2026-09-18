@@ -3007,6 +3007,59 @@ impl ResumeDoc {
             .all(|(section, id)| self.active_variant_id(*section) == Some(*id))
     }
 
+    /// The first preset whose reading is exactly the document's working copy.
+    ///
+    /// There is deliberately no stored "current preset". Two presets may be
+    /// identical, and storing either index would make the label depend on the
+    /// last button clicked rather than on what the document actually says.
+    /// Document order is the stable tie-break in that case.
+    pub fn active_preset_index(&self) -> Option<usize> {
+        (0..self.presets.len()).find(|index| self.is_preset_active(*index))
+    }
+
+    /// How many section cells differ between the working copy and a preset.
+    ///
+    /// Variant and visibility are one cell, not two: changing both on Skills
+    /// is still one row the person has to inspect in the matrix. A broken pin
+    /// differs from every live variant, which makes repairing it explicit.
+    pub fn preset_distance(&self, index: usize) -> Option<usize> {
+        let preset = self.presets.get(index)?;
+        Some(
+            self.sections()
+                .into_iter()
+                .filter(|section| {
+                    preset.variant_for(*section) != self.active_variant_id(*section)
+                        || preset.hidden.contains(section) != self.hidden_sections.contains(section)
+                })
+                .count(),
+        )
+    }
+
+    /// The preset requiring the fewest section changes to reach from now.
+    ///
+    /// `min_by_key` keeps the first minimum, so identical distances obey the
+    /// same document-order tie-break as [`Self::active_preset_index`].
+    pub fn nearest_preset_index(&self) -> Option<usize> {
+        (0..self.presets.len())
+            .min_by_key(|index| self.preset_distance(*index).unwrap_or(usize::MAX))
+    }
+
+    /// Rewrite one preset to describe the document's working copy.
+    ///
+    /// Presets own no content; updating one means replacing only its variant
+    /// pins and visibility. The UI checkpoints the whole document before this
+    /// call, which makes the operation undoable without a second history type.
+    pub fn update_preset(&mut self, index: usize) -> bool {
+        let selection = self.current_selection();
+        let hidden = self.hidden_sections.clone();
+        let Some(preset) = self.presets.get_mut(index) else {
+            return false;
+        };
+        preset.selection = selection;
+        preset.hidden = hidden;
+        true
+    }
+
     pub fn remove_preset(&mut self, index: usize) {
         if index < self.presets.len() {
             self.presets.remove(index);
@@ -3903,6 +3956,46 @@ mod applications_tests {
         // Hiding a section the preset does not hide takes it out of effect.
         doc.hidden_sections = vec![SectionKind::Skills];
         assert!(!doc.is_preset_active(0));
+    }
+
+    /// Active is a fact derived from the working copy, not the last preset a
+    /// control happened to apply. When two presets say the same thing, the
+    /// first one in document order owns the mark.
+    #[test]
+    fn the_active_preset_is_derived_with_a_document_order_tie_break() {
+        let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        doc.add_preset("First");
+        doc.add_preset("Same reading");
+
+        assert_eq!(doc.active_preset_index(), Some(0));
+
+        doc.add_variant(SectionKind::Work);
+        assert_eq!(doc.active_preset_index(), None);
+        assert_eq!(doc.nearest_preset_index(), Some(0));
+
+        assert!(doc.update_preset(1));
+        assert_eq!(doc.active_preset_index(), Some(1));
+        assert_eq!(doc.presets[1].name, "Same reading");
+    }
+
+    /// Distance is counted in matrix rows. A section whose variant and
+    /// visibility both changed is one differing cell, and the closest preset
+    /// wins before document order is needed as the tie-break.
+    #[test]
+    fn the_nearest_preset_counts_differing_section_cells() {
+        let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        doc.add_preset("Base");
+
+        doc.add_variant(SectionKind::Work);
+        doc.add_preset("Work tailored");
+
+        doc.add_variant(SectionKind::Skills);
+        doc.hidden_sections.push(SectionKind::Skills);
+
+        assert_eq!(doc.preset_distance(0), Some(2));
+        assert_eq!(doc.preset_distance(1), Some(1));
+        assert_eq!(doc.nearest_preset_index(), Some(1));
+        assert_eq!(doc.preset_distance(99), None);
     }
 
     #[test]

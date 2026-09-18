@@ -26,6 +26,8 @@ mod library_link;
 mod library_usage;
 mod preset_matrix;
 mod preset_matrix_export;
+#[cfg(test)]
+mod preset_matrix_tests;
 mod root;
 mod root_custom_sections;
 mod root_dates;
@@ -36,6 +38,7 @@ mod root_highlights;
 mod root_layout_rail;
 mod root_layout_rows;
 mod root_overlays;
+mod root_preset_control;
 mod root_preview_chrome;
 mod root_section_chrome;
 mod root_section_drag;

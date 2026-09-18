@@ -298,12 +298,6 @@ pub struct Root {
     /// separate because it addresses a different field (`FieldId::VariantName`
     /// vs. a section's printed heading).
     pub(super) renaming_variant: Option<VariantRename>,
-    /// The preset last applied (or saved) from the toolbar's preset menu, for
-    /// display only (`Preset  <name>  ▾`) — `ResumeDoc` has no notion of a
-    /// "current" preset (a preset is just a named selection, per
-    /// the editor spec §9), so this is ephemeral view state, not
-    /// persisted with the document.
-    pub(super) active_preset: Option<usize>,
     /// Preview rasters replaced by a newer one, waiting to be released.
     ///
     /// `Window::drop_image` evicts an atlas tile **immediately**, and GPUI frees
@@ -421,7 +415,6 @@ impl Root {
             export_sheet: None,
             renaming_section: None,
             renaming_variant: None,
-            active_preset: None,
             retired_images: Vec::new(),
             initialized: false,
             last_crisp: None,
@@ -434,84 +427,6 @@ impl Root {
             scale_slider: None,
             slider_subscriptions: Vec::new(),
         }
-    }
-
-    // --- presets (toolbar preset menu, design doc §8) ---
-
-    /// Switch every section to the variants recorded in preset `index` and
-    /// remember it as the toolbar's displayed preset.
-    pub(super) fn apply_preset(
-        &mut self,
-        index: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.checkpoint();
-        self.doc.apply_preset(index);
-        self.active_preset = Some(index);
-        self.schedule_save(cx);
-        self.fields_stale = true;
-        cx.notify();
-        self.schedule_recompile(window, cx);
-    }
-
-    /// Show this document at preset `index`, on arrival from the gallery.
-    ///
-    /// The same edit as picking the preset from the toolbar menu — applying a
-    /// preset moves `active` on every section it names, and that is stored, so
-    /// there is no honest way for this gesture to mean something weaker. Two
-    /// paths to one state that differ in whether they persist is the confusing
-    /// thing, not the writing.
-    ///
-    /// Except when the document is already in that state, which is the common
-    /// case for a card whose chip you clicked because it is what you want. Then
-    /// this only names the preset in the toolbar: no checkpoint, no save, no
-    /// recompile of a page that has not changed.
-    pub(super) fn open_at_preset(
-        &mut self,
-        index: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if index >= self.doc.presets.len() {
-            return;
-        }
-        if self.doc.is_preset_active(index) {
-            self.active_preset = Some(index);
-            cx.notify();
-            return;
-        }
-        self.apply_preset(index, window, cx);
-    }
-
-    /// Save the document's current section×variant selection as a new named
-    /// preset (`ResumeDoc::add_preset`) and make it the toolbar's displayed
-    /// preset. Not "capture" — see `ResumeDoc::add_preset`'s own doc comment
-    /// for why that word is reserved for the Diary's quick-capture (D-7).
-    pub(super) fn save_current_as_preset(&mut self, cx: &mut Context<Self>) {
-        self.checkpoint();
-        let n = self.doc.presets.len() + 1;
-        self.doc.add_preset(format!("Preset {n}"));
-        self.active_preset = Some(self.doc.presets.len() - 1);
-        self.schedule_save(cx);
-        self.fields_stale = true;
-        cx.notify();
-    }
-
-    /// Delete the preset currently shown in the toolbar. The old preset bar
-    /// exposed this per-chip (✕); the merged toolbar (design doc §3) has no
-    /// room to draw it per-preset, so it moves into the menu as a single
-    /// action on whichever preset is selected.
-    pub(super) fn remove_active_preset(&mut self, cx: &mut Context<Self>) {
-        let Some(index) = self.active_preset else {
-            return;
-        };
-        self.checkpoint();
-        self.doc.remove_preset(index);
-        self.active_preset = None;
-        self.schedule_save(cx);
-        self.fields_stale = true;
-        cx.notify();
     }
 
     // --- block library ("me") ---
@@ -1292,7 +1207,7 @@ impl Root {
         if count == 0 {
             return;
         }
-        let next = match self.active_preset {
+        let next = match self.active_preset() {
             Some(i) => (i as isize + delta).rem_euclid(count as isize) as usize,
             None if delta >= 0 => 0,
             None => count - 1,

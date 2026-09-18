@@ -8,15 +8,15 @@ use gpui::{
 
 use super::root_preview_chrome::{MAX_ZOOM_PCT, MIN_ZOOM_PCT};
 use dockcv_ui_components::{
-    lucide, Button, ButtonExt, Disableable, DropdownMenu, Icon, IconName, ListItem, ListItemExt,
-    PopupMenuItem, ScrollableElement, Sizable, TextField, CHROME_HEIGHT, SANS,
+    lucide, Button, ButtonExt, Disableable, Icon, IconName, ListItem, ListItemExt,
+    ScrollableElement, Sizable, TextField, CHROME_HEIGHT, SANS,
 };
 
 use crate::resume::model::SectionKind;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
-use super::root::{ExportPdf, NextPreset, OpenCapture, RedoDocument, UndoDocument, EDITOR_CONTEXT};
+use super::root::{ExportPdf, OpenCapture, RedoDocument, UndoDocument, EDITOR_CONTEXT};
 use super::{EditorEvent, Root};
 
 impl Root {
@@ -171,97 +171,6 @@ impl Root {
                         this.export_pdf_checked(window, cx);
                     })),
             )
-    }
-
-    /// The preset control: `Preset  <name>  ▾`, a real menu (P-01) rather than
-    /// a static label — lists this document's presets, applies one, offers
-    /// "＋ Save as preset", and is a door into the Preset Matrix screen
-    /// (`EditorEvent::OpenPresetMatrix`, handled by `Shell`).
-    fn render_preset_control(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = *cx.theme();
-        let value = self
-            .active_preset
-            .and_then(|i| self.doc.preset_name(i))
-            .cloned()
-            .unwrap_or_else(|| "No preset".to_string());
-        let presets: Vec<String> = self.doc.presets.iter().map(|p| p.name.clone()).collect();
-        let active_preset = self.active_preset;
-        let root = cx.weak_entity();
-
-        Button::new("preset-control")
-            .selector()
-            // P-17: cycling presets from the keyboard has no other visible
-            // control to hang a hint on but this one; `PrevPreset`'s chord
-            // (Alt+Shift+Up) is the mirror of the one shown here and is named
-            // in the text since a tooltip only resolves one action's binding.
-            .tooltip_with_action(
-                "Cycle to the next preset (Alt+Shift+Up for the previous)",
-                &NextPreset,
-                Some(EDITOR_CONTEXT),
-            )
-            .child(
-                div()
-                    .font_family(SANS)
-                    .text_size(px(10.5))
-                    .text_color(theme.text_subtle)
-                    .child("PRESET"),
-            )
-            .child(
-                div()
-                    .font_family(SANS)
-                    .text_size(px(13.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(theme.text)
-                    .child(value),
-            )
-            .dropdown_menu(move |menu, _window, _cx| {
-                let mut menu = menu;
-                if presets.is_empty() {
-                    menu = menu.item(PopupMenuItem::label("No presets yet"));
-                } else {
-                    for (i, name) in presets.iter().enumerate() {
-                        let root = root.clone();
-                        menu = menu.item(
-                            PopupMenuItem::new(name.clone())
-                                .checked(active_preset == Some(i))
-                                .on_click(move |_ev, window, cx| {
-                                    let _ = root.update(cx, |this, cx| {
-                                        this.apply_preset(i, window, cx);
-                                    });
-                                }),
-                        );
-                    }
-                }
-                if active_preset.is_some() {
-                    menu = menu.item(PopupMenuItem::new("Remove current preset").on_click({
-                        let root = root.clone();
-                        move |_ev, _window, cx| {
-                            let _ = root.update(cx, |this, cx| {
-                                this.remove_active_preset(cx);
-                            });
-                        }
-                    }));
-                }
-                menu = menu.separator();
-                menu = menu.item(PopupMenuItem::new("＋ Save as preset").on_click({
-                    let root = root.clone();
-                    move |_ev, _window, cx| {
-                        let _ = root.update(cx, |this, cx| {
-                            this.save_current_as_preset(cx);
-                        });
-                    }
-                }));
-                menu = menu.separator();
-                menu.item(PopupMenuItem::new("Preset Matrix…").on_click({
-                    let root = root.clone();
-                    move |_ev, _window, cx| {
-                        let _ = root.update(cx, |_this, cx| {
-                            cx.emit(EditorEvent::OpenPresetMatrix);
-                        });
-                    }
-                }))
-            })
-            .into_any_element()
     }
 
     /// The modal overlay listing diary entries for inserting one as a highlight.

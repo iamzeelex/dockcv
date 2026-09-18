@@ -21,7 +21,7 @@ impl Root {
     pub(super) fn filename_pattern_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let root = cx.weak_entity();
         let preset_name = self
-            .active_preset
+            .active_preset()
             .and_then(|idx| self.doc.presets.get(idx))
             .map(|p| p.name.as_str());
         let example_name = format!(

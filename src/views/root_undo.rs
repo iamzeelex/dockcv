@@ -78,17 +78,10 @@ impl Root {
 
     /// Everything a document swap has to bring back into line.
     ///
-    /// `active_preset` is the subtle one: it is ephemeral view state (L-05, no
-    /// stored active preset), so it is an index into a list that may have just
-    /// changed length underneath it. Left alone, undoing the creation of a
-    /// preset points it past the end.
+    /// Preset state needs no repair here: the active or nearest preset is
+    /// derived from `doc` after the swap, which is why undoing `Update` and
+    /// `Revert` also restores the correct toolbar label.
     fn after_history_move(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self
-            .active_preset
-            .is_some_and(|i| i >= self.doc.presets.len())
-        {
-            self.active_preset = None;
-        }
         // The fields are bound to the old document; rebuilding them is what
         // makes the restored values appear in the boxes rather than only in
         // the preview.
@@ -215,6 +208,65 @@ mod tests {
         assert_eq!(
             restored_undo.last().unwrap().profile.active().name,
             "Step 1"
+        );
+    }
+
+    /// Undoing `Update <preset>` puts the old pins back, and the toolbar
+    /// follows without being told.
+    ///
+    /// The whole reason C6 could delete `after_history_move`'s preset repair:
+    /// the label is derived from the document, so restoring the document
+    /// restores the label. This test is the checkpoint-then-restore that
+    /// `Root::update_preset` performs, with the `Window` taken out of it.
+    #[test]
+    fn undoing_an_update_restores_the_presets_old_reading() {
+        let mut doc = doc_named("Albert Einstein");
+        doc.add_preset("Infra-heavy");
+        let pinned_before = doc.presets[0].selection.clone();
+        assert_eq!(doc.active_preset_index(), Some(0));
+
+        // What `Root::update_preset` does: checkpoint, then rewrite the pins.
+        let mut undo_stack: Vec<ResumeDoc> = Vec::new();
+        push(&mut undo_stack, &doc);
+        doc.add_variant(SectionKind::Work);
+        assert_eq!(doc.active_preset_index(), None, "the working copy moved");
+        assert!(doc.update_preset(0));
+        assert_eq!(doc.active_preset_index(), Some(0), "the preset caught up");
+        assert_ne!(doc.presets[0].selection, pinned_before);
+
+        // What Undo does: swap the whole document back.
+        doc = undo_stack.pop().expect("a checkpoint was pushed");
+
+        assert_eq!(doc.presets[0].selection, pinned_before);
+        assert_eq!(
+            doc.active_preset_index(),
+            Some(0),
+            "restoring the document restores the label, with no view state to repair"
+        );
+    }
+
+    /// Reverting is `apply_preset`, and it is undoable the same way — back to
+    /// the edited working copy, not to the preset.
+    #[test]
+    fn undoing_a_revert_returns_to_the_edited_working_copy() {
+        let mut doc = doc_named("Albert Einstein");
+        doc.add_preset("Infra-heavy");
+        doc.add_variant(SectionKind::Work);
+        let edited = doc.variant_ids(SectionKind::Work);
+        assert_eq!(doc.active_preset_index(), None);
+
+        let mut undo_stack: Vec<ResumeDoc> = Vec::new();
+        push(&mut undo_stack, &doc);
+        doc.apply_preset(0);
+        assert_eq!(doc.active_preset_index(), Some(0));
+
+        doc = undo_stack.pop().expect("a checkpoint was pushed");
+
+        assert_eq!(doc.active_preset_index(), None, "back to EDITED");
+        assert_eq!(
+            doc.variant_ids(SectionKind::Work),
+            edited,
+            "and the variant the revert switched away from is still there"
         );
     }
 }
