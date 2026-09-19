@@ -1,26 +1,22 @@
-//! Preset Matrix Screen (US-02 / P-01): Section × Variant grid and two-preset diff view.
+//! The Preset Matrix: section × preset, with the working copy as its first
+//! column (US-02 / P-01).
 //!
-//! From the mockup's preset-matrix row.
+//! Not a comparison screen. The first pass drew preset A against preset B
+//! because the mockup did, and a `+ compare a third` prompt that was never
+//! built sat beside it for two releases — which is the shape telling on
+//! itself. A document has two or three readings (the design doc's §2 numbers),
+//! so showing *all* of them is simpler than making somebody pick two, and
+//! comparison is then what a grid does for free.
 //!
-//! Features:
-//! 1. Header Toolbar with a `<person_name> / Presets` breadcrumb and `+ Save current as new preset` action.
-//! 2. `COMPARING` toolbar with interactive Preset A vs Preset B pills, `vs` divider, `+ compare a third` prompt, and `■ Differs between presets` legend indicator.
-//! 3. 3-Column Table Grid (`Section | Preset A | Preset B`) with clean cell agreement vs amber-highlighted diff cells (`border-left: 2px solid theme.warning` + translucent amber background).
+//! Rendering lives in `preset_matrix_grid.rs`; this file is the state and the
+//! questions the grid asks of it.
 
-use gpui::prelude::*;
-use gpui::{div, px, ClickEvent, Context, Div, Entity, FontWeight, SharedString, Subscription};
-use std::collections::HashMap;
+use gpui::{Entity, Subscription};
 use std::path::PathBuf;
 
-use dockcv_ui_components::{
-    Button, ButtonExt, ButtonVariants, DockIcon, Icon, IconName, ScrollableElement, Sizable,
-    TextField, TextFieldState, CHROME_HEIGHT, MONO, SANS,
-};
+use dockcv_ui_components::TextFieldState;
 
 use crate::resume::model::{ResumeDoc, SectionKind, VariantId};
-use crate::theme::{ActiveTheme, StyledText, TextStyle};
-
-use super::shell::Shell;
 
 pub struct PresetMatrix {
     pub path: PathBuf,
@@ -29,8 +25,13 @@ pub struct PresetMatrix {
     /// editor carries, for the same reason: this screen holds a whole document
     /// in memory and writes all of it back. See [`crate::vault::OnDisk`].
     pub on_disk: crate::vault::OnDisk,
-    pub active_preset_idx: usize,
-    pub compare_preset_idx: Option<usize>,
+    /// Hide the rows every column agrees on.
+    ///
+    /// Defaulted on past three presets rather than always: at two or three
+    /// columns the agreeing rows are the context that makes the differing ones
+    /// legible, and at five they are the noise a comparison table is told to
+    /// drop (NN/g, Baymard — the design doc's §2).
+    pub differences_only: bool,
     /// Whichever preset is mid-rename. One at a time, like the editor's
     /// section rename — the gesture this deliberately copies, so a preset and
     /// a section heading are renamed the same way in the same product.
@@ -47,25 +48,38 @@ pub struct PresetRename {
     pub _subscription: Subscription,
 }
 
+/// What one column says about one section.
+///
+/// Three states, and the third is the one ids bought us (C0): a preset can
+/// pin a variant that has since been deleted, which is a different fact from
+/// "this preset says nothing about this section" and from "this preset leaves
+/// the section out". Before ids, all three looked alike.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Choice {
+    Pin(VariantId),
+    Hidden,
+    Unpinned,
+}
+
+/// A column of the grid: the working copy, or one preset.
+pub struct Column {
+    /// `None` is the working copy — always first, never editable here.
+    pub preset: Option<usize>,
+    pub name: String,
+    /// `ACTIVE` or `EDITED`, from [`PresetMatrix::working_copy_mark`].
+    pub mark: Option<&'static str>,
+}
+
 impl PresetMatrix {
     pub fn new(path: PathBuf, doc: ResumeDoc) -> Self {
         let on_disk = crate::vault::OnDisk::read(&path);
-        let active_preset_idx = doc
-            .active_preset_index()
-            .or_else(|| doc.nearest_preset_index())
-            .unwrap_or(0);
-        let compare_preset_idx = match doc.presets.len() {
-            0 => None,
-            1 => Some(0),
-            _ => (0..doc.presets.len()).find(|index| *index != active_preset_idx),
-        };
+        let differences_only = doc.presets.len() > 3;
 
         Self {
             path,
             doc,
             on_disk,
-            active_preset_idx,
-            compare_preset_idx,
+            differences_only,
             renaming_preset: None,
         }
     }
@@ -84,94 +98,101 @@ impl PresetMatrix {
         }
     }
 
-    /// The left pill: the preset's name, or the live input while it is being
-    /// renamed. The pen beside it is the same trigger the editor puts on a
-    /// section header — one gesture for renaming anything the user named.
-    pub fn render_preset_a_pill(&self, cx: &mut Context<Shell>, name: String) -> impl IntoElement {
-        let renaming = self
-            .renaming_preset
-            .as_ref()
-            .filter(|r| r.idx == self.active_preset_idx);
-
-        div()
-            .flex()
-            .items_center()
-            .gap(px(4.0))
-            .child(match renaming {
-                Some(rename) => div()
-                    .w(px(150.0))
-                    .child(TextField::new(&rename.field).small())
-                    .into_any_element(),
-                None => Button::new("preset-a-pill")
-                    .chip(false, cx.theme())
-                    .primary()
-                    .tooltip("Cycle to the next preset")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        this.cycle_matrix_preset_a(cx);
-                    }))
-                    .child(name)
-                    .into_any_element(),
-            })
-            .child(
-                Button::new("preset-a-rename")
-                    .icon_only()
-                    .icon(DockIcon::Pen)
-                    .tooltip("Rename this preset")
-                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                        this.start_preset_rename(window, cx);
-                    })),
-            )
+    /// Every column, working copy first, presets in document order.
+    pub fn columns(&self) -> Vec<Column> {
+        let mut columns = vec![Column {
+            preset: None,
+            name: "Now".to_string(),
+            mark: None,
+        }];
+        columns.extend(self.doc.presets.iter().enumerate().map(|(index, preset)| Column {
+            preset: Some(index),
+            name: preset.name.clone(),
+            mark: self.working_copy_mark(index),
+        }));
+        columns
     }
 
-    /// Cycle active Preset A selection.
-    pub fn cycle_preset_a(&mut self) {
-        if !self.doc.presets.is_empty() {
-            self.active_preset_idx = (self.active_preset_idx + 1) % self.doc.presets.len();
+    /// What `column` says about `section`.
+    pub fn choice(&self, column: &Column, section: SectionKind) -> Choice {
+        match column.preset {
+            // The working copy reads the document itself, which is the point
+            // of drawing it: the other columns are claims about what would
+            // happen, this one is what is on the page right now.
+            None => {
+                if self.doc.is_hidden(section) {
+                    Choice::Hidden
+                } else {
+                    match self.doc.active_variant_id(section) {
+                        Some(id) => Choice::Pin(id),
+                        None => Choice::Unpinned,
+                    }
+                }
+            }
+            Some(index) => match self.doc.presets.get(index) {
+                Some(preset) if preset.hidden.contains(&section) => Choice::Hidden,
+                Some(preset) => match preset.variant_for(section) {
+                    Some(id) => Choice::Pin(id),
+                    None => Choice::Unpinned,
+                },
+                None => Choice::Unpinned,
+            },
         }
     }
 
-    /// Cycle active Preset B selection.
-    pub fn cycle_preset_b(&mut self) {
-        if !self.doc.presets.is_empty() {
-            let current = self.compare_preset_idx.unwrap_or(0);
-            self.compare_preset_idx = Some((current + 1) % self.doc.presets.len());
-        }
+    /// What the working copy says — the reference every other column is read
+    /// against, because "how does this preset differ from what I am looking
+    /// at" is the question somebody standing in front of the grid has.
+    pub fn working_copy_choice(&self, section: SectionKind) -> Choice {
+        self.choice(
+            &Column {
+                preset: None,
+                name: String::new(),
+                mark: None,
+            },
+            section,
+        )
     }
 
-    /// What each of the two presets pins for each section, by id.
-    ///
-    /// Ids rather than names since C0: a cell has to be able to say "this
-    /// preset selected a cut of Skills that has since been deleted", and a
-    /// name cannot tell that apart from a variant that was merely renamed.
-    /// [`Self::variant_label`] is what turns an id back into something to read.
-    pub fn compute_diff(&self) -> HashMap<SectionKind, (VariantId, Option<VariantId>)> {
-        let mut map = HashMap::new();
-
-        let preset_a = self.doc.presets.get(self.active_preset_idx);
-        let preset_b = self
-            .compare_preset_idx
-            .and_then(|idx| self.doc.presets.get(idx));
-
-        for section in self.doc.sections() {
-            let active_a = preset_a
-                .and_then(|p| p.variant_for(section))
-                .or_else(|| self.doc.active_variant_id(section))
-                .unwrap_or_default();
-
-            let active_b = preset_b.and_then(|p| p.variant_for(section));
-
-            map.insert(section, (active_a, active_b));
-        }
-
-        map
+    /// Whether any column disagrees with the working copy on this section.
+    pub fn row_differs(&self, section: SectionKind) -> bool {
+        let reference = self.working_copy_choice(section);
+        self.columns()
+            .iter()
+            .any(|column| self.choice(column, section) != reference)
     }
 
-    /// Whether preset `index` leaves `section` out of the document.
-    pub fn preset_hides(&self, index: usize, section: SectionKind) -> bool {
+    /// The rows the grid draws, after `differences_only`.
+    pub fn rows(&self) -> Vec<SectionKind> {
         self.doc
-            .presets
-            .get(index)
-            .is_some_and(|p| p.hidden.contains(&section))
+            .sections()
+            .into_iter()
+            .filter(|section| !self.differences_only || self.row_differs(*section))
+            .collect()
+    }
+
+    /// What a cell prints.
+    ///
+    /// `— deleted variant —` is the loud half of C0: the preset selected a cut
+    /// of this section that no longer exists. Clicking the cell repairs it.
+    pub fn cell_text(&self, section: SectionKind, choice: Choice) -> String {
+        match choice {
+            Choice::Hidden => "— hidden —".to_string(),
+            Choice::Unpinned => "not pinned".to_string(),
+            Choice::Pin(id) => self
+                .variant_label(section, id)
+                .unwrap_or_else(|| "— deleted variant —".to_string()),
+        }
+    }
+
+    /// The secondary line on a cell — `· 4 roles`, and nothing for a choice
+    /// that names no variant.
+    pub fn cell_detail(&self, section: SectionKind, choice: Choice) -> Option<String> {
+        let Choice::Pin(id) = choice else {
+            return None;
+        };
+        let name = self.variant_label(section, id)?;
+        self.variant_detail(section, &name)
     }
 
     /// The name to print for a pinned id.
@@ -275,7 +296,7 @@ impl PresetMatrix {
         }
     }
 
-    fn identity(&self) -> String {
+    pub(super) fn identity(&self) -> String {
         let name = self.doc.profile.active().name.trim().to_string();
         if !name.is_empty() {
             return name;
@@ -284,443 +305,5 @@ impl PresetMatrix {
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "Untitled".to_string())
-    }
-
-    pub fn render_matrix(&self, cx: &mut Context<Shell>) -> Div {
-        let theme = *cx.theme();
-        let diff_map = self.compute_diff();
-
-        let preset_a_name = self
-            .doc
-            .presets
-            .get(self.active_preset_idx)
-            .map(|p| p.name.clone())
-            .unwrap_or_else(|| "Preset A".to_string());
-
-        let preset_b_name = self
-            .compare_preset_idx
-            .and_then(|idx| self.doc.presets.get(idx))
-            .map(|p| p.name.clone())
-            .unwrap_or_else(|| "Preset B".to_string());
-        let preset_a_mark = self.working_copy_mark(self.active_preset_idx);
-        let preset_b_mark = self
-            .compare_preset_idx
-            .and_then(|index| self.working_copy_mark(index));
-
-        // Header Toolbar matching mockup lines 1381-1392
-        let header_toolbar = div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .h(CHROME_HEIGHT)
-            .pl(px(80.0))
-            .pr(px(20.0))
-            .bg(theme.chrome)
-            .border_b_1()
-            .border_color(theme.border)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(9.0))
-                    .child(
-                        Button::new("matrix-back")
-                            .quiet()
-                            .gap(px(4.0))
-                            .icon(IconName::ChevronLeft)
-                            .tooltip("Back to the document")
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.leave_preset_matrix(cx);
-                            }))
-                            .child(self.identity()),
-                    )
-                    .child(
-                        div()
-                            .font_family(SANS)
-                            .text_size(px(13.5))
-                            .text_color(theme.border_strong)
-                            .child("/"),
-                    )
-                    .child(
-                        div()
-                            .font_family(SANS)
-                            .text_size(px(13.5))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme.text)
-                            .child("Presets"),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        Button::new("export-all-presets-btn")
-                            .toolbar()
-                            .icon(IconName::ArrowDown)
-                            .tooltip("Export every preset to PDF into a folder")
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.export_all_matrix_presets(cx);
-                            }))
-                            .child("Export all presets"),
-                    )
-                    .child(
-                        Button::new("save-new-preset-btn")
-                            .quiet()
-                            .text_color(theme.accent)
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.save_matrix_as_preset(cx);
-                            }))
-                            .icon(IconName::Plus)
-                            .child("Save current as new preset"),
-                    ),
-            );
-
-        // Comparing Bar matching mockup lines 1394-1402
-        let comparing_bar = div()
-            .flex()
-            .items_center()
-            .gap(px(10.0))
-            .mb(px(22.0))
-            .child(
-                div()
-                    .font_family(MONO)
-                    .text_size(px(12.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(theme.text_subtle)
-                    .child("COMPARING"),
-            )
-            .child(self.render_preset_a_pill(cx, preset_a_name.clone()))
-            .child(
-                div()
-                    .font_family(SANS)
-                    .text_size(px(12.0))
-                    .text_color(theme.text_subtle)
-                    .child("vs"),
-            )
-            .child(
-                Button::new("preset-b-pill")
-                    .chip(false, cx.theme())
-                    .outline()
-                    .tooltip("Compare against a different preset")
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        this.cycle_matrix_preset_b(cx);
-                    }))
-                    .child(preset_b_name.clone()),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .text_style(TextStyle::label())
-                    .text_color(theme.text_subtle)
-                    .px(px(10.0))
-                    .py(px(6.0))
-                    .rounded(cx.theme().radius_sm())
-                    .border_1()
-                    .border_dashed()
-                    .border_color(theme.border)
-                    .child(Icon::new(IconName::Plus).with_size(theme.icon_sm()))
-                    .child("compare a third"),
-            )
-            .child(div().flex_1())
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .font_family(SANS)
-                    .text_size(px(12.0))
-                    .text_color(theme.accent)
-                    .child(
-                        div()
-                            .w(px(8.0))
-                            .h(px(8.0))
-                            .rounded(px(2.0))
-                            .bg(theme.warning),
-                    )
-                    .child("Differs between presets"),
-            );
-
-        // 3-Column Table Grid matching mockup lines 1403-1427
-        let mut table_rows = Vec::new();
-
-        // Header Row
-        table_rows.push(
-            div()
-                .flex()
-                .w_full()
-                .gap(px(1.0))
-                .child(
-                    div()
-                        .w(px(170.0))
-                        .flex_none()
-                        .bg(theme.surface)
-                        .px(px(16.0))
-                        .py(px(12.0))
-                        .font_family(MONO)
-                        .text_size(px(11.0))
-                        .text_color(theme.text_subtle)
-                        .child("SECTION"),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .bg(theme.surface)
-                        .px(px(16.0))
-                        .py(px(12.0))
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .font_family(SANS)
-                        .text_size(px(13.0))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text)
-                        .child(preset_a_name)
-                        .when_some(preset_a_mark, |header, mark| {
-                            header.child(
-                                div()
-                                    .font_family(MONO)
-                                    .text_size(px(10.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(if mark == "EDITED" {
-                                        theme.warning
-                                    } else {
-                                        theme.accent
-                                    })
-                                    .child(mark),
-                            )
-                        }),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .bg(theme.surface)
-                        .px(px(16.0))
-                        .py(px(12.0))
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .font_family(SANS)
-                        .text_size(px(13.0))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text)
-                        .child(preset_b_name)
-                        .when_some(preset_b_mark, |header, mark| {
-                            header.child(
-                                div()
-                                    .font_family(MONO)
-                                    .text_size(px(10.0))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(if mark == "EDITED" {
-                                        theme.warning
-                                    } else {
-                                        theme.accent
-                                    })
-                                    .child(mark),
-                            )
-                        }),
-                ),
-        );
-
-        // Data Rows — from the document's own section order, so custom
-        // sections (D-9) appear and a renamed heading (O-14) shows the user's
-        // word rather than the enum's.
-        for section in self.doc.sections() {
-            let section_label = self.doc.section_title(section);
-
-            let (pin_a, pin_b) = diff_map.get(&section).copied().unwrap_or_default();
-            let name_a = self.variant_label(section, pin_a);
-            let name_b = pin_b.map(|b| self.variant_label(section, b));
-            // O-13 is modelled now, so the design's `— hidden —` is real: it
-            // says this preset leaves the section out of the document, which
-            // `ResumeDoc::compose` honours all the way to the PDF.
-            let hidden_a = self.preset_hides(self.active_preset_idx, section);
-            let hidden_b = self
-                .compare_preset_idx
-                .is_some_and(|i| self.preset_hides(i, section));
-            let is_diff = hidden_a != hidden_b || pin_b.is_some_and(|b| b != pin_a);
-
-            let detail_a = name_a
-                .as_deref()
-                .and_then(|n| self.variant_detail(section, n));
-            let detail_b = name_b
-                .as_ref()
-                .and_then(|b| b.as_deref())
-                .and_then(|n| self.variant_detail(section, n));
-
-            // Three different things a cell can say, and the third is new with
-            // C0. `— hidden —` is section visibility (O-13). `not pinned` is a
-            // preset that names no variant here at all, which
-            // `reconcile_presets` now prevents but a hand-edited file can still
-            // produce. `— deleted variant —` is a pin that resolves to nothing:
-            // the preset selected a cut of this section that no longer exists,
-            // which used to be indistinguishable from the document simply being
-            // on something else. Clicking the cell repairs it.
-            let label = |hidden: bool, name: Option<Option<String>>| match (hidden, name) {
-                (true, _) => "— hidden —".to_string(),
-                (_, None) => "not pinned".to_string(),
-                (_, Some(None)) => "— deleted variant —".to_string(),
-                (_, Some(Some(name))) => name,
-            };
-            let cell_a_text = label(hidden_a, Some(name_a.clone()));
-            let cell_b_text = label(hidden_b, name_b.clone());
-
-            let row = div()
-                .flex()
-                .w_full()
-                .gap(px(1.0))
-                // Col 1: Section
-                .child(
-                    div()
-                        .w(px(170.0))
-                        .flex_none()
-                        .bg(theme.surface)
-                        .px(px(16.0))
-                        .py(px(15.0))
-                        .font_family(SANS)
-                        .text_size(px(13.5))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text)
-                        .child(section_label),
-                )
-                // Col 2: Preset A Cell. Clicking cycles this preset's pin for
-                // the row's section — US-02 asks for a matrix you can *edit*,
-                // not just read, and cycling is the whole interaction a cell
-                // needs when a section has two or three variants.
-                .child(
-                    div()
-                        .id(SharedString::from(format!("cell-a-{section:?}")))
-                        .cursor_pointer()
-                        // Clicking a cell cycles that section's variant, and
-                        // nothing but the cursor used to say so.
-                        .hover(|s| s.border_color(theme.accent))
-                        .border_1()
-                        .border_color(gpui::Hsla::transparent_black())
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                            this.cycle_matrix_cell(0, section, cx);
-                        }))
-                        .flex_1()
-                        .min_w_0()
-                        .px(px(16.0))
-                        .py(px(15.0))
-                        .text_style(TextStyle::body())
-                        .when(is_diff, |s| {
-                            s.bg(theme.hover)
-                                .border_l_2()
-                                .border_color(theme.warning)
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(theme.text)
-                        })
-                        .when(!is_diff, |s| {
-                            s.bg(theme.elevated).text_color(theme.text_muted)
-                        })
-                        .child(
-                            div()
-                                .flex()
-                                .items_baseline()
-                                .gap(px(6.0))
-                                .child(cell_a_text.clone())
-                                .when_some(detail_a, |s, d| {
-                                    s.child(
-                                        div()
-                                            .text_size(px(11.5))
-                                            .text_color(if is_diff {
-                                                theme.warning
-                                            } else {
-                                                theme.text_subtle
-                                            })
-                                            .child(d),
-                                    )
-                                }),
-                        ),
-                )
-                // Col 3: Preset B Cell
-                .child(
-                    div()
-                        .id(SharedString::from(format!("cell-b-{section:?}")))
-                        .cursor_pointer()
-                        // Clicking a cell cycles that section's variant, and
-                        // nothing but the cursor used to say so.
-                        .hover(|s| s.border_color(theme.accent))
-                        .border_1()
-                        .border_color(gpui::Hsla::transparent_black())
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                            this.cycle_matrix_cell(1, section, cx);
-                        }))
-                        .flex_1()
-                        .min_w_0()
-                        .px(px(16.0))
-                        .py(px(15.0))
-                        .text_style(TextStyle::body())
-                        .when(is_diff, |s| {
-                            s.bg(theme.hover)
-                                .border_l_2()
-                                .border_color(theme.warning)
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(theme.text)
-                        })
-                        .when(!is_diff, |s| {
-                            s.bg(theme.elevated).text_color(theme.text_muted)
-                        })
-                        .child(
-                            div()
-                                .flex()
-                                .items_baseline()
-                                .gap(px(6.0))
-                                .child(cell_b_text)
-                                .when_some(detail_b, |s, d| {
-                                    s.child(
-                                        div()
-                                            .text_size(px(11.5))
-                                            .text_color(if is_diff {
-                                                theme.warning
-                                            } else {
-                                                theme.text_subtle
-                                            })
-                                            .child(d),
-                                    )
-                                }),
-                        ),
-                );
-
-            table_rows.push(row);
-        }
-
-        let matrix_table = div()
-            .w_full()
-            .max_w(px(1180.0))
-            .flex()
-            .flex_col()
-            .gap(px(1.0))
-            .bg(theme.border)
-            .border_1()
-            .border_color(theme.border)
-            .rounded(theme.radius_md())
-            .overflow_hidden()
-            .children(table_rows);
-
-        let matrix_body = div()
-            .id("preset-matrix-grid")
-            .flex_1()
-            .p(px(26.0))
-            .overflow_y_scrollbar()
-            .flex()
-            .flex_col()
-            .child(comparing_bar)
-            .child(matrix_table);
-
-        div()
-            .w_full()
-            .h_full()
-            .flex()
-            .flex_col()
-            .bg(theme.background)
-            .child(header_toolbar)
-            .child(matrix_body)
     }
 }

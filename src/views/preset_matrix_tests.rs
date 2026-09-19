@@ -2,12 +2,12 @@ use std::path::PathBuf;
 
 use crate::resume::model::{Preset, ResumeDoc, SectionKind};
 
-use super::preset_matrix::PresetMatrix;
+use super::preset_matrix::{Choice, PresetMatrix};
 
-/// Two presets that differ on Work and agree on Profile, pinned by id and read
-/// back as names.
-#[test]
-fn test_preset_matrix_diff_computation() {
+/// A document with two Work variants and two presets that disagree about which
+/// one to read. Returns the matrix and the two ids, named.
+fn two_readings() -> (PresetMatrix, crate::resume::model::VariantId, crate::resume::model::VariantId)
+{
     let mut doc = ResumeDoc::default();
     doc.work.variants[0].name = "FAANG".into();
     let faang = doc.work.active_id();
@@ -29,21 +29,86 @@ fn test_preset_matrix_diff_computation() {
         },
     ];
 
-    let mut matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
-    matrix.active_preset_idx = 0;
-    matrix.compare_preset_idx = Some(1);
+    (
+        PresetMatrix::new(PathBuf::from("/dummy/path"), doc),
+        faang,
+        startup,
+    )
+}
 
-    let diff = matrix.compute_diff();
-    let (prof_a, prof_b) = diff.get(&SectionKind::Profile).copied().unwrap();
-    assert_eq!(prof_a, base);
-    assert_eq!(prof_b, Some(base));
+/// Every preset is a column, and the working copy is the first of them.
+///
+/// The screen used to pick two presets and call the rest invisible; a document
+/// with three readings could not be seen at once at all.
+#[test]
+fn every_preset_is_a_column_behind_the_working_copy() {
+    let (matrix, faang, startup) = two_readings();
+    let columns = matrix.columns();
 
-    let (work_a, work_b) = diff.get(&SectionKind::Work).copied().unwrap();
-    assert_eq!(work_a, faang);
-    assert_eq!(work_b, Some(startup));
+    assert_eq!(columns.len(), 3, "the working copy plus both presets");
+    assert_eq!(columns[0].preset, None);
+    assert_eq!(columns[0].name, "Now");
+    assert_eq!(columns[1].name, "Preset A");
+    assert_eq!(columns[2].name, "Preset B");
+
     assert_eq!(
-        matrix.variant_label(SectionKind::Work, work_a).as_deref(),
-        Some("FAANG")
+        matrix.choice(&columns[1], SectionKind::Work),
+        Choice::Pin(faang)
+    );
+    assert_eq!(
+        matrix.choice(&columns[2], SectionKind::Work),
+        Choice::Pin(startup)
+    );
+    // The document was left on the second variant, so that is what `Now` says —
+    // it reads the document rather than a preset's claim about it.
+    assert_eq!(
+        matrix.choice(&columns[0], SectionKind::Work),
+        Choice::Pin(startup)
+    );
+    assert_eq!(matrix.cell_text(SectionKind::Work, Choice::Pin(faang)), "FAANG");
+}
+
+/// A row differs when any column departs from the working copy, and only then.
+#[test]
+fn a_row_differs_when_a_column_departs_from_the_working_copy() {
+    let (mut matrix, _faang, _startup) = two_readings();
+
+    assert!(
+        matrix.row_differs(SectionKind::Work),
+        "Preset A reads FAANG while the document reads Startup"
+    );
+    assert!(
+        !matrix.row_differs(SectionKind::Profile),
+        "every column pins the one Profile variant there is"
+    );
+
+    // `differences only` drops exactly the agreeing rows, and never the
+    // disagreeing one.
+    matrix.differences_only = true;
+    let rows = matrix.rows();
+    assert!(rows.contains(&SectionKind::Work));
+    assert!(!rows.contains(&SectionKind::Profile));
+
+    matrix.differences_only = false;
+    assert_eq!(matrix.rows(), matrix.doc.sections());
+}
+
+/// Hiding a section in one preset is a difference like any other, and reads as
+/// itself rather than as a missing variant (O-13).
+#[test]
+fn hiding_a_section_in_one_preset_is_a_difference() {
+    let (mut matrix, _faang, _startup) = two_readings();
+    matrix.doc.presets[1].hidden.push(SectionKind::Certificates);
+
+    let columns = matrix.columns();
+    assert_eq!(
+        matrix.choice(&columns[2], SectionKind::Certificates),
+        Choice::Hidden
+    );
+    assert!(matrix.row_differs(SectionKind::Certificates));
+    assert_eq!(
+        matrix.cell_text(SectionKind::Certificates, Choice::Hidden),
+        "— hidden —"
     );
 }
 
@@ -65,15 +130,18 @@ fn a_pin_to_a_deleted_variant_is_labelled_rather_than_guessed_at() {
     let matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
     assert_eq!(matrix.variant_label(SectionKind::Work, infra), None);
     assert_eq!(
+        matrix.cell_text(SectionKind::Work, Choice::Pin(infra)),
+        "— deleted variant —"
+    );
+    assert_eq!(
         matrix.doc.unresolved_pins(0),
         vec![SectionKind::Work],
         "the preset still names the cut that was deleted, and says which"
     );
 }
 
-/// The matrix opens on the preset that explains the working copy, not always
-/// column zero, and changes its mark from ACTIVE to EDITED when no preset is an
-/// exact match.
+/// The column marks come from the document, so the grid and the editor's
+/// toolbar cannot disagree about which reading is in front of you.
 #[test]
 fn the_working_copy_marks_the_exact_or_nearest_preset() {
     let mut doc = ResumeDoc::default();
@@ -82,13 +150,27 @@ fn the_working_copy_marks_the_exact_or_nearest_preset() {
     doc.add_preset("Work tailored");
 
     let exact = PresetMatrix::new(PathBuf::from("/dummy/path"), doc.clone());
-    assert_eq!(exact.active_preset_idx, 1);
     assert_eq!(exact.working_copy_mark(1), Some("ACTIVE"));
     assert_eq!(exact.working_copy_mark(0), None);
 
     doc.add_variant(SectionKind::Skills);
     let edited = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
-    assert_eq!(edited.active_preset_idx, 1);
     assert_eq!(edited.working_copy_mark(1), Some("EDITED"));
     assert_eq!(edited.working_copy_mark(0), None);
+}
+
+/// Past three presets the agreeing rows are noise, so the toggle starts on.
+/// At two or three they are the context that makes the differences legible.
+#[test]
+fn differences_only_defaults_by_how_many_presets_there_are() {
+    let mut doc = ResumeDoc::default();
+    for n in 0..3 {
+        doc.add_preset(format!("Preset {n}"));
+    }
+    let three = PresetMatrix::new(PathBuf::from("/dummy/path"), doc.clone());
+    assert!(!three.differences_only);
+
+    doc.add_preset("Preset 4");
+    let four = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+    assert!(four.differences_only);
 }

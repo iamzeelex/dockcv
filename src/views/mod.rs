@@ -26,6 +26,7 @@ mod library_link;
 mod library_usage;
 mod preset_matrix;
 mod preset_matrix_export;
+mod preset_matrix_grid;
 #[cfg(test)]
 mod preset_matrix_tests;
 mod root;

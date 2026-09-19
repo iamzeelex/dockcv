@@ -37,6 +37,7 @@ use super::import_flow::ImportStep;
 use super::library::LibrarySort;
 use super::library_edit::LibraryEdit;
 use super::library_link::PushReview;
+use super::preset_matrix::Choice;
 use super::preset_matrix_export::BatchExportSheet;
 use super::save_status;
 use super::update_notice::UpdateState;
@@ -975,18 +976,22 @@ impl Shell {
         }
     }
 
-    /// Begin renaming the preset the left pill shows.
+    /// Begin renaming the preset in column `idx`.
     ///
     /// `FieldId::PresetName` was addressable from the day presets existed and
     /// no view drew it, so a preset created as `Preset 2` kept that name for
     /// life (G-14). The gesture copies the editor's section rename — pen,
     /// inline field, Enter or clicking away commits — because a user who has
     /// renamed one should not have to learn a second way.
-    pub(super) fn start_preset_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn start_preset_rename(
+        &mut self,
+        idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Screen::PresetMatrix(ref mut pm) = self.screen else {
             return;
         };
-        let idx = pm.active_preset_idx;
         let Some(current) = pm.doc.presets.get(idx).map(|p| p.name.clone()) else {
             return;
         };
@@ -1199,84 +1204,57 @@ impl Shell {
         .detach();
     }
 
-    /// Move one matrix cell to the next variant that section has, and pin it
-    /// in the preset that column shows.
+    /// Pin one matrix cell, or hide the section in that preset.
     ///
-    /// `column` is 0 for the left preset, 1 for the right. Writing straight to
-    /// disk rather than debouncing: a preset is one line of TOML and this is a
-    /// deliberate click, not typing — there is nothing to coalesce.
-    pub(super) fn cycle_matrix_cell(
+    /// Writing straight to disk rather than debouncing: a preset is one line of
+    /// TOML and this is a deliberate choice from a menu, not typing — there is
+    /// nothing to coalesce.
+    ///
+    /// `Choice::Unpinned` is not offered by the menu and is not accepted here.
+    /// A preset names every section (`reconcile_presets`), so un-pinning one
+    /// would be a way to make a preset incomplete on purpose, and the answer to
+    /// "this preset should not show Skills" is `Hidden`, which says so.
+    pub(super) fn set_matrix_cell(
         &mut self,
-        column: usize,
+        preset: usize,
         section: SectionKind,
+        choice: Choice,
         cx: &mut Context<Self>,
     ) {
         let Screen::PresetMatrix(ref mut pm) = self.screen else {
             return;
         };
-        let Some(preset_idx) = (match column {
-            0 => Some(pm.active_preset_idx),
-            _ => pm.compare_preset_idx,
-        }) else {
+        let Some(entry) = pm.doc.presets.get_mut(preset) else {
             return;
         };
-
-        let variants = pm.doc.variant_ids(section);
-        if variants.is_empty() {
-            return;
-        }
-        let Some(preset) = pm.doc.presets.get(preset_idx) else {
-            return;
-        };
-        let hidden = preset.hidden.contains(&section);
-        let current = preset.variant_for(section);
-
-        // The cycle runs variant → variant → … → hidden → first variant, so
-        // "leave this section out of this preset" (O-13) is reachable from the
-        // same click as choosing a variant — it *is* one of the choices a
-        // preset makes about a section, not a separate mode. Profile is never
-        // hideable, so it cycles variants only.
-        let hideable = section != SectionKind::Profile;
-        let next_index = match current.and_then(|c| variants.iter().position(|v| *v == c)) {
-            // An unpinned cell starts at the first variant rather than the
-            // second: the first click should pin something visible.
-            None if !hidden => Some(0),
-            Some(i) if i + 1 < variants.len() => Some(i + 1),
-            // Past the last variant: hide, then wrap back to the first.
-            Some(_) if hideable && !hidden => None,
-            _ => Some(0),
-        };
-
-        let Some(preset) = pm.doc.presets.get_mut(preset_idx) else {
-            return;
-        };
-        match next_index {
-            Some(i) => {
-                preset.hidden.retain(|s| *s != section);
-                preset.set(section, variants[i]);
+        match choice {
+            Choice::Pin(id) => {
+                entry.hidden.retain(|s| *s != section);
+                entry.set(section, id);
             }
-            None => {
-                if !preset.hidden.contains(&section) {
-                    preset.hidden.push(section);
+            Choice::Hidden => {
+                if !entry.hidden.contains(&section) {
+                    entry.hidden.push(section);
                 }
             }
+            Choice::Unpinned => return,
         }
+
         let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
         let (path, seen) = (pm.path.clone(), pm.on_disk);
         pm.on_disk = save_status::record_document(cx, &path, seen, result);
         cx.notify();
     }
 
-    pub(super) fn cycle_matrix_preset_a(&mut self, cx: &mut Context<Self>) {
+    /// Show every section, or only the ones some preset disagrees about.
+    ///
+    /// View state, deliberately: it is about looking rather than about the
+    /// document, so it does not belong in the vault, and it is cheap enough to
+    /// re-decide on every visit that it does not belong in `config.toml`
+    /// either (the three-homes table).
+    pub(super) fn toggle_matrix_differences_only(&mut self, cx: &mut Context<Self>) {
         if let Screen::PresetMatrix(ref mut pm) = self.screen {
-            pm.cycle_preset_a();
-            cx.notify();
-        }
-    }
-
-    pub(super) fn cycle_matrix_preset_b(&mut self, cx: &mut Context<Self>) {
-        if let Screen::PresetMatrix(ref mut pm) = self.screen {
-            pm.cycle_preset_b();
+            pm.differences_only = !pm.differences_only;
             cx.notify();
         }
     }
