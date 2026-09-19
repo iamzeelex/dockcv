@@ -998,6 +998,7 @@ impl Root {
                             .flex_col()
                             .gap(px(18.0))
                             .child(preset_section)
+                            .child(self.render_export_ats_status(cx, selected_preset))
                             .child(output_section)
                             .children(collision_warning),
                     ),

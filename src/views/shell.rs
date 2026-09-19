@@ -1200,10 +1200,16 @@ impl Shell {
                     &super::root_export_sheet::today(),
                     OnCollision::KeepBoth,
                 );
+                let ats_counts = (0..pm.doc.presets.len())
+                    .map(|index| {
+                        super::root_ats_lint::findings_for_view(&pm.doc, Some(index)).len()
+                    })
+                    .collect();
                 this.batch_export = Some(BatchExportSheet {
                     folder,
                     on_collision: OnCollision::KeepBoth,
                     plan,
+                    ats_counts,
                     writing: false,
                 });
                 cx.notify();

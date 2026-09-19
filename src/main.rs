@@ -12,6 +12,11 @@
 )]
 
 mod app;
+// Test-only until the ATS screen lands (B1): what is here today is the
+// conformance harness and the readers it measures with, and a module the
+// binary cannot reach is dead code to the compiler however useful it is.
+#[cfg(test)]
+mod ats;
 mod config;
 mod import;
 mod logging;

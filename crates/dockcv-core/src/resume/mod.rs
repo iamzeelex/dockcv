@@ -4,6 +4,7 @@
 pub mod altacv;
 pub mod altacv_package;
 mod applications;
+pub mod ats;
 pub mod dates;
 pub mod diagnostics;
 mod document_toml;

@@ -503,6 +503,32 @@ pub struct TypstEngine {
     source: Source,
 }
 
+/// The characters in this text that **no bundled face can set**.
+///
+/// Typst answers a missing glyph the way it answers a missing family —
+/// silently, by falling back — so a CV in a script the bundle does not cover
+/// comes out with holes in it and nothing on screen says so. A Japanese CV
+/// compiled today embeds Libertinus and a maths face and not one glyph of
+/// kanji; the page has gaps in it and the text layer disagrees with itself
+/// between extractors. That is a thing to tell the author, not a thing to
+/// discover from a rejection, and it is the same silent substitution the
+/// decisions ledger records as L-11.
+///
+/// Whitespace is never reported: a space no face covers is still a space.
+pub fn characters_no_bundled_face_can_set(text: &str) -> Vec<char> {
+    let (_, fonts) = global_fonts();
+    let mut missing: Vec<char> = Vec::new();
+    for ch in text.chars() {
+        if ch.is_whitespace() || ch.is_control() || missing.contains(&ch) {
+            continue;
+        }
+        if !fonts.iter().any(|f| f.info().coverage.contains(ch as u32)) {
+            missing.push(ch);
+        }
+    }
+    missing
+}
+
 impl TypstEngine {
     /// Construct an engine initialized with the default template and fonts.
     pub fn new(initial_source: impl Into<String>) -> Self {
@@ -623,6 +649,31 @@ impl TypstEngine {
         let Warned { output, .. } = typst::compile(self);
         let document = output.map_err(join_diagnostics)?;
         typst_pdf::pdf(&document, &typst_pdf::PdfOptions::default()).map_err(join_diagnostics)
+    }
+
+    /// The same PDF, refused unless it conforms to **PDF/UA-1**.
+    ///
+    /// Not what the app exports — it is a second opinion, and a free one.
+    /// UA-1's rules are written for a screen reader, and a screen reader wants
+    /// what a CV parser wants: a heading tree that does not skip a level, a
+    /// document title, every figure carrying text, and nothing meaningful left
+    /// in an untagged artifact. Typst validates all of that at export and
+    /// refuses the file with a reason rather than writing something subtly
+    /// wrong, so a test that calls this is a standards body reviewing the
+    /// template for us on every commit.
+    ///
+    /// Errors are the validator's own words. See `src/ats/conformance.rs`.
+    #[cfg(feature = "pdf")]
+    pub fn compile_to_pdf_ua1(&self) -> Result<Vec<u8>, String> {
+        let Warned { output, .. } = typst::compile(self);
+        let document = output.map_err(join_diagnostics)?;
+        let standards = typst_pdf::PdfStandards::new(&[typst_pdf::PdfStandard::Ua_1])
+            .map_err(|e| format!("PDF/UA-1 is not a standard this build can ask for: {e:?}"))?;
+        let options = typst_pdf::PdfOptions {
+            standards,
+            ..Default::default()
+        };
+        typst_pdf::pdf(&document, &options).map_err(join_diagnostics)
     }
 
     /// Compile and rasterize like [`Self::compile_to_pixels`], but return
