@@ -845,6 +845,19 @@ pub struct Variant<T> {
     #[serde(default)]
     pub id: VariantId,
     pub name: String,
+    /// One line on what this cut of the section does — "Shorten setup; keep the
+    /// reliability result first."
+    ///
+    /// The name says which variant, this says why you would pick it. That is
+    /// the difference between a version screen that lists decisions and one
+    /// that lists consequences, which is the whole point of the 0.4 direction:
+    /// a person choosing between two cuts of their Work section should not have
+    /// to read both to find out how they differ.
+    ///
+    /// Absent by default, and never invented — an empty description shows
+    /// nothing rather than a sentence nobody wrote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub data: T,
 }
 
@@ -877,6 +890,7 @@ impl<T: Clone> Versioned<T> {
             variants: vec![Variant {
                 id: VariantId(1),
                 name: name.into(),
+                description: None,
                 data,
             }],
             active: 0,
@@ -933,6 +947,11 @@ impl<T: Clone> Versioned<T> {
 
     pub fn names(&self) -> Vec<String> {
         self.variants.iter().map(|v| v.name.clone()).collect()
+    }
+
+    /// Each variant's description, positionally beside [`Self::names`].
+    pub fn descriptions(&self) -> Vec<Option<String>> {
+        self.variants.iter().map(|v| v.description.clone()).collect()
     }
 
     pub fn set_active(&mut self, index: usize) {
@@ -1027,6 +1046,25 @@ pub struct TrimCandidate {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Preset {
     pub name: String,
+    /// The version this one was made from, by name.
+    ///
+    /// **A label, not a live reference** — the same rule `ExportRecord::preset`
+    /// and `SentCv::preset` follow, and for the same reason: it records what
+    /// happened. A version made from `Infra-heavy` was made from `Infra-heavy`
+    /// even after that one is renamed or deleted, and repointing it later would
+    /// be rewriting history to keep a link alive.
+    ///
+    /// This is *not* "the version tailoring starts from by default", which is a
+    /// changing fact about the whole vault and is derived, never stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub based_on: Option<String>,
+    /// What this version is for — "platform, reliability, distributed systems".
+    ///
+    /// The row on the front door is a choice between readings of one person,
+    /// and the names alone ("Base", "Infra-heavy") do not say which to send.
+    /// Absent by default; an empty one draws nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// One pin per section the document has — every one of them, which
     /// [`ResumeDoc::reconcile_presets`] is what keeps true. A preset silent
     /// about a section is not a reading of the document, it is an instruction
@@ -2946,6 +2984,8 @@ impl ResumeDoc {
         let hidden = self.hidden_sections.clone();
         self.presets.push(Preset {
             name: name.into(),
+            based_on: None,
+            description: None,
             selection,
             hidden,
         });
@@ -3651,6 +3691,8 @@ mod custom_section_tests {
         );
         let mut preset = Preset {
             name: "FAANG · concise".into(),
+            based_on: None,
+            description: None,
             selection: vec![(SectionKind::Work, detailed)],
             hidden: Vec::new(),
         };
@@ -3925,16 +3967,22 @@ mod applications_tests {
         doc.presets = vec![
             Preset {
                 name: "Short profile".into(),
+                based_on: None,
+                description: None,
                 selection: vec![(SectionKind::Profile, short)],
                 hidden: vec![],
             },
             Preset {
                 name: "Base profile".into(),
+                based_on: None,
+                description: None,
                 selection: vec![(SectionKind::Profile, base)],
                 hidden: vec![],
             },
             Preset {
                 name: "Names nothing".into(),
+                based_on: None,
+                description: None,
                 selection: vec![],
                 hidden: vec![],
             },

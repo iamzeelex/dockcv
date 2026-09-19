@@ -15,8 +15,11 @@ mod confirm;
 mod diary;
 mod diary_capture;
 mod diary_use;
+mod front_door;
+mod front_door_menus;
+mod front_door_rows;
+mod front_door_version;
 mod gallery;
-mod gallery_card;
 mod gallery_sort;
 pub mod import_flow;
 mod import_unplaced;
@@ -53,6 +56,10 @@ pub mod save_status;
 pub mod settings_window;
 mod setup;
 mod shell;
+mod tailor;
+// Wired into the version screen in the next step; its rules are tested now.
+#[cfg(test)]
+mod version_changes;
 mod sidebar;
 mod update_notice;
 mod vault_cache;

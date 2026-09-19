@@ -305,6 +305,8 @@ mod tests {
         let first = doc.work.variants[0].id;
         doc.presets.push(Preset {
             name: "Base work".into(),
+            based_on: None,
+            description: None,
             selection: vec![(SectionKind::Work, first)],
             hidden: Vec::new(),
         });

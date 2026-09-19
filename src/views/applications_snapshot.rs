@@ -63,7 +63,7 @@ pub(super) fn pin_groups(metas: &[vault::DocMeta]) -> Vec<PinGroup> {
             } else {
                 meta.name.clone()
             },
-            presets: meta.preset_names.clone(),
+            presets: meta.presets.iter().map(|p| p.name.clone()).collect(),
         })
         .collect()
 }
@@ -282,11 +282,15 @@ mod tests {
         with_presets.presets = vec![
             Preset {
                 name: "FAANG · concise".into(),
+                based_on: None,
+                description: None,
                 selection: vec![(SectionKind::Profile, base)],
                 hidden: Vec::new(),
             },
             Preset {
                 name: "Infra-heavy".into(),
+                based_on: None,
+                description: None,
                 selection: vec![(SectionKind::Profile, base)],
                 hidden: Vec::new(),
             },

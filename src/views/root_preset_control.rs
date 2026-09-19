@@ -96,8 +96,14 @@ impl Root {
     /// for why that word is reserved for the Diary's quick-capture (D-7).
     pub(super) fn save_current_as_preset(&mut self, cx: &mut Context<Self>) {
         self.checkpoint();
+        // "Version", not "Preset": every surface a person reads says version,
+        // and a placeholder that uses the internal word is a title they then
+        // have to translate. Vaults written before this keep their `Preset N`
+        // — `front_door::is_generated_name` recognises both and rewrites
+        // neither, because a stored name is the key the applications board and
+        // the export filename refer to.
         let n = self.doc.presets.len() + 1;
-        self.doc.add_preset(format!("Preset {n}"));
+        self.doc.add_preset(format!("Version {n}"));
         self.schedule_save(cx);
         self.fields_stale = true;
         cx.notify();

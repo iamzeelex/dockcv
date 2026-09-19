@@ -35,6 +35,15 @@ pub struct Config {
     /// this field would not be.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub gallery_sort: String,
+    /// The CV the app was last in, so it reopens there rather than in a list.
+    ///
+    /// Machine-local by the three-homes test: it is about *looking*, not about
+    /// any document, and a vault copied to a second laptop should not drag
+    /// "the file I had open on the other one" with it. The **reading** needs no
+    /// second field — applying a preset writes the document's active variants,
+    /// so the file already is the reading it was left in (C6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_document: Option<PathBuf>,
     /// The palette the user last chose. Defaults to Slate Dark.
     #[serde(default)]
     pub theme: ThemeMode,
@@ -152,6 +161,16 @@ pub fn save(config: &Config) {
 pub fn set_vault(vault: PathBuf) {
     let mut config = load();
     config.vault = Some(vault);
+    save(&config);
+}
+
+/// Remember which CV was open, so the next launch reopens it.
+pub fn set_last_document(path: Option<PathBuf>) {
+    let mut config = load();
+    if config.last_document == path {
+        return;
+    }
+    config.last_document = path;
     save(&config);
 }
 

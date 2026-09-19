@@ -2805,11 +2805,15 @@ mod date_format_tests {
         doc.presets = vec![
             Preset {
                 name: "FAANG · concise".into(),
+                based_on: None,
+                description: None,
                 selection: vec![(SectionKind::Profile, doc.profile.active_id())],
                 hidden: vec![SectionKind::Organizations],
             },
             Preset {
                 name: "Startup · long".into(),
+                based_on: None,
+                description: None,
                 selection: vec![],
                 hidden: vec![],
             },

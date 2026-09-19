@@ -375,6 +375,8 @@ mod tests {
             .iter()
             .map(|name| Preset {
                 name: (*name).to_string(),
+                based_on: None,
+                description: None,
                 selection: vec![],
                 hidden: vec![],
             })

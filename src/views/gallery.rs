@@ -13,9 +13,7 @@ use dockcv_ui_components::{
     Button, ButtonExt, Card, EmptyState, Icon, IconName, ScrollableElement, Sizable, TextField,
 };
 
-use crate::vault;
 
-use super::gallery_sort::sort_documents;
 use super::shell::Shell;
 
 impl Shell {
@@ -30,39 +28,58 @@ impl Shell {
         let theme = *cx.theme();
         let top = div()
             .flex()
+            .flex_wrap()
             .items_end()
             .justify_between()
+            // GPUI has no media queries, so responsiveness here is flex doing
+            // what flex does: the controls drop to their own line when the
+            // title and them no longer fit side by side, instead of the title
+            // being squeezed to nothing or the buttons leaving the window.
             .gap_4()
             .px(px(34.0))
             .pt(px(30.0))
             .pb(px(24.0))
-            // No counts under the title. The document total is the number of
-            // cards directly beneath it and the preset total is the sum of the
-            // named chips on those cards — neither changes what the user does
-            // next. See the number rule in the component audit.
+            // No counts under the title. The version total is the number of rows
+            // directly beneath it — a number that repeats what is already on
+            // screen changes nothing about what the user does next. See the
+            // number rule in the component audit.
             .child(
                 div()
-                    .text_style(TextStyle::title())
-                    .text_color(theme.text)
-                    .child("Your CVs"),
+                    .flex_1()
+                    .min_w(px(280.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(9.0))
+                    .child(
+                        div()
+                            .text_style(TextStyle::title())
+                            .text_color(theme.text)
+                            // The person, not the furniture. "Your CVs" is a
+                            // label for a filing cabinet; the screen is about
+                            // which version of *them* goes out next.
+                            .child(self.front_door_title()),
+                    )
+                    .child(
+                        div()
+                            .max_w(px(540.0))
+                            .text_style(TextStyle::body())
+                            .text_color(theme.text_muted)
+                            .child(
+                                "Use a saved version as a safe starting point, then create a \
+                                 focused version for the next role.",
+                            ),
+                    ),
             )
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .items_center()
+                    .justify_end()
                     .gap_3()
                     .child(self.search_box(cx))
                     .child(self.gallery_sort_control(cx))
-                    .child(
-                        Button::new("new-cv")
-                            .action_primary()
-                            .icon(IconName::Plus)
-                            .label("New CV")
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.gallery_creating = true;
-                                cx.notify();
-                            })),
-                    ),
+                    .child(self.render_add_cv(cx)),
             );
 
         // The import flow is a surface with its own footer and its own scroll,
@@ -71,6 +88,27 @@ impl Shell {
         // content, the page scrolled, and the action bar it pins to its own
         // bottom edge went below the fold — which is why the review step
         // appeared to have no way forward at all.
+        if self.tailoring.is_some() {
+            return div()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .flex()
+                .flex_col()
+                .child(top)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .px(px(34.0))
+                        .pb(px(30.0))
+                        .child(self.render_tailor(cx)),
+                );
+        }
+
         if self.gallery_creating {
             return div()
                 .flex_1()
@@ -98,7 +136,7 @@ impl Shell {
             // empty state rather than a barren grid.
             self.render_gallery_empty(cx).into_any_element()
         } else {
-            self.render_doc_grid(cx).into_any_element()
+            self.render_readings(cx).into_any_element()
         };
 
         div()
@@ -116,6 +154,7 @@ impl Shell {
                     .overflow_y_scrollbar()
                     .px(px(34.0))
                     .pb(px(30.0))
+                    .children((!vault_is_empty).then(|| self.render_tailor_callout(cx)))
                     .child(body),
             )
     }
@@ -128,14 +167,13 @@ impl Shell {
                 Button::new("empty-new-cv")
                     .action_primary()
                     .icon(IconName::Plus)
-                    .label("New CV")
-                    // TODO(US-01): once a dedicated first-run import screen
-                    // exists, point this at it. Today it opens the same
-                    // template chooser every other "New CV" entry point
-                    // uses, which already offers "Import existing resume".
+                    .label("Bring in a CV")
+                    // US-01: an empty vault is usually somebody who already has
+                    // a CV and does not want to start at a blank screen, so
+                    // this goes to the import screen — which still offers the
+                    // blank document as its second button for the rarer case.
                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        this.gallery_creating = true;
-                        cx.notify();
+                        this.open_import(cx);
                     })),
             )
     }
@@ -170,102 +208,29 @@ impl Shell {
             )
     }
 
-    pub(super) fn render_doc_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let query = self.search_query(cx);
-        // Cloned, not re-read: the cards take a `DocMeta` by value, and a
-        // handful of small string clones per visible card is nothing beside the
-        // full-vault TOML parse this used to be — twice a frame, once here and
-        // once for the header's aggregate.
-        let mut metas: Vec<vault::DocMeta> = self
-            .cache
-            .metadata()
-            .iter()
-            .filter(|m| query.is_empty() || m.best_match(&query).is_some())
-            .cloned()
-            .collect();
-        sort_documents(&mut metas, self.gallery_sort, self.cache.applications());
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-
-        // Whether the card should print the person's name at all. In a vault
-        // of one person's documents it is the same string on every card, and a
-        // headline that never varies is a headline that tells you nothing.
-        let mixed_names = metas
-            .iter()
-            .filter(|m| !m.unreadable)
-            .map(|m| m.name.as_str())
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-            > 1;
-
-        let theme = *cx.theme();
-        // A block is not a document, so it is not a card in this grid — but a
-        // query that finds nothing here and six things in the Library should
-        // say so rather than reading as "no results".
-        let library_hits = self.library_hits(&query);
-        let library_row = (library_hits > 0).then(|| {
-            let query = query.clone();
-            div()
-                .mt(px(18.0))
-                .flex()
-                .items_center()
-                .gap(px(10.0))
-                .child(
-                    div()
-                        .text_style(TextStyle::body())
-                        .text_color(theme.text_subtle)
-                        .child(format!(
-                            "{library_hits} {} in your Library also match",
-                            if library_hits == 1 { "block" } else { "blocks" }
-                        )),
-                )
-                .child(
-                    Button::new("gallery-library-hits")
-                        .quiet()
-                        .text_color(theme.accent)
-                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                            this.open_library_with(query.clone(), window, cx);
-                        }))
-                        .child("Open Library"),
-                )
-        });
-
-        div()
-            .flex()
-            .flex_col()
-            .child(
-                div().flex().flex_wrap().gap(px(18.0)).children(
-                    metas
-                        .into_iter()
-                        .map(|meta| self.doc_card(cx, meta, now, mixed_names)),
-                ),
-            )
-            .children(library_row)
+    /// Bring in a file: the import screen, which is where that has always
+    /// lived.
+    pub(super) fn open_import(&mut self, cx: &mut Context<Self>) {
+        self.gallery_creating = true;
+        self.import_step = ImportStep::Step1Drop;
+        cx.notify();
     }
 
-    /// One document card.
+    /// Start with nothing: a blank document, straight into the editor.
     ///
-    /// ### The click model, changed deliberately from the mockup
-    ///
-    /// **The whole card opens the editor.** It used to be three regions with
-    /// three behaviours — the thumbnail opened the document, the badge row
-    /// opened the Preset Matrix, and the bottom third did nothing at all —
-    /// which is the shape a user reads as "some of this is clickable and I
-    /// have to find out which". One card, one primary action, and every
-    /// competing destination moved into the `···` menu where it is named
-    /// rather than guessed at. The Preset Matrix is still one click away, it
-    /// just says so now.
-    ///
-    /// ### What the card says
-    ///
-    /// Two CVs for the same person with the same job title are *identical* on
-    /// the mockup's card: same name, same role, same "N variants". The facts
-    /// that actually tell them apart are the file name, the presets by name,
-    /// and where the tailoring is — so those are what it shows. `2 presets`
-    /// became `FAANG · concise` and `Infra-heavy`, which is P-01's whole
-    /// complaint answered in the place the user looks first.
+    /// No stop on the way. The screen in between is the *import* screen, and
+    /// showing somebody a drop zone after they said "start from scratch" is
+    /// asking the question they just answered. When there are real templates to
+    /// choose between, that choice goes here — there are none today, and a
+    /// chooser with one option is a dialog box.
+    pub(super) fn start_blank_cv(&mut self, cx: &mut Context<Self>) {
+        let doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        self.create_doc(doc, "cv", cx);
+        self.gallery_creating = false;
+        self.import_step = ImportStep::Step1Drop;
+        cx.notify();
+    }
+
     pub(super) fn render_template_chooser(&self, cx: &mut Context<Self>) -> impl IntoElement {
         match &self.import_step {
             ImportStep::Step1Drop => div()
@@ -280,12 +245,7 @@ impl Shell {
                     |this, cx| {
                         this.import_existing_resume(cx);
                     },
-                    |this, cx| {
-                        let doc = ResumeDoc::from_resume(Resume::default(), "Base");
-                        this.create_doc(doc, "cv", cx);
-                        this.gallery_creating = false;
-                        this.import_step = ImportStep::Step1Drop;
-                    },
+                    |this, cx| this.start_blank_cv(cx),
                 ))
                 .child(
                     Button::new("tpl-cancel")
@@ -321,12 +281,7 @@ impl Shell {
                         this.import_step = ImportStep::Step1Drop;
                         cx.notify();
                     },
-                    |this, cx| {
-                        let doc = ResumeDoc::from_resume(Resume::default(), "Base");
-                        this.create_doc(doc, "cv", cx);
-                        this.gallery_creating = false;
-                        this.import_step = ImportStep::Step1Drop;
-                    },
+                    |this, cx| this.start_blank_cv(cx),
                 )),
             // `flex_1` and `min_h_0`, not `justify_center`: the review panel
             // pins an action bar to its own bottom edge, and a centred box with

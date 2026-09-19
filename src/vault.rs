@@ -178,8 +178,21 @@ pub struct SearchEntry {
 
 /// Human-readable summary of a document, for the gallery cards.
 ///
-/// `Clone` because the cache owns one copy and the cards take theirs by value —
-/// a few small string clones per visible card, in place of re-parsing the vault.
+/// One version of a document, as the front door needs to list it.
+#[derive(Clone, Debug)]
+pub struct PresetMeta {
+    pub name: String,
+    /// The version this one was made from, by name — see
+    /// [`crate::resume::model::Preset::based_on`].
+    pub based_on: Option<String>,
+    /// What this version is for, when its author said — see
+    /// [`crate::resume::model::Preset::description`]. The front door's row
+    /// subtitle, and nothing when absent.
+    pub description: Option<String>,
+}
+
+/// `Clone` because the cache owns one copy and each row takes its own — a few
+/// small string clones per visible row, in place of re-parsing the vault.
 #[derive(Clone)]
 pub struct DocMeta {
     pub path: PathBuf,
@@ -191,11 +204,10 @@ pub struct DocMeta {
     /// Person name, or the file stem if the document can't be read.
     pub name: String,
     pub label: String,
-    pub presets: usize,
     /// Preset names, in document order. A count answers "how many"; the names
     /// answer "which", which is the question a returning user actually has —
     /// and P-01's complaint is precisely that presets are invisible.
-    pub preset_names: Vec<String>,
+    pub presets: Vec<PresetMeta>,
     /// True when the file couldn't be parsed as a document.
     pub unreadable: bool,
     /// File's last-modified time, seconds since the UNIX epoch. `None` if the
@@ -213,13 +225,6 @@ pub struct DocMeta {
 }
 
 impl DocMeta {
-    /// A document is a "draft" when it hasn't been organised into any preset
-    /// yet. Derived, not stored: a stored flag would drift from `presets` the
-    /// moment a preset is added or removed elsewhere.
-    pub fn is_draft(&self) -> bool {
-        self.presets == 0
-    }
-
     /// What in this document carries `folded`, or `None` if nothing does.
     ///
     /// `folded` must already be lower-cased — the caller does it once per
@@ -258,13 +263,21 @@ fn meta_from(path: &Path, doc: Option<&ResumeDoc>) -> DocMeta {
             } else {
                 basics.name.clone()
             };
-            let preset_names: Vec<String> = doc.presets.iter().map(|p| p.name.clone()).collect();
+            let presets: Vec<PresetMeta> = doc
+                .presets
+                .iter()
+                .map(|p| PresetMeta {
+                    name: p.name.clone(),
+                    based_on: p.based_on.clone(),
+                    description: p.description.clone(),
+                })
+                .collect();
 
             let mut search = SearchIndex::default();
             search.add(MatchKind::Stem, &stem);
             search.add(MatchKind::Person, &name);
             search.add(MatchKind::Role, &basics.label);
-            for preset in &preset_names {
+            for preset in presets.iter().map(|p| p.name.as_str()) {
                 search.add(MatchKind::Preset, preset);
             }
             // One name per variant, not one per section that happens to carry
@@ -279,8 +292,7 @@ fn meta_from(path: &Path, doc: Option<&ResumeDoc>) -> DocMeta {
             DocMeta {
                 name,
                 label: basics.label.clone(),
-                presets: doc.presets.len(),
-                preset_names,
+                presets,
                 unreadable: false,
                 path: path.to_path_buf(),
                 stem,
@@ -296,8 +308,7 @@ fn meta_from(path: &Path, doc: Option<&ResumeDoc>) -> DocMeta {
             DocMeta {
                 name: stem.clone(),
                 label: String::new(),
-                presets: 0,
-                preset_names: Vec::new(),
+                presets: Vec::new(),
                 unreadable: true,
                 path: path.to_path_buf(),
                 stem,
@@ -1503,27 +1514,6 @@ mod tests {
     }
 
     #[test]
-    fn is_draft_derives_from_presets() {
-        let with_presets = super::DocMeta {
-            path: std::path::PathBuf::new(),
-            stem: "cv".into(),
-            preset_names: Vec::new(),
-            name: "A".into(),
-            label: String::new(),
-            presets: 1,
-            unreadable: false,
-            modified_secs: None,
-            search: Vec::new(),
-        };
-        assert!(!with_presets.is_draft());
-        let no_presets = super::DocMeta {
-            presets: 0,
-            ..with_presets
-        };
-        assert!(no_presets.is_draft());
-    }
-
-    #[test]
     fn read_meta_populates_modified_secs() {
         let dir =
             std::env::temp_dir().join(format!("dockcv-meta-mtime-test-{}", std::process::id()));
@@ -1737,6 +1727,62 @@ mod tests {
         );
     }
 
+    /// Three fields arrived with the front door: what a version was made from,
+    /// what a version is for, and what a cut of a section does. All three are
+    /// stored, so all three have to survive the disk — and a document that uses
+    /// none of them has to gain no keys at all, because a version nobody
+    /// described is the ordinary case and an `Option` written out as empty is a
+    /// file that grew for nothing.
+    ///
+    /// The absence half is also the forward-compatibility half: a file written
+    /// before these existed looks exactly like the one this test writes first.
+    #[test]
+    fn a_versions_lineage_and_both_descriptions_survive_a_round_trip() {
+        let mut doc =
+            ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+        doc.add_preset("Infra-heavy");
+
+        let text = super::to_toml(&doc).expect("serializes");
+        assert!(
+            !text.contains("based_on"),
+            "a version made from nothing must not record that it was"
+        );
+        assert!(
+            !text.contains("description"),
+            "nobody described anything, so nothing should be written: {text}"
+        );
+
+        // Which is also what a document saved before these fields existed looks
+        // like, and it has to load.
+        let mut doc: ResumeDoc = toml::from_str(&text).expect("round-trips");
+        assert_eq!(doc.presets[0].based_on, None);
+        assert_eq!(doc.presets[0].description, None);
+        assert_eq!(doc.work.variants[0].description, None);
+
+        doc.work.variants[0].description = Some("Lead with the reliability result.".into());
+        let copy = doc.add_preset_from(0, "Northwind").expect("the base exists");
+        doc.presets[copy].description = Some("platform, reliability, distributed".into());
+
+        let text = super::to_toml(&doc).expect("serializes");
+        let back: ResumeDoc = toml::from_str(&text).expect("round-trips");
+        assert_eq!(
+            back.presets[copy].based_on.as_deref(),
+            Some("Infra-heavy"),
+            "a version remembers what it was made from, by name"
+        );
+        assert_eq!(
+            back.presets[copy].description.as_deref(),
+            Some("platform, reliability, distributed")
+        );
+        assert_eq!(
+            back.work.variants[0].description.as_deref(),
+            Some("Lead with the reliability result.")
+        );
+        // And the one nobody touched still carries neither.
+        assert_eq!(back.presets[0].based_on, None);
+        assert_eq!(back.presets[0].description, None);
+    }
+
     /// Stage history has to survive the disk, and a board written before it
     /// existed has to load without gaining an empty one in every card.
     #[test]
@@ -1862,11 +1908,10 @@ mod tests {
         let meta = super::meta_from(&path, super::load(&path).ok().as_ref());
         assert_eq!(meta.stem, "sean-senior-swe");
         assert_eq!(
-            meta.preset_names,
+            meta.presets.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
             vec!["FAANG · concise".to_string(), "Infra-heavy".to_string()],
-            "the card shows preset names, not a count (P-01)"
+            "the front door names the presets rather than counting them (P-01)"
         );
-        assert!(!meta.is_draft());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2312,6 +2357,8 @@ path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
         doc.profile.variants[0].name = "Short".into();
         doc.presets = vec![Preset {
             name: "FAANG".into(),
+            based_on: None,
+            description: None,
             selection: vec![(SectionKind::Profile, doc.profile.active_id())],
             hidden: vec![],
         }];

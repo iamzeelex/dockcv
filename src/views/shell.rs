@@ -18,13 +18,12 @@ use gpui::{
 use dockcv_ui_components::{TextFieldEvent, TextFieldState};
 
 use crate::config;
-use crate::render::{self, Rendered};
 use crate::resume::export_names::{plan_batch, OnCollision};
 use crate::resume::model::{DiaryEntry, ResumeDoc, SectionKind};
 use crate::resume::template;
 use crate::theme::ActiveTheme;
 use crate::theme::ThemeMode;
-use crate::typst_engine::TypstEngine;
+use crate::typst_engine::{PageGeometry, TypstEngine};
 use crate::vault;
 
 use super::applications_data::{ApplicationSort, ApplicationsView};
@@ -43,8 +42,6 @@ use super::update_notice::UpdateState;
 use super::vault_cache::{Fingerprint, VaultCache};
 use super::{EditorEvent, Root};
 
-/// Pixels-per-point for gallery thumbnails (small + cheap).
-const THUMB_SCALE: f32 = 0.5;
 
 /// The rail's four destinations, as a type `app.rs` can name.
 ///
@@ -101,6 +98,13 @@ pub struct Shell {
     pub(super) rename_field: Option<Entity<TextFieldState>>,
     /// Whether the gallery is showing the "new document" template chooser.
     pub(super) gallery_creating: bool,
+    /// A version being renamed from its row on the front door.
+    pub(super) renaming_version: Option<super::front_door_version::VersionRename>,
+    /// The CV the app would reopen on its own — `config`'s `last_document`,
+    /// held here so the front door does not read the config file per frame.
+    pub(super) last_opened: Option<PathBuf>,
+    /// The `Tailor for a job` sheet, when it is open over the front door.
+    pub(super) tailoring: Option<super::tailor::TailorSheet>,
     /// Current step in the import wizard (bring document / review split).
     pub(super) import_step: ImportStep,
     /// Whether the user/avatar dropdown menu is open.
@@ -180,11 +184,18 @@ pub struct Shell {
     /// card starts with (design doc's "Build these" instruction).
     /// Kept alive so the boxes keep reporting changes.
     pub(super) input_subscriptions: Vec<Subscription>,
-    /// Cached first-page thumbnails per document path.
-    pub(super) thumbnails: HashMap<PathBuf, Rendered>,
-    /// Shared engine for generating thumbnails (fonts load once).
+    /// How many pages each reading in the vault lays out into, keyed by
+    /// `(document, preset name)` — `None` for a document with no presets.
+    ///
+    /// This replaced a cache of rasterized first-page thumbnails. The front
+    /// door lists readings and shows what each one costs in paper, so it needs
+    /// a measurement per *reading* rather than a picture per document — and
+    /// measuring is the cheaper half of what the thumbnail pass was already
+    /// doing, since it laid every document out and threw the geometry away.
+    pub(super) reading_pages: HashMap<(PathBuf, Option<String>), PageGeometry>,
+    /// Shared engine for laying documents out (fonts load once).
     pub(super) thumb_engine: Option<Arc<Mutex<TypstEngine>>>,
-    pub(super) thumb_task: Option<Task<()>>,
+    pub(super) reading_task: Option<Task<()>>,
     /// Structural history stacks (undo, redo) per document path for the session.
     pub(super) undo_histories: HashMap<PathBuf, (Vec<ResumeDoc>, Vec<ResumeDoc>)>,
     /// The document currently open in the editor (to invalidate its thumbnail
@@ -343,6 +354,9 @@ impl Shell {
             renaming_doc: None,
             rename_field: None,
             gallery_creating: false,
+            renaming_version: None,
+            last_opened: config::load().last_document,
+            tailoring: None,
             import_step: ImportStep::default(),
             menu_open: false,
             setup_error: None,
@@ -370,9 +384,9 @@ impl Shell {
             applications_period: Default::default(),
             applications_detail: None,
             input_subscriptions: Vec::new(),
-            thumbnails: HashMap::new(),
+            reading_pages: HashMap::new(),
             thumb_engine: None,
-            thumb_task: None,
+            reading_task: None,
             undo_histories: HashMap::new(),
             editing_path: None,
             cache: VaultCache::default(),
@@ -532,23 +546,47 @@ impl Shell {
             .unwrap_or_default()
     }
 
-    /// Kick off (once) background generation of any missing thumbnails.
-    pub(super) fn ensure_thumbnails(&mut self, cx: &mut Context<Self>) {
-        if self.thumb_task.is_some() {
+    /// Measure every reading in the vault, in the background, once.
+    ///
+    /// The front door says what each reading costs in paper, and the only way
+    /// to know is to lay it out. This is the same pass that used to rasterize a
+    /// thumbnail per document, doing less work: `measure` stops after layout,
+    /// where the old one went on to produce a pixmap it only ever showed at
+    /// half scale.
+    ///
+    /// One document is loaded once and measured through each of its presets,
+    /// rather than reloaded per reading — a vault of five CVs with three
+    /// readings each is fifteen layouts, and five file reads.
+    pub(super) fn ensure_reading_pages(&mut self, cx: &mut Context<Self>) {
+        if self.reading_task.is_some() {
             return;
         }
         if self.vault.is_none() {
             return;
         }
-        // From the cache, not a fresh `read_dir`: this runs on every gallery
+        // From the cache, not a fresh `read_dir`: this runs on every front-door
         // frame, and the cache was refreshed a few lines earlier in `render`.
         let documents = self.cache.document_paths();
         // Entries for documents that have since been deleted or renamed away
         // would otherwise sit in the map for the life of the process.
-        self.thumbnails.retain(|path, _| documents.contains(path));
-        let pending: Vec<PathBuf> = documents
-            .into_iter()
-            .filter(|p| !self.thumbnails.contains_key(p))
+        self.reading_pages
+            .retain(|(path, _), _| documents.contains(path));
+        let pending: Vec<PathBuf> = self
+            .cache
+            .metadata()
+            .iter()
+            .filter(|meta| {
+                let mut keys = meta
+                    .presets
+                    .iter()
+                    .map(|preset| (meta.path.clone(), Some(preset.name.clone())))
+                    .peekable();
+                if keys.peek().is_none() {
+                    return !self.reading_pages.contains_key(&(meta.path.clone(), None));
+                }
+                keys.any(|key| !self.reading_pages.contains_key(&key))
+            })
+            .map(|meta| meta.path.clone())
             .collect();
         if pending.is_empty() {
             return;
@@ -560,30 +598,45 @@ impl Shell {
             .clone();
         let executor = cx.background_executor().clone();
 
-        self.thumb_task = Some(cx.spawn(async move |this, cx| {
+        self.reading_task = Some(cx.spawn(async move |this, cx| {
             for path in pending {
-                let rendered = executor
+                let measured = executor
                     .spawn({
                         let engine = engine.clone();
                         let path = path.clone();
                         async move {
                             let doc = vault::load(&path).ok()?;
-                            let source = template::generate_for(&doc);
-                            let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
-                            engine.set_source(source);
-                            let (pixels, _geometry) = engine.compile_to_pixels(THUMB_SCALE).ok()?;
-                            render::pixels_to_render_image(pixels, THUMB_SCALE).ok()
+                            let mut engine =
+                                engine.lock().unwrap_or_else(|e| e.into_inner());
+                            let mut out: Vec<(Option<String>, PageGeometry)> = Vec::new();
+                            if doc.presets.is_empty() {
+                                engine.set_source(template::generate_for(&doc));
+                                out.push((None, engine.measure().ok()?));
+                                return Some(out);
+                            }
+                            for (index, preset) in doc.presets.iter().enumerate() {
+                                let mut reading = doc.clone();
+                                reading.apply_preset(index);
+                                engine.set_source(template::generate_for(&reading));
+                                // A reading that will not compile gets no
+                                // number rather than a zero — the same rule the
+                                // matrix's headers follow.
+                                if let Ok(geometry) = engine.measure() {
+                                    out.push((Some(preset.name.clone()), geometry));
+                                }
+                            }
+                            Some(out)
                         }
                     })
                     .await;
                 let _ = this.update(cx, |this, cx| {
-                    if let Some(rendered) = rendered {
-                        this.thumbnails.insert(path.clone(), rendered);
+                    for (preset, geometry) in measured.unwrap_or_default() {
+                        this.reading_pages.insert((path.clone(), preset), geometry);
                     }
                     cx.notify();
                 });
             }
-            let _ = this.update(cx, |this, _cx| this.thumb_task = None);
+            let _ = this.update(cx, |this, _cx| this.reading_task = None);
         }));
     }
 
@@ -654,8 +707,9 @@ impl Shell {
         }
     }
 
+    /// Forget every page measurement, so the front door re-measures.
     pub(super) fn rebuild_thumbnails(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self.thumbnails.clear();
+        self.reading_pages.clear();
         cx.notify();
     }
 
@@ -667,7 +721,7 @@ impl Shell {
 
     pub(super) fn delete_doc(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if vault::delete_document(&path).is_ok() {
-            self.thumbnails.remove(&path);
+            self.reading_pages.retain(|(p, _), _| *p != path);
             cx.notify();
         }
     }
@@ -753,6 +807,18 @@ impl Shell {
                 log::info!("vault restored: {} ({documents} documents)", dir.display());
                 self.vault = Some(dir);
                 self.screen = Screen::Gallery;
+                // Open into the CV the app was last in, not into a list of
+                // one. The reading needs no second field: applying a preset
+                // writes the document's active variants, so the file already
+                // is the reading it was left in (C6). A path that has since
+                // been deleted or renamed simply does not open, and the front
+                // door is what the person sees — which is the right answer to
+                // "the file I had open is gone".
+                if let Some(last) = config::load().last_document {
+                    if last.is_file() {
+                        self.open_doc(last, cx);
+                    }
+                }
             }
             None => {
                 log::info!("no usable vault recorded — starting at Welcome");
@@ -821,6 +887,8 @@ impl Shell {
 
         let history = self.undo_histories.get(&doc_path).cloned();
         self.editing_path = Some(doc_path.clone());
+        config::set_last_document(Some(doc_path.clone()));
+        self.last_opened = Some(doc_path.clone());
         let editor = cx.new(move |cx| {
             let mut root = Root::new(doc_path, doc, cx);
             if let Some((undo, redo)) = history {
@@ -840,9 +908,10 @@ impl Shell {
                 // exit that quietly lost work.
                 this.flush_editor(&editor, cx);
 
-                // Invalidate the edited doc's thumbnail so it regenerates.
+                // Editing changes what the document's readings cost, so its
+                // measurements go and the front door takes them again.
                 if let Some(path) = this.editing_path.take() {
-                    this.thumbnails.remove(&path);
+                    this.reading_pages.retain(|(p, _), _| *p != path);
                 }
                 this.screen = Screen::Gallery;
                 cx.notify();
@@ -882,7 +951,7 @@ impl Shell {
             let editor = editor.clone();
             self.flush_editor(&editor, cx);
             if let Some(path) = self.editing_path.take() {
-                self.thumbnails.remove(&path);
+                self.reading_pages.retain(|(p, _), _| *p != path);
             }
         }
         self.screen = match screen {
@@ -1066,7 +1135,9 @@ impl Shell {
         let Screen::PresetMatrix(ref mut pm) = self.screen else {
             return;
         };
-        let new_preset_name = format!("Preset {}", pm.doc.presets.len() + 1);
+        // The same placeholder the editor hands out — see
+        // `save_current_as_preset` for why it is "Version".
+        let new_preset_name = format!("Version {}", pm.doc.presets.len() + 1);
         // `current_selection` walks the document's own sections, so a custom
         // section (D-9) is pinned like any other — iterating the six built-ins
         // would have silently dropped it out of every preset saved here.
@@ -1075,6 +1146,8 @@ impl Shell {
         let hidden = pm.doc.hidden_sections.clone();
         pm.doc.presets.push(crate::resume::model::Preset {
             name: new_preset_name,
+            based_on: None,
+            description: None,
             selection,
             hidden,
         });
@@ -1249,11 +1322,20 @@ impl Shell {
         let name = field.read(cx).value(cx).trim().to_string();
         match vault::rename_document(&path, &name) {
             Ok(new_path) => {
-                // The thumbnail is keyed by path, so move it across rather
-                // than making the card flash back to "rendering…".
-                if let Some(rendered) = self.thumbnails.remove(&path) {
-                    self.thumbnails.insert(new_path, rendered);
-                }
+                // Measurements are keyed by path, so they move across rather
+                // than the renamed document's rows going briefly blank.
+                let moved: Vec<((PathBuf, Option<String>), PageGeometry)> = self
+                    .reading_pages
+                    .keys()
+                    .filter(|(p, _)| *p == path)
+                    .cloned()
+                    .filter_map(|key| {
+                        let geometry = *self.reading_pages.get(&key)?;
+                        Some(((new_path.clone(), key.1.clone()), geometry))
+                    })
+                    .collect();
+                self.reading_pages.retain(|(p, _), _| *p != path);
+                self.reading_pages.extend(moved);
                 self.renaming_doc = None;
                 self.setup_error = None;
             }
@@ -1486,7 +1568,7 @@ impl Render for Shell {
             self.start_update_checks(cx);
         }
         if matches!(self.screen, Screen::Gallery) {
-            self.ensure_thumbnails(cx);
+            self.ensure_reading_pages(cx);
         }
 
         // The vault's screens are **tabs of one window, not separate pages** —

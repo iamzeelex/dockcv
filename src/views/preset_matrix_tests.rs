@@ -19,11 +19,15 @@ fn two_readings() -> (PresetMatrix, crate::resume::model::VariantId, crate::resu
     doc.presets = vec![
         Preset {
             name: "Preset A".into(),
+            based_on: None,
+            description: None,
             selection: vec![(SectionKind::Profile, base), (SectionKind::Work, faang)],
             hidden: Vec::new(),
         },
         Preset {
             name: "Preset B".into(),
+            based_on: None,
+            description: None,
             selection: vec![(SectionKind::Profile, base), (SectionKind::Work, startup)],
             hidden: Vec::new(),
         },
@@ -269,6 +273,7 @@ fn geometry(
     crate::typst_engine::PageGeometry {
         page_count: pages,
         page_height_pt: 842.0,
+        column_pt: 700.0,
         last_page_used_pt: 100.0,
         last_page_content_top_pt: 40.0,
         overflow_pt,

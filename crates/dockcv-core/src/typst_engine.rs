@@ -194,6 +194,20 @@ pub struct PageGeometry {
     /// uncertain, so this is `(page_count - 1) * page_height + last_page_used
     /// - page_height`, clamped at zero.
     pub overflow_pt: f64,
+    /// The height of one full column of text, in points — the first page's
+    /// content extent, top item to bottom item.
+    ///
+    /// The denominator for "how much of a page does the spill fill". Dividing
+    /// `overflow_pt` by `page_height_pt` instead mixes two units: the overflow
+    /// is content height, the page height is the whole sheet including its
+    /// margins, and the answer comes out too small by however much paper
+    /// surrounds the column. The first page is the right ruler because a
+    /// document that spilled at all has a full first page — Typst broke it
+    /// precisely because the next block did not fit.
+    ///
+    /// Zero for a document with nothing on its first page, which is the one
+    /// case a caller must not divide by.
+    pub column_pt: f64,
     /// The document's own line advance, in points — the vertical distance
     /// between consecutive text baselines, **measured** from the laid-out
     /// first page rather than derived from the leading we set.
@@ -241,6 +255,13 @@ impl PageGeometry {
             .last()
             .map(|p| frame_content_top(&p.frame).to_pt())
             .unwrap_or(0.0);
+        let column_pt = pages
+            .first()
+            .map(|p| {
+                let top = frame_content_top(&p.frame).to_pt();
+                (frame_content_bottom(&p.frame).to_pt() - top).max(0.0)
+            })
+            .unwrap_or(0.0);
 
         Self {
             page_count,
@@ -248,6 +269,7 @@ impl PageGeometry {
             last_page_used_pt,
             last_page_content_top_pt,
             overflow_pt,
+            column_pt,
             line_advance_pt: pages.first().and_then(|p| measure_line_advance(&p.frame)),
         }
     }
