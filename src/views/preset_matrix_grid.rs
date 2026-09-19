@@ -252,6 +252,7 @@ impl PresetMatrix {
     fn render_header_cell(&self, cx: &mut Context<Shell>, column: &Column) -> Div {
         let theme = *cx.theme();
         let working_copy = column.preset.is_none();
+        let language = self.column_language(column);
         let renaming = column
             .preset
             .and_then(|index| self.renaming_preset.as_ref().filter(|r| r.idx == index));
@@ -320,6 +321,18 @@ impl PresetMatrix {
                     .items_center()
                     .gap(px(6.0))
                     .child(name)
+                    .child(
+                        div()
+                            .font_family(MONO)
+                            .text_size(px(9.5))
+                            .px(px(5.0))
+                            .py(px(1.0))
+                            .rounded(theme.radius_sm())
+                            .border_1()
+                            .border_color(theme.border)
+                            .text_color(theme.text_subtle)
+                            .child(language.badge()),
+                    )
                     .when_some(column.mark, |header, mark| {
                         header.child(
                             div()

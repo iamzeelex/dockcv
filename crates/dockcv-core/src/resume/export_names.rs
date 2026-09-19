@@ -381,6 +381,7 @@ mod tests {
                 hidden: vec![],
                 order: vec![],
                 titles: vec![],
+                lang: None,
             })
             .collect();
         doc

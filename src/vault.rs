@@ -2089,6 +2089,7 @@ mod tests {
             crate::resume::model::SectionKind::Organizations,
         ];
         doc.set_section_title(crate::resume::model::SectionKind::Work, "Engineering");
+        doc.set_language(crate::resume::model::DocumentLanguage::German);
         doc.add_preset("Tailored");
 
         let text = super::to_toml(&doc).expect("serialize to TOML");
@@ -2101,6 +2102,11 @@ mod tests {
         assert_eq!(back.presets[0].name, "Tailored");
         assert_eq!(back.presets[0].order, doc.presets[0].order);
         assert_eq!(back.presets[0].titles, doc.presets[0].titles);
+        assert_eq!(back.presets[0].lang.as_deref(), Some("de"));
+        assert_eq!(
+            back.language(),
+            crate::resume::model::DocumentLanguage::German
+        );
     }
 
     /// Documents written before `layout` existed (page size, margins, text
@@ -2374,6 +2380,7 @@ path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
             hidden: vec![],
             order: vec![],
             titles: vec![],
+            lang: None,
         }];
 
         let dir = std::env::temp_dir().join(format!(

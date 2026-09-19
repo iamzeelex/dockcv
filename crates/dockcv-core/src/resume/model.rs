@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub use super::applications::*;
 pub use super::dates::{DateFormat, ResumeDate};
 pub use super::export_settings::*;
+pub use super::language::DocumentLanguage;
 pub use super::layout::*;
 pub use super::layout_sections::*;
 pub use super::versioning::*;
@@ -330,6 +331,13 @@ pub struct ResumeDoc {
     pub certificates: Versioned<Vec<Certificate>>,
     pub volunteer: Versioned<Vec<Volunteer>>,
     pub presets: Vec<Preset>,
+    /// Language of the working reading.
+    ///
+    /// English is represented by absence so every pre-C5 document keeps its
+    /// exact meaning and the common case stays out of TOML. Presets pin their
+    /// own copy and restore it wholesale, just like headings and order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
     /// The order sections appear in, which the user can change.
     ///
     /// Order is **data**, not a constant: a Platform CV leads with Skills, an

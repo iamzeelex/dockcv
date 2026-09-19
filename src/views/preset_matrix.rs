@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use dockcv_ui_components::TextFieldState;
 
-use crate::resume::model::{ResumeDoc, SectionKind, VariantId};
+use crate::resume::model::{DocumentLanguage, ResumeDoc, SectionKind, VariantId};
 use crate::resume::outcomes::PresetRecord;
 use crate::typst_engine::PageGeometry;
 
@@ -210,6 +210,15 @@ impl PresetMatrix {
                 }),
         );
         columns
+    }
+
+    /// Language is a property of a whole reading, so the matrix reports it in
+    /// the column header instead of inventing a third grid axis.
+    pub fn column_language(&self, column: &Column) -> DocumentLanguage {
+        match column.preset {
+            None => self.doc.language(),
+            Some(index) => self.doc.language_for_preset(index).unwrap_or_default(),
+        }
     }
 
     /// What `column` says about `section`.

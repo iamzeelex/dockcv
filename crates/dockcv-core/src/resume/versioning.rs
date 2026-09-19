@@ -247,8 +247,8 @@ pub struct TrimCandidate {
 }
 
 /// A named, document-wide reading: a chosen variant (by [`VariantId`]) for each
-/// section, plus visibility, order, and printed headings.
-/// Applying it restores all four dimensions in one click — e.g. a "GE Vernova"
+/// section, plus visibility, order, printed headings, and language.
+/// Applying it restores the complete reading in one click — e.g. a "GE Vernova"
 /// preset can pick tailored Profile and Work variants, lead with Skills under
 /// "Engineering", and leave Education on its shared variant.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -306,6 +306,14 @@ pub struct Preset {
     /// preset replaces the working copy's override table wholesale.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub titles: Vec<(SectionKind, String)>,
+    /// The BCP 47 language tag for this reading.
+    ///
+    /// `None` is English, the backwards-compatible document default. The UI
+    /// only writes tags from [`crate::resume::model::DocumentLanguage::ALL`];
+    /// unknown hand-written values remain round-trippable but resolve safely
+    /// to English rather than reaching generated Typst source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
 }
 
 /// Pin `section` to `variant` in this preset, replacing any existing pin.

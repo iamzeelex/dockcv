@@ -311,6 +311,7 @@ mod tests {
             hidden: Vec::new(),
             order: Vec::new(),
             titles: Vec::new(),
+            lang: None,
         });
         let mut value: Value = toml::from_str(&toml::to_string_pretty(&doc).unwrap()).unwrap();
         let variants = value["work"]["variants"].as_array_mut().unwrap();

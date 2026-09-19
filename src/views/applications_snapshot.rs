@@ -288,6 +288,7 @@ mod tests {
                 hidden: Vec::new(),
                 order: Vec::new(),
                 titles: Vec::new(),
+                lang: None,
             },
             Preset {
                 name: "Infra-heavy".into(),
@@ -297,6 +298,7 @@ mod tests {
                 hidden: Vec::new(),
                 order: Vec::new(),
                 titles: Vec::new(),
+                lang: None,
             },
         ];
         vault::save(

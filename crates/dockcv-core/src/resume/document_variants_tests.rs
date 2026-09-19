@@ -138,6 +138,7 @@ fn pinning_a_section_twice_replaces_rather_than_duplicates() {
         hidden: Vec::new(),
         order: Vec::new(),
         titles: Vec::new(),
+        lang: None,
     };
 
     preset.set(SectionKind::Work, concise);
@@ -415,4 +416,34 @@ fn active_and_nearest_preset_include_order_and_headings() {
     assert!(doc.update_preset(0));
     assert_eq!(doc.presets[0].order, doc.section_order);
     assert!(doc.is_preset_active(0));
+}
+
+#[test]
+fn a_preset_restores_language_and_old_presets_stay_english() {
+    let mut doc = ResumeDoc::default();
+    doc.add_preset("English");
+
+    assert_eq!(doc.presets[0].lang, None);
+    assert_eq!(doc.language(), DocumentLanguage::English);
+
+    assert!(doc.set_language(DocumentLanguage::German));
+    doc.add_preset("Deutsch");
+    assert_eq!(doc.presets[1].lang.as_deref(), Some("de"));
+    assert!(doc.is_preset_active(1));
+    assert_eq!(doc.preset_distance(0), Some(1));
+
+    doc.apply_preset(0);
+    assert_eq!(doc.lang, None);
+    assert_eq!(doc.language(), DocumentLanguage::English);
+    assert!(doc.is_preset_active(0));
+
+    doc.apply_preset(1);
+    assert_eq!(doc.language(), DocumentLanguage::German);
+    assert!(doc.is_preset_active(1));
+
+    let text = toml::to_string_pretty(&doc).expect("language serializes");
+    assert!(text.contains("lang = \"de\""));
+    let back: ResumeDoc = toml::from_str(&text).expect("language round-trips");
+    assert_eq!(back.language_for_preset(0), Some(DocumentLanguage::English));
+    assert_eq!(back.language_for_preset(1), Some(DocumentLanguage::German));
 }

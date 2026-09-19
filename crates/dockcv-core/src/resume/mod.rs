@@ -19,6 +19,7 @@ pub mod export_text;
 pub mod export_typst;
 pub mod export_walk;
 pub mod export_wrap;
+mod language;
 mod layout;
 mod layout_sections;
 pub mod links;
