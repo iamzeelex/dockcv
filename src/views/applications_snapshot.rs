@@ -286,6 +286,8 @@ mod tests {
                 description: None,
                 selection: vec![(SectionKind::Profile, base)],
                 hidden: Vec::new(),
+                order: Vec::new(),
+                titles: Vec::new(),
             },
             Preset {
                 name: "Infra-heavy".into(),
@@ -293,6 +295,8 @@ mod tests {
                 description: None,
                 selection: vec![(SectionKind::Profile, base)],
                 hidden: Vec::new(),
+                order: Vec::new(),
+                titles: Vec::new(),
             },
         ];
         vault::save(

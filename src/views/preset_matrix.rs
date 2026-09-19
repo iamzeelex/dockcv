@@ -198,11 +198,17 @@ impl PresetMatrix {
             name: "Now".to_string(),
             mark: None,
         }];
-        columns.extend(self.doc.presets.iter().enumerate().map(|(index, preset)| Column {
-            preset: Some(index),
-            name: preset.name.clone(),
-            mark: self.working_copy_mark(index),
-        }));
+        columns.extend(
+            self.doc
+                .presets
+                .iter()
+                .enumerate()
+                .map(|(index, preset)| Column {
+                    preset: Some(index),
+                    name: preset.name.clone(),
+                    mark: self.working_copy_mark(index),
+                }),
+        );
         columns
     }
 
@@ -247,12 +253,64 @@ impl PresetMatrix {
         )
     }
 
-    /// Whether any column disagrees with the working copy on this section.
-    pub fn row_differs(&self, section: SectionKind) -> bool {
-        let reference = self.working_copy_choice(section);
+    /// The heading one column prints for `section`.
+    pub fn section_heading(&self, column: &Column, section: SectionKind) -> Option<String> {
+        match column.preset {
+            None => Some(self.doc.section_title(section)),
+            Some(index) => self.doc.section_title_for_preset(index, section),
+        }
+    }
+
+    /// The one-based place one column gives `section` in the rendered order.
+    pub fn section_number(&self, column: &Column, section: SectionKind) -> Option<usize> {
+        let order = match column.preset {
+            None => self.doc.sections(),
+            Some(index) => self.doc.sections_for_preset(index)?,
+        };
+        order
+            .iter()
+            .position(|kind| *kind == section)
+            .map(|i| i + 1)
+    }
+
+    /// Whether `column` departs from the working copy anywhere on this row.
+    pub fn cell_differs(&self, column: &Column, section: SectionKind) -> bool {
+        let working = Column {
+            preset: None,
+            name: String::new(),
+            mark: None,
+        };
+        self.choice(column, section) != self.working_copy_choice(section)
+            || self.section_heading(column, section) != self.section_heading(&working, section)
+            || self.section_number(column, section) != self.section_number(&working, section)
+    }
+
+    /// Whether headings differ anywhere across this row.
+    pub fn heading_differs(&self, section: SectionKind) -> bool {
+        let working = self.doc.section_title(section);
+        self.columns().iter().any(|column| {
+            self.section_heading(column, section).as_deref() != Some(working.as_str())
+        })
+    }
+
+    /// Whether the section occupies different positions across the columns.
+    pub fn order_differs(&self, section: SectionKind) -> bool {
+        let working = self
+            .doc
+            .sections()
+            .iter()
+            .position(|kind| *kind == section)
+            .map(|i| i + 1);
         self.columns()
             .iter()
-            .any(|column| self.choice(column, section) != reference)
+            .any(|column| self.section_number(column, section) != working)
+    }
+
+    /// Whether any column disagrees with the working copy on this section.
+    pub fn row_differs(&self, section: SectionKind) -> bool {
+        self.columns()
+            .iter()
+            .any(|column| self.cell_differs(column, section))
     }
 
     /// The rows the grid draws, after `differences_only`.

@@ -102,6 +102,8 @@ fn a_preset_already_in_effect_is_not_applied_again() {
             description: None,
             selection: vec![(SectionKind::Profile, short)],
             hidden: vec![],
+            order: vec![],
+            titles: vec![],
         },
         Preset {
             name: "Base profile".into(),
@@ -109,6 +111,8 @@ fn a_preset_already_in_effect_is_not_applied_again() {
             description: None,
             selection: vec![(SectionKind::Profile, base)],
             hidden: vec![],
+            order: vec![],
+            titles: vec![],
         },
         Preset {
             name: "Names nothing".into(),
@@ -116,6 +120,8 @@ fn a_preset_already_in_effect_is_not_applied_again() {
             description: None,
             selection: vec![],
             hidden: vec![],
+            order: vec![],
+            titles: vec![],
         },
     ];
 

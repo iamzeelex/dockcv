@@ -1138,19 +1138,10 @@ impl Shell {
         // The same placeholder the editor hands out — see
         // `save_current_as_preset` for why it is "Version".
         let new_preset_name = format!("Version {}", pm.doc.presets.len() + 1);
-        // `current_selection` walks the document's own sections, so a custom
-        // section (D-9) is pinned like any other — iterating the six built-ins
-        // would have silently dropped it out of every preset saved here.
-        let selection = pm.doc.current_selection();
-
-        let hidden = pm.doc.hidden_sections.clone();
-        pm.doc.presets.push(crate::resume::model::Preset {
-            name: new_preset_name,
-            based_on: None,
-            description: None,
-            selection,
-            hidden,
-        });
+        // The model captures the complete reading: custom-section variants,
+        // visibility, order, and headings. Reassembling that here is how a new
+        // preset quietly falls behind the next dimension the model gains.
+        pm.doc.add_preset(new_preset_name);
 
         let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
         let (path, seen) = (pm.path.clone(), pm.on_disk);

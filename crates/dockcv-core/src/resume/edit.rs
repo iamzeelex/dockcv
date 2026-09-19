@@ -695,6 +695,8 @@ mod tests {
             description: None,
             selection: Vec::new(),
             hidden: Vec::new(),
+            order: Vec::new(),
+            titles: Vec::new(),
         });
 
         let id = FieldId::PresetName(0);

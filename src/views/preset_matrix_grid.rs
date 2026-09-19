@@ -9,8 +9,8 @@ use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, Div, FontWeight, SharedString};
 
 use dockcv_ui_components::{
-    Button, ButtonExt, DockIcon, DropdownMenu, IconName, PopupMenuItem,
-    ScrollableElement, Sizable, TextField, CHROME_HEIGHT, MONO, SANS,
+    Button, ButtonExt, DockIcon, DropdownMenu, IconName, PopupMenuItem, ScrollableElement, Sizable,
+    TextField, CHROME_HEIGHT, MONO, SANS,
 };
 
 use crate::resume::model::SectionKind;
@@ -365,15 +365,8 @@ impl PresetMatrix {
             .child(evidence)
     }
 
-    fn render_row(
-        &self,
-        cx: &mut Context<Shell>,
-        columns: &[Column],
-        section: SectionKind,
-    ) -> Div {
+    fn render_row(&self, cx: &mut Context<Shell>, columns: &[Column], section: SectionKind) -> Div {
         let theme = *cx.theme();
-        let differs = self.row_differs(section);
-        let reference = self.working_copy_choice(section);
 
         let mut row = div().flex().w_full().gap(px(1.0)).child(
             div()
@@ -395,7 +388,7 @@ impl PresetMatrix {
             // that differs from its neighbour. With more than two columns
             // "differs" needs a reference, and the working copy is the one the
             // person is standing on.
-            let marked = differs && choice != reference && column.preset.is_some();
+            let marked = column.preset.is_some() && self.cell_differs(column, section);
             row = row.child(self.render_cell(cx, column, section, choice, marked));
         }
         row
@@ -412,9 +405,22 @@ impl PresetMatrix {
         let theme = *cx.theme();
         let text = self.cell_text(section, choice);
         let detail = self.cell_detail(section, choice);
-        let deleted = matches!(choice, Choice::Pin(id) if self.variant_label(section, id).is_none());
+        let heading_differs = self.heading_differs(section);
+        let order_differs = self.order_differs(section);
+        let heading = if heading_differs {
+            self.section_heading(column, section)
+        } else {
+            None
+        };
+        let number = if order_differs {
+            self.section_number(column, section)
+        } else {
+            None
+        };
+        let deleted =
+            matches!(choice, Choice::Pin(id) if self.variant_label(section, id).is_none());
 
-        let body = div()
+        let primary = div()
             .flex()
             .items_baseline()
             .gap(px(6.0))
@@ -441,6 +447,49 @@ impl PresetMatrix {
                         .child(d),
                 )
             });
+
+        // Order and heading are reading-level differences, so they sit on a
+        // second visual line instead of masquerading as properties of the
+        // selected variant. The compact ordinal makes reordering visible at a
+        // glance; quotes make the heading read as the words printed on paper.
+        let has_reading_context = number.is_some() || heading.is_some();
+        let reading_context = div()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .when_some(number, |context, number| {
+                context.child(
+                    div()
+                        .px(px(5.0))
+                        .py(px(1.0))
+                        .rounded(px(3.0))
+                        .border_1()
+                        .border_color(theme.border)
+                        .font_family(MONO)
+                        .text_size(px(10.0))
+                        .text_color(theme.text_subtle)
+                        .child(format!("#{number}")),
+                )
+            })
+            .when_some(heading, |context, heading| {
+                context.child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(if marked {
+                            theme.warning
+                        } else {
+                            theme.text_subtle
+                        })
+                        .child(format!("“{heading}”")),
+                )
+            });
+
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(px(5.0))
+            .child(primary)
+            .when(has_reading_context, |body| body.child(reading_context));
 
         let cell = div()
             .flex_1()

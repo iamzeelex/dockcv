@@ -309,6 +309,8 @@ mod tests {
             description: None,
             selection: vec![(SectionKind::Work, first)],
             hidden: Vec::new(),
+            order: Vec::new(),
+            titles: Vec::new(),
         });
         let mut value: Value = toml::from_str(&toml::to_string_pretty(&doc).unwrap()).unwrap();
         let variants = value["work"]["variants"].as_array_mut().unwrap();

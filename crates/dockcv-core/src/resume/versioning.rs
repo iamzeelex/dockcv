@@ -246,11 +246,11 @@ pub struct TrimCandidate {
     pub saved_chars: usize,
 }
 
-/// A named, document-wide preset: a chosen variant (by [`VariantId`]) for each
-/// section.
-/// Applying it switches every section's active variant in one click —
-/// e.g. a "GE Vernova" preset that picks the tailored Profile and Work variants
-/// while leaving Education on its shared one.
+/// A named, document-wide reading: a chosen variant (by [`VariantId`]) for each
+/// section, plus visibility, order, and printed headings.
+/// Applying it restores all four dimensions in one click — e.g. a "GE Vernova"
+/// preset can pick tailored Profile and Work variants, lead with Skills under
+/// "Engineering", and leave Education on its shared variant.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Preset {
     pub name: String,
@@ -291,6 +291,21 @@ pub struct Preset {
     /// another). A preset that hides nothing writes no `hidden` line at all.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hidden: Vec<SectionKind>,
+    /// The order this reading prints its sections in.
+    ///
+    /// Empty means the document's standard order, exactly as an empty
+    /// [`crate::resume::model::ResumeDoc::section_order`] does. Keeping the
+    /// sentinel makes pre-C8 presets compatible and keeps the common case out
+    /// of the hand-editable TOML.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order: Vec<SectionKind>,
+    /// Heading overrides for this reading.
+    ///
+    /// Missing headings use the document's shipped defaults. These are values
+    /// a preset may pin because there is no second copy to drift: applying the
+    /// preset replaces the working copy's override table wholesale.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub titles: Vec<(SectionKind, String)>,
 }
 
 /// Pin `section` to `variant` in this preset, replacing any existing pin.

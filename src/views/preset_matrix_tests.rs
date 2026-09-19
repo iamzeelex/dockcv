@@ -6,8 +6,11 @@ use super::preset_matrix::{Choice, PresetMatrix};
 
 /// A document with two Work variants and two presets that disagree about which
 /// one to read. Returns the matrix and the two ids, named.
-fn two_readings() -> (PresetMatrix, crate::resume::model::VariantId, crate::resume::model::VariantId)
-{
+fn two_readings() -> (
+    PresetMatrix,
+    crate::resume::model::VariantId,
+    crate::resume::model::VariantId,
+) {
     let mut doc = ResumeDoc::default();
     doc.work.variants[0].name = "FAANG".into();
     let faang = doc.work.active_id();
@@ -23,6 +26,8 @@ fn two_readings() -> (PresetMatrix, crate::resume::model::VariantId, crate::resu
             description: None,
             selection: vec![(SectionKind::Profile, base), (SectionKind::Work, faang)],
             hidden: Vec::new(),
+            order: Vec::new(),
+            titles: Vec::new(),
         },
         Preset {
             name: "Preset B".into(),
@@ -30,6 +35,8 @@ fn two_readings() -> (PresetMatrix, crate::resume::model::VariantId, crate::resu
             description: None,
             selection: vec![(SectionKind::Profile, base), (SectionKind::Work, startup)],
             hidden: Vec::new(),
+            order: Vec::new(),
+            titles: Vec::new(),
         },
     ];
 
@@ -69,7 +76,10 @@ fn every_preset_is_a_column_behind_the_working_copy() {
         matrix.choice(&columns[0], SectionKind::Work),
         Choice::Pin(startup)
     );
-    assert_eq!(matrix.cell_text(SectionKind::Work, Choice::Pin(faang)), "FAANG");
+    assert_eq!(
+        matrix.cell_text(SectionKind::Work, Choice::Pin(faang)),
+        "FAANG"
+    );
 }
 
 /// A row differs when any column departs from the working copy, and only then.
@@ -279,4 +289,61 @@ fn geometry(
         overflow_pt,
         line_advance_pt,
     }
+}
+/// Order and headings are reading-level differences: the grid reports them
+/// without turning either into another per-cell editor.
+#[test]
+fn order_and_heading_differences_are_visible_in_their_rows() {
+    let mut doc = ResumeDoc {
+        section_order: vec![
+            SectionKind::Skills,
+            SectionKind::Profile,
+            SectionKind::Work,
+            SectionKind::Education,
+            SectionKind::Certificates,
+            SectionKind::Organizations,
+        ],
+        ..Default::default()
+    };
+    doc.set_section_title(SectionKind::Skills, "Engineering");
+    doc.add_preset("Engineering first");
+
+    doc.section_order = vec![
+        SectionKind::Work,
+        SectionKind::Profile,
+        SectionKind::Education,
+        SectionKind::Skills,
+        SectionKind::Certificates,
+        SectionKind::Organizations,
+    ];
+    doc.set_section_title(SectionKind::Skills, "");
+    doc.set_section_title(SectionKind::Work, "Experience");
+    doc.add_preset("Experience first");
+
+    let matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+    let columns = matrix.columns();
+
+    assert_eq!(
+        matrix.section_heading(&columns[1], SectionKind::Skills),
+        Some("Engineering".into())
+    );
+    assert_eq!(
+        matrix.section_heading(&columns[2], SectionKind::Work),
+        Some("Experience".into())
+    );
+    assert_eq!(
+        matrix.section_number(&columns[1], SectionKind::Skills),
+        Some(1)
+    );
+    assert_eq!(
+        matrix.section_number(&columns[2], SectionKind::Skills),
+        Some(4)
+    );
+    assert!(matrix.heading_differs(SectionKind::Work));
+    assert!(matrix.heading_differs(SectionKind::Skills));
+    assert!(matrix.order_differs(SectionKind::Skills));
+    assert!(matrix.row_differs(SectionKind::Work));
+    assert!(matrix.row_differs(SectionKind::Skills));
+    assert!(matrix.cell_differs(&columns[1], SectionKind::Skills));
+    assert!(!matrix.cell_differs(&columns[2], SectionKind::Work));
 }

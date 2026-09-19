@@ -2080,6 +2080,15 @@ mod tests {
         let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
         let mut doc = ResumeDoc::from_resume(resume, "Base");
         doc.add_variant(crate::resume::model::SectionKind::Work);
+        doc.section_order = vec![
+            crate::resume::model::SectionKind::Skills,
+            crate::resume::model::SectionKind::Profile,
+            crate::resume::model::SectionKind::Work,
+            crate::resume::model::SectionKind::Education,
+            crate::resume::model::SectionKind::Certificates,
+            crate::resume::model::SectionKind::Organizations,
+        ];
+        doc.set_section_title(crate::resume::model::SectionKind::Work, "Engineering");
         doc.add_preset("Tailored");
 
         let text = super::to_toml(&doc).expect("serialize to TOML");
@@ -2090,6 +2099,8 @@ mod tests {
         assert_eq!(back.work.active().len(), doc.work.active().len());
         assert_eq!(back.presets.len(), 1);
         assert_eq!(back.presets[0].name, "Tailored");
+        assert_eq!(back.presets[0].order, doc.presets[0].order);
+        assert_eq!(back.presets[0].titles, doc.presets[0].titles);
     }
 
     /// Documents written before `layout` existed (page size, margins, text
@@ -2361,6 +2372,8 @@ path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
             description: None,
             selection: vec![(SectionKind::Profile, doc.profile.active_id())],
             hidden: vec![],
+            order: vec![],
+            titles: vec![],
         }];
 
         let dir = std::env::temp_dir().join(format!(

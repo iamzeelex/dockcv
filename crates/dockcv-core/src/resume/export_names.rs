@@ -379,6 +379,8 @@ mod tests {
                 description: None,
                 selection: vec![],
                 hidden: vec![],
+                order: vec![],
+                titles: vec![],
             })
             .collect();
         doc

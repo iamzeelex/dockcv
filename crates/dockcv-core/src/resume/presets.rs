@@ -26,8 +26,12 @@ impl ResumeDoc {
             name: name.into(),
             based_on: Some(source.name.clone()),
             description: None,
-            selection: source.selection.clone(),
-            hidden: source.hidden.clone(),
+            // Everything else is the source's reading, taken wholesale rather
+            // than field by field. Listing the fields is how this silently
+            // falls behind: C8 gave a preset an order and its own headings
+            // while this said `selection` and `hidden`, and every version made
+            // by tailoring would have quietly lost both.
+            ..source.clone()
         };
         self.presets.push(preset);
         Some(self.presets.len() - 1)
@@ -66,11 +70,27 @@ mod tests {
         let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
         doc.add_variant(SectionKind::Work);
         doc.hidden_sections.push(SectionKind::Certificates);
+        // A reading with something pinned on every axis, so copying one that
+        // happens to be empty cannot pass for copying one.
+        doc.section_order = vec![
+            SectionKind::Skills,
+            SectionKind::Profile,
+            SectionKind::Work,
+            SectionKind::Education,
+            SectionKind::Certificates,
+            SectionKind::Organizations,
+        ];
+        doc.set_section_title(SectionKind::Skills, "Engineering");
         doc.add_preset("Infra-heavy");
+        assert!(!doc.presets[0].order.is_empty());
+        assert!(!doc.presets[0].titles.is_empty());
 
         let copy = doc.add_preset_from(0, "Northwind").expect("base exists");
         assert_eq!(copy, 1);
         assert_eq!(doc.presets[1].name, "Northwind");
+        // Every dimension of the reading, not the two this once listed by hand.
+        assert_eq!(doc.presets[1].order, doc.presets[0].order);
+        assert_eq!(doc.presets[1].titles, doc.presets[0].titles);
         assert_eq!(
             doc.presets[1].based_on.as_deref(),
             Some("Infra-heavy"),
