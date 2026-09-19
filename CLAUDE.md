@@ -262,9 +262,13 @@ history is wrong the day the label is reworded.
   established error type in `vault.rs`/`typst_engine.rs`; stay consistent within a module.
 - Don't add dependencies without saying why in the PR/summary. `image`, `smallvec` and
   `typst*` versions are pinned to unify with GPUI's own tree — check before bumping.
-- Rust files stay under ~800 lines. `shell.rs` and `root.rs` were split in F8; `views/root.rs`
-  (1201) and `resume/model.rs` (1142) are the two still over and are scheduled to be split
-  further — don't grow them.
+- Rust files stay under ~800 lines. `resume/model.rs` was split by domain in C14 (4376 → 596:
+  `versioning.rs`, `document_variants.rs`, `applications.rs`, `layout*.rs`, `export_settings.rs`,
+  each re-exported from `model.rs`, so existing paths still resolve). The worst still standing are
+  `resume/template.rs` (3114), `import/classifier.rs` (2569), `vault.rs` (2538), `views/shell.rs`
+  (1915) and `views/root.rs` (1647) — don't grow them, and prefer a new sibling file to another
+  hundred lines in one of these. `resume/presets.rs` and `views/front_door_menus.rs` are what that
+  looks like in practice.
 
 ## Working style
 
