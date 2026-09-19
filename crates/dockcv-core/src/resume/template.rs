@@ -2544,6 +2544,58 @@ mod section_order_tests {
         );
     }
 
+    #[test]
+    fn each_preset_heading_and_order_reaches_the_pdf_source() {
+        use crate::typst_engine::TypstEngine;
+
+        let mut doc = ResumeDoc::from_resume(
+            crate::resume::altacv::import(crate::resume::altacv::ALTACV_SAMPLE).unwrap(),
+            "Base",
+        );
+        doc.section_order = vec![
+            SectionKind::Skills,
+            SectionKind::Profile,
+            SectionKind::Work,
+            SectionKind::Education,
+            SectionKind::Certificates,
+            SectionKind::Organizations,
+        ];
+        doc.set_section_title(SectionKind::Skills, "Engineering");
+        doc.add_preset("Engineering first");
+
+        doc.section_order = vec![
+            SectionKind::Work,
+            SectionKind::Profile,
+            SectionKind::Education,
+            SectionKind::Skills,
+            SectionKind::Certificates,
+            SectionKind::Organizations,
+        ];
+        doc.set_section_title(SectionKind::Skills, "");
+        doc.set_section_title(SectionKind::Work, "Experience");
+        doc.add_preset("Experience first");
+
+        for (index, heading, first) in [
+            (0, "Engineering", "\"skills\""),
+            (1, "Experience", "\"work\""),
+        ] {
+            doc.apply_preset(index);
+            let source = generate_for(&doc);
+            let order = source
+                .lines()
+                .find(|line| line.trim_start().starts_with("order: ("))
+                .expect("preset order reaches generated source");
+            assert!(
+                order.trim_start().starts_with(&format!("order: ({first}")),
+                "wrong first section for preset {index}: {order}"
+            );
+            assert!(source.contains(heading), "missing heading {heading}");
+            TypstEngine::new(source)
+                .compile_to_pdf()
+                .expect("each preset compiles to PDF");
+        }
+    }
+
     /// Hiding one custom section must not move another one.
     ///
     /// The renderer used to address custom sections by their **position** in
@@ -2807,11 +2859,15 @@ mod date_format_tests {
                 name: "FAANG · concise".into(),
                 selection: vec![(SectionKind::Profile, doc.profile.active_id())],
                 hidden: vec![SectionKind::Organizations],
+                order: vec![],
+                titles: vec![],
             },
             Preset {
                 name: "Startup · long".into(),
                 selection: vec![],
                 hidden: vec![],
+                order: vec![],
+                titles: vec![],
             },
         ];
 

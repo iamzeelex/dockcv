@@ -308,8 +308,8 @@ pub struct Library {
 /// requirement — a counter at zero is noise in every file on disk.
 /// A stored override that is blank must not win over the default — it would
 /// print an empty heading into the exported PDF.
-fn title_is_blank(kind: &SectionKind, doc: &ResumeDoc) -> bool {
-    doc.section_titles
+fn title_is_blank(kind: &SectionKind, titles: &[(SectionKind, String)]) -> bool {
+    titles
         .iter()
         .find(|(k, _)| k == kind)
         .is_some_and(|(_, t)| t.trim().is_empty())
@@ -416,6 +416,16 @@ impl ResumeDoc {
     /// A document that silently lost a section because its order was malformed
     /// would be data loss with no error to see.
     pub fn sections(&self) -> Vec<SectionKind> {
+        self.sections_with_order(&self.section_order)
+    }
+
+    /// Resolve any stored order against this document's current section set.
+    ///
+    /// Presets carry their own order in C8, but malformed and pre-C8 data must
+    /// obey the same repair rules as the document's working copy. Keeping the
+    /// resolver here makes it impossible for the editor and a preset preview
+    /// to disagree about where a missing or duplicated section belongs.
+    pub(crate) fn sections_with_order(&self, order: &[SectionKind]) -> Vec<SectionKind> {
         // A `Custom` id only "exists" if a section with that id is still in
         // `custom_sections` — a stale reference (the section was deleted) is
         // exactly the "unknown" case this method already repairs away.
@@ -426,7 +436,7 @@ impl ResumeDoc {
 
         let mut out: Vec<SectionKind> =
             Vec::with_capacity(Self::SECTIONS.len() + self.custom_sections.len());
-        for kind in &self.section_order {
+        for kind in order {
             if is_known(kind) && !out.contains(kind) {
                 out.push(*kind);
             }
@@ -450,10 +460,22 @@ impl ResumeDoc {
     /// The user's override if they set one, otherwise the built-in default. A
     /// custom section's title lives on the section itself.
     pub fn section_title(&self, kind: SectionKind) -> String {
-        if let Some((_, title)) = self
-            .section_titles
+        self.section_title_with(kind, &self.section_titles)
+    }
+
+    /// Resolve a heading through an arbitrary override table.
+    ///
+    /// A preset's `titles` table has exactly the same meaning as the working
+    /// copy's `section_titles`; both the matrix and active-preset derivation
+    /// use this resolver so an absent override always means the same default.
+    pub(crate) fn section_title_with(
+        &self,
+        kind: SectionKind,
+        titles: &[(SectionKind, String)],
+    ) -> String {
+        if let Some((_, title)) = titles
             .iter()
-            .find(|(k, _)| *k == kind && !title_is_blank(k, self))
+            .find(|(k, _)| *k == kind && !title_is_blank(k, titles))
         {
             return title.clone();
         }

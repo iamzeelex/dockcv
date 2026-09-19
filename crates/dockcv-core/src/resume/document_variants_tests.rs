@@ -134,6 +134,8 @@ fn pinning_a_section_twice_replaces_rather_than_duplicates() {
         name: "FAANG · concise".into(),
         selection: vec![(SectionKind::Work, detailed)],
         hidden: Vec::new(),
+        order: Vec::new(),
+        titles: Vec::new(),
     };
 
     preset.set(SectionKind::Work, concise);
@@ -199,6 +201,11 @@ fn a_new_section_joins_every_existing_preset() {
         Some(active)
     );
     assert_eq!(doc.presets[0].selection.len(), doc.sections().len());
+    assert_eq!(
+        doc.sections_for_preset(0),
+        Some(doc.sections()),
+        "an empty preset order uses the repaired standard order"
+    );
 }
 
 /// Deletion does not rewrite history into a different selection. The pin
@@ -301,4 +308,109 @@ fn a_fresh_custom_section_appears_with_no_stored_order() {
     let id = doc.add_custom_section("Languages");
     assert!(doc.section_order.is_empty());
     assert_eq!(doc.sections().last(), Some(&SectionKind::Custom(id)));
+}
+
+#[test]
+fn a_preset_restores_order_and_headings_as_one_reading() {
+    let mut doc = ResumeDoc::default();
+    let engineering_order = vec![
+        SectionKind::Skills,
+        SectionKind::Profile,
+        SectionKind::Work,
+        SectionKind::Education,
+        SectionKind::Certificates,
+        SectionKind::Organizations,
+    ];
+    doc.section_order = engineering_order.clone();
+    doc.set_section_title(SectionKind::Skills, "Engineering");
+    doc.add_preset("Engineering first");
+
+    let experience_order = vec![
+        SectionKind::Work,
+        SectionKind::Profile,
+        SectionKind::Education,
+        SectionKind::Skills,
+        SectionKind::Certificates,
+        SectionKind::Organizations,
+    ];
+    doc.section_order = experience_order.clone();
+    doc.set_section_title(SectionKind::Skills, "");
+    doc.set_section_title(SectionKind::Work, "Experience");
+    doc.add_preset("Experience first");
+
+    assert_eq!(doc.presets[0].order, engineering_order);
+    assert_eq!(
+        doc.presets[0].titles,
+        vec![(SectionKind::Skills, "Engineering".into())]
+    );
+    assert!(doc.is_preset_active(1));
+
+    doc.apply_preset(0);
+    assert_eq!(doc.sections(), engineering_order);
+    assert_eq!(doc.section_title(SectionKind::Skills), "Engineering");
+    assert!(doc.is_preset_active(0));
+    assert!(!doc.is_preset_active(1));
+
+    let composed = doc.compose();
+    assert_eq!(composed.section_order, engineering_order);
+    assert!(composed
+        .section_titles
+        .contains(&(SectionKind::Skills, "Engineering".into())));
+
+    let text = toml::to_string_pretty(&doc).expect("preset serializes");
+    let back: ResumeDoc = toml::from_str(&text).expect("preset round-trips");
+    assert_eq!(back.presets[0].order, doc.presets[0].order);
+    assert_eq!(back.presets[0].titles, doc.presets[0].titles);
+}
+
+#[test]
+fn active_and_nearest_preset_include_order_and_headings() {
+    let mut doc = ResumeDoc::default();
+    doc.add_preset("Default reading");
+
+    // Empty fields are the backwards-compatible form and stay out of TOML.
+    let old_shape = toml::to_string_pretty(&doc).expect("serializes");
+    assert!(!old_shape
+        .lines()
+        .any(|line| line.trim_start().starts_with("order =")));
+    assert!(!old_shape
+        .lines()
+        .any(|line| line.trim_start().starts_with("titles =")));
+    let old_back: ResumeDoc = toml::from_str(&old_shape).expect("pre-C8 preset opens");
+    assert!(old_back.presets[0].order.is_empty());
+    assert!(old_back.presets[0].titles.is_empty());
+
+    doc.set_section_title(SectionKind::Work, "Engineering");
+    assert!(!doc.is_preset_active(0));
+    assert_eq!(doc.preset_distance(0), Some(1));
+    assert_eq!(doc.nearest_preset_index(), Some(0));
+
+    doc.apply_preset(0);
+    assert!(doc.section_order.is_empty());
+    assert!(doc.section_titles.is_empty());
+    assert_eq!(doc.section_title(SectionKind::Work), "Work Experience");
+    assert!(doc.is_preset_active(0));
+
+    doc.set_section_title(SectionKind::Work, "Engineering");
+    assert!(doc.update_preset(0));
+    assert!(doc.is_preset_active(0));
+    assert_eq!(
+        doc.presets[0].titles,
+        vec![(SectionKind::Work, "Engineering".into())]
+    );
+
+    // Swapping adjacent rows changes exactly those two rows in the matrix.
+    doc.section_order = vec![
+        SectionKind::Profile,
+        SectionKind::Education,
+        SectionKind::Work,
+        SectionKind::Skills,
+        SectionKind::Certificates,
+        SectionKind::Organizations,
+    ];
+    assert!(!doc.is_preset_active(0));
+    assert_eq!(doc.preset_distance(0), Some(2));
+    assert!(doc.update_preset(0));
+    assert_eq!(doc.presets[0].order, doc.section_order);
+    assert!(doc.is_preset_active(0));
 }

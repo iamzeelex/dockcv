@@ -150,7 +150,23 @@ impl ResumeDoc {
             .collect()
     }
 
-    /// Make every preset name every section the document has, and no others.
+    /// The effective section order of preset `index`, repaired through the
+    /// same rules as the working copy.
+    pub fn sections_for_preset(&self, index: usize) -> Option<Vec<SectionKind>> {
+        self.presets
+            .get(index)
+            .map(|preset| self.sections_with_order(&preset.order))
+    }
+
+    /// The effective heading preset `index` prints for `section`.
+    pub fn section_title_for_preset(&self, index: usize, section: SectionKind) -> Option<String> {
+        self.presets
+            .get(index)
+            .map(|preset| self.section_title_with(section, &preset.titles))
+    }
+
+    /// Make every preset account for every section the document has, and no
+    /// others.
     ///
     /// Run on load and after any change to the *set* of sections. Two repairs,
     /// and both are about totality rather than about resolvability:
@@ -161,6 +177,11 @@ impl ResumeDoc {
     ///   and it is the reason nobody trusts them;
     /// - a pin naming a section the document no longer has is dropped, the same
     ///   repair [`Self::sections`] already makes to `section_order`.
+    ///
+    /// The same section-set repair applies to C8's reading metadata: stale
+    /// heading overrides are dropped, and an explicit order is de-duplicated,
+    /// pruned, and completed. An empty order remains empty because it is the
+    /// backwards-compatible sentinel for the standard order.
     ///
     /// A pin naming a *deleted variant* is left exactly where it is. That is
     /// not untidiness: it is the difference between "this preset has nothing to
@@ -177,6 +198,21 @@ impl ResumeDoc {
                 }
             }
             preset.hidden.retain(|s| known.contains(s));
+            preset.titles.retain(|(s, _)| known.contains(s));
+            if !preset.order.is_empty() {
+                let mut repaired = Vec::with_capacity(known.len());
+                for section in &preset.order {
+                    if known.contains(section) && !repaired.contains(section) {
+                        repaired.push(*section);
+                    }
+                }
+                for section in &known {
+                    if !repaired.contains(section) {
+                        repaired.push(*section);
+                    }
+                }
+                preset.order = repaired;
+            }
         }
     }
 
@@ -209,23 +245,27 @@ impl ResumeDoc {
             .collect()
     }
 
-    /// Save the current selection as a new preset.
+    /// Save the document's complete current reading as a new preset.
     ///
     /// Not "capture" — in this product that word belongs to the Diary's
     /// quick-capture (roadmap D-7), and the two must not blur.
     pub fn add_preset(&mut self, name: impl Into<String>) {
         let selection = self.current_selection();
-        // A preset records what is hidden as well as what is selected, so
-        // saving "the current state" means the whole current state.
+        // A preset records visibility, order, and headings as well as variant
+        // selection, so saving "the current state" means the whole reading.
         let hidden = self.hidden_sections.clone();
+        let order = self.section_order.clone();
+        let titles = self.section_titles.clone();
         self.presets.push(Preset {
             name: name.into(),
             selection,
             hidden,
+            order,
+            titles,
         });
     }
 
-    /// Switch every section to the variants recorded in preset `index`.
+    /// Restore every dimension recorded in preset `index`.
     pub fn apply_preset(&mut self, index: usize) {
         let Some(preset) = self.presets.get(index).cloned() else {
             return;
@@ -246,15 +286,17 @@ impl ResumeDoc {
         // restores it wholesale — including *un*-hiding what this preset does
         // not hide, or switching presets would only ever accumulate hiding.
         self.hidden_sections = preset.hidden;
+        self.section_order = preset.order;
+        self.section_titles = preset.titles;
     }
 
     /// Whether preset `index` is already what the document is showing.
     ///
     /// Applying a preset is an edit: it moves `active` on every section it
-    /// names and rewrites `hidden_sections`, and all of that is stored. So
-    /// arriving at a document *already* in that state must not be an edit —
-    /// otherwise opening a card at the preset it is already in would checkpoint
-    /// nothing onto the undo stack and write an identical file to disk.
+    /// names and rewrites visibility, order, and headings, all of which are
+    /// stored. So arriving at a document *already* in that state must not be
+    /// an edit — otherwise opening a card at the preset it is already in would
+    /// checkpoint nothing onto the undo stack and write an identical file.
     ///
     /// A preset naming no sections is not "active": it selects nothing, so
     /// there is nothing for the document to already agree with.
@@ -275,6 +317,14 @@ impl ResumeDoc {
         {
             return false;
         }
+        if self.sections_with_order(&preset.order) != self.sections() {
+            return false;
+        }
+        if self.sections().into_iter().any(|section| {
+            self.section_title_with(section, &preset.titles) != self.section_title(section)
+        }) {
+            return false;
+        }
         preset
             .selection
             .iter()
@@ -293,17 +343,25 @@ impl ResumeDoc {
 
     /// How many section cells differ between the working copy and a preset.
     ///
-    /// Variant and visibility are one cell, not two: changing both on Skills
-    /// is still one row the person has to inspect in the matrix. A broken pin
-    /// differs from every live variant, which makes repairing it explicit.
+    /// Variant, visibility, heading, and order are one cell, not four: changing
+    /// several on Skills is still one row the person has to inspect in the
+    /// matrix. A broken pin differs from every live variant, which makes
+    /// repairing it explicit.
     pub fn preset_distance(&self, index: usize) -> Option<usize> {
         let preset = self.presets.get(index)?;
+        let preset_order = self.sections_with_order(&preset.order);
+        let current_order = self.sections();
         Some(
-            self.sections()
-                .into_iter()
+            current_order
+                .iter()
+                .copied()
                 .filter(|section| {
                     preset.variant_for(*section) != self.active_variant_id(*section)
                         || preset.hidden.contains(section) != self.hidden_sections.contains(section)
+                        || preset_order.iter().position(|kind| kind == section)
+                            != current_order.iter().position(|kind| kind == section)
+                        || self.section_title_with(*section, &preset.titles)
+                            != self.section_title(*section)
                 })
                 .count(),
         )
@@ -320,17 +378,22 @@ impl ResumeDoc {
 
     /// Rewrite one preset to describe the document's working copy.
     ///
-    /// Presets own no content; updating one means replacing only its variant
-    /// pins and visibility. The UI checkpoints the whole document before this
-    /// call, which makes the operation undoable without a second history type.
+    /// Presets own no content; updating one replaces its variant pins,
+    /// visibility, order, and headings. The UI checkpoints the whole document
+    /// before this call, which makes the operation undoable without a second
+    /// history type.
     pub fn update_preset(&mut self, index: usize) -> bool {
         let selection = self.current_selection();
         let hidden = self.hidden_sections.clone();
+        let order = self.section_order.clone();
+        let titles = self.section_titles.clone();
         let Some(preset) = self.presets.get_mut(index) else {
             return false;
         };
         preset.selection = selection;
         preset.hidden = hidden;
+        preset.order = order;
+        preset.titles = titles;
         true
     }
 

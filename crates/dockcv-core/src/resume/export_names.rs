@@ -377,6 +377,8 @@ mod tests {
                 name: (*name).to_string(),
                 selection: vec![],
                 hidden: vec![],
+                order: vec![],
+                titles: vec![],
             })
             .collect();
         doc

@@ -284,11 +284,15 @@ mod tests {
                 name: "FAANG · concise".into(),
                 selection: vec![(SectionKind::Profile, base)],
                 hidden: Vec::new(),
+                order: Vec::new(),
+                titles: Vec::new(),
             },
             Preset {
                 name: "Infra-heavy".into(),
                 selection: vec![(SectionKind::Profile, base)],
                 hidden: Vec::new(),
+                order: Vec::new(),
+                titles: Vec::new(),
             },
         ];
         vault::save(

@@ -693,6 +693,8 @@ mod tests {
             name: "Preset 2".into(),
             selection: Vec::new(),
             hidden: Vec::new(),
+            order: Vec::new(),
+            titles: Vec::new(),
         });
 
         let id = FieldId::PresetName(0);

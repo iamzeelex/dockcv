@@ -100,16 +100,22 @@ fn a_preset_already_in_effect_is_not_applied_again() {
             name: "Short profile".into(),
             selection: vec![(SectionKind::Profile, short)],
             hidden: vec![],
+            order: vec![],
+            titles: vec![],
         },
         Preset {
             name: "Base profile".into(),
             selection: vec![(SectionKind::Profile, base)],
             hidden: vec![],
+            order: vec![],
+            titles: vec![],
         },
         Preset {
             name: "Names nothing".into(),
             selection: vec![],
             hidden: vec![],
+            order: vec![],
+            titles: vec![],
         },
     ];
 
