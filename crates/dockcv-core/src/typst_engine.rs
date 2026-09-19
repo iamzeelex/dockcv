@@ -553,6 +553,23 @@ impl TypstEngine {
         ))
     }
 
+    /// Lay the document out and measure it, without drawing anything.
+    ///
+    /// For the Preset Matrix, which wants to know how many pages each reading
+    /// takes — including readings the person has never opened. Rasterizing N
+    /// documents to count their pages would pay for a pixmap per preset and
+    /// throw every one away; layout is the part that answers the question.
+    ///
+    /// Unlike the three methods around it this needs no feature gate: page
+    /// geometry comes out of `typst` itself, not out of a renderer.
+    pub fn measure(&self) -> Result<PageGeometry, String> {
+        let Warned { output, .. } = typst::compile::<PagedDocument>(self);
+        let document = output.map_err(join_diagnostics)?;
+        let geometry = PageGeometry::measure(&document);
+        comemo::evict(COMEMO_MAX_AGE);
+        Ok(geometry)
+    }
+
     /// Compile the current document to one SVG per page.
     ///
     /// The browser's output. `typst-render` gives the app a pixmap because
@@ -733,6 +750,34 @@ mod tests {
     /// "unexpected closing bracket"; `humanize` is what stands between that
     /// and the person editing the document.
     const BROKEN_SOURCE: &str = "A summary with a stray ] bracket that breaks the markup.";
+
+    /// `measure` answers the same page geometry a full compile does, without
+    /// rasterizing — the Preset Matrix reads every column through it, so the
+    /// two paths agreeing is the whole contract.
+    #[test]
+    fn measuring_agrees_with_compiling_and_needs_no_raster() {
+        let engine = TypstEngine::new(ONE_PAGE_SOURCE);
+        let measured = engine.measure().expect("a valid document measures");
+        assert_eq!(measured.page_count, 1);
+        assert_eq!(measured.overflow_pt, 0.0);
+
+        let engine = TypstEngine::new(overflowing_source());
+        let measured = engine.measure().expect("an overflowing document measures");
+        assert!(measured.page_count > 1, "it paginated");
+        assert!(
+            measured.overflow_pt > 0.0,
+            "and says how much is past one page"
+        );
+    }
+
+    /// A document that will not compile measures to an error rather than to
+    /// zero pages. A column header showing `0 pages` would be the matrix
+    /// stating something untrue about a document it simply could not read.
+    #[test]
+    fn a_broken_document_refuses_to_measure() {
+        let engine = TypstEngine::new(BROKEN_SOURCE);
+        assert!(engine.measure().is_err());
+    }
 
     #[test]
     fn broken_document_yields_a_human_readable_error() {

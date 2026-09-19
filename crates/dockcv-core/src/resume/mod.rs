@@ -18,6 +18,7 @@ pub mod export_walk;
 pub mod export_wrap;
 pub mod links;
 pub mod model;
+pub mod outcomes;
 pub mod template;
 
 pub use document_toml::parse_document_toml;

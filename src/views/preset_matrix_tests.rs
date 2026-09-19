@@ -174,3 +174,104 @@ fn differences_only_defaults_by_how_many_presets_there_are() {
     let four = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
     assert!(four.differences_only);
 }
+
+/// Nothing is guessed. A column the compiler has not measured yet prints no
+/// page line at all, which is the difference between "not known" and a number
+/// that might be wrong.
+#[test]
+fn a_column_says_nothing_about_pages_until_it_is_measured() {
+    let (mut matrix, _faang, _startup) = two_readings();
+    assert_eq!(matrix.pages_line(Some(0)), None);
+    assert!(!matrix.overflows(Some(0)));
+
+    matrix.pages.insert(Some(0), geometry(1, 0.0, Some(14.0)));
+    assert_eq!(matrix.pages_line(Some(0)).as_deref(), Some("1 page"));
+    assert!(!matrix.overflows(Some(0)));
+}
+
+/// Overflow is said in lines, because that is the unit somebody trims in, and
+/// it is rounded up: half a line over is still a line that does not fit.
+#[test]
+fn a_reading_that_does_not_fit_says_how_far_over_it_runs() {
+    let (mut matrix, _faang, _startup) = two_readings();
+
+    matrix.pages.insert(Some(0), geometry(2, 70.0, Some(14.0)));
+    assert_eq!(
+        matrix.pages_line(Some(0)).as_deref(),
+        Some("2 pages · 5 lines over")
+    );
+    assert!(matrix.overflows(Some(0)));
+
+    matrix.pages.insert(Some(1), geometry(2, 8.0, Some(14.0)));
+    assert_eq!(
+        matrix.pages_line(Some(1)).as_deref(),
+        Some("2 pages · 1 line over")
+    );
+
+    // Measured as overflowing, but with too little text to average a line
+    // height from: the page count is still true, so it is still said.
+    matrix.pages.insert(None, geometry(2, 70.0, None));
+    assert_eq!(matrix.pages_line(None).as_deref(), Some("2 pages"));
+}
+
+/// Counts, never a rate, and nothing at all for a reading nothing went out
+/// under — an empty column header beats `sent 0 · 0 interviews`.
+#[test]
+fn the_record_line_counts_and_never_computes_a_rate() {
+    use crate::resume::outcomes::PresetRecord;
+
+    let (mut matrix, _faang, _startup) = two_readings();
+    assert_eq!(matrix.record_line(Some(0)), None);
+
+    matrix.records.insert(
+        0,
+        PresetRecord {
+            sent: 11,
+            interviewed: 4,
+        },
+    );
+    assert_eq!(
+        matrix.record_line(Some(0)).as_deref(),
+        Some("sent 11 · 4 interviews")
+    );
+
+    matrix.records.insert(
+        1,
+        PresetRecord {
+            sent: 3,
+            interviewed: 1,
+        },
+    );
+    assert_eq!(
+        matrix.record_line(Some(1)).as_deref(),
+        Some("sent 3 · 1 interview")
+    );
+
+    matrix.records.insert(
+        0,
+        PresetRecord {
+            sent: 2,
+            interviewed: 0,
+        },
+    );
+    assert_eq!(matrix.record_line(Some(0)).as_deref(), Some("sent 2"));
+
+    // The working copy is not a named reading, so nothing was sent under it.
+    assert_eq!(matrix.record_line(None), None);
+}
+
+/// A `PageGeometry` as the compiler would report one.
+fn geometry(
+    pages: usize,
+    overflow_pt: f64,
+    line_advance_pt: Option<f64>,
+) -> crate::typst_engine::PageGeometry {
+    crate::typst_engine::PageGeometry {
+        page_count: pages,
+        page_height_pt: 842.0,
+        last_page_used_pt: 100.0,
+        last_page_content_top_pt: 40.0,
+        overflow_pt,
+        line_advance_pt,
+    }
+}

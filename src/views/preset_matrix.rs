@@ -12,11 +12,14 @@
 //! questions the grid asks of it.
 
 use gpui::{Entity, Subscription};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use dockcv_ui_components::TextFieldState;
 
 use crate::resume::model::{ResumeDoc, SectionKind, VariantId};
+use crate::resume::outcomes::PresetRecord;
+use crate::typst_engine::PageGeometry;
 
 pub struct PresetMatrix {
     pub path: PathBuf,
@@ -36,6 +39,20 @@ pub struct PresetMatrix {
     /// section rename — the gesture this deliberately copies, so a preset and
     /// a section heading are renamed the same way in the same product.
     pub renaming_preset: Option<PresetRename>,
+    /// How many pages each column lays out into, keyed by [`Column::preset`].
+    ///
+    /// Measured, never guessed: a column with no entry here prints no page
+    /// line at all rather than a number that might be wrong. Cleared whenever
+    /// a pin changes, because a pin is exactly what decides a column's length.
+    pub pages: HashMap<Option<usize>, PageGeometry>,
+    /// True while a measuring pass is in flight, so a second one does not
+    /// stack behind it.
+    pub measuring: bool,
+    /// What the board says each reading has done, keyed the same way.
+    ///
+    /// Read once when the screen opens rather than per frame: the board cannot
+    /// change while the matrix is in front of it.
+    pub records: HashMap<usize, PresetRecord>,
 }
 
 /// Live state for a preset rename. `FieldId::PresetName` was addressable from
@@ -81,7 +98,83 @@ impl PresetMatrix {
             on_disk,
             differences_only,
             renaming_preset: None,
+            pages: HashMap::new(),
+            measuring: false,
+            records: HashMap::new(),
         }
+    }
+
+    /// Forget every page measurement.
+    ///
+    /// Called when a pin moves. Clearing all of them rather than the one
+    /// column that changed is deliberate: two presets can pin the same
+    /// variants, and a measurement is cheap enough that being right is worth
+    /// more than being clever about which columns to keep.
+    pub fn forget_measurements(&mut self) {
+        self.pages.clear();
+    }
+
+    /// The Typst source a column would compile to, for measuring.
+    pub fn source_for(&self, preset: Option<usize>) -> String {
+        let mut doc = self.doc.clone();
+        if let Some(index) = preset {
+            doc.apply_preset(index);
+        }
+        crate::resume::template::generate_for(&doc)
+    }
+
+    /// `1 page`, or `2 pages · 6 lines over` when a reading does not fit.
+    ///
+    /// `None` until the column has actually been measured. The page count is
+    /// the same integer the preview toolbar shows, and the overflow is said in
+    /// lines because that is the unit a person trims in — both come from the
+    /// compiler's own measurement of the laid-out pages, not from arithmetic
+    /// on the settings.
+    pub fn pages_line(&self, preset: Option<usize>) -> Option<String> {
+        let geometry = self.pages.get(&preset)?;
+        let pages = geometry.page_count.max(1);
+        let noun = if pages == 1 { "page" } else { "pages" };
+        if geometry.overflow_pt <= 0.0 {
+            return Some(format!("{pages} {noun}"));
+        }
+        match geometry.line_advance_pt {
+            Some(advance) if advance > 0.0 => {
+                let lines = (geometry.overflow_pt / advance).ceil() as i64;
+                let line_noun = if lines == 1 { "line" } else { "lines" };
+                Some(format!("{pages} {noun} · {lines} {line_noun} over"))
+            }
+            // Measured as overflowing, but the page holds too little text to
+            // average a line height from. Saying how many pages is still true.
+            _ => Some(format!("{pages} {noun}")),
+        }
+    }
+
+    /// Whether a column's measurement says it runs past one page.
+    pub fn overflows(&self, preset: Option<usize>) -> bool {
+        self.pages
+            .get(&preset)
+            .is_some_and(|geometry| geometry.overflow_pt > 0.0)
+    }
+
+    /// `sent 11 · 4 interviews`, or nothing for a reading nothing went out
+    /// under. Counts only — never a rate (see `PresetRecord`).
+    pub fn record_line(&self, preset: Option<usize>) -> Option<String> {
+        let record = self.records.get(&preset?)?;
+        if record.is_empty() {
+            return None;
+        }
+        if record.interviewed == 0 {
+            return Some(format!("sent {}", record.sent));
+        }
+        let noun = if record.interviewed == 1 {
+            "interview"
+        } else {
+            "interviews"
+        };
+        Some(format!(
+            "sent {} · {} {noun}",
+            record.sent, record.interviewed
+        ))
     }
 
     /// The mark carried by a preset column relative to the working copy.

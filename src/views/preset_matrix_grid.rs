@@ -274,6 +274,37 @@ impl PresetMatrix {
                 .into_any_element(),
         };
 
+        // The two lines that make a column worth reading: what this reading
+        // costs in paper, and how it has actually done. Both are blank until
+        // they are known — a header that guessed would be worse than one that
+        // waits (C11).
+        let evidence = div()
+            .flex()
+            .flex_col()
+            .gap(px(2.0))
+            .when_some(self.pages_line(column.preset), |line, text| {
+                line.child(
+                    div()
+                        .font_family(MONO)
+                        .text_size(px(10.5))
+                        .text_color(if self.overflows(column.preset) {
+                            theme.warning
+                        } else {
+                            theme.text_subtle
+                        })
+                        .child(text),
+                )
+            })
+            .when_some(self.record_line(column.preset), |line, text| {
+                line.child(
+                    div()
+                        .font_family(MONO)
+                        .text_size(px(10.5))
+                        .text_color(theme.text_subtle)
+                        .child(text),
+                )
+            });
+
         div()
             .flex_1()
             .min_w(px(COLUMN_MIN_WIDTH))
@@ -281,50 +312,57 @@ impl PresetMatrix {
             .px(px(16.0))
             .py(px(12.0))
             .flex()
-            .items_center()
-            .gap(px(6.0))
-            .child(name)
-            .when_some(column.mark, |header, mark| {
-                header.child(
-                    div()
-                        .font_family(MONO)
-                        .text_size(px(9.5))
-                        .px(px(5.0))
-                        .py(px(1.0))
-                        .rounded(theme.radius_sm())
-                        .bg(if mark == "ACTIVE" {
-                            theme.success.opacity(0.18)
-                        } else {
-                            theme.warning.opacity(0.18)
-                        })
-                        .text_color(if mark == "ACTIVE" {
-                            theme.success
-                        } else {
-                            theme.warning
-                        })
-                        .child(mark),
-                )
-            })
-            .when_some(column.preset, |header, index| {
-                header.child(
-                    Button::new(SharedString::from(format!("preset-rename-{index}")))
-                        .icon_only()
-                        .icon(DockIcon::Pen)
-                        .tooltip("Rename this preset")
-                        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                            this.start_preset_rename(index, window, cx);
-                        })),
-                )
-            })
-            .when(working_copy, |header| {
-                header.child(
-                    div()
-                        .font_family(MONO)
-                        .text_size(px(9.5))
-                        .text_color(theme.text_subtle)
-                        .child("WORKING COPY"),
-                )
-            })
+            .flex_col()
+            .gap(px(4.0))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(name)
+                    .when_some(column.mark, |header, mark| {
+                        header.child(
+                            div()
+                                .font_family(MONO)
+                                .text_size(px(9.5))
+                                .px(px(5.0))
+                                .py(px(1.0))
+                                .rounded(theme.radius_sm())
+                                .bg(if mark == "ACTIVE" {
+                                    theme.success.opacity(0.18)
+                                } else {
+                                    theme.warning.opacity(0.18)
+                                })
+                                .text_color(if mark == "ACTIVE" {
+                                    theme.success
+                                } else {
+                                    theme.warning
+                                })
+                                .child(mark),
+                        )
+                    })
+                    .when_some(column.preset, |header, index| {
+                        header.child(
+                            Button::new(SharedString::from(format!("preset-rename-{index}")))
+                                .icon_only()
+                                .icon(DockIcon::Pen)
+                                .tooltip("Rename this preset")
+                                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                    this.start_preset_rename(index, window, cx);
+                                })),
+                        )
+                    })
+                    .when(working_copy, |header| {
+                        header.child(
+                            div()
+                                .font_family(MONO)
+                                .text_size(px(9.5))
+                                .text_color(theme.text_subtle)
+                                .child("WORKING COPY"),
+                        )
+                    }),
+            )
+            .child(evidence)
     }
 
     fn render_row(

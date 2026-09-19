@@ -37,7 +37,6 @@ use super::import_flow::ImportStep;
 use super::library::LibrarySort;
 use super::library_edit::LibraryEdit;
 use super::library_link::PushReview;
-use super::preset_matrix::Choice;
 use super::preset_matrix_export::BatchExportSheet;
 use super::save_status;
 use super::update_notice::UpdateState;
@@ -972,6 +971,11 @@ impl Shell {
         if let Ok(doc) = vault::load(&doc_path) {
             let pm = super::preset_matrix::PresetMatrix::new(doc_path, doc);
             self.screen = Screen::PresetMatrix(Box::new(pm));
+            // The evidence in the column headers, in the order it can be had:
+            // the board is on disk and answers immediately, the page counts
+            // need a compile each and arrive when they arrive.
+            self.load_matrix_records();
+            self.measure_matrix_pages(cx);
             cx.notify();
         }
     }
@@ -1048,6 +1052,11 @@ impl Shell {
             let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
             let (path, seen) = (pm.path.clone(), pm.on_disk);
             pm.on_disk = save_status::record_document(cx, &path, seen, result);
+            // What the board recorded was sent under the *old* name, and
+            // history keeps the name it was sent under. So a rename usually
+            // empties this column's record, and saying so beats carrying the
+            // old count under a new heading.
+            self.load_matrix_records();
         }
         cx.notify();
     }
@@ -1074,6 +1083,9 @@ impl Shell {
         let (path, seen) = (pm.path.clone(), pm.on_disk);
         pm.on_disk = save_status::record_document(cx, &path, seen, result);
         cx.notify();
+        // A new column, with no evidence behind it until it is asked for.
+        self.load_matrix_records();
+        self.measure_matrix_pages(cx);
     }
 
     /// Step one of exporting every preset: choose the folder, then show what
@@ -1202,61 +1214,6 @@ impl Shell {
             });
         })
         .detach();
-    }
-
-    /// Pin one matrix cell, or hide the section in that preset.
-    ///
-    /// Writing straight to disk rather than debouncing: a preset is one line of
-    /// TOML and this is a deliberate choice from a menu, not typing — there is
-    /// nothing to coalesce.
-    ///
-    /// `Choice::Unpinned` is not offered by the menu and is not accepted here.
-    /// A preset names every section (`reconcile_presets`), so un-pinning one
-    /// would be a way to make a preset incomplete on purpose, and the answer to
-    /// "this preset should not show Skills" is `Hidden`, which says so.
-    pub(super) fn set_matrix_cell(
-        &mut self,
-        preset: usize,
-        section: SectionKind,
-        choice: Choice,
-        cx: &mut Context<Self>,
-    ) {
-        let Screen::PresetMatrix(ref mut pm) = self.screen else {
-            return;
-        };
-        let Some(entry) = pm.doc.presets.get_mut(preset) else {
-            return;
-        };
-        match choice {
-            Choice::Pin(id) => {
-                entry.hidden.retain(|s| *s != section);
-                entry.set(section, id);
-            }
-            Choice::Hidden => {
-                if !entry.hidden.contains(&section) {
-                    entry.hidden.push(section);
-                }
-            }
-            Choice::Unpinned => return,
-        }
-
-        let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
-        let (path, seen) = (pm.path.clone(), pm.on_disk);
-        pm.on_disk = save_status::record_document(cx, &path, seen, result);
-        cx.notify();
-    }
-
-    /// Show every section, or only the ones some preset disagrees about.
-    ///
-    /// View state, deliberately: it is about looking rather than about the
-    /// document, so it does not belong in the vault, and it is cheap enough to
-    /// re-decide on every visit that it does not belong in `config.toml`
-    /// either (the three-homes table).
-    pub(super) fn toggle_matrix_differences_only(&mut self, cx: &mut Context<Self>) {
-        if let Screen::PresetMatrix(ref mut pm) = self.screen {
-            pm.differences_only = !pm.differences_only;
-            cx.notify();
-        }
     }
 
     /// Start renaming `path`, seeding the box with its current file name.
