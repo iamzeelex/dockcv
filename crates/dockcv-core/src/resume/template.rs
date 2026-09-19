@@ -20,7 +20,8 @@ use std::fmt::Write as _;
 
 use crate::resume::links;
 use crate::resume::model::{
-    DateFormat, LayoutSettings, Resume, ResumeDoc, SectionKind, SectionOverrides, TypeSizes,
+    DateFormat, LayoutSettings, ProfileCatalog, Resume, ResumeDoc, SectionKind, SectionOverrides,
+    TypeSizes,
 };
 
 /// The renderer body, written in Typst: helper functions plus `render-cv`.
@@ -157,7 +158,11 @@ const RENDERER: &str = r##"
 // PT Serif lack U+2197, and Typst answers a missing glyph by falling back to
 // system fonts rather than by erroring — exactly the silent substitution L-11
 // was written against. Geist is always bundled and covers it.
-#let link-mark = text(font: "Geist", size: 0.85em, " ↗")
+#let link-mark = if show-link-marks {
+  text(font: "Geist", size: 0.85em, " ↗")
+} else {
+  none
+}
 
 // A dated entry: title, subtitle, and the date/location pair.
 //
@@ -520,7 +525,18 @@ pub fn generate(resume: &Resume) -> String {
 /// reached the model, were saved to the vault, and then never arrived in the
 /// preview. Taking the whole `ResumeDoc` makes the layout impossible to drop.
 pub fn generate_for(doc: &ResumeDoc) -> String {
-    generate_with_layout(&doc.compose(), &doc.layout)
+    generate_for_with_profiles(doc, &ProfileCatalog::default())
+}
+
+/// Build the Typst document with vault-wide profiles available.
+///
+/// The plain [`generate_for`] entry point still resolves built-ins and is the
+/// right boundary for WASM and isolated files. The desktop passes its vault
+/// catalog here so a custom profile remains a reference rather than a copy in
+/// every document.
+pub fn generate_for_with_profiles(doc: &ResumeDoc, profiles: &ProfileCatalog) -> String {
+    let layout = profiles.resolve(doc.layout_profile.as_deref(), doc.layout);
+    generate_with_layout(&doc.compose(), &layout)
 }
 
 /// Build the full Typst document for a resume with an explicit layout. This
@@ -690,6 +706,7 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
 #let header-align = "{header_align}"
 #let header-contacts = "{header_contacts}"
 #let header-separator = "{header_separator}"
+#let show-link-marks = {show_link_marks}
 
 // How a dated entry is set — a job, a degree, a certificate.
 #let entry-meta-position = "{entry_meta_position}"
@@ -733,6 +750,7 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
         header_align = layout.header.align.keyword(),
         header_contacts = layout.header.contacts.keyword(),
         header_separator = layout.header.separator.printed(),
+        show_link_marks = layout.show_link_marks,
         x = fmt_measure(layout.margins.x_mm),
         top = fmt_measure(layout.margins.top_mm),
         bottom = fmt_measure(layout.margins.bottom_mm),
@@ -2088,6 +2106,7 @@ mod tests {
             entries: Default::default(),
             header: Default::default(),
             headings: Default::default(),
+            show_link_marks: true,
             sizes: TypeSizes {
                 name_pt: 900.0,
                 title_pt: -900.0,
@@ -2362,6 +2381,32 @@ mod tests {
             "document with links must compile: {:?}",
             report.diagnostics
         );
+    }
+
+    #[test]
+    fn ats_safe_profile_turns_the_link_mark_off_and_compiles() {
+        use crate::resume::model::{Education, Resume};
+        use crate::resume::ATS_SAFE_PROFILE;
+
+        let resume = Resume {
+            education: vec![Education {
+                institution: "MIT".into(),
+                study_type: "B.S.".into(),
+                url: "https://mit.edu".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut doc = ResumeDoc::from_resume(resume, "Base");
+
+        assert!(generate_for(&doc).contains("#let show-link-marks = true"));
+
+        doc.layout_profile = Some(ATS_SAFE_PROFILE.to_string());
+        let source = generate_for(&doc);
+        assert!(source.contains("#let show-link-marks = false"));
+        crate::typst_engine::TypstEngine::new(source)
+            .compile_to_pdf()
+            .expect("ATS-safe profile compiles");
     }
 
     #[test]
@@ -2857,6 +2902,7 @@ mod date_format_tests {
         doc.presets = vec![
             Preset {
                 name: "FAANG · concise".into(),
+                profile: None,
                 selection: vec![(SectionKind::Profile, doc.profile.active_id())],
                 hidden: vec![SectionKind::Organizations],
                 order: vec![],
@@ -2864,6 +2910,7 @@ mod date_format_tests {
             },
             Preset {
                 name: "Startup · long".into(),
+                profile: None,
                 selection: vec![],
                 hidden: vec![],
                 order: vec![],

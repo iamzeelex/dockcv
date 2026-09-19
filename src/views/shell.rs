@@ -559,6 +559,7 @@ impl Shell {
             .thumb_engine
             .get_or_insert_with(|| Arc::new(Mutex::new(TypstEngine::new(String::new()))))
             .clone();
+        let profiles = self.cache.profiles().clone();
         let executor = cx.background_executor().clone();
 
         self.thumb_task = Some(cx.spawn(async move |this, cx| {
@@ -567,9 +568,10 @@ impl Shell {
                     .spawn({
                         let engine = engine.clone();
                         let path = path.clone();
+                        let profiles = profiles.clone();
                         async move {
                             let doc = vault::load(&path).ok()?;
-                            let source = template::generate_for(&doc);
+                            let source = template::generate_for_with_profiles(&doc, &profiles);
                             let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
                             engine.set_source(source);
                             let (pixels, _geometry) = engine.compile_to_pixels(THUMB_SCALE).ok()?;
@@ -1135,6 +1137,7 @@ impl Shell {
         }
         sheet.writing = true;
         let doc = pm.doc.clone();
+        let profiles = pm.profiles.clone();
         let folder = sheet.folder.clone();
         let plan = sheet.plan.clone();
         let executor = cx.background_executor().clone();
@@ -1147,7 +1150,10 @@ impl Shell {
                     for step in &plan {
                         let mut preset_doc = doc.clone();
                         preset_doc.apply_preset(step.preset_index);
-                        let source = crate::resume::template::generate_for(&preset_doc);
+                        let source = crate::resume::template::generate_for_with_profiles(
+                            &preset_doc,
+                            &profiles,
+                        );
                         let pdf_bytes = TypstEngine::new(source).compile_to_pdf()?;
                         std::fs::write(&step.destination.target, pdf_bytes).map_err(|e| {
                             format!("write to {} failed: {e}", step.destination.target.display())
@@ -1232,6 +1238,38 @@ impl Shell {
             }
             Choice::Unpinned => return,
         }
+
+        let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
+        let (path, seen) = (pm.path.clone(), pm.on_disk);
+        pm.on_disk = save_status::record_document(cx, &path, seen, result);
+        cx.notify();
+    }
+
+    /// Select the working copy's profile, or the profile one preset applies.
+    /// Existing profiles are references; this writes only the name into the
+    /// document and never duplicates `LayoutSettings` into a matrix cell.
+    pub(super) fn set_matrix_profile(
+        &mut self,
+        preset: Option<usize>,
+        profile: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let Screen::PresetMatrix(ref mut pm) = self.screen else {
+            return;
+        };
+        let slot = match preset {
+            None => &mut pm.doc.layout_profile,
+            Some(index) => {
+                let Some(preset) = pm.doc.presets.get_mut(index) else {
+                    return;
+                };
+                &mut preset.profile
+            }
+        };
+        if *slot == profile {
+            return;
+        }
+        *slot = profile;
 
         let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
         let (path, seen) = (pm.path.clone(), pm.on_disk);
@@ -1512,6 +1550,11 @@ impl Render for Shell {
         // frame — and it does nothing at all unless the directory moved.
         let revision = save_status::vault_revision(cx);
         self.cache.refresh(self.vault.as_deref(), revision);
+        if let Screen::PresetMatrix(pm) = &mut self.screen {
+            if &pm.profiles != self.cache.profiles() {
+                pm.profiles = self.cache.profiles().clone();
+            }
+        }
         // The update settings, read once a launch, and the weekly check if it
         // is due. Not on the pre-vault screens: somebody's first thirty
         // seconds with this app are not the moment to mention versions of it.

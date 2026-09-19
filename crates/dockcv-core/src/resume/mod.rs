@@ -23,6 +23,7 @@ mod layout;
 mod layout_sections;
 pub mod links;
 pub mod model;
+mod profiles;
 pub mod template;
 mod versioning;
 
@@ -35,3 +36,6 @@ pub use export_names::{disambiguate_filename, plan_batch, OnCollision, PlannedEx
 pub use export_text::{export_plain_text, export_plain_text_with_date_format};
 pub use export_typst::{export_typst, export_typst_with_layout};
 pub use model::ExportRecord;
+pub use profiles::{
+    builtin as builtin_profile, LayoutProfile, ProfileCatalog, ATS_SAFE_PROFILE, DEFAULT_PROFILE,
+};

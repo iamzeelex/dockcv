@@ -16,6 +16,7 @@ pub use super::dates::{DateFormat, ResumeDate};
 pub use super::export_settings::*;
 pub use super::layout::*;
 pub use super::layout_sections::*;
+pub use super::profiles::*;
 pub use super::versioning::*;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -348,6 +349,13 @@ pub struct ResumeDoc {
     /// written before this field existed renders unchanged.
     #[serde(default)]
     pub layout: LayoutSettings,
+    /// A vault-wide layout profile used by the working copy.
+    ///
+    /// `None` means [`Self::layout`]. The named profile is resolved at render
+    /// time rather than copied here, so updating one profile updates every CV
+    /// that names it without eleven layout values drifting apart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_profile: Option<String>,
     /// How exports of this document are named, and where they last went.
     #[serde(default, skip_serializing_if = "ExportSettings::is_default")]
     pub export: ExportSettings,

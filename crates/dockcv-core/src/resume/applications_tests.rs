@@ -98,6 +98,7 @@ fn a_preset_already_in_effect_is_not_applied_again() {
     doc.presets = vec![
         Preset {
             name: "Short profile".into(),
+            profile: None,
             selection: vec![(SectionKind::Profile, short)],
             hidden: vec![],
             order: vec![],
@@ -105,6 +106,7 @@ fn a_preset_already_in_effect_is_not_applied_again() {
         },
         Preset {
             name: "Base profile".into(),
+            profile: None,
             selection: vec![(SectionKind::Profile, base)],
             hidden: vec![],
             order: vec![],
@@ -112,6 +114,7 @@ fn a_preset_already_in_effect_is_not_applied_again() {
         },
         Preset {
             name: "Names nothing".into(),
+            profile: None,
             selection: vec![],
             hidden: vec![],
             order: vec![],

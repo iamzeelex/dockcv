@@ -691,6 +691,7 @@ mod tests {
         let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
         doc.presets.push(Preset {
             name: "Preset 2".into(),
+            profile: None,
             selection: Vec::new(),
             hidden: Vec::new(),
             order: Vec::new(),

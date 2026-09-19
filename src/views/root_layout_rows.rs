@@ -382,6 +382,10 @@ impl Root {
                             menu = menu.item(PopupMenuItem::new(text).checked(checked).on_click(
                                 move |_ev, window, cx| {
                                     let _ = root.update(cx, |this, cx| {
+                                        if checked {
+                                            return;
+                                        }
+                                        this.prepare_document_layout_change(label);
                                         apply(&mut this.doc, value);
                                         this.after_layout_change(window, cx);
                                     });
@@ -423,6 +427,10 @@ impl Root {
                             menu = menu.item(PopupMenuItem::new(font.label()).on_click(
                                 move |_ev, window, cx| {
                                     let _ = root.update(cx, |this, cx| {
+                                        if this.effective_layout().font == font {
+                                            return;
+                                        }
+                                        this.prepare_document_layout_change("Font");
                                         this.doc.layout.font = font;
                                         this.after_layout_change(window, cx);
                                     });
@@ -469,6 +477,10 @@ impl Root {
                                 .on_click(
                                     move |_ev, window, cx| {
                                         let _ = root.update(cx, |this, cx| {
+                                            if this.effective_layout().date_format == format {
+                                                return;
+                                            }
+                                            this.prepare_document_layout_change("Date format");
                                             this.doc.layout.date_format = format;
                                             this.after_layout_change(window, cx);
                                         });
@@ -510,6 +522,10 @@ impl Root {
                     }))
                     .on_click(cx.listener(move |this, clicked: &Vec<usize>, window, cx| {
                         if let Some(size) = clicked.first().and_then(|i| PAGE_SIZES.get(*i)) {
+                            if this.effective_layout().page_size == *size {
+                                return;
+                            }
+                            this.prepare_document_layout_change("Page size");
                             this.doc.layout.page_size = *size;
                             this.after_layout_change(window, cx);
                         }
@@ -581,7 +597,7 @@ impl Root {
         read: fn(&TypeSizes) -> f32,
         write: fn(&mut TypeSizes, f32),
     ) -> impl IntoElement {
-        let layout = self.doc.layout;
+        let layout = self.effective_layout();
         let resolved = TypeSizes::resolve(layout.base_size_pt(), read(&layout.sizes));
         div()
             .flex()
@@ -623,7 +639,11 @@ impl Root {
         .icon(if up { IconName::Plus } else { IconName::Minus })
         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
             let (lo, hi) = TypeSizes::DELTA_RANGE;
-            let next = (read(&this.doc.layout.sizes) + step).clamp(lo, hi);
+            let next = (read(&this.effective_layout().sizes) + step).clamp(lo, hi);
+            if (next - read(&this.effective_layout().sizes)).abs() < f32::EPSILON {
+                return;
+            }
+            this.prepare_document_layout_change(label);
             write(&mut this.doc.layout.sizes, next);
             this.after_layout_change(window, cx);
         }))

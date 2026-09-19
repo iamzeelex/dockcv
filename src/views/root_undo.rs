@@ -86,6 +86,9 @@ impl Root {
         // makes the restored values appear in the boxes rather than only in
         // the preview.
         self.fields_stale = true;
+        self.profile_detachment = None;
+        self.profile_fork = None;
+        self.reset_layout_sliders();
         self.focus_handle.focus(window, cx);
         cx.notify();
         self.schedule_recompile(window, cx);

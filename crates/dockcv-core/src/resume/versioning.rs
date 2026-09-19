@@ -228,13 +228,17 @@ pub struct TrimCandidate {
 }
 
 /// A named, document-wide reading: a chosen variant (by [`VariantId`]) for each
-/// section, plus visibility, order, and printed headings.
-/// Applying it restores all four dimensions in one click — e.g. a "GE Vernova"
+/// section, plus visibility, order, printed headings, and a layout profile.
+/// Applying it restores the complete reading in one click — e.g. a "GE Vernova"
 /// preset can pick tailored Profile and Work variants, lead with Skills under
 /// "Engineering", and leave Education on its shared variant.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Preset {
     pub name: String,
+    /// Vault-wide layout profile used by this reading. `None` means the
+    /// document's own layout; raw layout values never live in a preset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
     /// One pin per section the document has — every one of them, which
     /// [`crate::resume::model::ResumeDoc::reconcile_presets`] is what keeps true. A preset silent
     /// about a section is not a reading of the document, it is an instruction

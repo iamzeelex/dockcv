@@ -45,6 +45,9 @@ impl Root {
         }
         self.checkpoint();
         self.doc.apply_preset(index);
+        self.profile_detachment = None;
+        self.profile_fork = None;
+        self.reset_layout_sliders();
         self.schedule_save(cx);
         self.fields_stale = true;
         cx.notify();

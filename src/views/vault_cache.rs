@@ -31,7 +31,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::resume::model::{Applications, Diary, Library, ResumeDoc};
+use crate::resume::model::{Applications, Diary, Library, ProfileCatalog, ResumeDoc};
 use crate::vault::{self, DocMeta};
 
 /// What the directory looked like: one entry per `.toml`, sorted by name.
@@ -91,6 +91,7 @@ pub(super) struct VaultCache {
     library: Library,
     diary: Diary,
     applications: Applications,
+    profiles: ProfileCatalog,
 }
 
 impl VaultCache {
@@ -120,6 +121,7 @@ impl VaultCache {
         self.library = vault::load_library(dir);
         self.diary = vault::load_diary(dir);
         self.applications = vault::load_applications(dir);
+        self.profiles = vault::load_profiles(dir);
 
         self.loaded_from = Some(dir.to_path_buf());
         self.fingerprint = fingerprint;
@@ -157,6 +159,10 @@ impl VaultCache {
 
     pub(super) fn applications(&self) -> &Applications {
         &self.applications
+    }
+
+    pub(super) fn profiles(&self) -> &ProfileCatalog {
+        &self.profiles
     }
 }
 

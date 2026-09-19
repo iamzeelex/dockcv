@@ -32,6 +32,7 @@ fn sanitized_clamps_out_of_range_values() {
         entries: Default::default(),
         header: Default::default(),
         headings: Default::default(),
+        show_link_marks: true,
         sizes: TypeSizes {
             name_pt: 400.0,
             title_pt: -90.0,
@@ -69,6 +70,7 @@ fn layout_round_trips_through_toml() {
         entries: Default::default(),
         header: Default::default(),
         headings: Default::default(),
+        show_link_marks: true,
         sizes: TypeSizes {
             name_pt: 12.5,
             title_pt: 2.0,
@@ -86,4 +88,13 @@ fn layout_round_trips_through_toml() {
     let text = toml::to_string_pretty(&layout).expect("serializes");
     let back: LayoutSettings = toml::from_str(&text).expect("round-trips");
     assert_eq!(back, layout);
+}
+
+#[test]
+fn layouts_written_before_link_marks_existed_keep_drawing_them() {
+    let text = toml::to_string_pretty(&LayoutSettings::default()).expect("serialize");
+    let old = text.replace("show_link_marks = true\n", "");
+    assert_ne!(old, text, "fixture must actually remove the new field");
+    let back: LayoutSettings = toml::from_str(&old).expect("old layout opens");
+    assert!(back.show_link_marks);
 }

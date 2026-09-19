@@ -9,11 +9,11 @@ use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, Div, FontWeight, SharedString};
 
 use dockcv_ui_components::{
-    Button, ButtonExt, DockIcon, DropdownMenu, IconName, PopupMenuItem, ScrollableElement, Sizable,
-    TextField, CHROME_HEIGHT, MONO, SANS,
+    Button, ButtonExt, DockIcon, DropdownMenu, IconName, PopupMenuItem, ScrollableElement,
+    Selectable, Sizable, TextField, CHROME_HEIGHT, MONO, SANS,
 };
 
-use crate::resume::model::SectionKind;
+use crate::resume::model::{SectionKind, ATS_SAFE_PROFILE};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use super::preset_matrix::{Choice, Column, PresetMatrix};
@@ -155,6 +155,16 @@ impl PresetMatrix {
                     }))
                     .child("Differences only"),
             )
+            .child(
+                Button::new("matrix-ats-safe")
+                    .quiet()
+                    .selected(self.doc.layout_profile.as_deref() == Some(ATS_SAFE_PROFILE))
+                    .tooltip("Apply the layout proven by the ATS conformance harness")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.set_matrix_profile(None, Some(ATS_SAFE_PROFILE.to_string()), cx);
+                    }))
+                    .child("Use ATS-safe"),
+            )
             .when(differences_only && hidden_rows > 0, |bar| {
                 bar.child(
                     div()
@@ -192,7 +202,10 @@ impl PresetMatrix {
     ) -> Div {
         let theme = *cx.theme();
 
-        let mut table_rows = vec![self.render_header_row(cx, columns)];
+        let mut table_rows = vec![
+            self.render_header_row(cx, columns),
+            self.render_profile_row(cx, columns),
+        ];
         for section in rows {
             table_rows.push(self.render_row(cx, columns, *section));
         }
@@ -223,6 +236,98 @@ impl PresetMatrix {
             .rounded(theme.radius_md())
             .overflow_hidden()
             .children(table_rows)
+    }
+
+    /// Profiles are a reading-level choice, so they get one dedicated row
+    /// above section variants instead of becoming a third matrix axis.
+    fn render_profile_row(&self, cx: &mut Context<Shell>, columns: &[Column]) -> Div {
+        let theme = *cx.theme();
+        let mut row = div().flex().w_full().gap(px(1.0)).child(
+            div()
+                .w(px(LABEL_WIDTH))
+                .flex_none()
+                .bg(theme.surface)
+                .px(px(16.0))
+                .py(px(13.0))
+                .font_family(SANS)
+                .text_size(px(13.0))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text)
+                .child("Profile"),
+        );
+        for column in columns {
+            row = row.child(self.render_profile_cell(cx, column));
+        }
+        row
+    }
+
+    fn render_profile_cell(&self, cx: &mut Context<Shell>, column: &Column) -> AnyElement {
+        let theme = *cx.theme();
+        let selected = self.column_profile(column).map(str::to_string);
+        let label = selected.clone().unwrap_or_else(|| "This CV".to_string());
+        let missing = selected
+            .as_deref()
+            .is_some_and(|name| !self.profiles.contains_name(name));
+        let marked =
+            column.preset.is_some() && selected.as_deref() != self.doc.layout_profile.as_deref();
+        let names = self.profiles.names();
+        let preset = column.preset;
+        let shell = cx.weak_entity();
+
+        div()
+            .flex_1()
+            .min_w(px(COLUMN_MIN_WIDTH))
+            .px(px(10.0))
+            .py(px(8.0))
+            .when(marked, |cell| {
+                cell.bg(theme.hover)
+                    .border_l_2()
+                    .border_color(theme.warning)
+            })
+            .when(!marked, |cell| cell.bg(theme.elevated))
+            .child(
+                Button::new(SharedString::from(format!("matrix-profile-{preset:?}")))
+                    .quiet()
+                    .w_full()
+                    .justify_start()
+                    .text_color(if missing {
+                        theme.danger
+                    } else {
+                        theme.text_muted
+                    })
+                    .child(if missing {
+                        format!("Missing: {label}")
+                    } else {
+                        label
+                    })
+                    .dropdown_menu(move |mut menu, _window, _cx| {
+                        let own_shell = shell.clone();
+                        menu = menu.item(
+                            PopupMenuItem::new("This CV")
+                                .checked(selected.is_none())
+                                .on_click(move |_ev, _window, cx| {
+                                    let _ = own_shell.update(cx, |this, cx| {
+                                        this.set_matrix_profile(preset, None, cx);
+                                    });
+                                }),
+                        );
+                        for name in names.clone() {
+                            let checked = selected.as_deref() == Some(name.as_str());
+                            let item_shell = shell.clone();
+                            let profile = name.clone();
+                            menu = menu.item(PopupMenuItem::new(name).checked(checked).on_click(
+                                move |_ev, _window, cx| {
+                                    let profile = profile.clone();
+                                    let _ = item_shell.update(cx, |this, cx| {
+                                        this.set_matrix_profile(preset, Some(profile), cx);
+                                    });
+                                },
+                            ));
+                        }
+                        menu
+                    }),
+            )
+            .into_any_element()
     }
 
     /// `SECTION | Now | <preset> | …`, each preset header carrying its rename
