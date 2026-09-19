@@ -1779,6 +1779,7 @@ dependencies = [
  "comemo",
  "docx-rs",
  "icu_segmenter",
+ "lopdf 0.44.0",
  "regex",
  "serde",
  "serde_json",

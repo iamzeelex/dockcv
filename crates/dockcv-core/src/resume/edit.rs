@@ -695,6 +695,7 @@ mod tests {
             hidden: Vec::new(),
             order: Vec::new(),
             titles: Vec::new(),
+            lang: None,
         });
 
         let id = FieldId::PresetName(0);

@@ -15,6 +15,7 @@ impl ResumeDoc {
             certificates: Versioned::single(base_name.clone(), r.certificates),
             volunteer: Versioned::single(base_name.clone(), r.volunteer),
             presets: Vec::new(),
+            lang: None,
             section_order: Vec::new(),
             section_titles: Vec::new(),
             layout: LayoutSettings::default(),
@@ -251,17 +252,20 @@ impl ResumeDoc {
     /// quick-capture (roadmap D-7), and the two must not blur.
     pub fn add_preset(&mut self, name: impl Into<String>) {
         let selection = self.current_selection();
-        // A preset records visibility, order, and headings as well as variant
-        // selection, so saving "the current state" means the whole reading.
+        // A preset records visibility, order, headings, and language as well
+        // as variant selection, so saving the current state means the whole
+        // reading.
         let hidden = self.hidden_sections.clone();
         let order = self.section_order.clone();
         let titles = self.section_titles.clone();
+        let lang = self.lang.clone();
         self.presets.push(Preset {
             name: name.into(),
             selection,
             hidden,
             order,
             titles,
+            lang,
         });
     }
 
@@ -288,6 +292,7 @@ impl ResumeDoc {
         self.hidden_sections = preset.hidden;
         self.section_order = preset.order;
         self.section_titles = preset.titles;
+        self.lang = preset.lang;
     }
 
     /// Whether preset `index` is already what the document is showing.
@@ -325,6 +330,9 @@ impl ResumeDoc {
         }) {
             return false;
         }
+        if self.language() != Self::language_from(&preset.lang) {
+            return false;
+        }
         preset
             .selection
             .iter()
@@ -341,30 +349,31 @@ impl ResumeDoc {
         (0..self.presets.len()).find(|index| self.is_preset_active(*index))
     }
 
-    /// How many section cells differ between the working copy and a preset.
+    /// How many visible decisions differ between the working copy and a preset.
     ///
     /// Variant, visibility, heading, and order are one cell, not four: changing
     /// several on Skills is still one row the person has to inspect in the
     /// matrix. A broken pin differs from every live variant, which makes
-    /// repairing it explicit.
+    /// repairing it explicit. Language is a column-level decision rather than
+    /// a section row, so a language mismatch contributes one more difference.
     pub fn preset_distance(&self, index: usize) -> Option<usize> {
         let preset = self.presets.get(index)?;
         let preset_order = self.sections_with_order(&preset.order);
         let current_order = self.sections();
-        Some(
-            current_order
-                .iter()
-                .copied()
-                .filter(|section| {
-                    preset.variant_for(*section) != self.active_variant_id(*section)
-                        || preset.hidden.contains(section) != self.hidden_sections.contains(section)
-                        || preset_order.iter().position(|kind| kind == section)
-                            != current_order.iter().position(|kind| kind == section)
-                        || self.section_title_with(*section, &preset.titles)
-                            != self.section_title(*section)
-                })
-                .count(),
-        )
+        let section_distance = current_order
+            .iter()
+            .copied()
+            .filter(|section| {
+                preset.variant_for(*section) != self.active_variant_id(*section)
+                    || preset.hidden.contains(section) != self.hidden_sections.contains(section)
+                    || preset_order.iter().position(|kind| kind == section)
+                        != current_order.iter().position(|kind| kind == section)
+                    || self.section_title_with(*section, &preset.titles)
+                        != self.section_title(*section)
+            })
+            .count();
+        let language_distance = usize::from(self.language() != Self::language_from(&preset.lang));
+        Some(section_distance + language_distance)
     }
 
     /// The preset requiring the fewest section changes to reach from now.
@@ -379,14 +388,15 @@ impl ResumeDoc {
     /// Rewrite one preset to describe the document's working copy.
     ///
     /// Presets own no content; updating one replaces its variant pins,
-    /// visibility, order, and headings. The UI checkpoints the whole document
-    /// before this call, which makes the operation undoable without a second
-    /// history type.
+    /// visibility, order, headings, and language. The UI checkpoints the whole
+    /// document before this call, which makes the operation undoable without a
+    /// second history type.
     pub fn update_preset(&mut self, index: usize) -> bool {
         let selection = self.current_selection();
         let hidden = self.hidden_sections.clone();
         let order = self.section_order.clone();
         let titles = self.section_titles.clone();
+        let lang = self.lang.clone();
         let Some(preset) = self.presets.get_mut(index) else {
             return false;
         };
@@ -394,7 +404,38 @@ impl ResumeDoc {
         preset.hidden = hidden;
         preset.order = order;
         preset.titles = titles;
+        preset.lang = lang;
         true
+    }
+
+    /// The language of the working reading, resolved through the supported
+    /// short list. English is the default for old documents and invalid
+    /// hand-written tags alike.
+    pub fn language(&self) -> DocumentLanguage {
+        Self::language_from(&self.lang)
+    }
+
+    /// The language a preset will restore.
+    pub fn language_for_preset(&self, index: usize) -> Option<DocumentLanguage> {
+        self.presets
+            .get(index)
+            .map(|preset| Self::language_from(&preset.lang))
+    }
+
+    /// Change the working reading's language. Returns whether it changed.
+    ///
+    /// English clears the field rather than writing redundant `lang = "en"`.
+    pub fn set_language(&mut self, language: DocumentLanguage) -> bool {
+        let next = language.stored().map(str::to_string);
+        if self.lang == next {
+            return false;
+        }
+        self.lang = next;
+        true
+    }
+
+    fn language_from(stored: &Option<String>) -> DocumentLanguage {
+        DocumentLanguage::from_code(stored.as_deref())
     }
 
     pub fn remove_preset(&mut self, index: usize) {

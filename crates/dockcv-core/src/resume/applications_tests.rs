@@ -102,6 +102,7 @@ fn a_preset_already_in_effect_is_not_applied_again() {
             hidden: vec![],
             order: vec![],
             titles: vec![],
+            lang: None,
         },
         Preset {
             name: "Base profile".into(),
@@ -109,6 +110,7 @@ fn a_preset_already_in_effect_is_not_applied_again() {
             hidden: vec![],
             order: vec![],
             titles: vec![],
+            lang: None,
         },
         Preset {
             name: "Names nothing".into(),
@@ -116,6 +118,7 @@ fn a_preset_already_in_effect_is_not_applied_again() {
             hidden: vec![],
             order: vec![],
             titles: vec![],
+            lang: None,
         },
     ];
 

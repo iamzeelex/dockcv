@@ -25,6 +25,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::language::DocumentLanguage;
+
 /// A date on a résumé, as typed.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -76,8 +78,18 @@ impl ResumeDate {
     /// Falls back to the raw text whenever it cannot be parsed — a CV that
     /// says "Summer 2021" keeps saying it.
     pub fn display(&self, format: DateFormat) -> String {
+        self.display_in(format, DocumentLanguage::English)
+    }
+
+    /// The text to print under both a date shape and a document language.
+    ///
+    /// Parsing stays language-neutral because the stored ISO-like values are
+    /// the source of truth. Only the words emitted for a parsed date are
+    /// localized; text DockCV cannot parse remains exactly what its author
+    /// typed.
+    pub fn display_in(&self, format: DateFormat, language: DocumentLanguage) -> String {
         match self.parse() {
-            Some(date) => format.render(date),
+            Some(date) => format.render_in(date, language),
             None => self.text.trim().to_string(),
         }
     }
@@ -98,21 +110,6 @@ pub struct CivilDate {
     pub month: Option<u32>,
     pub day: Option<u32>,
 }
-
-const MONTHS_LONG: [&str; 12] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-];
 
 /// Formats the document can print its dates in.
 ///
@@ -180,14 +177,20 @@ impl DateFormat {
 
     /// Render `date` at the precision it carries.
     pub fn render(self, date: CivilDate) -> String {
+        self.render_in(date, DocumentLanguage::English)
+    }
+
+    /// Render `date` with the words and ordinal convention of `language`.
+    pub fn render_in(self, date: CivilDate, language: DocumentLanguage) -> String {
         let year = date.year;
         let Some(month) = date.month else {
             // Year only: every format prints the same thing, because there is
             // nothing else to arrange.
             return year.to_string();
         };
-        let short = &MONTHS_LONG[(month as usize - 1).min(11)][..3];
-        let long = MONTHS_LONG[(month as usize - 1).min(11)];
+        let month_index = (month as usize - 1).min(11);
+        let short = language.month_short(month_index);
+        let long = language.month_long(month_index);
 
         match (self, date.day) {
             (Self::Iso, Some(day)) => format!("{year:04}-{month:02}-{day:02}"),
@@ -196,17 +199,19 @@ impl DateFormat {
             (Self::DayMonShortYear, Some(day)) => format!("{day:02} {short} {year}"),
             (Self::DayMonShortYear, None) => format!("{short} {year}"),
 
-            (Self::DayOrdinalMonthYear, Some(day)) => {
-                format!("{} {long} {year}", ordinal(day))
-            }
+            (Self::DayOrdinalMonthYear, Some(day)) => match language {
+                DocumentLanguage::English => format!("{} {long} {year}", ordinal(day)),
+                DocumentLanguage::German => format!("{day}. {long} {year}"),
+            },
             (Self::DayOrdinalMonthYear, None) => format!("{long} {year}"),
 
             (Self::MonShortDayYear, Some(day)) => format!("{short} {day:02}, {year}"),
             (Self::MonShortDayYear, None) => format!("{short} {year}"),
 
-            (Self::MonthDayOrdinalYear, Some(day)) => {
-                format!("{long} {}, {year}", ordinal(day))
-            }
+            (Self::MonthDayOrdinalYear, Some(day)) => match language {
+                DocumentLanguage::English => format!("{long} {}, {year}", ordinal(day)),
+                DocumentLanguage::German => format!("{long} {day}., {year}"),
+            },
             (Self::MonthDayOrdinalYear, None) => format!("{long} {year}"),
 
             (Self::SlashDayFirst, Some(day)) => format!("{day:02}/{month:02}/{year}"),
@@ -287,11 +292,11 @@ fn parse_date(text: &str) -> Option<CivilDate> {
 
 fn month_number(word: &str) -> Option<u32> {
     let word = word.trim_end_matches(',').to_lowercase();
-    MONTHS_LONG
-        .iter()
-        .position(|m| {
-            let m = m.to_lowercase();
-            m == word || m[..3] == word
+    (0..12)
+        .position(|month| {
+            let long = DocumentLanguage::English.month_long(month).to_lowercase();
+            let short = DocumentLanguage::English.month_short(month).to_lowercase();
+            long == word || short == word
         })
         .map(|i| i as u32 + 1)
 }
@@ -349,6 +354,28 @@ mod tests {
         assert_eq!(d.display(DateFormat::SlashDayFirst), "08/08/2026");
         assert_eq!(d.display(DateFormat::SlashMonthFirst), "08/08/2026");
         assert_eq!(d.display(DateFormat::DotDayFirst), "08.08.2026");
+    }
+
+    #[test]
+    fn german_localizes_only_words_the_model_understands() {
+        let month = ResumeDate::new("2019-03");
+        assert_eq!(
+            month.display_in(DateFormat::DayMonShortYear, DocumentLanguage::German),
+            "Mär 2019"
+        );
+
+        let full = ResumeDate::new("2026-08-08");
+        assert_eq!(
+            full.display_in(DateFormat::DayOrdinalMonthYear, DocumentLanguage::German),
+            "8. August 2026"
+        );
+
+        let authors_words = ResumeDate::new("Sommer 2021");
+        assert_eq!(
+            authors_words.display_in(DateFormat::DayOrdinalMonthYear, DocumentLanguage::German),
+            "Sommer 2021"
+        );
+        assert_eq!(authors_words.text, "Sommer 2021");
     }
 
     /// The rule this module exists to hold: text the app cannot read is

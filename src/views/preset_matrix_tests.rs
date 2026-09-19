@@ -26,6 +26,7 @@ fn two_readings() -> (
             hidden: Vec::new(),
             order: Vec::new(),
             titles: Vec::new(),
+            lang: None,
         },
         Preset {
             name: "Preset B".into(),
@@ -33,6 +34,7 @@ fn two_readings() -> (
             hidden: Vec::new(),
             order: Vec::new(),
             titles: Vec::new(),
+            lang: None,
         },
     ];
 
@@ -241,4 +243,18 @@ fn order_and_heading_differences_are_visible_in_their_rows() {
     assert!(matrix.row_differs(SectionKind::Skills));
     assert!(matrix.cell_differs(&columns[1], SectionKind::Skills));
     assert!(!matrix.cell_differs(&columns[2], SectionKind::Work));
+}
+
+#[test]
+fn language_is_reported_per_column_without_becoming_a_section_row() {
+    let mut doc = ResumeDoc::default();
+    doc.add_preset("English");
+    doc.set_language(crate::resume::model::DocumentLanguage::German);
+    doc.add_preset("Deutsch");
+
+    let matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+    let columns = matrix.columns();
+    assert_eq!(matrix.column_language(&columns[0]).badge(), "DE");
+    assert_eq!(matrix.column_language(&columns[1]).badge(), "EN");
+    assert_eq!(matrix.column_language(&columns[2]).badge(), "DE");
 }

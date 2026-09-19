@@ -9,8 +9,9 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, Context, FontWeight, IntoElement, Window};
 
-use dockcv_ui_components::{Button, ButtonExt, DropdownMenu, PopupMenuItem, SANS};
+use dockcv_ui_components::{Button, ButtonExt, DropdownMenu, PopupMenu, PopupMenuItem, SANS};
 
+use crate::resume::model::DocumentLanguage;
 use crate::theme::ActiveTheme;
 
 use super::root::{NextPreset, EDITOR_CONTEXT};
@@ -118,6 +119,29 @@ impl Root {
         cx.notify();
     }
 
+    /// Change the language of the working reading.
+    ///
+    /// Like changing a heading or moving a section, this intentionally makes
+    /// an active preset `EDITED`; `Update` or `Save as preset` is the explicit
+    /// gesture that pins the new language to a named reading.
+    pub(super) fn set_document_language(
+        &mut self,
+        language: DocumentLanguage,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.doc.lang.as_deref() == language.stored() {
+            return;
+        }
+        self.checkpoint();
+        if !self.doc.set_language(language) {
+            return;
+        }
+        self.schedule_save(cx);
+        cx.notify();
+        self.schedule_recompile(window, cx);
+    }
+
     /// Derive the label from the working copy. An exact match shows the preset
     /// name; otherwise the nearest reading is named and marked `EDITED`, with
     /// explicit Update and Revert actions.
@@ -126,6 +150,7 @@ impl Root {
         let active_preset = self.active_preset();
         let nearest_preset = active_preset.or_else(|| self.nearest_preset());
         let edited = active_preset.is_none() && nearest_preset.is_some();
+        let language = self.doc.language();
         let value = nearest_preset
             .and_then(|i| self.doc.preset_name(i))
             .map(|name| {
@@ -137,6 +162,9 @@ impl Root {
             })
             .unwrap_or_else(|| "No preset".to_string());
         let presets: Vec<String> = self.doc.presets.iter().map(|p| p.name.clone()).collect();
+        let preset_languages: Vec<DocumentLanguage> = (0..self.doc.presets.len())
+            .filter_map(|index| self.doc.language_for_preset(index))
+            .collect();
         let root = cx.weak_entity();
 
         Button::new("preset-control")
@@ -163,17 +191,18 @@ impl Root {
                     .text_size(px(13.0))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.text)
-                    .child(value),
+                    .child(format!("{value} · {}", language.badge())),
             )
-            .dropdown_menu(move |menu, _window, _cx| {
+            .dropdown_menu(move |menu, window, cx| {
                 let mut menu = menu;
                 if presets.is_empty() {
                     menu = menu.item(PopupMenuItem::label("No presets yet"));
                 } else {
                     for (i, name) in presets.iter().enumerate() {
                         let root = root.clone();
+                        let language = preset_languages.get(i).copied().unwrap_or_default();
                         menu = menu.item(
-                            PopupMenuItem::new(name.clone())
+                            PopupMenuItem::new(format!("{name} · {}", language.badge()))
                                 .checked(active_preset == Some(i))
                                 .on_click(move |_ev, window, cx| {
                                     let _ = root.update(cx, |this, cx| {
@@ -209,6 +238,27 @@ impl Root {
                         }
                     }
                 }
+                let language_root = root.clone();
+                let language_menu =
+                    PopupMenu::build(window, cx, move |mut submenu, _window, _cx| {
+                        for option in DocumentLanguage::ALL {
+                            let root = language_root.clone();
+                            submenu = submenu.item(
+                                PopupMenuItem::new(option.label())
+                                    .checked(option == language)
+                                    .on_click(move |_ev, window, cx| {
+                                        let _ = root.update(cx, |this, cx| {
+                                            this.set_document_language(option, window, cx);
+                                        });
+                                    }),
+                            );
+                        }
+                        submenu
+                    });
+                menu = menu.separator().item(PopupMenuItem::submenu(
+                    format!("Language · {}", language.badge()),
+                    language_menu,
+                ));
                 if active_preset.is_some() {
                     menu = menu.item(PopupMenuItem::new("Remove current preset").on_click({
                         let root = root.clone();
