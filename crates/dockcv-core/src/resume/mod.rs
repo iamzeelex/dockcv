@@ -3,24 +3,30 @@
 
 pub mod altacv;
 pub mod altacv_package;
+mod applications;
 pub mod dates;
 pub mod diagnostics;
 mod document_toml;
+mod document_variants;
 pub mod edit;
 #[cfg(feature = "docx")]
 pub mod export_docx;
 pub mod export_json_resume;
 pub mod export_markdown;
 pub mod export_names;
+mod export_settings;
 pub mod export_text;
 pub mod export_typst;
 pub mod export_walk;
 pub mod export_wrap;
+mod layout;
+mod layout_sections;
 pub mod links;
 pub mod model;
 pub mod outcomes;
 pub mod presets;
 pub mod template;
+mod versioning;
 
 pub use document_toml::parse_document_toml;
 #[cfg(feature = "docx")]
