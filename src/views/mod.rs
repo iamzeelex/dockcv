@@ -30,6 +30,7 @@ mod preset_matrix_grid;
 #[cfg(test)]
 mod preset_matrix_tests;
 mod root;
+mod root_ats_lint;
 mod root_custom_sections;
 mod root_dates;
 mod root_export_rail;

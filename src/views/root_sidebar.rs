@@ -547,6 +547,7 @@ impl Root {
                 }))
                 .child(drag_handle)
                 .child(heading)
+                .children(self.render_ats_chip(cx, section))
                 .child(rename_button)
                 .child(self.section_layout_button(cx, section))
                 .child(self.visibility_button(cx, section))
@@ -573,6 +574,7 @@ impl Root {
                 .px(px(15.0))
                 .py(px(14.0))
                 .child(header)
+                .children(self.render_ats_findings(cx, section))
                 // C-1: explicit `small()` tightens the Form's own row/column
                 // gap (8px/24px → 6px/18px) rather than the implicit Medium
                 // default upstream falls back to when no size is set.
@@ -602,6 +604,7 @@ impl Root {
                 }))
                 .child(drag_handle)
                 .child(heading)
+                .children(self.render_ats_chip(cx, section))
                 .child(rename_button);
 
             if let Some(name) = variant_chip {

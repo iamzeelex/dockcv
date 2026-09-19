@@ -30,6 +30,9 @@ pub struct BatchExportSheet {
     /// The plan under that choice — recomputed when the choice changes, since
     /// the targets differ between the two.
     pub plan: Vec<PlannedExport>,
+    /// Deterministic ATS finding count per preset index. Computed once when
+    /// the sheet opens; repainting the list must not lint every CV again.
+    pub ats_counts: Vec<usize>,
     /// True from the moment the user confirms until the writes finish, so the
     /// sheet cannot be confirmed twice.
     pub writing: bool,
@@ -83,7 +86,6 @@ impl Shell {
         let Some(sheet) = &self.batch_export else {
             return div().into_any_element();
         };
-
         let collisions = sheet.collisions();
         let count = sheet.plan.len();
 
@@ -95,6 +97,11 @@ impl Shell {
             .max_h(px(280.0))
             .overflow_y_scrollbar()
             .children(sheet.plan.iter().map(|step| {
+                let ats_count = sheet
+                    .ats_counts
+                    .get(step.preset_index)
+                    .copied()
+                    .unwrap_or_default();
                 let name = step
                     .destination
                     .target
@@ -134,21 +141,35 @@ impl Shell {
                                     .child(step.preset.clone()),
                             ),
                     )
-                    .child(if step.destination.overwrites() {
+                    .child(
                         div()
-                            .text_style(TextStyle::chip())
-                            .text_color(theme.danger)
-                            .child("replaces")
-                            .into_any_element()
-                    } else if step.destination.collides {
-                        div()
-                            .text_style(TextStyle::chip())
-                            .text_color(theme.warning)
-                            .child("renamed")
-                            .into_any_element()
-                    } else {
-                        div().into_any_element()
-                    })
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .children((ats_count > 0).then(|| {
+                                div()
+                                    .text_style(TextStyle::chip())
+                                    .text_color(theme.warning)
+                                    .child(format!("{ats_count} ATS"))
+                            }))
+                            .children(step.destination.overwrites().then(|| {
+                                div()
+                                    .text_style(TextStyle::chip())
+                                    .text_color(theme.danger)
+                                    .child("replaces")
+                            }))
+                            .children(
+                                (!step.destination.overwrites() && step.destination.collides).then(
+                                    || {
+                                        div()
+                                            .text_style(TextStyle::chip())
+                                            .text_color(theme.warning)
+                                            .child("renamed")
+                                    },
+                                ),
+                            ),
+                    )
             }));
 
         // Only asked when it means something. A folder with no clashes in it

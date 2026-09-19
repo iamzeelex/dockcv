@@ -22,6 +22,7 @@ use dockcv_ui_components::{
 };
 
 use crate::render::{self, Rendered};
+use crate::resume::ats::Finding;
 use crate::resume::diagnostics::{describe_all, CompileMessage};
 use crate::resume::edit::FieldId;
 use crate::resume::model::{Diary, DiaryEntry, Library, ProfileCatalog, ResumeDoc, SectionKind};
@@ -229,6 +230,9 @@ pub struct Root {
     pub(super) profile_detachment: Option<ProfileDetachment>,
     /// Inline name field opened by “Save as a new profile…”.
     pub(super) profile_fork: Option<ProfileFork>,
+    /// Deterministic B2 findings for the current working copy, refreshed once
+    /// per frame and shared by every section card.
+    pub(super) ats_findings: Vec<Finding>,
     pub(super) rendered: Option<Rendered>,
     /// Visible compile status — see [`CompileState`].
     pub(super) compile_state: CompileState,
@@ -406,6 +410,7 @@ impl Root {
             profiles,
             profile_detachment: None,
             profile_fork: None,
+            ats_findings: Vec::new(),
             rendered: None,
             compile_state: CompileState::Compiling,
             last_source: String::new(),
@@ -1391,6 +1396,7 @@ impl Render for Root {
         }
         self.sync_fields(window, cx);
         self.ensure_layout_sliders(window, cx);
+        self.refresh_ats_findings();
 
         let theme = *cx.theme();
 
