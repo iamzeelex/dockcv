@@ -47,15 +47,21 @@ impl Root {
         let path = destination.target;
         let write_path = path.clone();
         let engine = self.engine.clone();
+        let profiles = self.profiles.clone();
         let executor = cx.background_executor().clone();
 
         cx.spawn(async move |this, cx| {
             let outcome = executor
                 .spawn(async move {
                     let composed = export_doc.compose();
+                    let layout =
+                        profiles.resolve(export_doc.layout_profile.as_deref(), export_doc.layout);
                     match format {
                         ExportFormat::Pdf => {
-                            let source = crate::resume::template::generate_for(&export_doc);
+                            let source = crate::resume::template::generate_for_with_profiles(
+                                &export_doc,
+                                &profiles,
+                            );
                             let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
                             engine.set_source(source);
                             let pdf_bytes = engine.compile_to_pdf()?;
@@ -63,18 +69,27 @@ impl Root {
                                 .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::Docx => {
-                            let bytes = crate::resume::export_docx(&composed)
-                                .map_err(|e| format!("DOCX generation failed: {e}"))?;
+                            let bytes = crate::resume::export_docx_with_date_format(
+                                &composed,
+                                layout.date_format,
+                            )
+                            .map_err(|e| format!("DOCX generation failed: {e}"))?;
                             std::fs::write(&write_path, bytes)
                                 .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::PlainText => {
-                            let text = crate::resume::export_plain_text(&composed);
+                            let text = crate::resume::export_plain_text_with_date_format(
+                                &composed,
+                                layout.date_format,
+                            );
                             std::fs::write(&write_path, text.as_bytes())
                                 .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::Markdown => {
-                            let md = crate::resume::export_markdown(&composed);
+                            let md = crate::resume::export_markdown_with_date_format(
+                                &composed,
+                                layout.date_format,
+                            );
                             std::fs::write(&write_path, md.as_bytes())
                                 .map_err(|e| format!("write failed: {e}"))
                         }
@@ -95,7 +110,7 @@ impl Root {
                                 .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::Typst => {
-                            let typst = crate::resume::export_typst(&export_doc);
+                            let typst = crate::resume::export_typst_with_layout(&composed, &layout);
                             std::fs::write(&write_path, typst.as_bytes())
                                 .map_err(|e| format!("write failed: {e}"))
                         }

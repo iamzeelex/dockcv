@@ -596,6 +596,7 @@ impl Shell {
             .thumb_engine
             .get_or_insert_with(|| Arc::new(Mutex::new(TypstEngine::new(String::new()))))
             .clone();
+        let profiles = self.cache.profiles().clone();
         let executor = cx.background_executor().clone();
 
         self.reading_task = Some(cx.spawn(async move |this, cx| {
@@ -604,20 +605,30 @@ impl Shell {
                     .spawn({
                         let engine = engine.clone();
                         let path = path.clone();
+                        let profiles = profiles.clone();
                         async move {
                             let doc = vault::load(&path).ok()?;
                             let mut engine =
                                 engine.lock().unwrap_or_else(|e| e.into_inner());
                             let mut out: Vec<(Option<String>, PageGeometry)> = Vec::new();
+                            // Through the catalog, not `generate_for`: a
+                            // reading on a vault profile lays out differently,
+                            // and measuring it against the document's own
+                            // layout would put a page count on the row that
+                            // the exported PDF then disagrees with.
                             if doc.presets.is_empty() {
-                                engine.set_source(template::generate_for(&doc));
+                                engine.set_source(template::generate_for_with_profiles(
+                                    &doc, &profiles,
+                                ));
                                 out.push((None, engine.measure().ok()?));
                                 return Some(out);
                             }
                             for (index, preset) in doc.presets.iter().enumerate() {
                                 let mut reading = doc.clone();
                                 reading.apply_preset(index);
-                                engine.set_source(template::generate_for(&reading));
+                                engine.set_source(template::generate_for_with_profiles(
+                                    &reading, &profiles,
+                                ));
                                 // A reading that will not compile gets no
                                 // number rather than a zero — the same rule the
                                 // matrix's headers follow.
@@ -1218,6 +1229,7 @@ impl Shell {
         }
         sheet.writing = true;
         let doc = pm.doc.clone();
+        let profiles = pm.profiles.clone();
         let folder = sheet.folder.clone();
         let plan = sheet.plan.clone();
         let executor = cx.background_executor().clone();
@@ -1230,7 +1242,10 @@ impl Shell {
                     for step in &plan {
                         let mut preset_doc = doc.clone();
                         preset_doc.apply_preset(step.preset_index);
-                        let source = crate::resume::template::generate_for(&preset_doc);
+                        let source = crate::resume::template::generate_for_with_profiles(
+                            &preset_doc,
+                            &profiles,
+                        );
                         let pdf_bytes = TypstEngine::new(source).compile_to_pdf()?;
                         std::fs::write(&step.destination.target, pdf_bytes).map_err(|e| {
                             format!("write to {} failed: {e}", step.destination.target.display())
@@ -1549,6 +1564,11 @@ impl Render for Shell {
         // frame — and it does nothing at all unless the directory moved.
         let revision = save_status::vault_revision(cx);
         self.cache.refresh(self.vault.as_deref(), revision);
+        if let Screen::PresetMatrix(pm) = &mut self.screen {
+            if &pm.profiles != self.cache.profiles() {
+                pm.profiles = self.cache.profiles().clone();
+            }
+        }
         // The update settings, read once a launch, and the weekly check if it
         // is due. Not on the pre-vault screens: somebody's first thirty
         // seconds with this app are not the moment to mention versions of it.

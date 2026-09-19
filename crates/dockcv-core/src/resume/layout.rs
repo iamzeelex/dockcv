@@ -296,6 +296,13 @@ pub struct LayoutSettings {
     /// document written before this existed keeps the band it had.
     #[serde(default)]
     pub headings: HeadingLayout,
+    /// Whether linked entry titles carry the small `↗` mark.
+    ///
+    /// The default keeps every existing document pixel-identical. ATS-safe
+    /// turns it off because the glyph is otherwise real text in PDF content
+    /// order, where parsers read it as part of the institution or employer.
+    #[serde(default = "default_show_link_marks")]
+    pub show_link_marks: bool,
     /// The size of the name, the professional title, the section bars and
     /// an entry's title. `#[serde(default)]` so a document written before
     /// this existed keeps the sizes the template hard-coded.
@@ -321,6 +328,7 @@ impl Default for LayoutSettings {
             entries: EntryLayout::default(),
             header: HeaderLayout::default(),
             headings: HeadingLayout::default(),
+            show_link_marks: true,
             sizes: TypeSizes::default(),
             text_scale_pct: 100,
             leading_em: 0.62,
@@ -383,6 +391,7 @@ impl LayoutSettings {
             header: self.header,
             // Nothing to clamp: every combination is a valid heading.
             headings: self.headings,
+            show_link_marks: self.show_link_marks,
             sizes: self.sizes.sanitized(),
             text_scale_pct: self.text_scale_pct.clamp(min_scale, max_scale),
             leading_em: self.leading_em.clamp(min_leading, max_leading),
@@ -396,6 +405,10 @@ impl LayoutSettings {
             },
         }
     }
+}
+
+fn default_show_link_marks() -> bool {
+    true
 }
 
 #[cfg(test)]

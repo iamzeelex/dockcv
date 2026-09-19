@@ -19,6 +19,7 @@ impl ResumeDoc {
             section_order: Vec::new(),
             section_titles: Vec::new(),
             layout: LayoutSettings::default(),
+            layout_profile: None,
             export: ExportSettings::default(),
             next_custom_section_id: 0,
             custom_sections: Vec::new(),
@@ -252,9 +253,9 @@ impl ResumeDoc {
     /// quick-capture (roadmap D-7), and the two must not blur.
     pub fn add_preset(&mut self, name: impl Into<String>) {
         let selection = self.current_selection();
-        // A preset records visibility, order, headings, and language as well
-        // as variant selection, so saving the current state means the whole
-        // reading.
+        // A preset records visibility, order, headings, language and the
+        // layout profile as well as variant selection, so saving "the current
+        // state" means the whole reading.
         let hidden = self.hidden_sections.clone();
         let order = self.section_order.clone();
         let titles = self.section_titles.clone();
@@ -263,6 +264,7 @@ impl ResumeDoc {
             name: name.into(),
             based_on: None,
             description: None,
+            profile: self.layout_profile.clone(),
             selection,
             hidden,
             order,
@@ -295,6 +297,7 @@ impl ResumeDoc {
         self.section_order = preset.order;
         self.section_titles = preset.titles;
         self.lang = preset.lang;
+        self.layout_profile = preset.profile;
     }
 
     /// Whether preset `index` is already what the document is showing.
@@ -312,6 +315,9 @@ impl ResumeDoc {
             return false;
         };
         if preset.selection.is_empty() {
+            return false;
+        }
+        if preset.profile != self.layout_profile {
             return false;
         }
         // Order is not meaning — `apply_preset` assigns the list wholesale, but
@@ -374,8 +380,11 @@ impl ResumeDoc {
                         != self.section_title(*section)
             })
             .count();
+        // Language and profile are whole-document facts, so each is one step
+        // away rather than one per section that would print differently.
         let language_distance = usize::from(self.language() != Self::language_from(&preset.lang));
-        Some(section_distance + language_distance)
+        let profile_distance = usize::from(preset.profile != self.layout_profile);
+        Some(section_distance + language_distance + profile_distance)
     }
 
     /// The preset requiring the fewest section changes to reach from now.
@@ -390,15 +399,16 @@ impl ResumeDoc {
     /// Rewrite one preset to describe the document's working copy.
     ///
     /// Presets own no content; updating one replaces its variant pins,
-    /// visibility, order, headings, and language. The UI checkpoints the whole
-    /// document before this call, which makes the operation undoable without a
-    /// second history type.
+    /// visibility, order, headings, language and layout profile. The UI
+    /// checkpoints the whole document before this call, which makes the
+    /// operation undoable without a second history type.
     pub fn update_preset(&mut self, index: usize) -> bool {
         let selection = self.current_selection();
         let hidden = self.hidden_sections.clone();
         let order = self.section_order.clone();
         let titles = self.section_titles.clone();
         let lang = self.lang.clone();
+        let profile = self.layout_profile.clone();
         let Some(preset) = self.presets.get_mut(index) else {
             return false;
         };
@@ -407,6 +417,7 @@ impl ResumeDoc {
         preset.order = order;
         preset.titles = titles;
         preset.lang = lang;
+        preset.profile = profile;
         true
     }
 

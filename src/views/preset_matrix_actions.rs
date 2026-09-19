@@ -171,6 +171,39 @@ impl Shell {
             .collect();
     }
 
+    /// Select the working copy's profile, or the profile one preset applies.
+    /// Existing profiles are references; this writes only the name into the
+    /// document and never duplicates `LayoutSettings` into a matrix cell.
+    pub(super) fn set_matrix_profile(
+        &mut self,
+        preset: Option<usize>,
+        profile: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        let Screen::PresetMatrix(ref mut pm) = self.screen else {
+            return;
+        };
+        let slot = match preset {
+            None => &mut pm.doc.layout_profile,
+            Some(index) => {
+                let Some(preset) = pm.doc.presets.get_mut(index) else {
+                    return;
+                };
+                &mut preset.profile
+            }
+        };
+        if *slot == profile {
+            return;
+        }
+        *slot = profile;
+
+        let result = vault::save(&pm.doc, &pm.path, pm.on_disk);
+        let (path, seen) = (pm.path.clone(), pm.on_disk);
+        pm.on_disk = save_status::record_document(cx, &path, seen, result);
+        cx.notify();
+    }
+
+
     /// Show every section, or only the ones some preset disagrees about.
     ///
     /// View state, deliberately: it is about looking rather than about the

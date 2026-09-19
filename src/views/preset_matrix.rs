@@ -17,13 +17,14 @@ use std::path::PathBuf;
 
 use dockcv_ui_components::TextFieldState;
 
-use crate::resume::model::{DocumentLanguage, ResumeDoc, SectionKind, VariantId};
+use crate::resume::model::{DocumentLanguage, ProfileCatalog, ResumeDoc, SectionKind, VariantId};
 use crate::resume::outcomes::PresetRecord;
 use crate::typst_engine::PageGeometry;
 
 pub struct PresetMatrix {
     pub path: PathBuf,
     pub doc: ResumeDoc,
+    pub profiles: ProfileCatalog,
     /// What `path` held when this screen took its copy — the same guard the
     /// editor carries, for the same reason: this screen holds a whole document
     /// in memory and writes all of it back. See [`crate::vault::OnDisk`].
@@ -91,10 +92,15 @@ impl PresetMatrix {
     pub fn new(path: PathBuf, doc: ResumeDoc) -> Self {
         let on_disk = crate::vault::OnDisk::read(&path);
         let differences_only = doc.presets.len() > 3;
+        let profiles = path
+            .parent()
+            .map(crate::vault::load_profiles)
+            .unwrap_or_default();
 
         Self {
             path,
             doc,
+            profiles,
             on_disk,
             differences_only,
             renaming_preset: None,
@@ -175,6 +181,18 @@ impl PresetMatrix {
             "sent {} · {} {noun}",
             record.sent, record.interviewed
         ))
+    }
+
+    /// Layout profile named by a column. `None` is the document's own layout.
+    pub fn column_profile<'a>(&'a self, column: &'a Column) -> Option<&'a str> {
+        match column.preset {
+            None => self.doc.layout_profile.as_deref(),
+            Some(index) => self
+                .doc
+                .presets
+                .get(index)
+                .and_then(|preset| preset.profile.as_deref()),
+        }
     }
 
     /// The mark carried by a preset column relative to the working copy.

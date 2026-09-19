@@ -149,6 +149,7 @@ impl Shell {
         let (stem, preset) = (sent.document, sent.preset);
         let version = application.snapshots.len() as u32 + 1;
         let doc_path = vault.join(format!("{stem}.toml"));
+        let profiles = vault::load_profiles(&vault);
 
         let engine = self
             .thumb_engine
@@ -173,7 +174,7 @@ impl Shell {
                             doc.apply_preset(i);
                         }
                     }
-                    let source = template::generate_for(&doc);
+                    let source = template::generate_for_with_profiles(&doc, &profiles);
                     let mut engine = engine.lock().map_err(|e| format!("engine busy: {e}"))?;
                     engine.set_source(source);
                     engine.compile_to_pdf()
@@ -284,6 +285,7 @@ mod tests {
                 name: "FAANG · concise".into(),
                 based_on: None,
                 description: None,
+                profile: None,
                 selection: vec![(SectionKind::Profile, base)],
                 hidden: Vec::new(),
                 order: Vec::new(),
@@ -294,6 +296,7 @@ mod tests {
                 name: "Infra-heavy".into(),
                 based_on: None,
                 description: None,
+                profile: None,
                 selection: vec![(SectionKind::Profile, base)],
                 hidden: Vec::new(),
                 order: Vec::new(),

@@ -377,6 +377,7 @@ mod tests {
                 name: (*name).to_string(),
                 based_on: None,
                 description: None,
+                profile: None,
                 selection: vec![],
                 hidden: vec![],
                 order: vec![],

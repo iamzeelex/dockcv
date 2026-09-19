@@ -24,7 +24,7 @@ use dockcv_ui_components::{
 use crate::render::{self, Rendered};
 use crate::resume::diagnostics::{describe_all, CompileMessage};
 use crate::resume::edit::FieldId;
-use crate::resume::model::{Diary, DiaryEntry, Library, ResumeDoc, SectionKind};
+use crate::resume::model::{Diary, DiaryEntry, Library, ProfileCatalog, ResumeDoc, SectionKind};
 use crate::resume::template;
 use crate::theme::ActiveTheme;
 use crate::typst_engine::{PageGeometry, Severity, TypstEngine};
@@ -220,6 +220,15 @@ pub struct Root {
     /// blocking the UI. `TypstEngine` is `Send` (its `World` is `Send + Sync`).
     pub(super) engine: Arc<Mutex<TypstEngine>>,
     pub(super) doc: ResumeDoc,
+    /// User profiles from `<vault>/profiles.toml`. Built-ins are supplied by
+    /// `ProfileCatalog` itself and therefore exist even when this is empty.
+    pub(super) profiles: ProfileCatalog,
+    /// Why a shared profile was detached by the first manual layout edit.
+    /// Ephemeral interaction state; the durable result is `layout_profile =
+    /// None` plus the copied-and-edited `layout` in the document.
+    pub(super) profile_detachment: Option<ProfileDetachment>,
+    /// Inline name field opened by “Save as a new profile…”.
+    pub(super) profile_fork: Option<ProfileFork>,
     pub(super) rendered: Option<Rendered>,
     /// Visible compile status — see [`CompileState`].
     pub(super) compile_state: CompileState,
@@ -378,10 +387,11 @@ impl Root {
             .unwrap_or_else(|| PathBuf::from("."));
         let library = vault::load_library(&vault_dir);
         let diary = vault::load_diary(&vault_dir);
+        let profiles = vault::load_profiles(&vault_dir);
 
-        let engine = Arc::new(Mutex::new(TypstEngine::new(template::generate(
-            &doc.compose(),
-        ))));
+        let engine = Arc::new(Mutex::new(TypstEngine::new(
+            template::generate_for_with_profiles(&doc, &profiles),
+        )));
 
         // Read here rather than taken as an argument: `Root::new` already owns
         // the path, and every caller that builds an editor would otherwise have
@@ -393,6 +403,9 @@ impl Root {
             external_change_pending: false,
             engine,
             doc,
+            profiles,
+            profile_detachment: None,
+            profile_fork: None,
             rendered: None,
             compile_state: CompileState::Compiling,
             last_source: String::new(),
@@ -753,6 +766,17 @@ impl Root {
     /// a real conflict, and a conflict is reported rather than resolved: only a
     /// person knows which version they want.
     pub(super) fn adopt_external_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // The directory watcher reports the vault, not one file. Profiles are
+        // live shared data, so re-resolve them before deciding whether the CV
+        // itself changed. A profiles-only edit should re-render immediately
+        // and must not masquerade as an external document conflict.
+        let profiles = vault::load_profiles(&self.vault_dir);
+        if profiles != self.profiles {
+            self.profiles = profiles;
+            self.reset_layout_sliders();
+            self.schedule_recompile(window, cx);
+            cx.notify();
+        }
         match vault::external_change(&self.doc, &self.doc_path, self.on_disk) {
             // Some other file in the vault moved, or this one was written by us.
             vault::ExternalChange::None => return,
@@ -805,7 +829,7 @@ impl Root {
     /// instead of sharper, and why the whole preview "felt like a half
     /// measure". Zoom now *re-renders* rather than magnifying a bitmap.
     pub(super) fn crisp_scale(&self, window: &Window) -> f32 {
-        let page_width_pt = self.doc.layout.page_size.width_pt();
+        let page_width_pt = self.effective_layout().page_size.width_pt();
         if page_width_pt <= 0.0 {
             return window.scale_factor();
         }
@@ -815,7 +839,7 @@ impl Root {
     }
 
     pub(super) fn recompile_now(&mut self, window: &mut Window) {
-        let source = template::generate_for(&self.doc);
+        let source = template::generate_for_with_profiles(&self.doc, &self.profiles);
         let scale = self.crisp_scale(window);
         self.last_scale = scale;
         self.last_source = source.clone();
@@ -828,7 +852,7 @@ impl Root {
     /// already updated the model/caret, and this catches the preview up shortly
     /// after the user stops typing — without ever blocking the UI thread.
     pub(super) fn schedule_recompile(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let source = template::generate_for(&self.doc);
+        let source = template::generate_for_with_profiles(&self.doc, &self.profiles);
         let crisp_scale = self.crisp_scale(window);
 
         // Skip work entirely when neither the document nor the resolution it
@@ -1396,6 +1420,11 @@ impl Render for Root {
             .flex_col()
             .bg(theme.background)
             .child(self.render_toolbar(cx))
+            .children(
+                self.profile_detachment
+                    .as_ref()
+                    .map(|_| self.render_profile_detachment(cx)),
+            )
             .child(
                 // Draggable split rather than a fixed column. How much room a
                 // CV's fields need is a property of the document — a long
@@ -1457,6 +1486,22 @@ impl Render for Root {
 pub(super) struct FieldBinding {
     pub(super) state: Entity<TextFieldState>,
     _subscription: Subscription,
+}
+
+/// A manual change made while a shared profile was selected.
+#[derive(Clone)]
+pub(super) struct ProfileDetachment {
+    pub(super) profile: String,
+    pub(super) changed: String,
+    /// Distinct CVs the profile currently reaches. Captured before an update
+    /// is offered, so the button says the write's scope before it happens.
+    pub(super) affected: Vec<String>,
+}
+
+/// Live field for naming a detached layout as a new profile.
+pub(super) struct ProfileFork {
+    pub(super) field: Entity<TextFieldState>,
+    pub(super) _subscription: Subscription,
 }
 
 /// State for the D-7 quick-capture sheet: just the note field. Not committed

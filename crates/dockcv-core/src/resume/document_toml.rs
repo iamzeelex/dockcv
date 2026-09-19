@@ -307,6 +307,7 @@ mod tests {
             name: "Base work".into(),
             based_on: None,
             description: None,
+            profile: None,
             selection: vec![(SectionKind::Work, first)],
             hidden: Vec::new(),
             order: Vec::new(),

@@ -134,6 +134,7 @@ fn pinning_a_section_twice_replaces_rather_than_duplicates() {
         name: "FAANG · concise".into(),
         based_on: None,
         description: None,
+        profile: None,
         selection: vec![(SectionKind::Work, detailed)],
         hidden: Vec::new(),
         order: Vec::new(),
@@ -446,4 +447,33 @@ fn a_preset_restores_language_and_old_presets_stay_english() {
     let back: ResumeDoc = toml::from_str(&text).expect("language round-trips");
     assert_eq!(back.language_for_preset(0), Some(DocumentLanguage::English));
     assert_eq!(back.language_for_preset(1), Some(DocumentLanguage::German));
+}
+
+#[test]
+fn a_preset_pins_a_profile_name_without_copying_layout_values() {
+    let mut doc = ResumeDoc {
+        layout_profile: Some(ATS_SAFE_PROFILE.to_string()),
+        ..ResumeDoc::default()
+    };
+    doc.add_preset("ATS reading");
+
+    assert_eq!(doc.presets[0].profile.as_deref(), Some(ATS_SAFE_PROFILE));
+    assert!(doc.is_preset_active(0));
+
+    doc.layout_profile = None;
+    assert!(!doc.is_preset_active(0));
+    assert_eq!(doc.preset_distance(0), Some(1));
+
+    doc.apply_preset(0);
+    assert_eq!(doc.layout_profile.as_deref(), Some(ATS_SAFE_PROFILE));
+    assert!(doc.is_preset_active(0));
+
+    doc.layout_profile = Some(DEFAULT_PROFILE.to_string());
+    assert!(doc.update_preset(0));
+    assert_eq!(doc.presets[0].profile.as_deref(), Some(DEFAULT_PROFILE));
+
+    let text = toml::to_string_pretty(&doc).expect("serializes");
+    assert!(text.contains("profile = \"Default\""));
+    let back: ResumeDoc = toml::from_str(&text).expect("round-trips");
+    assert_eq!(back.presets[0].profile, doc.presets[0].profile);
 }

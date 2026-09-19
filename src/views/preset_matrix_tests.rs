@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::resume::model::{Preset, ResumeDoc, SectionKind};
+use crate::resume::model::{Preset, ResumeDoc, SectionKind, ATS_SAFE_PROFILE};
 
 use super::preset_matrix::{Choice, PresetMatrix};
 
@@ -24,6 +24,7 @@ fn two_readings() -> (
             name: "Preset A".into(),
             based_on: None,
             description: None,
+            profile: None,
             selection: vec![(SectionKind::Profile, base), (SectionKind::Work, faang)],
             hidden: Vec::new(),
             order: Vec::new(),
@@ -34,6 +35,7 @@ fn two_readings() -> (
             name: "Preset B".into(),
             based_on: None,
             description: None,
+            profile: None,
             selection: vec![(SectionKind::Profile, base), (SectionKind::Work, startup)],
             hidden: Vec::new(),
             order: Vec::new(),
@@ -82,6 +84,26 @@ fn every_preset_is_a_column_behind_the_working_copy() {
         matrix.cell_text(SectionKind::Work, Choice::Pin(faang)),
         "FAANG"
     );
+}
+
+#[test]
+fn profile_is_one_reading_row_not_a_matrix_axis() {
+    let (mut matrix, _faang, _startup) = two_readings();
+    let before = matrix.doc.preset_distance(1).expect("preset exists");
+    matrix.doc.layout_profile = Some(ATS_SAFE_PROFILE.to_string());
+    matrix.doc.presets[0].profile = Some(ATS_SAFE_PROFILE.to_string());
+
+    let columns = matrix.columns();
+    assert_eq!(matrix.column_profile(&columns[0]), Some(ATS_SAFE_PROFILE));
+    assert_eq!(matrix.column_profile(&columns[1]), Some(ATS_SAFE_PROFILE));
+    assert_eq!(matrix.column_profile(&columns[2]), None);
+    assert!(matrix.profiles.contains_name(ATS_SAFE_PROFILE));
+
+    // A profile disagreement changes the preset mark, but does not manufacture
+    // one more section row or a second matrix dimension.
+    assert_eq!(matrix.rows(), matrix.doc.sections());
+    assert!(!matrix.doc.is_preset_active(1));
+    assert_eq!(matrix.doc.preset_distance(1), Some(before + 1));
 }
 
 /// A row differs when any column departs from the working copy, and only then.

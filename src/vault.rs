@@ -10,15 +10,16 @@ use std::path::{Path, PathBuf};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::resume::model::{Applications, Diary, Library, ResumeDoc};
+use crate::resume::model::{Applications, Diary, Library, ProfileCatalog, ResumeDoc};
 
 const VAULT_DIR_NAME: &str = "cvault";
 const LIBRARY_FILE: &str = "library.toml";
 const DIARY_FILE: &str = "diary.toml";
 const APPLICATIONS_FILE: &str = "applications.toml";
+const PROFILES_FILE: &str = "profiles.toml";
 const SNAPSHOTS_DIR: &str = "snapshots";
 /// Reserved files that live in the vault but are NOT CV documents.
-const RESERVED_FILES: [&str; 3] = [LIBRARY_FILE, DIARY_FILE, APPLICATIONS_FILE];
+const RESERVED_FILES: [&str; 4] = [LIBRARY_FILE, DIARY_FILE, APPLICATIONS_FILE, PROFILES_FILE];
 
 /// Cross-platform resolution of the current user's home directory.
 pub fn user_home_dir() -> PathBuf {
@@ -84,6 +85,7 @@ pub fn vault_shape(dir: &Path) -> VaultShape {
     if dir.join(LIBRARY_FILE).exists()
         || dir.join(DIARY_FILE).exists()
         || dir.join(APPLICATIONS_FILE).exists()
+        || dir.join(PROFILES_FILE).exists()
         || dir.join(".trash").is_dir()
     {
         return VaultShape::Recognized;
@@ -614,6 +616,54 @@ pub fn save_applications(vault_dir: &Path, applications: &Applications) -> Resul
     fs::write(&tmp, text).map_err(|e| format!("write {}: {e}", tmp.display()))?;
     fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
     Ok(())
+}
+
+/// Path of the vault's reusable layout profiles.
+pub fn profiles_path(vault_dir: &Path) -> PathBuf {
+    vault_dir.join(PROFILES_FILE)
+}
+
+/// Load user profiles. Built-ins live in code, so a missing or unreadable
+/// file is exactly an empty user catalog and never prevents the vault opening.
+pub fn load_profiles(vault_dir: &Path) -> ProfileCatalog {
+    fs::read_to_string(profiles_path(vault_dir))
+        .ok()
+        .and_then(|text| toml::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+/// Atomically save user profiles.
+pub fn save_profiles(vault_dir: &Path, profiles: &ProfileCatalog) -> Result<(), String> {
+    let text = toml::to_string_pretty(profiles).map_err(|e| format!("serialize: {e}"))?;
+    let path = profiles_path(vault_dir);
+    let tmp = path.with_extension("toml.tmp");
+    fs::write(&tmp, text).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
+    Ok(())
+}
+
+/// Document stems whose working copy or any preset names `profile`.
+///
+/// Distinct documents, not reference count: `Update ATS-safe (2 CVs)` tells a
+/// person how far the write reaches, and one CV with three ATS presets is still
+/// one CV.
+pub fn documents_using_profile(vault_dir: &Path, profile: &str) -> Vec<String> {
+    list_documents(vault_dir)
+        .into_iter()
+        .filter_map(|path| {
+            let doc = load(&path).ok()?;
+            let used = doc.layout_profile.as_deref() == Some(profile)
+                || doc
+                    .presets
+                    .iter()
+                    .any(|preset| preset.profile.as_deref() == Some(profile));
+            used.then(|| {
+                path.file_stem()
+                    .map(|stem| stem.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.display().to_string())
+            })
+        })
+        .collect()
 }
 
 /// Directory PDF snapshots are stored in — `<vault>/snapshots/`.
@@ -2145,6 +2195,7 @@ mod tests {
             entries: Default::default(),
             header: Default::default(),
             headings: Default::default(),
+            show_link_marks: true,
             sizes: TypeSizes {
                 name_pt: 8.5,
                 title_pt: 2.0,
@@ -2376,6 +2427,7 @@ path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
             name: "FAANG".into(),
             based_on: None,
             description: None,
+            profile: None,
             selection: vec![(SectionKind::Profile, doc.profile.active_id())],
             hidden: vec![],
             order: vec![],
@@ -2436,5 +2488,51 @@ path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
             meta.best_match("broken").map(|h| h.kind),
             Some(MatchKind::Stem)
         );
+    }
+
+    #[test]
+    fn profiles_are_a_reserved_atomic_vault_file_and_usage_is_per_document() {
+        use crate::resume::model::{LayoutSettings, ProfileCatalog, ResumeDoc, ATS_SAFE_PROFILE};
+
+        let dir = std::env::temp_dir().join(format!(
+            "dockcv_profiles_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("scratch");
+
+        let compact = LayoutSettings {
+            text_scale_pct: 92,
+            ..LayoutSettings::default()
+        };
+        let mut catalog = ProfileCatalog::default();
+        catalog.upsert("Compact", compact);
+        super::save_profiles(&dir, &catalog).expect("save profiles");
+        assert_eq!(super::load_profiles(&dir), catalog);
+        assert!(super::list_documents(&dir).is_empty());
+        assert_eq!(super::vault_shape(&dir), super::VaultShape::Recognized);
+
+        let current = ResumeDoc {
+            layout_profile: Some(ATS_SAFE_PROFILE.to_string()),
+            ..ResumeDoc::default()
+        };
+        super::create_document(&dir, &current, "current").expect("current doc");
+
+        let mut preset_only = ResumeDoc::default();
+        preset_only.add_preset("ATS");
+        preset_only.presets[0].profile = Some(ATS_SAFE_PROFILE.to_string());
+        // A second reference in one document must not inflate the CV count.
+        preset_only.add_preset("ATS concise");
+        preset_only.presets[1].profile = Some(ATS_SAFE_PROFILE.to_string());
+        super::create_document(&dir, &preset_only, "preset-only").expect("preset doc");
+
+        assert_eq!(
+            super::documents_using_profile(&dir, ATS_SAFE_PROFILE),
+            vec!["current".to_string(), "preset-only".to_string()]
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

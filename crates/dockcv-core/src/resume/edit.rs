@@ -693,6 +693,7 @@ mod tests {
             name: "Preset 2".into(),
             based_on: None,
             description: None,
+            profile: None,
             selection: Vec::new(),
             hidden: Vec::new(),
             order: Vec::new(),
