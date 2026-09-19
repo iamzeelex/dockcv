@@ -72,14 +72,27 @@ const RENDERER: &str = r##"
 } else {
   let h = heading-of(key)
   let words = if h.case == "upper" { upper(title) } else { title }
-  let body = text(
+  // A real `heading` element, not a styled block: it is what puts an `/H2`
+  // in the PDF's structure tree, so a tag-aware parser reads the section
+  // boundary from the document rather than inferring it from geometry. The
+  // `#show heading` rule in the preamble hands the styling straight back, so
+  // nothing about the page changes.
+  let body = heading(level: 2, outlined: false, text(
     weight: "bold",
     size: size-heading,
     // Letter-spacing is a decision about capitals — it is what stops a run of
     // them setting solid. On mixed case it only loosens the word.
-    tracking: if h.case == "upper" { 1pt } else { 0pt },
+    //
+    // Measured rather than chosen: at 0.1em and above, four of the eight
+    // extractors the conformance harness reads with return `E D U C AT I O N`
+    // and lose every section heading in the document — pdf-extract, pdfminer,
+    // and `pdftotext` in two of its three modes. 0.05em and 0.08em are clean
+    // across every heading size and text scale the app offers. This is the
+    // lower of the two, and `em` rather than `pt` so a document set at 120%
+    // does not walk back over the cliff. See `src/ats/conformance.rs`.
+    tracking: if h.case == "upper" { 0.05em } else { 0pt },
     words,
-  )
+  ))
   let al = if h.align == "left" { left } else { center }
 
   if h.style == "band" {
@@ -216,7 +229,13 @@ const RENDERER: &str = r##"
   let head-align = if header-align == "left" { left } else { center }
 
   align(head-align, {
-    text(size: size-name, weight: "bold", b.at("name", default: ""))
+    // Level 1, and the section bars below are level 2: the name is this
+    // document's title, and a heading tree that starts at level 2 is the one
+    // thing PDF/UA-1 refuses the file for. The `#show heading` rule keeps the
+    // element from bringing any styling of its own, so the name sets exactly
+    // as it did.
+    heading(level: 1, outlined: false,
+      text(size: size-name, weight: "bold", b.at("name", default: "")))
     if b.at("label", default: "") != "" {
       h(8pt)
       text(size: size-title, style: "italic", fill: muted, b.at("label", default: ""))
@@ -262,7 +281,8 @@ const RENDERER: &str = r##"
 
   let summary = b.at("summary", default: none)
   let titles = cv.at("sectionTitles", default: (:))
-  let heading(key, fallback) = titles.at(key, default: fallback)
+  // Named apart from Typst's `heading` element, which `section` now emits.
+  let section-title(key, fallback) = titles.at(key, default: fallback)
 
   // Each section is a closure so the document's own order (`order`, below)
   // decides the sequence. Before this they were emitted inline, one after
@@ -270,13 +290,13 @@ const RENDERER: &str = r##"
   // drag-reorderable field — reached the sidebar and stopped there: the PDF
   // always printed the built-in order no matter what the user arranged.
   let render-profile() = {
-    if summary != none { section("profile", heading("Profile", "Profile")); summary }
+    if summary != none { section("profile", section-title("Profile", "Profile")); summary }
   }
 
   let render-work() = {
   let work = cv.at("work", default: ())
   if work.len() > 0 {
-    section("work", heading("Work", "Work Experience"))
+    section("work", section-title("Work", "Work Experience"))
     let el = entry-of("work")
     for w in work {
       entry(
@@ -299,7 +319,7 @@ const RENDERER: &str = r##"
   let render-education() = {
   let edu = cv.at("education", default: ())
   if edu.len() > 0 {
-    section("education", heading("Education", "Education"))
+    section("education", section-title("Education", "Education"))
     let el = entry-of("education")
     for e in edu {
       entry(
@@ -332,7 +352,7 @@ const RENDERER: &str = r##"
   // is `groups`, named apart so the two cannot be confused.
   let groups = cv.at("skills", default: ())
   if groups.len() > 0 {
-    section("skills", heading("Skills", "Skills"))
+    section("skills", section-title("Skills", "Skills"))
 
     // A group with no name is a flat list — LinkedIn exports have no
     // categories at all, and a CV need not invent one. Every branch below has
@@ -410,7 +430,7 @@ const RENDERER: &str = r##"
   let render-certificates() = {
   let certs = cv.at("certificates", default: ())
   if certs.len() > 0 {
-    section("certificates", heading("Certificates", "Certifications"))
+    section("certificates", section-title("Certificates", "Certifications"))
     let el = entry-of("certificates")
     for c in certs {
       let u = c.at("url", default: "")
@@ -434,7 +454,7 @@ const RENDERER: &str = r##"
   let render-organizations() = {
   let orgs = cv.at("volunteer", default: ())
   if orgs.len() > 0 {
-    section("organizations", heading("Organizations", "Organizations"))
+    section("organizations", section-title("Organizations", "Organizations"))
     let el = entry-of("organizations")
     for o in orgs {
       entry(
@@ -681,8 +701,24 @@ fn page_setup_into(out: &mut String, layout: &LayoutSettings) {
     let _ = write!(
         out,
         r##"#set page(paper: "{paper}", fill: white, margin: (x: {x}mm, top: {top}mm, bottom: {bottom}mm))
-#set text(font: "{font}", size: {size}pt, fill: rgb("#1a1a1a"))
+#set text(font: "{font}", size: {size}pt, fill: rgb("#1a1a1a"), hyphenate: false)
+// Hyphenation off, and measured rather than preferred. Typst hyphenates by
+// default when a paragraph is justified, and it does it correctly: the break
+// is a *soft* hyphen, U+00AD, which is exactly what the character is for. No
+// extractor strips it. All seven readings of a CV whose bullet broke the word
+// `counterparties` across a line lost that whole sentence — content order,
+// sorted, the structure tree, `pdftotext` in all three modes, pdfminer and
+// PDFBox alike. A CV is a page of short prose at a wide measure, so the
+// typographic cost is a little more air between words; the cost of leaving it
+// on is a bullet no parser can read. See `src/ats/adversarial.rs`.
 #set par(justify: true, leading: {leading}em)
+
+// Section bars are `heading` elements so the exported PDF carries an `/H2`
+// per section in its structure tree — the one thing that tells a parser where
+// a section begins without it having to guess from the geometry. The styling
+// is the renderer's own, applied inside the element, so this rule hands the
+// body straight back rather than adding Typst's default heading shape on top.
+#show heading: it => it.body
 
 // Everything that is not body text, sized from the base above rather than in
 // absolute points — so `text_scale_pct` scales the document instead of only

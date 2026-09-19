@@ -151,9 +151,24 @@ fn get_phone_regex() -> &'static Regex {
         // pattern that demanded a three-digit group in the middle read straight
         // past it. Nothing writes a date range with a leading `+`, so there is
         // no ambiguity left for the group widths to resolve.
-        Regex::new(
-            r"(?:\+\d{1,3}(?:[ .-]?\(?\d{2,4}\)?){2,6}|\(?\d{2,4}\)?[ .-]?\d{3,4}[ .-]\d{3,4})",
-        )
+        // And the groups after a `+` may be one digit wide, because national
+        // numbering plans have one-digit area codes: `+353 1 555 0100` is how
+        // Dublin is written and how DockCV's own plain-text export writes it,
+        // and demanding two digits read straight past the whole number —
+        // leaving a CV that had just been exported with no telephone number on
+        // the way back in.
+        // The separator class carries the marks a *typesetter* puts in a
+        // number as well as the ones a keyboard does: a non-breaking hyphen
+        // (U+2011) is what a considerate author writes so `555-0134` never
+        // breaks across a line, and `[ .-]` stopped dead at it — `+1 (415)
+        // 555‑0134` imported as `+1 (415) 555`, a number that reaches nobody.
+        // The no-break and thin spaces are here for the same reason. The en
+        // dash is deliberately *not*: it is what separates the two ends of a
+        // date range.
+        const SEP: &str = r"[ .\-\u{00a0}\u{2009}\u{202f}\u{2010}\u{2011}]";
+        Regex::new(&format!(
+            r"(?:\+\d{{1,3}}(?:{SEP}?\(?\d{{1,4}}\)?){{2,6}}|\(?\d{{2,4}}\)?{SEP}?\d{{3,4}}{SEP}\d{{3,4}})"
+        ))
         .unwrap()
     })
 }
@@ -177,8 +192,16 @@ fn get_date_range_regex() -> &'static Regex {
         // 2021-01-01` was read as no range at all, and the title of every entry
         // in a CV written with ISO dates came back as `Project  -01-01 –
         // 2021-01-01`. It is one of DockCV's own date formats.
+        // One separator, not a run of them. `[\s./-]+` let `06 - 2022` read as
+        // a single date, and with `[0-9]{1,2}[\s./-]+{year}` in the same
+        // alternation a stray digit in front of a range swallowed its year:
+        // `Company Number 4` above `2019-06 - 2022-01` parsed as `4 2019` to
+        // `06 - 2022`, and every job in a CV whose employer ends in a digit
+        // came back with the wrong dates. A real date's parts are held together
+        // by one mark, never by ` - `, which is what separates the two ends of
+        // a range — see `roundtrip_tests::a_number_in_front_of_a_range`.
         let date_elem = format!(
-            r"(?:(?:{months}[\s./-]*{year})|(?:{year}[\s./-]+[0-9]{{1,2}}[\s./-]+[0-9]{{1,2}})|(?:{year}[\s./-]+[0-9]{{1,2}})|(?:[0-9]{{1,2}}[\s./-]+{year})|(?:{year}))"
+            r"(?:(?:{months}[\s./-]*{year})|(?:{year}[\s./-][0-9]{{1,2}}[\s./-][0-9]{{1,2}})|(?:{year}[\s./-][0-9]{{1,2}})|(?:[0-9]{{1,2}}[\s./-]{year})|(?:{year}))"
         );
         let present = r"(?:present|current|till now|ongoing|настоящее время|н\.в\.|по н\.в\.|по настоящее время)";
         let pattern = format!(r"(?i)(\b{date_elem}\b)\s*(?:–|—|-|~|to|по)\s*(\b{date_elem}\b|{present})");
@@ -228,16 +251,20 @@ fn title_case(heading: &str) -> String {
 }
 
 fn is_shouted(line: &str) -> bool {
-    let mut has_letter = false;
+    // A *cased* letter, not merely a letter. Hebrew, Arabic, Japanese, Chinese,
+    // Georgian and Devanagari have no capitals at all, so "no lower-case letter
+    // in it" was true of every line in them — and the rule this feeds says a
+    // shouted line is a section heading even when the taxonomy has never heard
+    // of it. The first line of a Hebrew CV is the person's name; read as a
+    // heading, it became a section with the whole document filed under it.
+    let mut has_case = false;
     for ch in line.chars() {
-        if ch.is_alphabetic() {
-            has_letter = true;
-            if ch.is_lowercase() {
-                return false;
-            }
+        if ch.is_lowercase() {
+            return false;
         }
+        has_case |= ch.is_uppercase();
     }
-    has_letter
+    has_case
 }
 
 /// Zero-allocation 1D Levenshtein distance with early-exit row thresholding.
@@ -468,6 +495,29 @@ fn absorb_contact(line: &str, resume: &mut Resume) -> bool {
                     resume.basics.location = candidate;
                     absorbed = true;
                     break 'search;
+                }
+            }
+        }
+
+        // `Dublin` with nothing after it is a place too, and most CVs write the
+        // city alone — but a bare word is also a name, a job title and half the
+        // other things on a header line, so it counts only where a place
+        // belongs: *among* the contact details rather than in front of them.
+        // `A Person | person@example.com | Dublin` gives up its city and keeps
+        // its name; `A Person | Senior Engineer` gives up neither.
+        //
+        // After the shape with a region in it, never before: `Bern,
+        // Switzerland` is two parts and its first part is a bare place, so a
+        // bare reading that ran first would take the city and drop the country.
+        if resume.basics.location.is_empty() {
+            for (at, part) in parts.iter().enumerate() {
+                if is_other_field(part) || !parts[..at].iter().any(is_other_field) {
+                    continue;
+                }
+                if looks_like_bare_place(part) {
+                    resume.basics.location = (*part).to_string();
+                    absorbed = true;
+                    break;
                 }
             }
         }
@@ -758,6 +808,16 @@ fn every_word_names_a_section(clean: &str) -> bool {
     counted >= 2
 }
 
+/// The first telephone number in a block of text, if there is one.
+///
+/// The regex is this module's; the sidebar reader needs the answer and has no
+/// business knowing how it is arrived at.
+pub fn first_phone(text: &str) -> Option<String> {
+    get_phone_regex()
+        .find(text)
+        .map(|m| m.as_str().trim().to_string())
+}
+
 pub fn names_a_section(clean: &str) -> bool {
     let tax = get_indexed_taxonomy();
     if tax.exact_map.contains_key(clean) {
@@ -862,7 +922,7 @@ fn matches_keywords_clean(input: &str, keywords: &[&str]) -> bool {
 /// A body line that reads like a keyword is far more common than a heading that
 /// reads like a sentence, so a line only gets to be classified once it looks
 /// like a heading at all: not a bullet, not a sentence, and short.
-fn is_section_header(line: &str) -> bool {
+pub fn is_section_header(line: &str) -> bool {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.len() > 60 {
         return false;
@@ -934,6 +994,24 @@ fn network_of(url: &str) -> &'static str {
 /// Deliberately narrow: a short line, one comma, no digits and no `@`. A CV's
 /// contact block is the only place this runs, and anything it declines simply
 /// stays reported rather than being filed as a location it is not.
+/// A city on its own — `Dublin`, `San Francisco`, `Київ`.
+///
+/// Deliberately strict about shape, because it is only ever asked about a part
+/// that already sits among contact details: a word or three, each of them
+/// capitalised, no digits and nothing that belongs to another field.
+fn looks_like_bare_place(line: &str) -> bool {
+    let line = line.trim();
+    let words: Vec<&str> = line.split_whitespace().collect();
+    !line.is_empty()
+        && line.len() <= 32
+        && (1..=3).contains(&words.len())
+        && !line.contains(['@', ',', ':', '/'])
+        && !line.chars().any(|c| c.is_ascii_digit())
+        && words
+            .iter()
+            .all(|w| w.chars().next().is_some_and(|c| c.is_uppercase()))
+}
+
 fn looks_like_place(line: &str) -> bool {
     let line = line.trim();
     // One comma is the `City, Region` shape. Digits are allowed — a postcode is
@@ -1094,7 +1172,88 @@ pub fn classify_raw_text(format_name: &str, raw_text: &str) -> ImportedDoc {
         // joined into one.
         get_date_range_regex().is_match(l) || ends_with_parenthesised_date(l)
     });
-    classify_lines(format_name, lines)
+    classify_lines(format_name, join_split_entry_headers(lines))
+}
+
+/// Put an entry's dates back on its title.
+///
+/// Templates routinely give the dates a cell, a paragraph or a column of their
+/// own — styled `Dates`, styled `Heading2` with the title in a plain run beside
+/// it, or simply a table with the years down the left. Split that way neither
+/// half is a usable entry header: the title carries no date to place it, and
+/// the dates carry no title to name them.
+///
+/// This lived in the DOCX engine, on the reasoning that scattering an entry
+/// across cells is a fact about Word. It is not. A PDF exported from the same
+/// Word template arrives with the date on its own line for exactly the same
+/// reason, and a CV built as a two-column table — which is most of the Word
+/// gallery — imported as two jobs that had dates and no employer, no title and
+/// no bullets. Both directions are handled: the dates can precede their entry
+/// or follow it.
+pub fn join_split_entry_headers(lines: Vec<layout::LogicalLine>) -> Vec<layout::LogicalLine> {
+    let mut out: Vec<layout::LogicalLine> = Vec::with_capacity(lines.len());
+    let mut pending_dates: Option<String> = None;
+
+    for line in lines {
+        if line.kind != layout::LineKind::Heading && is_only_dates(&line.text) {
+            // An entry's own address sits on a line of its own between the
+            // title and the dates — both the Word and the Markdown readers put
+            // it there so `attach_entry_url` can pick it up — and it is not a
+            // line that can own dates. Gluing them to it made `ethz.ch 1896-10
+            // - 1900-07`, which is no longer an address, so the school's link
+            // was dropped and the string became an entry of its own.
+            let owner = match out.last() {
+                Some(last) if layout::is_lone_address(&last.text) => out.len().checked_sub(2),
+                _ => out.len().checked_sub(1),
+            };
+            match owner.and_then(|at| out.get_mut(at)) {
+                // The line above claims the dates whenever it is one that could
+                // own them. That is the order DockCV's own exporter writes —
+                // title, dates, bullets — and holding them for the *next* line
+                // stapled them to the entry's first bullet instead, leaving the
+                // entry itself undated.
+                Some(prev)
+                    if prev.kind != layout::LineKind::Heading
+                        && prev.kind != layout::LineKind::Bullet =>
+                {
+                    prev.text = format!("{} {}", prev.text, line.text);
+                    prev.kind = layout::LineKind::EntryHeader;
+                }
+                // A section heading or a list above, so nothing there can own
+                // them: this template printed the dates first, and the entry is
+                // on the line below.
+                _ => pending_dates = Some(line.text.clone()),
+            }
+            continue;
+        }
+        match pending_dates.take() {
+            // The line after a bare date is the entry that date belongs to —
+            // unless it is a list item, which is content under an entry and
+            // never an entry itself.
+            Some(dates)
+                if line.kind != layout::LineKind::Heading
+                    && line.kind != layout::LineKind::Bullet =>
+            {
+                out.push(layout::LogicalLine::new(
+                    format!("{} {}", line.text, dates),
+                    layout::LineKind::EntryHeader,
+                ))
+            }
+            // A heading or a bullet follows: the dates belonged to the entry
+            // above them.
+            Some(dates) => {
+                if let Some(prev) = out
+                    .last_mut()
+                    .filter(|p| p.kind == layout::LineKind::EntryHeader)
+                {
+                    prev.text = format!("{} {}", prev.text, dates);
+                }
+                out.push(line);
+            }
+            None => out.push(line),
+        }
+    }
+    out
 }
 
 /// The part of the document a contact detail may come from.
@@ -1204,6 +1363,26 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
     }
 
     let mut current_section = SectionKind::Unknown;
+    // A CV with no section headings at all is a real template — the
+    // minimalist one — and it used to import as a name, an email and a couple
+    // of lines the wizard offered to adopt. Everything else was read as part
+    // of the contact block and dropped, because `current_section` never left
+    // `Unknown` and the arm for `Unknown` is the contact block.
+    //
+    // With nothing to segment on, the shape of a line is all there is: the
+    // first one carrying a date range ends the contact block and opens the
+    // work history. Filing a degree under Work is wrong and is *visibly*
+    // wrong, where losing it is neither — so the reading is stated in a note
+    // rather than performed quietly.
+    let has_headings = lines.iter().any(|l| l.kind == layout::LineKind::Heading);
+    let implicit_work_at = if has_headings {
+        None
+    } else {
+        lines
+            .iter()
+            .position(|l| !l.is_bullet() && get_date_range_regex().is_match(&l.text))
+    };
+
     let mut first_lines: Vec<&str> = Vec::new();
     let mut custom: Vec<(String, Vec<CustomEntry>)> = Vec::new();
     let mut seen: Vec<SectionKind> = Vec::new();
@@ -1228,6 +1407,10 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
         let next_is_dates = lines
             .get(idx + 1)
             .is_some_and(|l| l.kind != layout::LineKind::Heading && is_only_dates(&l.text));
+        if Some(idx) == implicit_work_at {
+            current_section = SectionKind::Work;
+            seen.push(SectionKind::Work);
+        }
         if entry.kind == layout::LineKind::Heading {
             current_section = classify_header(&entry.text);
             // A document never has two Work sections. When a second heading
@@ -1655,11 +1838,19 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
     // floor: every CV written the way DockCV writes one — name, title, contacts,
     // then the summary — imported with no summary at all.
     if resume.basics.summary.is_empty() {
-        if let Some(prose) = first_lines
-            .iter()
-            .skip(1)
-            .find(|l| l.split_whitespace().count() >= 8 && !looks_like_contact_line(l))
-        {
+        // Eight words was the old test, and it was a test about English. A
+        // summary in Ukrainian says the same thing in seven — «Інженерка з
+        // восьмирічним досвідом у розподілених системах.» — and so does a short
+        // one in English, so both were dropped on the floor while the same CV
+        // in longer words came through. What a summary *is* travels better than
+        // how many words it takes: it is a sentence, and it ends like one.
+        let is_prose = |l: &&&str| {
+            !looks_like_contact_line(l)
+                && (l.split_whitespace().count() >= 8
+                    || (l.chars().count() >= 30
+                        && l.trim_end().ends_with(['.', '!', '?', '。', '！', '？'])))
+        };
+        if let Some(prose) = first_lines.iter().skip(1).find(is_prose) {
             resume.basics.summary = (*prose).to_string();
             if resume.basics.label == **prose {
                 resume.basics.label.clear();
@@ -1705,6 +1896,13 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
         };
         if empty {
             imported.note(part, Note::Empty);
+        }
+    }
+
+    if implicit_work_at.is_some() {
+        let entries = imported.doc.work.active().len();
+        if entries > 0 {
+            imported.note(Part::Work, Note::ReadWithoutHeadings { entries });
         }
     }
 

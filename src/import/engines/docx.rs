@@ -20,9 +20,10 @@ use docx_rs::{
     Table, TableCellContent, TableChild, TableRowChild,
 };
 use std::collections::HashMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
-use crate::import::classifier::{classify_lines, is_only_dates, names_a_section};
+use crate::import::classifier::{classify_lines, join_split_entry_headers, names_a_section};
 use crate::import::layout::{without_bullet, LineKind, LogicalLine};
 use crate::import::model::ImportedDoc;
 
@@ -71,7 +72,26 @@ pub fn import_docx(path: &Path) -> Result<ImportedDoc, String> {
     }
     let buf = std::fs::read(path).map_err(|e| format!("Could not open DOCX file: {e}"))?;
     validate_docx_container(&buf)?;
-    let docx = read_docx(&buf).map_err(|e| format!("Failed to parse DOCX structure: {e}"))?;
+
+    // `read_docx` answers a file that is structurally a zip and not structurally
+    // a document by **panicking**, the same way `pdf-extract` does — an
+    // `unwrap` on an element it did not expect, somewhere under the XML reader.
+    // One flipped byte in the middle of a valid .docx is enough to reach it,
+    // which is a truncated download, a bad sync or a tired USB stick, and the
+    // whole app went down on the first thing a new user does (US-01).
+    //
+    // A panic on a worker thread is not contained by being there: `async-task`
+    // catches it and resumes the unwind in the awaiting task, which for the
+    // import flow is on the UI thread. So it is caught here, at the call, and
+    // turned into the refusal every other unreadable file already gets.
+    let docx = catch_unwind(AssertUnwindSafe(|| read_docx(&buf)))
+        .map_err(|_| {
+            "This .docx is damaged — the part that says what the document contains could \
+             not be read. If it came from a download or a sync, fetch it again; if you \
+             still have it open in Word, save a copy and import that."
+                .to_string()
+        })?
+        .map_err(|e| format!("Failed to parse DOCX structure: {e}"))?;
 
     // `r:id` → the URL behind it. A hyperlink's target lives in the document's
     // relationships, not on the element, so without this map the only thing a
@@ -197,6 +217,23 @@ fn push_paragraph(out: &mut Vec<LogicalLine>, p: &Paragraph, links: &HashMap<&st
             continue;
         }
         let kind = kind_of(&style, numbered, &text, out.is_empty());
+
+        // An entry's own address is a field, not part of its name. The link is
+        // on the heading — `Diploma, Mathematics and Physics, ETH Zurich`,
+        // linked to the school — and appending the address inline, which is
+        // right on a contact line, put it inside the degree's title instead:
+        // the CV came back naming a qualification that ended in `ethz.ch`.
+        // Split off, it is a line of its own, which is the shape
+        // `classifier::attach_entry_url` already knows how to put back on the
+        // entry above it.
+        if kind == LineKind::EntryHeader {
+            if let Some((title, address)) = split_trailing_address(&text, links) {
+                out.push(LogicalLine::new(title, kind));
+                out.push(LogicalLine::new(address, LineKind::Text));
+                continue;
+            }
+        }
+
         out.push(LogicalLine::new(
             if kind == LineKind::Bullet {
                 without_bullet(&text)
@@ -244,14 +281,56 @@ fn push_run(segments: &mut Vec<String>, run: &Run, target: Option<&str>) {
     } else {
         segments[before - 1..].join(" ")
     };
-    let bare = target.trim_start_matches("mailto:");
-    if !contributed.contains(bare) {
+    // What the link *says* is compared without the scheme, because that is how
+    // people write an address and how every emitter here prints one. Comparing
+    // the full target instead meant `GitHub: github.com/aeinstein`, linked to
+    // `https://github.com/aeinstein`, did not look like it already carried its
+    // own address — so the address was appended, the contact line came back
+    // holding the profile twice, and the next export printed both. A CV that
+    // went out, came back and went out again had grown a second GitHub.
+    let bare = strip_scheme(target);
+    if !strip_scheme(&contributed).contains(bare) {
         let last = segments.last_mut().expect("never empty");
         if !last.is_empty() {
             last.push(' ');
         }
         last.push_str(bare);
     }
+}
+
+/// A line that ends in one of this document's own link targets, split into
+/// what it says and where it points.
+fn split_trailing_address(text: &str, links: &HashMap<&str, &str>) -> Option<(String, String)> {
+    let mut best: Option<(String, String)> = None;
+    for target in links.values() {
+        let bare = strip_scheme(target);
+        if bare.is_empty() {
+            continue;
+        }
+        let Some(head) = text.strip_suffix(bare) else {
+            continue;
+        };
+        let head = head.trim();
+        if head.is_empty() {
+            continue;
+        }
+        // The longest address wins, so a document holding both `ethz.ch` and
+        // `research.ethz.ch` splits at the one the line actually ends with.
+        if best.as_ref().is_none_or(|(_, b)| b.len() < bare.len()) {
+            best = Some((head.to_string(), bare.to_string()));
+        }
+    }
+    best
+}
+
+/// An address as a person writes it: no scheme, no `www.`, no trailing slash.
+fn strip_scheme(text: &str) -> &str {
+    text.trim_start_matches("mailto:")
+        .trim_start_matches("tel:")
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("www.")
+        .trim_end_matches('/')
 }
 
 /// What a paragraph is, from its style and its words.
@@ -290,60 +369,6 @@ fn kind_of(style: &str, numbered: bool, text: &str, first_line: bool) -> LineKin
         return LineKind::EntryHeader;
     }
     LineKind::Text
-}
-
-/// Put an entry's dates back on its title.
-///
-/// Templates routinely give the dates their own cell or paragraph — sometimes
-/// styled `Dates`, sometimes `Heading2` with the title in a plain run beside it.
-/// Split that way, neither half is a usable entry header: the title carries no
-/// date to place it, and the dates carry no title to name it. Joining them is
-/// this engine's job, not the shared classifier's — how a template scatters an
-/// entry across cells is a fact about DOCX.
-fn join_split_entry_headers(lines: Vec<LogicalLine>) -> Vec<LogicalLine> {
-    let mut out: Vec<LogicalLine> = Vec::with_capacity(lines.len());
-    let mut pending_dates: Option<String> = None;
-
-    for line in lines {
-        if line.kind != LineKind::Heading && is_only_dates(&line.text) {
-            match out.last_mut() {
-                // The line above claims the dates whenever it is one that could
-                // own them. That is the order DockCV's own exporter writes —
-                // title, dates, bullets — and holding them for the *next* line
-                // stapled them to the entry's first bullet instead, leaving the
-                // entry itself undated.
-                Some(prev) if prev.kind != LineKind::Heading && prev.kind != LineKind::Bullet => {
-                    prev.text = format!("{} {}", prev.text, line.text);
-                    prev.kind = LineKind::EntryHeader;
-                }
-                // A section heading or a list above, so nothing there can own
-                // them: this template printed the dates first, and the entry is
-                // on the line below.
-                _ => pending_dates = Some(line.text.clone()),
-            }
-            continue;
-        }
-        match pending_dates.take() {
-            // The line after a bare date is the entry that date belongs to —
-            // unless it is a list item, which is content under an entry and
-            // never an entry itself.
-            Some(dates) if line.kind != LineKind::Heading && line.kind != LineKind::Bullet => out
-                .push(LogicalLine::new(
-                    format!("{} {}", line.text, dates),
-                    LineKind::EntryHeader,
-                )),
-            // A heading or a bullet follows: the dates belonged to the entry
-            // above them.
-            Some(dates) => {
-                if let Some(prev) = out.last_mut().filter(|p| p.kind == LineKind::EntryHeader) {
-                    prev.text = format!("{} {}", prev.text, dates);
-                }
-                out.push(line);
-            }
-            None => out.push(line),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -418,10 +443,11 @@ mod tests {
             Paragraph::new().add_hyperlink(link),
             &[("rId7", "https://linkedin.com/in/aeinstein")],
         );
-        assert_eq!(
-            texts(&lines),
-            vec!["LinkedIn https://linkedin.com/in/aeinstein"]
-        );
+        // The address is appended the way a person writes one and the way the
+        // model stores one — without the scheme. `links::href` puts the scheme
+        // back on the way out, and comparing the two forms is what stopped a
+        // contact line from coming back holding the same profile twice.
+        assert_eq!(texts(&lines), vec!["LinkedIn linkedin.com/in/aeinstein"]);
     }
 
     /// A link that already shows its own address gains nothing from having it
