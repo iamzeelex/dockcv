@@ -21,7 +21,7 @@ use gpui::{div, px, ClickEvent, Context, Entity, FontWeight, IntoElement, Shared
 
 use dockcv_ui_components::{
     lucide, Button, ButtonExt, DockIcon, Icon, IconName, ScrollableElement, Sizable, Spinner,
-    TextFieldState, SANS,
+    TextFieldState, MONO, SANS,
 };
 
 use super::import_unplaced::AdoptHandler;
@@ -371,35 +371,47 @@ pub fn render_drop_panel<V: 'static>(
                 ),
         )
         .child(
+            // The other way in, given the weight it has. It was a muted link
+            // in a footer row beside a stray line about LinkedIn — two
+            // afterthoughts sharing a shelf, when one of them is the whole
+            // alternative path through this screen and the other belonged in
+            // the rail's guide, where the rest of "where do I get a file" now
+            // lives.
             div()
-                .mt(px(16.0))
+                .mt(px(20.0))
                 .flex()
-                .flex_wrap()
+                .flex_col()
                 .items_center()
-                .justify_between()
-                .gap(px(10.0))
+                .gap(px(12.0))
                 .child(
-                    // Naming LinkedIn without saying which of its three
-                    // downloads you mean is a dead end, and the one we used to
-                    // name was the wrong one: the data archive takes a day to
-                    // arrive and most people have never opened that settings
-                    // screen. The profile PDF is two clicks and is the file
-                    // more people import than any other.
                     div()
-                        .flex_1()
-                        .min_w(px(220.0))
-                        .text_style(TextStyle::meta())
-                        .text_color(theme.text_subtle)
-                        .child("From LinkedIn: your profile → More → Save to PDF"),
+                        .flex()
+                        .items_center()
+                        .gap(px(12.0))
+                        .w_full()
+                        .child(div().flex_1().h(px(1.0)).bg(theme.border))
+                        .child(
+                            div()
+                                .font_family(MONO)
+                                .text_size(px(10.0))
+                                .text_color(theme.text_subtle)
+                                .child("or"),
+                        )
+                        .child(div().flex_1().h(px(1.0)).bg(theme.border)),
                 )
                 .child(
                     Button::new("skip-start-blank")
-                        .quiet()
-                        .text_color(theme.text_subtle)
+                        .action_secondary()
                         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                             on_skip_blank(this, cx);
                         }))
-                        .child("Start from scratch →"),
+                        .child("Start from scratch"),
+                )
+                .child(
+                    div()
+                        .text_style(TextStyle::meta())
+                        .text_color(theme.text_subtle)
+                        .child("Write it here instead. Nothing to import, nothing to check."),
                 ),
         )
 }
