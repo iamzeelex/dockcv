@@ -102,6 +102,8 @@ pub struct Shell {
     pub(super) renaming_version: Option<super::front_door_version::VersionRename>,
     /// Which note is open in each of the import rail's two lists.
     pub(super) import_notes: super::import_screen::ImportNotes,
+    /// A local assistant reading a scanned CV right now.
+    pub(super) import_run: Option<super::import_assistant::LocalRun>,
     /// A version being built, in memory and not on disk. See
     /// `version_draft.rs` — discarding it leaves the vault untouched.
     pub(super) drafting: Option<Box<super::version_draft::VersionDraft>>,
@@ -361,6 +363,7 @@ impl Shell {
             gallery_creating: false,
             renaming_version: None,
             import_notes: Default::default(),
+            import_run: None,
             drafting: None,
             last_opened: config::load().last_document,
             tailoring: None,
