@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::resume::model::{Applications, Diary, Library, ProfileCatalog, ResumeDoc};
+use crate::resume::model::{
+    ApplicationStatus, Applications, Diary, Library, ProfileCatalog, ResumeDoc,
+};
 
 const VAULT_DIR_NAME: &str = "cvault";
 const LIBRARY_FILE: &str = "library.toml";
@@ -592,10 +594,24 @@ pub fn applications_path(vault_dir: &Path) -> PathBuf {
 /// old row's conversion funnel isn't silently zeroed just because the field
 /// wasn't there to deserialize.
 pub fn load_applications(vault_dir: &Path) -> Applications {
-    let applications: Applications = fs::read_to_string(applications_path(vault_dir))
+    let mut applications: Applications = fs::read_to_string(applications_path(vault_dir))
         .ok()
         .and_then(|text| toml::from_str(&text).ok())
         .unwrap_or_default();
+    for entry in &mut applications.entries {
+        // An empty status is ours, not the author's.
+        //
+        // The word is otherwise kept exactly as written, and deliberately: a
+        // hand-edited `status = "ofer"` must not be silently rewritten to
+        // `wishlist`, because then an offer stops having ever existed. `""` is
+        // the one value that rule does not protect — nobody types it. It came
+        // from `Application::default` disagreeing with serde's own default
+        // (fixed at the source), and every card the app made carried it. So it
+        // is filled in rather than warned about for the life of the vault.
+        if entry.status_word.is_empty() {
+            entry.status_word = ApplicationStatus::Wishlist.word().to_string();
+        }
+    }
     for entry in &applications.entries {
         if !entry.status_is_recognised() {
             log::warn!(
@@ -2062,6 +2078,43 @@ mod tests {
         assert_eq!(back.work[0].position, "Engineer");
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A board written by the build that had the `status = ""` bug loads as a
+    /// board of wishlist cards, once, instead of warning about it on every
+    /// read for the life of the vault. The rule that keeps an unknown word
+    /// verbatim is untouched — `""` is the one value nobody typed.
+    #[test]
+    fn an_empty_status_is_filled_in_rather_than_warned_about_forever() {
+        use crate::resume::model::ApplicationStatus;
+
+        let dir = std::env::temp_dir().join(format!(
+            "dockcv_status_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("scratch");
+        std::fs::write(
+            super::applications_path(&dir),
+            "[[entries]]\ncompany = \"Northwind\"\nrole = \"Engineer\"\nstatus = \"\"\n\n\
+             [[entries]]\ncompany = \"Acme\"\nrole = \"Lead\"\nstatus = \"ofer\"\n",
+        )
+        .expect("write");
+
+        let board = super::load_applications(&dir);
+        assert_eq!(board.entries.len(), 2);
+        assert_eq!(
+            board.entries[0].status_word,
+            ApplicationStatus::Wishlist.word()
+        );
+        assert!(board.entries[0].status_is_recognised());
+        // And a word a person really did type is still theirs.
+        assert_eq!(board.entries[1].status_word, "ofer");
+        assert!(!board.entries[1].status_is_recognised());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
