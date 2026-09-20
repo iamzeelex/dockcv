@@ -178,6 +178,12 @@ impl Shell {
                         active_cvs,
                         |this, cx| {
                             this.screen = Screen::Gallery;
+                            // And out of the import flow, which lives inside
+                            // this screen. Without this the rail was a trap:
+                            // clicking CVs mid-import put you back on the
+                            // import screen, because that *is* the CVs screen
+                            // while a file is being brought in.
+                            this.close_import(cx);
                             cx.notify();
                         },
                     ))

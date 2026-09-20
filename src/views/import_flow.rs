@@ -20,8 +20,8 @@ use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, Entity, FontWeight, IntoElement, SharedString};
 
 use dockcv_ui_components::{
-    lucide, Button, ButtonExt, Card, DockIcon, Icon, IconName, ScrollableElement, Sizable, Spinner,
-    TextFieldState,
+    lucide, Button, ButtonExt, DockIcon, Icon, IconName, ScrollableElement, Sizable, Spinner,
+    TextFieldState, SANS,
 };
 
 use super::import_unplaced::AdoptHandler;
@@ -245,7 +245,14 @@ impl SectionReviewItem {
     }
 }
 
-pub fn render_step1_bring_document<V: 'static>(
+/// Step one, inside the screen's panel: the drop zone and nothing else.
+///
+/// What is gone from here is as much the point as what is left. The 560×600
+/// card, its shadow and its own `DockCV` wordmark all belonged to a surface
+/// that floated over the pane; `import_screen.rs` is the pane now, and a panel
+/// does not need a frame inside a frame. The hero line went with them — a
+/// screen with a heading does not also need a headline.
+pub fn render_drop_panel<V: 'static>(
     cx: &mut Context<V>,
     on_browse: impl Fn(&mut V, &mut Context<V>) + 'static + Copy,
     on_skip_blank: impl Fn(&mut V, &mut Context<V>) + 'static + Copy,
@@ -253,116 +260,41 @@ pub fn render_step1_bring_document<V: 'static>(
     let theme = *cx.theme();
 
     div()
-        .w(px(560.0))
-        .h(px(600.0))
-        .rounded(theme.radius_lg())
-        .overflow_hidden()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.elevated)
-        .shadow_lg()
         .flex()
         .flex_col()
-        .items_center()
-        .justify_center()
-        .p(px(40.0))
-        // Brand logo
         .child(
             div()
-                .flex()
-                .items_baseline()
-                .mb(px(8.0))
-                // Matched to the rail's wordmark, which is the same mark on
-                // the same product; 21/700 was the loudest thing on a screen
-                // whose job is to get out of the way.
-                .child(
-                    div()
-                        .text_size(px(17.0))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text)
-                        .child("Dock"),
-                )
-                .child(
-                    div()
-                        .text_size(px(17.0))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.accent)
-                        .child("CV"),
-                ),
-        )
-        // Title
-        .child(
-            div()
-                .text_style(TextStyle::hero())
-                .text_size(px(28.0))
-                .text_color(theme.text)
-                .text_center()
-                .mb(px(8.0))
-                .child("Bring what you already have"),
-        )
-        // Subtitle
-        .child(
-            div()
-                .text_style(TextStyle::body())
-                .text_color(theme.text_muted)
-                .text_center()
-                .max_w(px(380.0))
-                .line_height(px(20.0))
-                .mb(px(28.0))
-                .child("We'll split it into sections and blocks you can edit right away."),
-        )
-        // What we accept — a statement, not a choice.
-        //
-        // These were three tabs, and the choice was fiction: `import_file`
-        // dispatches on the file's own extension and never consulted the tab,
-        // so picking DOCX and dropping a PDF worked, and picking PDF and
-        // dropping a DOCX worked too. A control that changes nothing teaches
-        // the user something untrue about the product.
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .mb(px(20.0))
-                .children(ACCEPTED_FORMATS.iter().map(|format| {
-                    div()
-                        .text_style(TextStyle::chip())
-                        .px(px(9.0))
-                        .py(px(4.0))
-                        .rounded(theme.radius_sm())
-                        .bg(theme.hover)
-                        .text_color(theme.text_muted)
-                        .child(*format)
-                })),
-        )
-        // Drag and Drop Zone
-        .child(
-            Card::new()
-                .outline()
-                .interactive("dropzone-area")
+                .id("dropzone-area")
+                .min_h(px(205.0))
+                .p(px(24.0))
+                .rounded(theme.radius_md())
+                .border_1()
                 .border_dashed()
-                .border_color(theme.border_strong)
-                .max_w(px(420.0))
-                .h(px(150.0))
+                // Accent rather than a grey outline: this is the one thing on
+                // the screen to do, and a dashed grey box reads as a disabled
+                // control rather than as an invitation.
+                .border_color(theme.accent.opacity(0.55))
+                .bg(theme.accent.opacity(0.06))
                 .flex()
                 .flex_col()
                 .items_center()
                 .justify_center()
-                .gap(px(8.0))
+                .cursor_pointer()
+                .hover(|s| s.bg(theme.accent.opacity(0.1)))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                     on_browse(this, cx);
                 }))
                 .child(
                     div()
-                        .w(px(34.0))
-                        .h(px(34.0))
+                        .w(px(42.0))
+                        .h(px(42.0))
+                        .mb(px(14.0))
                         .rounded(theme.radius_md())
-                        .border_1()
-                        .border_color(theme.text_subtle)
+                        .bg(theme.accent.opacity(0.14))
+                        .text_color(theme.accent)
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_color(theme.text_subtle)
                         // `DockIcon::Download` exists for precisely this glyph;
                         // it was being drawn as a `↑` character, at whatever
                         // size and in whatever font happened to carry it.
@@ -370,37 +302,86 @@ pub fn render_step1_bring_document<V: 'static>(
                 )
                 .child(
                     div()
-                        .text_style(TextStyle::body())
+                        .font_family(SANS)
+                        .text_size(px(14.0))
+                        .font_weight(FontWeight::SEMIBOLD)
                         .text_color(theme.text)
-                        .child("Drop your CV here"),
+                        .child("Drop a CV here"),
                 )
                 .child(
                     div()
-                        .text_style(TextStyle::label())
-                        .text_color(theme.text_subtle)
-                        .child("or click to browse"),
+                        .max_w(px(350.0))
+                        .mt(px(7.0))
+                        .text_style(TextStyle::body())
+                        .text_color(theme.text_muted)
+                        .text_center()
+                        .child(
+                            "or choose a file from your computer. Text PDFs, DOCX, LinkedIn \
+                             exports, JSON Resume and Markdown are supported.",
+                        ),
                 )
+                .child(
+                    Button::new("choose-file")
+                        .action_primary()
+                        .mt(px(16.0))
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            on_browse(this, cx);
+                        }))
+                        .child("Choose file"),
+                )
+                // The formats, under the button that asks for one, which is
+                // where "will mine work?" gets asked. A statement of fact, not
+                // a mode: `import::import_file` picks the engine from the
+                // file's own extension and never consulted the tabs this
+                // replaced, so picking DOCX and dropping a PDF worked. A
+                // control that changes nothing teaches something untrue.
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .gap(px(7.0))
+                        .mt(px(14.0))
+                        .children(ACCEPTED_FORMATS.iter().map(|format| {
+                            div()
+                                .text_style(TextStyle::chip())
+                                .px(px(8.0))
+                                .py(px(3.0))
+                                .rounded(theme.radius_sm())
+                                .bg(theme.hover)
+                                .text_color(theme.text_muted)
+                                .child(*format)
+                        })),
+                ),
+        )
+        .child(
+            div()
+                .mt(px(16.0))
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .justify_between()
+                .gap(px(10.0))
                 .child(
                     // The LinkedIn archive is three clicks deep in a settings
                     // screen most people have never opened, and naming the
                     // format without saying where to get it is a dead end.
                     div()
-                        .mt(px(10.0))
+                        .flex_1()
+                        .min_w(px(200.0))
                         .text_style(TextStyle::meta())
                         .text_color(theme.text_subtle)
                         .child(LINKEDIN_HINT),
+                )
+                .child(
+                    Button::new("skip-start-blank")
+                        .quiet()
+                        .text_color(theme.text_subtle)
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            on_skip_blank(this, cx);
+                        }))
+                        .child("Start from scratch →"),
                 ),
-        )
-        // Skip link
-        .child(
-            Button::new("skip-start-blank")
-                .quiet()
-                .mt(px(26.0))
-                .text_color(theme.text_subtle)
-                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                    on_skip_blank(this, cx);
-                }))
-                .child("Skip — start blank →"),
         )
 }
 
@@ -408,35 +389,23 @@ pub fn render_parsing_step<V: 'static>(cx: &mut Context<V>, filename: &str) -> i
     let theme = *cx.theme();
 
     div()
-        .w(px(560.0))
-        .h(px(600.0))
-        .rounded(theme.radius_lg())
-        .overflow_hidden()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.elevated)
-        .shadow_lg()
+        .min_h(px(205.0))
         .flex()
         .flex_col()
         .items_center()
         .justify_center()
-        .p(px(40.0))
-        .child(
-            div()
-                .mb(px(12.0))
-                .child(Spinner::new().large().color(theme.accent)),
-        )
-        .child(
-            div()
-                .text_style(TextStyle::title())
-                .text_color(theme.text)
-                .mb(px(6.0))
-                .child("Parsing document..."),
-        )
+        .gap(px(14.0))
+        .child(Spinner::new().large().color(theme.accent))
         .child(
             div()
                 .text_style(TextStyle::body())
-                .text_color(theme.text_muted)
+                .text_color(theme.text)
+                .child("Reading the file…"),
+        )
+        .child(
+            div()
+                .text_style(TextStyle::meta())
+                .text_color(theme.text_subtle)
                 .child(filename.to_string()),
         )
 }
@@ -456,20 +425,14 @@ pub fn render_step2_review_split<V: 'static>(
     let total_count = items.len();
 
     div()
-        .w(px(560.0))
-        // Grows with the window instead of a fixed 600px. The list of
-        // sections was scrolling *inside* a short card that was itself inside
-        // the gallery's scroll area — two nested scrollbars for one list, on a
-        // screen with room to spare.
-        .flex_1()
-        .min_h(px(420.0))
+        // No width, no frame, no shadow: `import_screen.rs` owns the panel, and
+        // this list was the reason to stop drawing one here. It is the densest
+        // thing in the flow — a row per section, each with a verdict and an
+        // action — and it was being squeezed into 560px on a window with room
+        // to spare, inside a card that was itself inside the pane's scroll.
+        .w_full()
+        .min_h(px(320.0))
         .max_h(px(880.0))
-        .rounded(theme.radius_lg())
-        .overflow_hidden()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.elevated)
-        .shadow_lg()
         .flex()
         .flex_col()
         // Header. `Undo import` used to sit alone in a bar of its own at the
@@ -482,9 +445,7 @@ pub fn render_step2_review_split<V: 'static>(
                 .items_start()
                 .justify_between()
                 .gap(px(16.0))
-                .px(px(22.0))
-                .pt(px(20.0))
-                .pb(px(12.0))
+                .pb(px(14.0))
                 .child(
                     div()
                         .flex()
@@ -531,8 +492,7 @@ pub fn render_step2_review_split<V: 'static>(
                 .id("review-items-scroll")
                 .flex_1()
                 .overflow_y_scrollbar()
-                .px(px(22.0))
-                .py(px(10.0))
+                .py(px(2.0))
                 .flex()
                 .flex_col()
                 .gap(px(8.0))
@@ -640,8 +600,7 @@ pub fn render_step2_review_split<V: 'static>(
                 .items_center()
                 .justify_between()
                 .gap(px(12.0))
-                .px(px(22.0))
-                .py(px(14.0))
+                .pt(px(14.0))
                 .border_t_1()
                 .border_color(theme.border)
                 .child(
@@ -687,15 +646,11 @@ pub fn render_could_not_read<V: 'static>(
     let theme = *cx.theme();
 
     div()
-        .w(px(560.0))
-        .rounded(theme.radius_lg())
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.elevated)
-        .shadow_lg()
+        .w_full()
+        .min_h(px(205.0))
         .flex()
         .flex_col()
-        .p(px(36.0))
+        .justify_center()
         .gap(px(6.0))
         .child(
             div()

@@ -1608,24 +1608,15 @@ impl Render for Shell {
             Screen::Editor(editor) => editor.clone().into_any_element(),
             Screen::PresetMatrix(pm) => pm.render_matrix(cx).into_any_element(),
 
-            // The import wizard takes the whole window rather than sitting as
-            // a card inside the gallery's scrolling body.
+            // Import keeps the rail, like every other vault screen.
             //
-            // Embedded, it was a fixed-height block with its own scrollbar
-            // *inside* the page's scrollbar — two scrollbars for one list, on
-            // a screen with room to spare — and the surrounding grid competed
-            // with it for attention. It is a modal step: one decision, one
-            // surface, and the rail is not navigation you want mid-import.
-            Screen::Gallery if self.gallery_creating => {
-                let wizard = self.render_template_chooser(cx).into_any_element();
-                self.backdrop(cx)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .p(px(40.0))
-                    .child(wizard)
-                    .into_any_element()
-            }
+            // It used to take the whole window as a modal, for a reason that
+            // was true of the surface it had: a 560px card inside the
+            // gallery's scroll, with the grid competing behind it. The fix was
+            // to stop being a card — `import_screen.rs` is the pane — and once
+            // it is the pane there is nothing left for the rail to compete
+            // with, and no reason for this one flow to be the screen where the
+            // product's own furniture disappears.
             Screen::Gallery => {
                 let main = self.render_gallery_main(cx).into_any_element();
                 self.with_rail(main, window, cx)

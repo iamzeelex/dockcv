@@ -6,11 +6,11 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement};
 
-use super::import_flow::{self, ImportStep};
+use super::import_flow::ImportStep;
 use crate::resume::model::{Resume, ResumeDoc};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use dockcv_ui_components::{
-    Button, ButtonExt, Card, EmptyState, Icon, IconName, ScrollableElement, Sizable, TextField,
+    Button, ButtonExt, EmptyState, Icon, IconName, ScrollableElement, Sizable, TextField,
 };
 
 
@@ -109,25 +109,11 @@ impl Shell {
                 );
         }
 
+        // Its own screen, its own heading: `import_screen.rs`. The gallery's
+        // header used to stay above it, offering to search a list that was not
+        // showing and to add a CV you were in the middle of adding.
         if self.gallery_creating {
-            return div()
-                .flex_1()
-                .min_w_0()
-                .h_full()
-                .flex()
-                .flex_col()
-                .child(top)
-                .child(
-                    div()
-                        .flex_1()
-                        .min_h_0()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .px(px(34.0))
-                        .pb(px(30.0))
-                        .child(self.render_template_chooser(cx)),
-                );
+            return self.render_import_screen(cx);
         }
 
         let body: AnyElement = if vault_is_empty {
@@ -229,135 +215,5 @@ impl Shell {
         self.gallery_creating = false;
         self.import_step = ImportStep::Step1Drop;
         cx.notify();
-    }
-
-    pub(super) fn render_template_chooser(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        match &self.import_step {
-            ImportStep::Step1Drop => div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .w_full()
-                .py(px(20.0))
-                .child(import_flow::render_step1_bring_document(
-                    cx,
-                    |this, cx| {
-                        this.import_existing_resume(cx);
-                    },
-                    |this, cx| this.start_blank_cv(cx),
-                ))
-                .child(
-                    Button::new("tpl-cancel")
-                        .quiet()
-                        .mt(px(16.0))
-                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                            this.gallery_creating = false;
-                            this.import_step = ImportStep::Step1Drop;
-                            cx.notify();
-                        }))
-                        .child("← Back to Gallery"),
-                ),
-            ImportStep::Parsing { filename } => div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .w_full()
-                .py(px(20.0))
-                .child(import_flow::render_parsing_step(cx, filename)),
-            ImportStep::CouldNotRead { filename, error } => div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .w_full()
-                .py(px(20.0))
-                .child(import_flow::render_could_not_read(
-                    cx,
-                    filename,
-                    error,
-                    |this, cx| {
-                        this.import_step = ImportStep::Step1Drop;
-                        cx.notify();
-                    },
-                    |this, cx| this.start_blank_cv(cx),
-                )),
-            // `flex_1` and `min_h_0`, not `justify_center`: the review panel
-            // pins an action bar to its own bottom edge, and a centred box with
-            // no bound to resolve against grows past the window and takes that
-            // bar with it.
-            ImportStep::Step2Review { imported } => div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .flex_1()
-                .min_h_0()
-                .w_full()
-                .py(px(20.0))
-                .child(import_flow::render_step2_review_split(
-                    cx,
-                    imported,
-                    self.import_section_name.as_ref(),
-                    |this, cx| {
-                        this.import_step = ImportStep::Step1Drop;
-                        cx.notify();
-                    },
-                    |this, cx| {
-                        if let ImportStep::Step2Review { imported } = &this.import_step.clone() {
-                            let doc = imported.doc.clone();
-                            this.create_doc(doc, "imported", cx);
-                            this.gallery_creating = false;
-                            this.import_step = ImportStep::Step1Drop;
-                        }
-                    },
-                    // Adopting mutates the *pending* import, not a document on
-                    // disk: nothing has been created yet, and Undo import still
-                    // throws the whole thing away. The section is simply there
-                    // when Continue writes the file.
-                    |this, heading, items, cx| {
-                        if let ImportStep::Step2Review { imported } = &mut this.import_step {
-                            let created = crate::import::model::adopt_as_section(
-                                &mut imported.doc,
-                                &heading,
-                                &items,
-                            );
-                            if created > 0 {
-                                imported.unplaced.retain(|left| !items.contains(left));
-                            }
-                            cx.notify();
-                        }
-                    },
-                )),
-        }
-    }
-
-    #[allow(dead_code, clippy::type_complexity)]
-    pub(super) fn template_card(
-        &self,
-        cx: &mut Context<Self>,
-        id: &'static str,
-        title: &'static str,
-        description: &'static str,
-        action: Box<dyn Fn(&mut Self, &mut Context<Self>) + 'static>,
-    ) -> impl IntoElement {
-        let theme = *cx.theme();
-        Card::new()
-            .surface()
-            .small()
-            .interactive(id)
-            .flex()
-            .flex_col()
-            .gap_1()
-            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                action(this, cx);
-            }))
-            .child(div().text_color(theme.text).text_sm().child(title))
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child(description),
-            )
     }
 }
