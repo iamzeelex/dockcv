@@ -22,6 +22,7 @@ mod front_door_version;
 mod gallery;
 mod gallery_sort;
 pub mod import_assistant;
+mod import_assistant_view;
 mod import_flow;
 mod import_screen;
 mod import_unplaced;

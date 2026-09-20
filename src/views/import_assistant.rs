@@ -40,14 +40,9 @@
 //! where it came from so the review is read as a transcription to check rather
 //! than as extraction to skim.
 
-use gpui::prelude::*;
-use gpui::{div, px, ClickEvent, Context, Div, FontWeight, SharedString, Task};
+use gpui::{Context, Task};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-
-use dockcv_ui_components::{Button, ButtonExt, Spinner, MONO, SANS};
-
-use crate::theme::ActiveTheme;
 
 use super::shell::Shell;
 
@@ -60,7 +55,7 @@ use super::shell::Shell;
 /// admits it is unverified turns the same failure into a message that names
 /// which assistant — which is the only way the list gets fixed.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Trust {
+pub(super) enum Trust {
     /// The mechanism is documented and has been read.
     Verified,
     /// Plausible, unconfirmed, and asking to be told.
@@ -68,7 +63,7 @@ enum Trust {
 }
 
 /// How a CV reaches an assistant.
-enum Route {
+pub(super) enum Route {
     /// A command-line tool on this machine. It opens the file itself, from the
     /// path, and answers on standard output — so nothing is dragged and
     /// nothing is pasted, and the whole round trip is one click.
@@ -83,11 +78,11 @@ enum Route {
     Web { new_chat: &'static str },
 }
 
-struct Assistant {
-    id: &'static str,
-    name: &'static str,
-    route: Route,
-    trust: Trust,
+pub(super) struct Assistant {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub route: Route,
+    pub trust: Trust,
 }
 
 /// Tools that read the file themselves.
@@ -96,7 +91,7 @@ struct Assistant {
 /// non-interactive flags are read off `--help` on a machine that has them, but
 /// whether a given one will look at a PDF of images and answer with clean JSON
 /// Resume is a question only a real run answers. That is what the mark is for.
-const LOCAL: [Assistant; 3] = [
+pub(super) const LOCAL: [Assistant; 3] = [
     Assistant {
         id: "local-claude",
         name: "Claude Code",
@@ -137,7 +132,7 @@ const LOCAL: [Assistant; 3] = [
 /// button would open a blank window and look like a bug rather than an
 /// omission. `Copy the prompt instead` is its route, and Ollama's, and any
 /// model running on the person's own machine.
-const WEB: [Assistant; 6] = [
+pub(super) const WEB: [Assistant; 6] = [
     Assistant {
         id: "web-claude",
         name: "Claude",
@@ -188,12 +183,36 @@ const WEB: [Assistant; 6] = [
     },
 ];
 
+/// Whether Claude Desktop is here to answer a `claude://` link.
+///
+/// By its bundle, and only on macOS. The scheme is registered by the app on
+/// every platform it ships for, but "is it installed" is asked differently on
+/// each, and a wrong guess here is a button that opens nothing — which is the
+/// exact failure the unverified mark exists to avoid, so it is better not to
+/// offer the button at all than to offer one that lies.
+pub(super) fn claude_desktop() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        static FOUND: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *FOUND.get_or_init(|| {
+            let user = std::env::var_os("HOME")
+                .map(|home| Path::new(&home).join("Applications/Claude.app"))
+                .is_some_and(|p| p.is_dir());
+            user || Path::new("/Applications/Claude.app").is_dir()
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 /// Which of the local tools are actually installed.
 ///
 /// Looked up once. `PATH` does not change inside a run, and a directory scan
 /// per frame to draw three buttons is the kind of cost that never shows up in
 /// a profile because it is spread over every frame.
-fn installed() -> &'static [&'static str] {
+pub(super) fn installed() -> &'static [&'static str] {
     static FOUND: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
     FOUND.get_or_init(|| {
         let path = std::env::var_os("PATH").unwrap_or_default();
@@ -226,7 +245,7 @@ pub(super) fn transcription_prompt() -> String {
 }
 
 /// The same job, for a tool that can open the file itself.
-fn local_prompt(path: &Path) -> String {
+pub(super) fn local_prompt(path: &Path) -> String {
     format!(
         "Read the CV at {} — its pages are images, so transcribe what you can see on them. \
          Reply with a single JSON Resume document (jsonresume.org schema) and nothing else. \
@@ -249,7 +268,7 @@ const RULES: &str = "Rules:\n\
 /// Hand-rolled rather than a dependency: this is the only URL this app builds,
 /// the rule is RFC 3986's unreserved set, and adding a crate to the graph to
 /// encode one string is a poor trade in a binary that ships no HTTP client.
-fn encode(text: &str) -> String {
+pub(super) fn encode(text: &str) -> String {
     let mut out = String::with_capacity(text.len() * 3);
     for byte in text.as_bytes() {
         match byte {
@@ -260,6 +279,35 @@ fn encode(text: &str) -> String {
         }
     }
     out
+}
+
+/// Cowork, with the CV attached.
+///
+/// The one link in this file that carries the file itself. `file` takes an
+/// absolute path and Claude Desktop attaches it, which removes the only manual
+/// step the browser route has. Claude confirms the attachment before using it,
+/// so nothing arrives unannounced.
+pub(super) fn cowork_url(path: &Path) -> String {
+    format!(
+        "claude://cowork/new?q={}&file={}",
+        encode(&transcription_prompt()),
+        encode(&path.to_string_lossy())
+    )
+}
+
+/// Claude Code, with the folder the CV is in.
+///
+/// `folder`, not `file`: Code's `file` parameter is documented as accepted and
+/// not yet supported, so passing it would look like it worked and attach
+/// nothing. The folder goes across and the prompt names the file inside it —
+/// the same shape the command-line route uses, for the same reason.
+pub(super) fn code_url(path: &Path) -> String {
+    let folder = path.parent().unwrap_or(Path::new("/"));
+    format!(
+        "claude://code/new?q={}&folder={}",
+        encode(&local_prompt(path)),
+        encode(&folder.to_string_lossy())
+    )
 }
 
 /// A local tool that is running right now.
@@ -295,7 +343,7 @@ impl Shell {
     /// Here DockCV starts a process that reads their CV and sends it to a
     /// model, so the exact command is on screen before the button is pressed
     /// and the panel says who is doing the sending.
-    fn run_local_assistant(
+    pub(super) fn run_local_assistant(
         &mut self,
         program: &'static str,
         argv: &'static [&'static str],
@@ -400,276 +448,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// The panel under a PDF that turned out to be a picture.
-    pub(super) fn render_assistant_handoff(
-        &self,
-        cx: &mut Context<Self>,
-        path: Option<&std::path::Path>,
-    ) -> Div {
-        let theme = *cx.theme();
-        let local: Vec<&Assistant> = LOCAL
-            .iter()
-            .filter(|a| match a.route {
-                Route::Local { program, .. } => installed().contains(&program),
-                Route::Web { .. } => false,
-            })
-            .collect();
-
-        div()
-            .mt(px(18.0))
-            .pt(px(16.0))
-            .border_t_1()
-            .border_color(theme.border)
-            .flex()
-            .flex_col()
-            .gap(px(14.0))
-            .child(
-                div()
-                    .font_family(SANS)
-                    .text_size(px(13.0))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.text)
-                    .child("Or have an assistant read it"),
-            )
-            .children(
-                self.import_run
-                    .as_ref()
-                    .map(|run| self.render_local_run(cx, run)),
-            )
-            .children((self.import_run.is_none() && !local.is_empty() && path.is_some()).then(
-                || self.render_local_choices(cx, &local, path.expect("checked")),
-            ))
-            .children(
-                self.import_run
-                    .is_none()
-                    .then(|| self.render_web_choices(cx, path)),
-            )
-    }
-
-    /// The tools on this machine, which do the whole round trip.
-    fn render_local_choices(
-        &self,
-        cx: &mut Context<Self>,
-        local: &[&'static Assistant],
-        path: &std::path::Path,
-    ) -> Div {
-        let theme = *cx.theme();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(9.0))
-            .child(
-                div()
-                    .max_w(px(600.0))
-                    .text_size(px(11.5))
-                    .line_height(px(17.0))
-                    .text_color(theme.text_muted)
-                    .child(
-                        "These are installed here and can open the file themselves — one click, \
-                         nothing to drag or paste. DockCV starts the command and reads what it \
-                         prints; the tool sends your CV wherever it normally sends things.",
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(8.0))
-                    .children(local.iter().map(|assistant| {
-                        let Route::Local { program, argv } = assistant.route else {
-                            unreachable!("filtered to local routes");
-                        };
-                        let file = path.to_path_buf();
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(5.0))
-                            .child(
-                                Button::new(SharedString::from(assistant.id))
-                                    .action_secondary()
-                                    .on_click(cx.listener(
-                                        move |this, _: &ClickEvent, _window, cx| {
-                                            this.run_local_assistant(
-                                                program,
-                                                argv,
-                                                file.clone(),
-                                                cx,
-                                            );
-                                        },
-                                    ))
-                                    .child(format!("Run {}", assistant.name)),
-                            )
-                            .children(self.trust_mark(cx, assistant.trust))
-                    })),
-            )
-    }
-
-    /// While a local tool is working.
-    fn render_local_run(&self, cx: &mut Context<Self>, run: &LocalRun) -> Div {
-        let theme = *cx.theme();
-        div()
-            .px(px(12.0))
-            .py(px(11.0))
-            .rounded(theme.radius_sm())
-            .border_1()
-            .border_color(theme.accent.opacity(0.4))
-            .bg(theme.accent.opacity(0.06))
-            .flex()
-            .flex_col()
-            .gap(px(7.0))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(9.0))
-                    .child(Spinner::new().color(theme.accent))
-                    .child(
-                        div()
-                            .font_family(SANS)
-                            .text_size(px(12.0))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme.text)
-                            .child(format!("{} is reading the pages…", run.tool)),
-                    ),
-            )
-            .child(
-                div()
-                    .font_family(MONO)
-                    .text_size(px(10.5))
-                    .text_color(theme.text_subtle)
-                    .child(run.command.clone()),
-            )
-            .child(
-                div()
-                    .text_size(px(11.0))
-                    .text_color(theme.text_muted)
-                    .child(
-                        "Reading a page of images is slow. Leaving this screen stops DockCV \
-                         waiting for it.",
-                    ),
-            )
-    }
-
-    /// The browser routes, where the person carries the file.
-    fn render_web_choices(&self, cx: &mut Context<Self>, path: Option<&std::path::Path>) -> Div {
-        let theme = *cx.theme();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(9.0))
-            .child(
-                div()
-                    .max_w(px(600.0))
-                    .text_size(px(11.5))
-                    .line_height(px(17.0))
-                    .text_color(theme.text_muted)
-                    .child(
-                        "Or open one in your browser with the instructions already written. A \
-                         link can carry text but not a file, so you attach it and paste the \
-                         answer back — DockCV itself sends nothing.",
-                    ),
-            )
-            .child(
-                // The consequence, in the place where the decision is made. A
-                // CV is the most personal document most people own, and this
-                // is the one action in DockCV that takes it off the machine.
-                div()
-                    .px(px(10.0))
-                    .py(px(8.0))
-                    .rounded(theme.radius_sm())
-                    .bg(theme.warning.opacity(0.08))
-                    .border_1()
-                    .border_color(theme.warning.opacity(0.3))
-                    .text_size(px(11.0))
-                    .line_height(px(16.0))
-                    .text_color(theme.text_muted)
-                    .child(
-                        "Either way your CV goes to that company under your own account, with \
-                         whatever retention their terms set. Nothing else in DockCV leaves this \
-                         machine.",
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(8.0))
-                    .children(WEB.iter().map(|assistant| {
-                        let Route::Web { new_chat } = assistant.route else {
-                            unreachable!("WEB holds web routes");
-                        };
-                        let url = format!("{new_chat}{}", encode(&transcription_prompt()));
-                        let file = path.map(|p| p.to_path_buf());
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(5.0))
-                            .child(
-                                Button::new(SharedString::from(assistant.id))
-                                    .quiet()
-                                    .text_color(theme.text)
-                                    .on_click(cx.listener(
-                                        move |this, _: &ClickEvent, _window, cx| {
-                                            this.stage_transcription(file.clone(), cx);
-                                            cx.open_url(&url);
-                                        },
-                                    ))
-                                    .child(assistant.name),
-                            )
-                            .children(self.trust_mark(cx, assistant.trust))
-                    })),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(10.0))
-                    .child(
-                        Button::new("assistant-copy")
-                            .quiet()
-                            .text_color(theme.text_muted)
-                            .tooltip("Copies the instructions and reveals the PDF")
-                            .on_click({
-                                let file = path.map(|p| p.to_path_buf());
-                                cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                                    this.stage_transcription(file.clone(), cx);
-                                })
-                            })
-                            .child("Copy the prompt instead"),
-                    )
-                    .child(div().flex_1().min_w(px(20.0)))
-                    .child(
-                        Button::new("assistant-paste")
-                            .action_primary()
-                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                this.import_from_clipboard(cx);
-                            }))
-                            .child("Paste the answer"),
-                    ),
-            )
-    }
-
-    /// The mark that invites a bug report.
-    fn trust_mark(&self, cx: &mut Context<Self>, trust: Trust) -> Option<Div> {
-        let theme = *cx.theme();
-        (trust == Trust::Unverified).then(|| {
-            div()
-                .font_family(MONO)
-                .text_size(px(9.0))
-                .px(px(4.0))
-                .py(px(1.0))
-                .rounded(theme.radius_sm())
-                .bg(theme.warning.opacity(0.12))
-                .text_color(theme.warning)
-                .child("?")
-        })
-    }
-
     /// Put the prompt on the clipboard and show the file, so both are to hand.
-    fn stage_transcription(&mut self, path: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
+    pub(super) fn stage_transcription(&mut self, path: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(transcription_prompt()));
         if let Some(path) = path {
             cx.open_with_system(&path);
@@ -815,6 +595,36 @@ mod tests {
         ] {
             assert_eq!(extract_json(wrapped), want, "failed on {wrapped:?}");
         }
+    }
+
+    /// The two links that carry a path. Both fail silently when wrong — a bad
+    /// `file` attaches nothing and Cowork opens empty, a bad `folder` puts
+    /// Code in the wrong place — so what is asserted is that the path arrives
+    /// encoded and under the parameter the documentation names.
+    #[test]
+    fn the_desktop_links_carry_the_file_and_the_folder() {
+        use std::path::Path;
+
+        let path = Path::new("/Users/me/Down loads/scan & copy.pdf");
+
+        let cowork = super::cowork_url(path);
+        assert!(cowork.starts_with("claude://cowork/new?q="));
+        assert!(
+            cowork.contains("&file=%2FUsers%2Fme%2FDown%20loads%2Fscan%20%26%20copy.pdf"),
+            "the space and the ampersand have to survive: {cowork}"
+        );
+
+        let code = super::code_url(path);
+        assert!(code.starts_with("claude://code/new?q="));
+        assert!(
+            code.contains("&folder=%2FUsers%2Fme%2FDown%20loads"),
+            "Code takes the folder, never the file: {code}"
+        );
+        assert!(!code.contains("&file="), "Code's file parameter does nothing yet");
+        // Code is not handed the file, so the prompt has to name it.
+        assert!(super::local_prompt(path).contains("/Users/me/Down loads/scan & copy.pdf"));
+        // Well under the ~14,000 characters Claude Desktop truncates `q` at.
+        assert!(cowork.len() < 2000 && code.len() < 2000);
     }
 
     /// Broken JSON stays broken. Repairing it would mean deciding what the
