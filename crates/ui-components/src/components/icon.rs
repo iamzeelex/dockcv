@@ -59,6 +59,23 @@ pub enum DockIcon {
     Phone,
     MapPin,
     Link,
+    // Assistants, for the import screen's hand-off. A wordmark is what a
+    // person recognises a product by, and a row of identically-shaped rows is
+    // what they were scanning without one.
+    //
+    // From **simple-icons**, which publishes the artwork under CC0-1.0 — see
+    // `THIRD_PARTY.md`. That answers the licence of the *file*; the mark
+    // itself stays its owner's, and is used here only to name that owner's own
+    // product, which is what a logo is for.
+    //
+    // Grok and Microsoft Copilot are absent because simple-icons carries
+    // neither, and the X logo is not Grok's. They fall back to a plain glyph
+    // rather than borrowing somebody else's mark.
+    BrandClaude,
+    BrandOpenAi,
+    BrandGemini,
+    BrandPerplexity,
+    BrandMistral,
 }
 
 /// A Lucide glyph that ships in the upstream bundle but is missing from
@@ -76,7 +93,20 @@ pub fn lucide(stem: &'static str) -> Icon {
 /// The Lucide stems reached through [`lucide`]. Listed so the test can prove
 /// each one resolves; a typo would otherwise show up as a blank control.
 #[cfg_attr(not(test), allow(dead_code))]
-const LUCIDE_BY_NAME: &[&str] = &["undo", "redo"];
+const LUCIDE_BY_NAME: &[&str] = &[
+    "undo",
+    "redo",
+    // The import screen's assistant hand-off: what kind of thing a route is,
+    // and the mark on one that has not been verified. `circle-help` was here
+    // first and is not in the bundle, so the mark rendered nothing at all —
+    // which is what this list is for, and what forgetting to add to it costs.
+    "square-terminal",
+    "window-maximize",
+    "globe",
+    "copy",
+    "info",
+    "bot",
+];
 
 macro_rules! dock_icons {
     ($($variant:ident => $stem:literal),* $(,)?) => {
@@ -112,6 +142,11 @@ dock_icons! {
     Phone => "phone",
     MapPin => "map-pin",
     Link => "link",
+    BrandClaude => "brand-claude",
+    BrandOpenAi => "brand-openai",
+    BrandGemini => "brand-gemini",
+    BrandPerplexity => "brand-perplexity",
+    BrandMistral => "brand-mistral",
 }
 
 /// The application's asset source: Lucide first, then the DockCV adds.

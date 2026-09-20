@@ -124,12 +124,34 @@ pub(super) struct Route {
 /// the reader already knows the answer to.
 pub(super) struct Assistant {
     pub name: &'static str,
+    /// Its wordmark, when one ships. `None` falls back to a plain glyph rather
+    /// than borrowing somebody else's mark — see `DockIcon`'s note.
+    pub mark: Option<dockcv_ui_components::DockIcon>,
     pub routes: &'static [Route],
+}
+
+impl Assistant {
+    /// Whether any of its routes can be taken here.
+    pub(super) fn reachable(&self) -> bool {
+        self.routes.iter().any(|route| route.via.available())
+    }
+
+    /// An assistant whose only way in is a browser is a row that says its own
+    /// name and the word `Browser`. Four of those in a column is a list of
+    /// nothing; they collapse into one line instead.
+    pub(super) fn browser_only(&self) -> bool {
+        self.routes
+            .iter()
+            .filter(|route| route.via.available())
+            .all(|route| matches!(route.via, Via::Web { .. }))
+            && self.routes.iter().filter(|r| r.via.available()).count() == 1
+    }
 }
 
 pub(super) const ASSISTANTS: &[Assistant] = &[
     Assistant {
         name: "Claude",
+        mark: Some(dockcv_ui_components::DockIcon::BrandClaude),
         routes: &[
             Route {
                 id: "claude-cowork",
@@ -164,6 +186,7 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
     },
     Assistant {
         name: "ChatGPT",
+        mark: Some(dockcv_ui_components::DockIcon::BrandOpenAi),
         routes: &[
             Route {
                 id: "codex-cli",
@@ -189,6 +212,7 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
         // button would open a blank window and read as a bug rather than an
         // omission. Its command line takes one.
         name: "Gemini",
+        mark: Some(dockcv_ui_components::DockIcon::BrandGemini),
         routes: &[Route {
             id: "gemini-cli",
             label: "Terminal",
@@ -201,6 +225,7 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
     },
     Assistant {
         name: "Perplexity",
+        mark: Some(dockcv_ui_components::DockIcon::BrandPerplexity),
         routes: &[Route {
             id: "perplexity-web",
             label: "Browser",
@@ -212,6 +237,7 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
     },
     Assistant {
         name: "Copilot",
+        mark: None,
         routes: &[Route {
             id: "copilot-web",
             label: "Browser",
@@ -223,6 +249,7 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
     },
     Assistant {
         name: "Le Chat",
+        mark: Some(dockcv_ui_components::DockIcon::BrandMistral),
         routes: &[Route {
             id: "mistral-web",
             label: "Browser",
@@ -234,6 +261,7 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
     },
     Assistant {
         name: "Grok",
+        mark: None,
         routes: &[Route {
             id: "grok-web",
             label: "Browser",

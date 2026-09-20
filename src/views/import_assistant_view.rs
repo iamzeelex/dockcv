@@ -17,7 +17,7 @@ use dockcv_ui_components::{lucide, Button, ButtonExt, Icon, Sizable, Spinner, MO
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
-use super::import_assistant::{route_url, LocalRun, Route, Trust, Via, ASSISTANTS};
+use super::import_assistant::{route_url, Assistant, LocalRun, Route, Trust, Via, ASSISTANTS};
 use super::shell::Shell;
 
 impl Shell {
@@ -79,11 +79,10 @@ impl Shell {
                     .children(
                         ASSISTANTS
                             .iter()
-                            .filter(|a| a.routes.iter().any(|r| r.via.available()))
-                            .map(|assistant| {
-                                self.render_assistant_row(cx, assistant.name, assistant.routes, path)
-                            }),
+                            .filter(|a| a.reachable() && !a.browser_only())
+                            .map(|assistant| self.render_assistant_row(cx, assistant, path)),
                     )
+                    .children(self.render_browser_only(cx, path))
             }))
             .children((!running).then(|| self.render_anything_else(cx, path)))
             .children((!running).then(|| self.render_bring_it_back(cx)))
@@ -93,8 +92,7 @@ impl Shell {
     fn render_assistant_row(
         &self,
         cx: &mut Context<Self>,
-        name: &'static str,
-        routes: &'static [Route],
+        assistant: &'static Assistant,
         path: &std::path::Path,
     ) -> Div {
         let theme = *cx.theme();
@@ -103,25 +101,102 @@ impl Shell {
             .flex_wrap()
             .items_center()
             .gap(px(10.0))
-            .py(px(7.0))
+            .py(px(8.0))
             .border_b_1()
             .border_color(theme.border.opacity(0.5))
             .child(
                 div()
                     .flex_none()
-                    .w(px(96.0))
-                    .font_family(SANS)
-                    .text_size(px(12.5))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(theme.text)
-                    .child(name),
+                    .w(px(112.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(7.0))
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(theme.text_muted)
+                            .child(match assistant.mark {
+                                Some(mark) => Icon::new(mark).small().into_any_element(),
+                                None => Icon::new(lucide("bot")).small().into_any_element(),
+                            }),
+                    )
+                    .child(
+                        div()
+                            .font_family(SANS)
+                            .text_size(px(12.5))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(theme.text)
+                            .child(assistant.name),
+                    ),
             )
             .children(
-                routes
+                assistant
+                    .routes
                     .iter()
                     .filter(|route| route.via.available())
-                    .map(|route| self.render_route(cx, route, path)),
+                    .map(|route| self.render_route(cx, route, path, route.label)),
             )
+    }
+
+    /// The ones whose only way in is a browser, on one line.
+    ///
+    /// Each was a row of its own saying its own name and the word `Browser`,
+    /// which is a list four items long carrying one fact. The fact is the
+    /// names; it fits on a line.
+    fn render_browser_only(
+        &self,
+        cx: &mut Context<Self>,
+        path: &std::path::Path,
+    ) -> Option<Div> {
+        let theme = *cx.theme();
+        let rest: Vec<&'static Assistant> = ASSISTANTS
+            .iter()
+            .filter(|a| a.reachable() && a.browser_only())
+            .collect();
+        if rest.is_empty() {
+            return None;
+        }
+        Some(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap(px(8.0))
+                .py(px(8.0))
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(112.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(7.0))
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_color(theme.text_subtle)
+                                .child(Icon::new(lucide("globe")).small()),
+                        )
+                        .child(
+                            div()
+                                .font_family(SANS)
+                                .text_size(px(12.5))
+                                .text_color(theme.text_muted)
+                                .child("In a browser"),
+                        ),
+                )
+                .children(rest.into_iter().map(|assistant| {
+                    let route = assistant
+                        .routes
+                        .iter()
+                        .find(|r| r.via.available())
+                        .expect("filtered to reachable");
+                    // Named for the assistant, not for the route: four
+                    // buttons all saying `Browser` under a heading that
+                    // already says it would be the same repetition in one
+                    // line instead of four.
+                    self.render_route(cx, route, path, assistant.name)
+                })),
+        )
     }
 
     /// One way in, with a glyph for the kind of thing it is.
@@ -130,6 +205,7 @@ impl Shell {
         cx: &mut Context<Self>,
         route: &'static Route,
         path: &std::path::Path,
+        label: &'static str,
     ) -> Div {
         let theme = *cx.theme();
         let file = path.to_path_buf();
@@ -169,7 +245,7 @@ impl Shell {
                             }
                         }
                     }))
-                    .child(route.label),
+                    .child(label),
             )
             .children(self.trust_mark(cx, route.trust))
     }
@@ -326,7 +402,7 @@ impl Shell {
                 .text_color(theme.warning.opacity(0.8))
                 // Not a badge. A badge beside every second button is a row of
                 // warnings; this is a mark you notice when you look at one.
-                .child(Icon::new(lucide("circle-help")).xsmall())
+                .child(Icon::new(lucide("info")).xsmall())
                 .into_any_element()
         })
     }

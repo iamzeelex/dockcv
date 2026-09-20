@@ -53,6 +53,31 @@ upstream icon, so the local set shrinks if `gpui-component` ever exposes one.
 "a model produced this" across this audience's tools, so the glyph is reserved
 for the AI layer (M5) rather than spent on an ordinary edit control.
 
+## Assistant wordmarks
+
+The import screen offers to hand a scanned CV to whichever assistant the person
+already uses, and a column of identically shaped rows is what they were reading
+without a mark to scan for. Five ship:
+
+- **Source:** [simple-icons](https://simpleicons.org) 16.32.0 —
+  `claude`, `openai`, `googlegemini`, `perplexity`, `mistralai`, vendored as
+  `assets/icons/brand-*.svg`.
+- **License of the files:** **CC0-1.0.** The artwork is placed in the public
+  domain by the project, which is what makes vendoring them a question with an
+  answer rather than a risk to carry.
+- **The marks themselves stay their owners'.** They are used here only to name
+  each owner's own product, on a button that opens that product — which is what
+  a logo is for, and the whole of the use.
+- **Modified in one way, deliberately:** `fill="currentColor"` is added to each.
+  simple-icons ships them with no fill, so they default to black and would have
+  been invisible on the dark palette. `the_dockcv_adds_are_real_svgs_that_follow_the_theme`
+  is the test that caught it.
+
+**Grok and Microsoft Copilot have no mark**, because simple-icons carries
+neither and the X logo is not Grok's. They fall back to Lucide's `bot`. Drawing
+an approximation of somebody's logo is worse than not drawing one: a wrong mark
+is a claim about a company, and a plain glyph is only an absence.
+
 `components::icon::Assets` composes both sources, because
 `gpui::Application::with_assets` takes exactly one. Note that upstream reports a
 missing path as `Err`, not `Ok(None)` — the composite treats that as "try the

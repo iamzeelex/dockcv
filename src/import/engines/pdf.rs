@@ -36,17 +36,20 @@ pub fn import_pdf(path: &Path) -> Result<ImportedDoc, ImportError> {
     // import, and it was indistinguishable from success.
     if text.trim().is_empty() {
         return Err(ImportError::new("There is no text in this PDF to read")
-            .detail(
-                "Nothing is wrong with your file. It is a picture of a document — a scan or an \
-                 export that flattened the page — and DockCV reads text, so there is nothing in \
-                 here for it to find.",
-            )
-            .remedy(
-                "Open the CV in the app you wrote it in and export to PDF again, choosing a \
-                 setting that keeps the text rather than flattening the page",
-            )
-            .remedy("If you still have the original, import the .docx instead")
-            .remedy("Run the scan through OCR first, then import the result")
+            // Short on purpose. Why a file will not open is the least
+            // interesting thing on this screen — what to do about it is
+            // underneath, and every line spent here is a line between the
+            // person and the answer.
+            .detail("Nothing is wrong with it — it is a picture of a document, not text.")
+            // No OCR advice. It used to say "run the scan through OCR first,
+            // then import the result", which asks somebody who has never heard
+            // the word to go and find a tool for it — while the panel below
+            // now does exactly that job in one click. A remedy that sends a
+            // person away from the answer we are already offering is worse
+            // than no remedy.
+            .remedy("Have an assistant read it — just below")
+            .remedy("Import the original .docx, if you still have it")
+            .remedy("Export to PDF again from the app you wrote it in, keeping the text")
             .no_text_layer());
     }
 
@@ -625,7 +628,7 @@ mod tests {
             error.headline
         );
         assert!(
-            error.detail.contains("Nothing is wrong with your file"),
+            error.detail.to_lowercase().contains("nothing is wrong"),
             "the user must be told the file is not at fault, got: {}",
             error.detail
         );
