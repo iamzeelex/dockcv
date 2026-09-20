@@ -145,6 +145,14 @@ pub fn import_file(path: &Path) -> Result<ImportedDoc, ImportError> {
             imported.doc.work.active().len(),
             imported.unplaced.len(),
         ),
+        // A picture of a document is not a fault. It is the commonest thing a
+        // PDF import runs into, DockCV recognises it on purpose, says so, and
+        // offers four ways on — including having an assistant read it. Logging
+        // that at `error` puts the most frequent non-problem in the product at
+        // the top of the file somebody opens when something is actually wrong.
+        Err(error) if error.no_text_layer => {
+            log::info!("import of .{ext} declined: the pages are images, not text")
+        }
         Err(error) => log::error!("import of .{ext} failed: {error}"),
     }
     outcome
