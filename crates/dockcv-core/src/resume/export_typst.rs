@@ -3,7 +3,7 @@
 //! Produces standalone `.typ` source that compiles with the Typst CLI to the
 //! identical typeset layout produced by DockCV.
 
-use super::model::{LayoutSettings, Resume, ResumeDoc};
+use super::model::{DocumentLanguage, LayoutSettings, Resume, ResumeDoc};
 use super::template;
 
 /// Export a [`ResumeDoc`] to a complete, standalone Typst source string.
@@ -15,13 +15,59 @@ pub fn export_typst(doc: &ResumeDoc) -> String {
 }
 
 /// Export a composed [`Resume`] with explicit [`LayoutSettings`] to standalone Typst source.
+///
+/// English, because a composed [`Resume`] has no language of its own. A caller
+/// that has the document — every caller in the app does — should use
+/// [`export_typst_in`] instead, or the `.typ` it writes will compile to a
+/// different PDF from the one the preview showed it.
 pub fn export_typst_with_layout(resume: &Resume, layout: &LayoutSettings) -> String {
     template::generate_with_layout(resume, layout)
+}
+
+/// The same, in the reading's own language.
+///
+/// The Typst source export is the one format whose output is *the same
+/// artifact* as the preview — somebody compiles it and expects our PDF. So it
+/// is the one that cannot afford to drop an axis: without the language it
+/// writes no `/Lang` into the catalog, which is a PDF/UA-1 conformance the
+/// preview has and the export does not, and it prints `Present` on a CV that
+/// says `Heute` on screen.
+pub fn export_typst_in(
+    resume: &Resume,
+    layout: &LayoutSettings,
+    language: DocumentLanguage,
+) -> String {
+    template::generate_with_layout_and_language(resume, layout, language)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `.typ` we write and the PDF we preview have to be the same document.
+    /// They were not: the export dropped the reading's language, so the file
+    /// compiled without a `/Lang` in its catalog — the PDF/UA-1 conformance
+    /// B4 exists for — and printed `Present` under a CV that says `Heute`.
+    #[test]
+    fn the_typst_export_is_the_document_the_preview_showed() {
+        use crate::resume::model::{DocumentLanguage, Resume, ResumeDoc};
+
+        let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        doc.set_language(DocumentLanguage::German);
+
+        let exported = export_typst_in(&doc.compose(), &doc.layout, doc.language());
+        let previewed = crate::resume::template::generate_for(&doc);
+        assert_eq!(
+            exported, previewed,
+            "the file somebody compiles is not the file we showed them"
+        );
+        assert!(exported.contains("lang: \"de\""));
+
+        // The composed-only entry point cannot know a language and says so by
+        // being English rather than by guessing.
+        let english = export_typst_with_layout(&doc.compose(), &doc.layout);
+        assert!(english.contains("lang: \"en\""));
+    }
     use crate::resume::export_walk::sample_resume;
     use crate::typst_engine::TypstEngine;
 

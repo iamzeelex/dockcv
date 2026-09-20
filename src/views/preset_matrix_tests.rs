@@ -385,3 +385,29 @@ fn language_is_reported_per_column_without_becoming_a_section_row() {
     assert_eq!(matrix.column_language(&columns[1]).badge(), "EN");
     assert_eq!(matrix.column_language(&columns[2]).badge(), "DE");
 }
+
+/// A column pinned to a *vault* profile has to be measured through that
+/// profile. `generate_for` resolves built-ins only, so the matrix was sizing
+/// such a column against a layout it does not use and printing a page count
+/// the exported PDF disagrees with — the same defect the front door had.
+#[test]
+fn a_column_is_measured_through_the_profile_it_is_pinned_to() {
+    use crate::resume::model::{LayoutSettings, PageSize, Resume, ResumeDoc};
+
+    let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+    doc.layout_profile = Some("House letter".into());
+    let mut matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+    matrix.profiles.upsert(
+        "House letter",
+        LayoutSettings {
+            page_size: PageSize::Letter,
+            ..Default::default()
+        },
+    );
+
+    let source = matrix.source_for(None);
+    assert!(
+        source.contains("us-letter"),
+        "the column was measured against the document's own layout, not its profile"
+    );
+}

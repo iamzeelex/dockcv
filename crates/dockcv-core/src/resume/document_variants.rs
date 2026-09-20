@@ -465,21 +465,6 @@ impl ResumeDoc {
         self.presets.get_mut(index).map(|p| &mut p.name)
     }
 
-    /// Total number of variants across all sections (for gallery metadata).
-    pub fn total_variants(&self) -> usize {
-        self.profile.variants.len()
-            + self.work.variants.len()
-            + self.education.variants.len()
-            + self.skills.variants.len()
-            + self.certificates.variants.len()
-            + self.volunteer.variants.len()
-            + self
-                .custom_sections
-                .iter()
-                .map(|s| s.content.variants.len())
-                .sum::<usize>()
-    }
-
     /// The rendered document: each section's active variant, including every
     /// custom section's (D-9).
     /// The rendered document: every visible section at its active variant.

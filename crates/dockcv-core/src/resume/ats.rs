@@ -117,9 +117,11 @@ const INVISIBLE: &[char] = &[
 /// generous means telling a person their invention is safe when it is not.
 ///
 /// English is the canon because that is what the parsers were trained and
-/// written on. The Cyrillic names are here because a CV written in Ukrainian or
-/// Russian is a CV this product expects, and flagging every heading in it would
-/// be a lint that taught people to ignore it. Adding a language is one line.
+/// written on. The others are here because a CV written in them is a CV this
+/// product expects, and flagging every heading in one would be a lint that
+/// taught people to ignore it. Adding a language is one line — and German is
+/// here because C5 made it a language a reading can *declare*, which made the
+/// lint start calling `Berufserfahrung` unknown on every German CV.
 const KNOWN_HEADINGS: &[(SectionKind, &[&str])] = &[
     (
         SectionKind::Profile,
@@ -134,6 +136,10 @@ const KNOWN_HEADINGS: &[(SectionKind, &[&str])] = &[
             "про себе",
             "о себе",
             "резюме",
+            "profil",
+            "kurzprofil",
+            "über mich",
+            "zusammenfassung",
         ],
     ),
     (
@@ -148,6 +154,10 @@ const KNOWN_HEADINGS: &[(SectionKind, &[&str])] = &[
             "career history",
             "досвід роботи",
             "опыт работы",
+            "berufserfahrung",
+            "beruflicher werdegang",
+            "werdegang",
+            "praxiserfahrung",
         ],
     ),
     (
@@ -158,6 +168,10 @@ const KNOWN_HEADINGS: &[(SectionKind, &[&str])] = &[
             "academic background",
             "освіта",
             "образование",
+            "ausbildung",
+            "bildungsweg",
+            "akademischer werdegang",
+            "studium",
         ],
     ),
     (
@@ -169,6 +183,10 @@ const KNOWN_HEADINGS: &[(SectionKind, &[&str])] = &[
             "competencies",
             "навички",
             "навыки",
+            "kenntnisse",
+            "fähigkeiten",
+            "kompetenzen",
+            "fachkenntnisse",
         ],
     ),
     (
@@ -180,6 +198,8 @@ const KNOWN_HEADINGS: &[(SectionKind, &[&str])] = &[
             "licences and certifications",
             "сертифікати",
             "сертификаты",
+            "zertifikate",
+            "zertifizierungen",
         ],
     ),
     (
@@ -193,6 +213,9 @@ const KNOWN_HEADINGS: &[(SectionKind, &[&str])] = &[
             "community involvement",
             "волонтерство",
             "громадська діяльність",
+            "ehrenamt",
+            "ehrenamtliche tätigkeit",
+            "engagement",
         ],
     ),
 ];
@@ -587,6 +610,55 @@ fn check_marker(text: &str, section: SectionKind, at: FieldId, out: &mut Vec<Fin
 
 #[cfg(test)]
 mod tests {
+
+    /// C5 made German a language a reading can declare; this table is what
+    /// decides whether the lint then calls that reading's own headings
+    /// unrecognised. It did — six findings on a correct German CV, each
+    /// offering to replace a German heading with an English one.
+    #[test]
+    fn a_german_cv_under_german_headings_is_not_a_finding() {
+        use crate::resume::model::{Basics, Resume, SectionKind, SkillGroup, Work};
+
+        let resume = Resume {
+            basics: Basics {
+                name: "Anna Weber".into(),
+                email: "anna@example.de".into(),
+                summary: "Plattform-Ingenieurin.".into(),
+                ..Default::default()
+            },
+            work: vec![Work {
+                name: "Siemens".into(),
+                position: "Ingenieurin".into(),
+                ..Default::default()
+            }],
+            skills: vec![SkillGroup {
+                keywords: vec!["Rust".into()],
+                ..Default::default()
+            }],
+            section_titles: vec![
+                (SectionKind::Profile, "Profil".into()),
+                (SectionKind::Work, "Berufserfahrung".into()),
+                (SectionKind::Skills, "Kenntnisse".into()),
+            ],
+            ..Default::default()
+        };
+
+        let headings: Vec<Finding> = lint(&resume)
+            .into_iter()
+            .filter(|f| matches!(f.rule, Rule::HeadingNoParserKnows { .. }))
+            .collect();
+        assert!(
+            headings.is_empty(),
+            "a correctly written German CV is not a list of mistakes: {headings:?}"
+        );
+
+        // And the lint has not become permissive: an invention is still one.
+        let mut invented = resume.clone();
+        invented.section_titles = vec![(SectionKind::Work, "Meine Reise".into())];
+        assert!(lint(&invented)
+            .iter()
+            .any(|f| matches!(f.rule, Rule::HeadingNoParserKnows { .. })));
+    }
     use super::*;
     use crate::resume::model::{Basics, Certificate, Education, SkillGroup, Work};
 

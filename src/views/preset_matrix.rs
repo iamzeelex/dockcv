@@ -126,7 +126,11 @@ impl PresetMatrix {
         if let Some(index) = preset {
             doc.apply_preset(index);
         }
-        crate::resume::template::generate_for(&doc)
+        // Through this screen's own catalog. `generate_for` resolves built-in
+        // profiles only, so a column pinned to a *vault* profile would have
+        // been measured against a layout it does not use and reported a page
+        // count the exported PDF then disagrees with.
+        crate::resume::template::generate_for_with_profiles(&doc, &self.profiles)
     }
 
     /// `1 page`, or `2 pages · 6 lines over` when a reading does not fit.

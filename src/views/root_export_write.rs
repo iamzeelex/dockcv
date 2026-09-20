@@ -110,7 +110,11 @@ impl Root {
                                 .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::Typst => {
-                            let typst = crate::resume::export_typst_with_layout(&composed, &layout);
+                            let typst = crate::resume::export_typst_in(
+                                &composed,
+                                &layout,
+                                export_doc.language(),
+                            );
                             std::fs::write(&write_path, typst.as_bytes())
                                 .map_err(|e| format!("write failed: {e}"))
                         }

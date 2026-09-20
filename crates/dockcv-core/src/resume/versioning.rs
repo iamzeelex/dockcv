@@ -140,14 +140,6 @@ impl<T: Clone> Versioned<T> {
         self.variants.iter().map(|v| v.id).collect()
     }
 
-    /// Where `id` sits, or `None` when nothing in this section carries it —
-    /// which is a preset pinning a variant that has since been deleted, and is
-    /// reported rather than guessed at (see
-    /// [`crate::resume::model::ResumeDoc::unresolved_pins`]).
-    pub fn index_of_id(&self, id: VariantId) -> Option<usize> {
-        self.variants.iter().position(|v| v.id == id)
-    }
-
     pub fn active_id(&self) -> VariantId {
         self.variants[self.active].id
     }
