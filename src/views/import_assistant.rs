@@ -62,126 +62,206 @@ pub(super) enum Trust {
     Unverified,
 }
 
-/// How a CV reaches an assistant.
-pub(super) enum Route {
-    /// A command-line tool on this machine. It opens the file itself, from the
-    /// path, and answers on standard output — so nothing is dragged and
-    /// nothing is pasted, and the whole round trip is one click.
-    Local {
-        /// The program, looked for on `PATH`.
+/// How a route reaches the assistant, and therefore how much of the work it
+/// can do.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Via {
+    /// A command-line tool. It opens the file from its path and answers on
+    /// standard output, so this is the only route with no manual step at all.
+    Cli {
         program: &'static str,
-        /// Its non-interactive form. `{}` is where the prompt goes.
         argv: &'static [&'static str],
     },
-    /// A deep link into a browser. A URL carries text and cannot carry a file,
-    /// so the person attaches it and pastes the answer back.
-    Web { new_chat: &'static str },
+    /// Claude Desktop's `claude://` scheme. Cowork's link carries the file
+    /// itself; Code's carries the folder it is in.
+    Cowork,
+    Code,
+    /// A browser. The person attaches the file and brings the answer back.
+    Web { base: &'static str },
 }
 
-pub(super) struct Assistant {
+impl Via {
+    /// What kind of thing this is, for the glyph on its button.
+    ///
+    /// The icon says *how it will work* rather than whose product it is, which
+    /// is the distinction that actually changes what the person has to do
+    /// next: a terminal finishes on its own, an app window and a browser both
+    /// come back through the clipboard.
+    pub(super) fn icon(self) -> dockcv_ui_components::Icon {
+        use dockcv_ui_components::lucide;
+        match self {
+            Via::Cli { .. } => lucide("square-terminal"),
+            Via::Cowork | Via::Code => lucide("window-maximize"),
+            Via::Web { .. } => lucide("globe"),
+        }
+    }
+
+    /// Whether this route can be taken on this machine right now.
+    pub(super) fn available(self) -> bool {
+        match self {
+            Via::Cli { program, .. } => installed().contains(&program),
+            Via::Cowork | Via::Code => claude_desktop(),
+            Via::Web { .. } => true,
+        }
+    }
+}
+
+pub(super) struct Route {
     pub id: &'static str,
-    pub name: &'static str,
-    pub route: Route,
+    /// Named for the surface, not the company — the company is the heading
+    /// this sits under.
+    pub label: &'static str,
+    pub via: Via,
     pub trust: Trust,
 }
 
-/// Tools that read the file themselves.
+/// One assistant and every way DockCV knows to reach it.
 ///
-/// All three are unverified, and the distinction matters: their
-/// non-interactive flags are read off `--help` on a machine that has them, but
-/// whether a given one will look at a PDF of images and answer with clean JSON
-/// Resume is a question only a real run answers. That is what the mark is for.
-pub(super) const LOCAL: [Assistant; 3] = [
+/// Grouped this way because that is how a person holds it: they have an
+/// assistant, and then a choice about where to use it. The flat list this
+/// replaces put eleven buttons in three unlabelled bands, so the first
+/// question it asked was "which of these is mine", which is the one question
+/// the reader already knows the answer to.
+pub(super) struct Assistant {
+    pub name: &'static str,
+    pub routes: &'static [Route],
+}
+
+pub(super) const ASSISTANTS: &[Assistant] = &[
     Assistant {
-        id: "local-claude",
-        name: "Claude Code",
-        route: Route::Local {
-            program: "claude",
-            argv: &["-p"],
-        },
-        trust: Trust::Unverified,
+        name: "Claude",
+        routes: &[
+            Route {
+                id: "claude-cowork",
+                label: "Cowork",
+                via: Via::Cowork,
+                trust: Trust::Verified,
+            },
+            Route {
+                id: "claude-code-app",
+                label: "Claude Code",
+                via: Via::Code,
+                trust: Trust::Verified,
+            },
+            Route {
+                id: "claude-cli",
+                label: "Terminal",
+                via: Via::Cli {
+                    program: "claude",
+                    argv: &["-p"],
+                },
+                trust: Trust::Unverified,
+            },
+            Route {
+                id: "claude-web",
+                label: "Browser",
+                via: Via::Web {
+                    base: "https://claude.ai/new?q=",
+                },
+                trust: Trust::Verified,
+            },
+        ],
     },
     Assistant {
-        id: "local-codex",
-        name: "Codex",
-        route: Route::Local {
-            program: "codex",
-            argv: &["exec"],
-        },
-        trust: Trust::Unverified,
+        name: "ChatGPT",
+        routes: &[
+            Route {
+                id: "codex-cli",
+                label: "Codex",
+                via: Via::Cli {
+                    program: "codex",
+                    argv: &["exec"],
+                },
+                trust: Trust::Unverified,
+            },
+            Route {
+                id: "chatgpt-web",
+                label: "Browser",
+                via: Via::Web {
+                    base: "https://chatgpt.com/?q=",
+                },
+                trust: Trust::Verified,
+            },
+        ],
     },
     Assistant {
-        id: "local-gemini",
-        name: "Gemini CLI",
-        route: Route::Local {
-            program: "gemini",
-            argv: &["-p"],
-        },
-        trust: Trust::Unverified,
+        // No browser route: Gemini's web chat has no prefill parameter, so a
+        // button would open a blank window and read as a bug rather than an
+        // omission. Its command line takes one.
+        name: "Gemini",
+        routes: &[Route {
+            id: "gemini-cli",
+            label: "Terminal",
+            via: Via::Cli {
+                program: "gemini",
+                argv: &["-p"],
+            },
+            trust: Trust::Unverified,
+        }],
+    },
+    Assistant {
+        name: "Perplexity",
+        routes: &[Route {
+            id: "perplexity-web",
+            label: "Browser",
+            via: Via::Web {
+                base: "https://www.perplexity.ai/search?q=",
+            },
+            trust: Trust::Unverified,
+        }],
+    },
+    Assistant {
+        name: "Copilot",
+        routes: &[Route {
+            id: "copilot-web",
+            label: "Browser",
+            via: Via::Web {
+                base: "https://copilot.microsoft.com/?q=",
+            },
+            trust: Trust::Unverified,
+        }],
+    },
+    Assistant {
+        name: "Le Chat",
+        routes: &[Route {
+            id: "mistral-web",
+            label: "Browser",
+            via: Via::Web {
+                base: "https://chat.mistral.ai/chat?q=",
+            },
+            trust: Trust::Unverified,
+        }],
+    },
+    Assistant {
+        name: "Grok",
+        routes: &[Route {
+            id: "grok-web",
+            label: "Browser",
+            via: Via::Web {
+                base: "https://grok.com/?q=",
+            },
+            trust: Trust::Unverified,
+        }],
     },
 ];
 
-/// Assistants that can be opened with a question already in the box.
+/// Which of the command-line tools are actually installed.
 ///
-/// Claude and ChatGPT document the parameter. The rest are here because they
-/// look like they take one and because a list of two is a list that tells you
-/// nothing about the one you actually use — marked unverified so that when one
-/// of them opens an empty chat, the person knows it is worth saying so.
-///
-/// Gemini is deliberately absent: it has no prefill parameter at all, so a
-/// button would open a blank window and look like a bug rather than an
-/// omission. `Copy the prompt instead` is its route, and Ollama's, and any
-/// model running on the person's own machine.
-pub(super) const WEB: [Assistant; 6] = [
-    Assistant {
-        id: "web-claude",
-        name: "Claude",
-        route: Route::Web {
-            new_chat: "https://claude.ai/new?q=",
-        },
-        trust: Trust::Verified,
-    },
-    Assistant {
-        id: "web-chatgpt",
-        name: "ChatGPT",
-        route: Route::Web {
-            new_chat: "https://chatgpt.com/?q=",
-        },
-        trust: Trust::Verified,
-    },
-    Assistant {
-        id: "web-perplexity",
-        name: "Perplexity",
-        route: Route::Web {
-            new_chat: "https://www.perplexity.ai/search?q=",
-        },
-        trust: Trust::Unverified,
-    },
-    Assistant {
-        id: "web-copilot",
-        name: "Copilot",
-        route: Route::Web {
-            new_chat: "https://copilot.microsoft.com/?q=",
-        },
-        trust: Trust::Unverified,
-    },
-    Assistant {
-        id: "web-mistral",
-        name: "Le Chat",
-        route: Route::Web {
-            new_chat: "https://chat.mistral.ai/chat?q=",
-        },
-        trust: Trust::Unverified,
-    },
-    Assistant {
-        id: "web-grok",
-        name: "Grok",
-        route: Route::Web {
-            new_chat: "https://grok.com/?q=",
-        },
-        trust: Trust::Unverified,
-    },
-];
+/// Looked up once. `PATH` does not change inside a run, and a directory scan
+/// per frame to draw a handful of buttons is the kind of cost that never shows
+/// up in a profile because it is spread over every frame.
+fn installed() -> &'static [&'static str] {
+    static FOUND: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    FOUND.get_or_init(|| {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        ["claude", "codex", "gemini"]
+            .into_iter()
+            .filter(|program| {
+                std::env::split_paths(&path).any(|dir| dir.join(program).is_file())
+            })
+            .collect()
+    })
+}
 
 /// Whether Claude Desktop is here to answer a `claude://` link.
 ///
@@ -190,7 +270,7 @@ pub(super) const WEB: [Assistant; 6] = [
 /// each, and a wrong guess here is a button that opens nothing — which is the
 /// exact failure the unverified mark exists to avoid, so it is better not to
 /// offer the button at all than to offer one that lies.
-pub(super) fn claude_desktop() -> bool {
+fn claude_desktop() -> bool {
     #[cfg(target_os = "macos")]
     {
         static FOUND: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -207,28 +287,7 @@ pub(super) fn claude_desktop() -> bool {
     }
 }
 
-/// Which of the local tools are actually installed.
-///
-/// Looked up once. `PATH` does not change inside a run, and a directory scan
-/// per frame to draw three buttons is the kind of cost that never shows up in
-/// a profile because it is spread over every frame.
-pub(super) fn installed() -> &'static [&'static str] {
-    static FOUND: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
-    FOUND.get_or_init(|| {
-        let path = std::env::var_os("PATH").unwrap_or_default();
-        LOCAL
-            .iter()
-            .filter_map(|assistant| match assistant.route {
-                Route::Local { program, .. } => std::env::split_paths(&path)
-                    .any(|dir| dir.join(program).is_file())
-                    .then_some(program),
-                Route::Web { .. } => None,
-            })
-            .collect()
-    })
-}
-
-/// What a browser-side assistant is asked for.
+/// What an assistant is asked for, when the file is attached or dragged.
 ///
 /// Two rules carry the weight. **JSON Resume** because DockCV already imports
 /// it and has a round-trip test over it, so the answer lands in the ordinary
@@ -238,30 +297,34 @@ pub(super) fn installed() -> &'static [&'static str] {
 /// is a lie nobody catches.
 pub(super) fn transcription_prompt() -> String {
     format!(
-        "I am attaching a CV as a PDF whose pages are images, so its text cannot be \
-         extracted. Please read it and reply with a single JSON Resume document \
-         (jsonresume.org schema) and nothing else.\n\n{RULES}"
+        "I am attaching a CV as a PDF whose pages are images, so its text cannot be extracted. \
+         Please read it and reply with a single JSON Resume document (jsonresume.org schema) \
+         and nothing else. {RULES}"
     )
 }
 
-/// The same job, for a tool that can open the file itself.
+/// The same job, for a route that hands over a path instead of a file.
 pub(super) fn local_prompt(path: &Path) -> String {
     format!(
         "Read the CV at {} — its pages are images, so transcribe what you can see on them. \
          Reply with a single JSON Resume document (jsonresume.org schema) and nothing else. \
-         Do not create, edit or delete any file.\n\n{RULES}",
+         Do not create, edit or delete any file. {RULES}",
         path.display()
     )
 }
 
-/// The part both prompts share, so the two cannot drift.
-const RULES: &str = "Rules:\n\
-     - Transcribe only what you can actually read on the page.\n\
-     - If a field is unreadable or absent, leave it out. Do not infer it, and do not fill a \
-     gap with something plausible.\n\
-     - Keep dates exactly as they are written. Do not normalise or correct them.\n\
-     - Keep every bullet as its own entry in `highlights`.\n\
-     - Do not improve, shorten or reword anything. This is a transcription.";
+/// The part every prompt shares, so they cannot drift.
+///
+/// One line, with no newlines in it at all. Cowork attached the file from a
+/// link and left the composer empty, and a `q` full of `%0A` is the likeliest
+/// difference between the two — so every prompt that travels in a URL is a
+/// sentence now, and the rules are separated by semicolons rather than by line
+/// breaks.
+const RULES: &str = "Rules: transcribe only what you can actually read on the page; \
+     if a field is unreadable or absent, leave it out — do not infer it, and do not fill a gap \
+     with something plausible; keep dates exactly as they are written, without normalising or \
+     correcting them; keep every bullet as its own entry in `highlights`; do not improve, \
+     shorten or reword anything, because this is a transcription.";
 
 /// Percent-encode for a query string.
 ///
@@ -281,33 +344,33 @@ pub(super) fn encode(text: &str) -> String {
     out
 }
 
-/// Cowork, with the CV attached.
+/// The link a route opens, with the file or the folder it can carry.
 ///
-/// The one link in this file that carries the file itself. `file` takes an
-/// absolute path and Claude Desktop attaches it, which removes the only manual
-/// step the browser route has. Claude confirms the attachment before using it,
-/// so nothing arrives unannounced.
-pub(super) fn cowork_url(path: &Path) -> String {
-    format!(
-        "claude://cowork/new?q={}&file={}",
-        encode(&transcription_prompt()),
-        encode(&path.to_string_lossy())
-    )
-}
-
-/// Claude Code, with the folder the CV is in.
-///
-/// `folder`, not `file`: Code's `file` parameter is documented as accepted and
-/// not yet supported, so passing it would look like it worked and attach
-/// nothing. The folder goes across and the prompt names the file inside it —
-/// the same shape the command-line route uses, for the same reason.
-pub(super) fn code_url(path: &Path) -> String {
-    let folder = path.parent().unwrap_or(Path::new("/"));
-    format!(
-        "claude://code/new?q={}&folder={}",
-        encode(&local_prompt(path)),
-        encode(&folder.to_string_lossy())
-    )
+/// Built here rather than in a click handler because every one of these fails
+/// silently when wrong: a bad `file` attaches nothing and Cowork opens empty,
+/// a bad `folder` puts Code in the wrong place, a bad `q` leaves a composer
+/// blank. None of them can report anything back to us.
+pub(super) fn route_url(via: Via, path: &Path) -> Option<String> {
+    Some(match via {
+        // `file` takes an absolute path and Claude Desktop attaches it. This
+        // is the one link in the product that carries the document itself.
+        Via::Cowork => format!(
+            "claude://cowork/new?q={}&file={}",
+            encode(&transcription_prompt()),
+            encode(&path.to_string_lossy())
+        ),
+        // `folder`, not `file`: Code's `file` parameter is documented as
+        // accepted and not yet supported, so passing it would look like it
+        // worked and attach nothing. The folder goes across and the prompt
+        // names the file inside it.
+        Via::Code => format!(
+            "claude://code/new?q={}&folder={}",
+            encode(&local_prompt(path)),
+            encode(&path.parent().unwrap_or(Path::new("/")).to_string_lossy())
+        ),
+        Via::Web { base } => format!("{base}{}", encode(&transcription_prompt())),
+        Via::Cli { .. } => return None,
+    })
 }
 
 /// A local tool that is running right now.
@@ -576,10 +639,14 @@ mod tests {
 
     #[test]
     fn the_prompt_forbids_guessing() {
-        let prompt = transcription_prompt();
-        assert!(prompt.contains("leave it out"));
-        assert!(prompt.contains("Do not infer"));
-        assert!(prompt.contains("JSON Resume"));
+        // Case-insensitive, because the rule is the sentence and not its
+        // capitalisation — this assertion has already failed once for a
+        // reword that kept the instruction perfectly intact, which is a test
+        // failing about itself rather than about the thing it guards.
+        let prompt = transcription_prompt().to_lowercase();
+        assert!(prompt.contains("leave it out"), "{prompt}");
+        assert!(prompt.contains("do not infer"), "{prompt}");
+        assert!(prompt.contains("json resume"), "{prompt}");
     }
 
     /// What assistants actually send back, however the prompt is worded.
@@ -597,6 +664,34 @@ mod tests {
         }
     }
 
+    /// A route with no link of its own says so rather than building a wrong
+    /// one — the terminal reads the file itself.
+    #[test]
+    fn the_command_line_has_no_url() {
+        use std::path::Path;
+        assert!(super::route_url(
+            super::Via::Cli {
+                program: "claude",
+                argv: &["-p"]
+            },
+            Path::new("/tmp/x.pdf")
+        )
+        .is_none());
+    }
+
+    /// Every prompt that travels in a URL is one line.
+    ///
+    /// Cowork attached the file from a link and left the composer empty. A `q`
+    /// full of `%0A` is the likeliest reason, and it is the kind of failure
+    /// that reports nothing: the link opens, the file arrives, and the
+    /// instruction is simply missing.
+    #[test]
+    fn no_prompt_that_travels_in_a_url_has_a_newline_in_it() {
+        use std::path::Path;
+        assert!(!super::transcription_prompt().contains('\n'));
+        assert!(!super::local_prompt(Path::new("/tmp/x.pdf")).contains('\n'));
+    }
+
     /// The two links that carry a path. Both fail silently when wrong — a bad
     /// `file` attaches nothing and Cowork opens empty, a bad `folder` puts
     /// Code in the wrong place — so what is asserted is that the path arrives
@@ -607,14 +702,14 @@ mod tests {
 
         let path = Path::new("/Users/me/Down loads/scan & copy.pdf");
 
-        let cowork = super::cowork_url(path);
+        let cowork = super::route_url(super::Via::Cowork, path).expect("a link");
         assert!(cowork.starts_with("claude://cowork/new?q="));
         assert!(
             cowork.contains("&file=%2FUsers%2Fme%2FDown%20loads%2Fscan%20%26%20copy.pdf"),
             "the space and the ampersand have to survive: {cowork}"
         );
 
-        let code = super::code_url(path);
+        let code = super::route_url(super::Via::Code, path).expect("a link");
         assert!(code.starts_with("claude://code/new?q="));
         assert!(
             code.contains("&folder=%2FUsers%2Fme%2FDown%20loads"),

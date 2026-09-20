@@ -104,6 +104,8 @@ pub struct Shell {
     pub(super) import_notes: super::import_screen::ImportNotes,
     /// A local assistant reading a scanned CV right now.
     pub(super) import_run: Option<super::import_assistant::LocalRun>,
+    /// A file picker is already on screen. See `import_existing_resume`.
+    pub(super) import_picking: bool,
     /// A version being built, in memory and not on disk. See
     /// `version_draft.rs` — discarding it leaves the vault untouched.
     pub(super) drafting: Option<Box<super::version_draft::VersionDraft>>,
@@ -364,6 +366,7 @@ impl Shell {
             renaming_version: None,
             import_notes: Default::default(),
             import_run: None,
+            import_picking: false,
             drafting: None,
             last_opened: config::load().last_document,
             tailoring: None,
@@ -1385,6 +1388,17 @@ impl Shell {
 
     /// Prompt for a file (PDF, DOCX, JSON, TXT) and import it as a new CV.
     pub(super) fn import_existing_resume(&mut self, cx: &mut Context<Self>) {
+        // One panel at a time.
+        //
+        // The drop zone is clickable and so is the `Choose file` button inside
+        // it, which is two targets for one intent — and a double-click on the
+        // zone is two more. Each opened its own `NSOpenPanel`, stacked, so
+        // choosing a file dismissed the top one and revealed the next: the
+        // dialog looked like it would not close.
+        if self.import_picking {
+            return;
+        }
+        self.import_picking = true;
         self.setup_error = None;
         let prompt = PathPromptOptions {
             files: true,
@@ -1396,7 +1410,9 @@ impl Shell {
         let executor = cx.background_executor().clone();
 
         cx.spawn(async move |this, cx| {
-            let Some(file_path) = first_path(receiver.await) else {
+            let picked = first_path(receiver.await);
+            let _ = this.update(cx, |this, _cx| this.import_picking = false);
+            let Some(file_path) = picked else {
                 return;
             };
             let filename = file_path
