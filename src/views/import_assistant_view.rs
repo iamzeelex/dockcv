@@ -62,7 +62,9 @@ impl Shell {
                             .text_color(theme.text_muted)
                             .child(
                                 "It transcribes the pages and answers with a CV DockCV can \
-                                 read. You see every section before anything is saved.",
+                                 read. You see every section before anything is saved — and \
+                                 whichever you pick, the instructions go to your clipboard too, \
+                                 so paste them if the box comes up empty.",
                             ),
                     ),
             )

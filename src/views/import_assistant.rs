@@ -382,10 +382,19 @@ pub(super) fn route_url(via: Via, path: &Path) -> Option<String> {
     Some(match via {
         // `file` takes an absolute path and Claude Desktop attaches it. This
         // is the one link in the product that carries the document itself.
+        //
+        // **`file` before `q`, and that order is a guess.** Reported
+        // behaviour: the composer fills with the prompt and then empties,
+        // while the attachment arrives — which reads like the attach handler
+        // running second and resetting what the prefill put there. If the
+        // parameters are applied in the order they appear, this swaps the two.
+        // It is unverifiable from here and costs nothing if it is wrong; the
+        // instructions go to the clipboard on every route regardless, which is
+        // the fix that does not depend on somebody else's app.
         Via::Cowork => format!(
-            "claude://cowork/new?q={}&file={}",
-            encode(&transcription_prompt()),
-            encode(&path.to_string_lossy())
+            "claude://cowork/new?file={}&q={}",
+            encode(&path.to_string_lossy()),
+            encode(&transcription_prompt())
         ),
         // `folder`, not `file`: Code's `file` parameter is documented as
         // accepted and not yet supported, so passing it would look like it
@@ -731,10 +740,18 @@ mod tests {
         let path = Path::new("/Users/me/Down loads/scan & copy.pdf");
 
         let cowork = super::route_url(super::Via::Cowork, path).expect("a link");
-        assert!(cowork.starts_with("claude://cowork/new?q="));
+        assert!(cowork.starts_with("claude://cowork/new?"));
         assert!(
-            cowork.contains("&file=%2FUsers%2Fme%2FDown%20loads%2Fscan%20%26%20copy.pdf"),
+            cowork.contains("file=%2FUsers%2Fme%2FDown%20loads%2Fscan%20%26%20copy.pdf"),
             "the space and the ampersand have to survive: {cowork}"
+        );
+        assert!(cowork.contains("q="), "the composer is prefilled too: {cowork}");
+        // `file` first. The order is a guess at somebody else's parameter
+        // handling — see `route_url` — but a guess worth keeping stable, since
+        // changing it back would silently undo whatever it bought.
+        assert!(
+            cowork.find("file=") < cowork.find("q="),
+            "the attachment is applied before the prompt: {cowork}"
         );
 
         let code = super::route_url(super::Via::Code, path).expect("a link");
