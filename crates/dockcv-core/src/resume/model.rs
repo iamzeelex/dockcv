@@ -12,7 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 pub use super::applications::*;
-pub use super::dates::{DateFormat, ResumeDate};
+pub use super::dates::{DateFormat, DateStyle, ResumeDate};
 pub use super::export_settings::*;
 pub use super::language::DocumentLanguage;
 pub use super::layout::*;

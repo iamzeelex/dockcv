@@ -10,7 +10,7 @@ use docx_rs::{
     LevelText, NumberFormat, Numbering, NumberingId, Paragraph, Run, Start, Style, StyleType,
 };
 
-use super::dates::DateFormat;
+use super::dates::DateStyle;
 use super::export_text::strip_typst_markup;
 use super::export_walk::{
     format_date_range, is_section_empty, ordered_sections, resolve_section_title,
@@ -48,13 +48,13 @@ const NAME_STYLE: &str = "Title";
 
 /// Export a composed [`Resume`] to DOCX binary bytes.
 pub fn export_docx(resume: &Resume) -> Result<Vec<u8>, DocxError> {
-    export_docx_with_date_format(resume, DateFormat::default())
+    export_docx_in(resume, DateStyle::default())
 }
 
 /// Export a composed [`Resume`] to DOCX binary bytes with an explicit date format.
-pub fn export_docx_with_date_format(
+pub fn export_docx_in(
     resume: &Resume,
-    date_format: DateFormat,
+    dates: DateStyle,
 ) -> Result<Vec<u8>, DocxError> {
     let mut docx = Docx::new()
         .add_abstract_numbering(
@@ -154,23 +154,23 @@ pub fn export_docx_with_date_format(
                 // Profile summary is handled with basics
             }
             SectionKind::Work => {
-                docx = write_docx_work(docx, &resume.work, date_format);
+                docx = write_docx_work(docx, &resume.work, dates);
             }
             SectionKind::Education => {
-                docx = write_docx_education(docx, &resume.education, date_format);
+                docx = write_docx_education(docx, &resume.education, dates);
             }
             SectionKind::Skills => {
                 docx = write_docx_skills(docx, &resume.skills);
             }
             SectionKind::Certificates => {
-                docx = write_docx_certificates(docx, &resume.certificates, date_format);
+                docx = write_docx_certificates(docx, &resume.certificates, dates);
             }
             SectionKind::Organizations => {
-                docx = write_docx_volunteer(docx, &resume.volunteer, date_format);
+                docx = write_docx_volunteer(docx, &resume.volunteer, dates);
             }
             SectionKind::Custom(id) => {
                 if let Some(cs) = resume.custom_sections.iter().find(|s| s.id == id) {
-                    docx = write_docx_custom(docx, cs, date_format);
+                    docx = write_docx_custom(docx, cs, dates);
                 }
             }
         }
@@ -279,7 +279,7 @@ fn write_linked_line(docx: &mut Docx, parts: &[(String, Option<String>)]) {
     *docx = std::mem::take(docx).add_paragraph(p);
 }
 
-fn write_docx_work(mut docx: Docx, work: &[Work], date_format: DateFormat) -> Docx {
+fn write_docx_work(mut docx: Docx, work: &[Work], dates: DateStyle) -> Docx {
     for w in work {
         let role = if !w.position.is_empty() && !w.name.is_empty() {
             format!("{}, {}", w.position, w.name)
@@ -314,7 +314,7 @@ fn write_docx_work(mut docx: Docx, work: &[Work], date_format: DateFormat) -> Do
 
         docx = docx.add_paragraph(p);
 
-        let date_str = format_date_range(&w.start_date, &w.end_date, date_format);
+        let date_str = format_date_range(&w.start_date, &w.end_date, dates);
         if !date_str.is_empty() {
             docx = docx.add_paragraph(
                 Paragraph::new().add_run(Run::new().add_text(date_str).italic().size(20)),
@@ -341,7 +341,7 @@ fn write_docx_work(mut docx: Docx, work: &[Work], date_format: DateFormat) -> Do
     docx
 }
 
-fn write_docx_education(mut docx: Docx, edu: &[Education], date_format: DateFormat) -> Docx {
+fn write_docx_education(mut docx: Docx, edu: &[Education], dates: DateStyle) -> Docx {
     for e in edu {
         let heading = if !e.study_type.is_empty() && !e.institution.is_empty() {
             format!("{}, {}", e.study_type, e.institution)
@@ -365,7 +365,7 @@ fn write_docx_education(mut docx: Docx, edu: &[Education], date_format: DateForm
 
         docx = docx.add_paragraph(p);
 
-        let date_str = format_date_range(&e.start_date, &e.end_date, date_format);
+        let date_str = format_date_range(&e.start_date, &e.end_date, dates);
         if !date_str.is_empty() {
             docx = docx.add_paragraph(
                 Paragraph::new().add_run(Run::new().add_text(date_str).italic().size(20)),
@@ -409,7 +409,7 @@ fn write_docx_skills(mut docx: Docx, skills: &[SkillGroup]) -> Docx {
     docx
 }
 
-fn write_docx_certificates(mut docx: Docx, certs: &[Certificate], date_format: DateFormat) -> Docx {
+fn write_docx_certificates(mut docx: Docx, certs: &[Certificate], dates: DateStyle) -> Docx {
     for c in certs {
         let mut p = Paragraph::new();
         if let Some(href) = links::href(&c.url) {
@@ -423,7 +423,7 @@ fn write_docx_certificates(mut docx: Docx, certs: &[Certificate], date_format: D
         if !c.issuer.is_empty() {
             p = p.add_run(Run::new().add_text(format!(" — {}", c.issuer)).size(22));
         }
-        let date_str = c.date.display(date_format);
+        let date_str = c.date.display_in(dates.format, dates.language);
         if !date_str.is_empty() {
             p = p.add_run(
                 Run::new()
@@ -437,7 +437,7 @@ fn write_docx_certificates(mut docx: Docx, certs: &[Certificate], date_format: D
     docx
 }
 
-fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], date_format: DateFormat) -> Docx {
+fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], dates: DateStyle) -> Docx {
     for v in vol {
         let heading = if !v.position.is_empty() && !v.organization.is_empty() {
             format!("{}, {}", v.position, v.organization)
@@ -460,7 +460,7 @@ fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], date_format: DateForm
         }
         docx = docx.add_paragraph(p);
 
-        let date_str = format_date_range(&v.start_date, &v.end_date, date_format);
+        let date_str = format_date_range(&v.start_date, &v.end_date, dates);
         if !date_str.is_empty() {
             docx = docx.add_paragraph(
                 Paragraph::new().add_run(Run::new().add_text(date_str).italic().size(20)),
@@ -481,14 +481,14 @@ fn write_docx_volunteer(mut docx: Docx, vol: &[Volunteer], date_format: DateForm
     docx
 }
 
-fn write_docx_custom(mut docx: Docx, cs: &ComposedCustomSection, date_format: DateFormat) -> Docx {
+fn write_docx_custom(mut docx: Docx, cs: &ComposedCustomSection, dates: DateStyle) -> Docx {
     for e in &cs.entries {
-        docx = write_docx_custom_entry(docx, e, date_format);
+        docx = write_docx_custom_entry(docx, e, dates);
     }
     docx
 }
 
-fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, date_format: DateFormat) -> Docx {
+fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, dates: DateStyle) -> Docx {
     let heading = if !e.title.is_empty() && !e.subtitle.is_empty() {
         format!("{} — {}", e.title, e.subtitle)
     } else if !e.title.is_empty() {
@@ -512,7 +512,7 @@ fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, date_format: DateFor
         docx = docx.add_paragraph(p);
     }
 
-    let date_str = format_date_range(&e.start_date, &e.end_date, date_format);
+    let date_str = format_date_range(&e.start_date, &e.end_date, dates);
     if !date_str.is_empty() {
         docx = docx.add_paragraph(
             Paragraph::new().add_run(Run::new().add_text(date_str).italic().size(20)),

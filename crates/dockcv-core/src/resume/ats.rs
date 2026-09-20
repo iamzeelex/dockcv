@@ -22,7 +22,7 @@ use super::dates::{CivilDate, ResumeDate};
 use super::edit::FieldId;
 use super::export_text::strip_typst_markup;
 use super::export_walk::{is_section_empty, ordered_sections, resolve_section_title};
-use super::model::{Resume, SectionKind};
+use super::model::{DocumentLanguage, Resume, ResumeDoc, SectionKind};
 
 /// One fact about the document, and where it lives.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,6 +122,31 @@ const INVISIBLE: &[char] = &[
 /// taught people to ignore it. Adding a language is one line — and German is
 /// here because C5 made it a language a reading can *declare*, which made the
 /// lint start calling `Berufserfahrung` unknown on every German CV.
+/// What to put there instead, when a heading is one no parser knows.
+///
+/// Separate from [`KNOWN_HEADINGS`] on purpose, and the two differ in kind.
+/// Acceptance is generous and language-blind: a CV may be written in any of
+/// these and mix them, and the lint's job is to not object. A *suggestion* is
+/// advice, and advising `Work Experience` on a CV that says `Heute` under
+/// every open-ended job is advice to write the heading in the wrong language.
+///
+/// English delegates to the product's own default rather than repeating it, so
+/// the two cannot drift apart.
+pub fn preferred_heading(kind: SectionKind, language: DocumentLanguage) -> &'static str {
+    use DocumentLanguage::*;
+    use SectionKind::*;
+    match (kind, language) {
+        (_, English) => ResumeDoc::default_section_title(kind),
+        (Profile, German) => "Profil",
+        (Work, German) => "Berufserfahrung",
+        (Education, German) => "Ausbildung",
+        (Skills, German) => "Kenntnisse",
+        (Certificates, German) => "Zertifikate",
+        (Organizations, German) => "Ehrenamt",
+        (Custom(_), German) => "",
+    }
+}
+
 const KNOWN_HEADINGS: &[(SectionKind, &[&str])] = &[
     (
         SectionKind::Profile,
@@ -334,7 +359,9 @@ fn printed_fields(resume: &Resume) -> Vec<(SectionKind, FieldId, String)> {
 /// The composed résumé, not the document: what a parser sees is the active
 /// variant of each section, and a sentence sitting in a variant nobody sends is
 /// not a defect in what was sent.
-pub fn lint(resume: &Resume) -> Vec<Finding> {
+/// `language` is the reading's own, and it decides only what the findings
+/// *suggest* — never what they accept (see [`preferred_heading`]).
+pub fn lint(resume: &Resume, language: DocumentLanguage) -> Vec<Finding> {
     let mut out = Vec::new();
 
     if resume.basics.email.trim().is_empty() && resume.basics.phone.trim().is_empty() {
@@ -370,7 +397,7 @@ pub fn lint(resume: &Resume) -> Vec<Finding> {
             out.push(Finding {
                 rule: Rule::HeadingNoParserKnows {
                     title,
-                    expected: known.1[0],
+                    expected: preferred_heading(kind, language),
                 },
                 section: kind,
                 at: None,
@@ -643,7 +670,7 @@ mod tests {
             ..Default::default()
         };
 
-        let headings: Vec<Finding> = lint(&resume)
+        let headings: Vec<Finding> = lint(&resume, DocumentLanguage::German)
             .into_iter()
             .filter(|f| matches!(f.rule, Rule::HeadingNoParserKnows { .. }))
             .collect();
@@ -652,12 +679,25 @@ mod tests {
             "a correctly written German CV is not a list of mistakes: {headings:?}"
         );
 
-        // And the lint has not become permissive: an invention is still one.
+        // And the lint has not become permissive: an invention is still one,
+        // and what it suggests instead is in the CV's own language. Advising
+        // `Work Experience` here would fix the parser and break the CV.
         let mut invented = resume.clone();
         invented.section_titles = vec![(SectionKind::Work, "Meine Reise".into())];
-        assert!(lint(&invented)
+        let found = lint(&invented, DocumentLanguage::German);
+        let suggestion = found
             .iter()
-            .any(|f| matches!(f.rule, Rule::HeadingNoParserKnows { .. })));
+            .find_map(|f| match &f.rule {
+                Rule::HeadingNoParserKnows { expected, .. } => Some(*expected),
+                _ => None,
+            })
+            .expect("an invented heading is still a finding");
+        assert_eq!(suggestion, "Berufserfahrung");
+        assert_eq!(
+            preferred_heading(SectionKind::Work, DocumentLanguage::English),
+            "Work Experience",
+            "and English still says what the product's own default says"
+        );
     }
     use super::*;
     use crate::resume::model::{Basics, Certificate, Education, SkillGroup, Work};
@@ -701,12 +741,12 @@ mod tests {
     }
 
     fn rules(resume: &Resume) -> Vec<Rule> {
-        lint(resume).into_iter().map(|f| f.rule).collect()
+        lint(resume, DocumentLanguage::English).into_iter().map(|f| f.rule).collect()
     }
 
     #[test]
     fn a_document_with_nothing_wrong_with_it_reports_nothing() {
-        assert_eq!(lint(&clean()), Vec::new());
+        assert_eq!(lint(&clean(), DocumentLanguage::English), Vec::new());
     }
 
     #[test]
@@ -715,7 +755,7 @@ mod tests {
         resume
             .section_titles
             .push((SectionKind::Work, "Where I've Been".into()));
-        let found = lint(&resume);
+        let found = lint(&resume, DocumentLanguage::English);
         assert!(matches!(
             found.as_slice(),
             [Finding {
@@ -731,7 +771,7 @@ mod tests {
             resume
                 .section_titles
                 .push((SectionKind::Work, title.into()));
-            assert_eq!(lint(&resume), Vec::new(), "{title} should be recognised");
+            assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new(), "{title} should be recognised");
         }
     }
 
@@ -742,7 +782,7 @@ mod tests {
         let mut resume = clean();
         let id = resume.custom_sections.len();
         let _ = id;
-        assert_eq!(lint(&resume), Vec::new());
+        assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new());
         resume
             .section_titles
             .push((SectionKind::Skills, "Kit".into()));
@@ -762,12 +802,12 @@ mod tests {
         // and it is the one word a CV writes in an end-date field.
         let mut resume = clean();
         resume.work[0].end_date = ResumeDate::new("Present");
-        assert_eq!(lint(&resume), Vec::new());
+        assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new());
 
         // Nor is an empty end date, which is how this model says the same thing.
         let mut resume = clean();
         resume.work[0].end_date = ResumeDate::default();
-        assert_eq!(lint(&resume), Vec::new());
+        assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new());
     }
 
     #[test]
@@ -785,7 +825,7 @@ mod tests {
         let mut resume = clean();
         resume.work[0].start_date = ResumeDate::new("2019");
         resume.work[0].end_date = ResumeDate::new("2019-06");
-        assert_eq!(lint(&resume), Vec::new());
+        assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new());
     }
 
     #[test]
@@ -801,14 +841,14 @@ mod tests {
         let mut resume = clean();
         resume.basics.email = String::new();
         resume.basics.phone = "+353 1 555 0100".into();
-        assert_eq!(lint(&resume), Vec::new());
+        assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new());
     }
 
     #[test]
     fn markup_that_never_renders() {
         let mut resume = clean();
         resume.work[0].highlights[0] = "Halved #strong[p99] latency.".into();
-        let found = lint(&resume);
+        let found = lint(&resume, DocumentLanguage::English);
         assert!(
             matches!(
                 found.as_slice(),
@@ -833,7 +873,7 @@ mod tests {
         ] {
             let mut resume = clean();
             resume.work[0].highlights[0] = prose.into();
-            assert_eq!(lint(&resume), Vec::new(), "{prose:?} should be left alone");
+            assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new(), "{prose:?} should be left alone");
         }
     }
 
@@ -853,7 +893,7 @@ mod tests {
         // A dash inside the sentence is a dash, not a marker.
         let mut resume = clean();
         resume.work[0].highlights[0] = "Halved p99 latency - and kept it there.".into();
-        assert_eq!(lint(&resume), Vec::new());
+        assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new());
     }
 
     #[test]
@@ -862,7 +902,7 @@ mod tests {
         resume.work[0].start_date = ResumeDate::new("Summer 2021");
         resume.work[0].highlights[0] = "• Halved #strong[p99] latency.".into();
         resume.basics.email = String::new();
-        let found = lint(&resume);
+        let found = lint(&resume, DocumentLanguage::English);
         assert!(found.len() >= 4, "expected several findings, got {found:?}");
         for finding in &found {
             match &finding.rule {
@@ -885,7 +925,7 @@ mod tests {
         // wolf, and both are worth stopping for.
         let resume = crate::resume::altacv::import(crate::resume::altacv::ALTACV_SAMPLE)
             .expect("the AltaCV fixture parses");
-        assert_eq!(lint(&resume), Vec::new());
+        assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new());
     }
     #[test]
     fn characters_no_bundled_face_can_set() {
@@ -894,7 +934,7 @@ mod tests {
         // the extractors disagree with each other about what is left.
         let mut resume = clean();
         resume.basics.name = "山田太郎".into();
-        let found = lint(&resume);
+        let found = lint(&resume, DocumentLanguage::English);
         assert!(
             matches!(
                 found.as_slice(),
@@ -912,20 +952,20 @@ mod tests {
         let mut resume = clean();
         resume.basics.name = "Олена Ковальчук".into();
         resume.work[0].highlights[0] = "Скоротила затримку p99 удвічі.".into();
-        assert_eq!(lint(&resume), Vec::new());
+        assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new());
 
         // Nor do the shapes a CV is actually full of.
         let mut resume = clean();
         resume.basics.label = "C++ & .NET Architect — 40% ↑ 3×".into();
         resume.work[0].highlights[0] = "Saved $1.2M/year (≈18 000 lines).".into();
-        assert_eq!(lint(&resume), Vec::new());
+        assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new());
     }
 
     #[test]
     fn whitespace_nobody_sees() {
         let mut resume = clean();
         resume.basics.phone = "+48\u{00a0}22\u{2009}555\u{2009}0100".into();
-        let found = lint(&resume);
+        let found = lint(&resume, DocumentLanguage::English);
         assert!(
             matches!(
                 found.as_slice(),
@@ -941,6 +981,6 @@ mod tests {
         // An ordinary space, however many of them, is not this.
         let mut resume = clean();
         resume.basics.phone = "+48  22 555 0100".into();
-        assert_eq!(lint(&resume), Vec::new());
+        assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new());
     }
 }

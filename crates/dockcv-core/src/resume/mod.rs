@@ -33,11 +33,11 @@ mod versioning;
 
 pub use document_toml::parse_document_toml;
 #[cfg(feature = "docx")]
-pub use export_docx::{export_docx, export_docx_with_date_format};
+pub use export_docx::{export_docx, export_docx_in};
 pub use export_json_resume::{export_json_resume, export_json_resume_with_meta, ResumeMeta};
-pub use export_markdown::{export_markdown, export_markdown_with_date_format};
+pub use export_markdown::{export_markdown, export_markdown_in};
 pub use export_names::{disambiguate_filename, plan_batch, OnCollision, PlannedExport};
-pub use export_text::{export_plain_text, export_plain_text_with_date_format};
+pub use export_text::{export_plain_text, export_plain_text_in};
 pub use export_typst::{export_typst, export_typst_in, export_typst_with_layout};
 pub use model::ExportRecord;
 pub use profiles::{

@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 
 use dockcv_core::resume::altacv;
 use dockcv_core::resume::model::{
-    ContactLayout, HeaderLayout, HeadingCase, HeadingLayout, HeadingStyle, LayoutSettings, Resume,
-    SkillsLayout, SkillsStyle,
+    ContactLayout, DocumentLanguage, HeaderLayout, HeadingCase, HeadingLayout, HeadingStyle,
+    LayoutSettings, Resume, SectionKind, SkillsLayout, SkillsStyle,
 };
 use dockcv_core::resume::template;
 use dockcv_core::typst_engine::TypstEngine;
@@ -43,8 +43,8 @@ use super::readers;
 /// Every line here is a defect DockCV ships today, measured rather than
 /// guessed. Deleting a line is how a fix is declared.
 ///
-/// The six below are one defect seen in six layouts, and it is **ours rather
-/// than the file's**: `pdf-extract` joins the first bullet of a job to the
+/// Every line below is one defect seen in every reading, and it is **ours
+/// rather than the file's**: `pdf-extract` joins the first bullet of a job to the
 /// entry summary above it (`…owns the event-sourcing stack.• Migrated a…`),
 /// where the seven other readings — including the file's own content order and
 /// its structure tree, which tags the list as `L / LI / Lbl / LBody` — put it
@@ -54,6 +54,11 @@ use super::readers;
 /// is the tail wagging the dog. Recorded here so it cannot be forgotten, and
 /// so the day `pdf-extract` or its replacement stops doing it, these lines
 /// have to go.
+///
+/// That this list gained exactly two lines when the German and renamed-heading
+/// readings arrived — and no others — is the useful half of adding them: a
+/// heading renamed to `Core Competencies` and a page of `Mär`/`Heute` under
+/// `Berufserfahrung` come back whole from every reader that reads the default.
 const KNOWN_GAPS: &[Gap] = &[
     Gap {
         scenario: "default",
@@ -97,6 +102,18 @@ const KNOWN_GAPS: &[Gap] = &[
         what: "work 0 bullet 0",
         owner: "B5, import side",
     },
+    Gap {
+        scenario: "renamed headings",
+        engine: "sorted",
+        what: "work 0 bullet 0",
+        owner: "B5, import side",
+    },
+    Gap {
+        scenario: "German",
+        engine: "sorted",
+        what: "work 0 bullet 0",
+        owner: "B5, import side",
+    },
 ];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -109,12 +126,77 @@ struct Gap {
     owner: &'static str,
 }
 
+/// One way a CV actually leaves this app: a layout, a language, and the
+/// headings that reading prints.
+///
+/// A struct rather than a tuple because it stopped being one thing. C5 gave a
+/// reading a language and C8 gave it headings of its own, and both reach the
+/// page — so a harness that varied only the layout was measuring a third of
+/// what ships.
+struct Scenario {
+    name: &'static str,
+    layout: LayoutSettings,
+    language: DocumentLanguage,
+    /// What this reading calls its sections, when it does not use the
+    /// defaults — `Preset::titles` arriving at the page.
+    titles: &'static [(SectionKind, &'static str)],
+}
+
+impl Scenario {
+    fn new(name: &'static str, layout: LayoutSettings) -> Self {
+        Self {
+            name,
+            layout,
+            language: DocumentLanguage::English,
+            titles: &[],
+        }
+    }
+
+    fn in_language(mut self, language: DocumentLanguage) -> Self {
+        self.language = language;
+        self
+    }
+
+    fn under(mut self, titles: &'static [(SectionKind, &'static str)]) -> Self {
+        self.titles = titles;
+        self
+    }
+
+    /// The fixture as this reading prints it.
+    fn resume(&self) -> Resume {
+        let mut resume = fixture();
+        if !self.titles.is_empty() {
+            resume.section_titles = self
+                .titles
+                .iter()
+                .map(|(kind, title)| (*kind, (*title).to_string()))
+                .collect();
+        }
+        resume
+    }
+
+    fn slug(&self) -> String {
+        self.name.replace(' ', "-")
+    }
+}
+
+/// A German CV names its sections in German. Both halves travel together —
+/// a `lang: "de"` page under English headings is not a document anybody sends.
+const GERMAN_HEADINGS: &[(SectionKind, &str)] = &[
+    (SectionKind::Profile, "Profil"),
+    (SectionKind::Work, "Berufserfahrung"),
+    (SectionKind::Education, "Ausbildung"),
+    (SectionKind::Skills, "Kenntnisse"),
+    (SectionKind::Certificates, "Zertifikate"),
+    (SectionKind::Organizations, "Ehrenamt"),
+];
+
 /// The layouts a CV actually gets sent in, chosen for the parser risk each one
 /// carries rather than for coverage of the settings.
-fn scenarios() -> Vec<(&'static str, LayoutSettings)> {
+fn scenarios() -> Vec<Scenario> {
     vec![
-        ("default", LayoutSettings::default()),
-        (
+        Scenario::new("default", LayoutSettings::default()),
+        Scenario::new(
             "headings as typed",
             LayoutSettings {
                 headings: HeadingLayout {
@@ -124,7 +206,7 @@ fn scenarios() -> Vec<(&'static str, LayoutSettings)> {
                 ..Default::default()
             },
         ),
-        (
+        Scenario::new(
             "heading rule to margin",
             LayoutSettings {
                 headings: HeadingLayout {
@@ -134,7 +216,7 @@ fn scenarios() -> Vec<(&'static str, LayoutSettings)> {
                 ..Default::default()
             },
         ),
-        (
+        Scenario::new(
             "heading band",
             LayoutSettings {
                 headings: HeadingLayout {
@@ -144,7 +226,7 @@ fn scenarios() -> Vec<(&'static str, LayoutSettings)> {
                 ..Default::default()
             },
         ),
-        (
+        Scenario::new(
             "contacts in two columns",
             LayoutSettings {
                 header: HeaderLayout {
@@ -154,7 +236,7 @@ fn scenarios() -> Vec<(&'static str, LayoutSettings)> {
                 ..Default::default()
             },
         ),
-        (
+        Scenario::new(
             "skills as pills",
             LayoutSettings {
                 skills: SkillsLayout {
@@ -164,10 +246,23 @@ fn scenarios() -> Vec<(&'static str, LayoutSettings)> {
                 ..Default::default()
             },
         ),
-        (
+        Scenario::new(
             "ATS-safe",
             builtin_profile(ATS_SAFE_PROFILE).expect("ATS-safe is a shipped profile"),
         ),
+        // C8: a reading may print its own headings, and a heading is what
+        // every parser segments a CV on. Renaming one is the single change
+        // most able to cost a whole section, so it is measured.
+        Scenario::new("renamed headings", LayoutSettings::default()).under(&[
+            (SectionKind::Profile, "Summary"),
+            (SectionKind::Work, "Professional Experience"),
+            (SectionKind::Skills, "Core Competencies"),
+        ]),
+        // C5: a whole reading in another language — the `/Lang` tag, the
+        // localized month names, and the German headings that go with them.
+        Scenario::new("German", LayoutSettings::default())
+            .in_language(DocumentLanguage::German)
+            .under(GERMAN_HEADINGS),
     ]
 }
 
@@ -175,10 +270,12 @@ fn fixture() -> Resume {
     altacv::import(altacv::ALTACV_SAMPLE).expect("the AltaCV fixture parses")
 }
 
-fn compile(resume: &Resume, layout: &LayoutSettings) -> Vec<u8> {
-    TypstEngine::new(template::generate_with_layout(resume, layout))
-        .compile_to_pdf()
-        .expect("the fixture compiles to PDF")
+fn compile(resume: &Resume, layout: &LayoutSettings, language: DocumentLanguage) -> Vec<u8> {
+    TypstEngine::new(template::generate_with_layout_and_language(
+        resume, layout, language,
+    ))
+    .compile_to_pdf()
+    .expect("the fixture compiles to PDF")
 }
 
 fn target_dir() -> PathBuf {
@@ -245,10 +342,15 @@ fn the_file_reads_the_same_way_whoever_reads_it() {
     let mut failures: Vec<String> = Vec::new();
     let mut closed: Vec<String> = Vec::new();
 
-    for (scenario, layout) in scenarios() {
-        let pdf = compile(&resume, &layout);
-        let path =
-            std::env::temp_dir().join(format!("dockcv-ats-{}.pdf", scenario.replace(' ', "-")));
+    for case in scenarios() {
+        let scenario = case.name;
+        // Per scenario, because a reading that renames its headings or writes
+        // them in German pins different strings — the whole point of measuring
+        // those two.
+        let resume = case.resume();
+        let pinned = fields::pin(&resume);
+        let pdf = compile(&resume, &case.layout, case.language);
+        let path = std::env::temp_dir().join(format!("dockcv-ats-{}.pdf", case.slug()));
         std::fs::write(&path, &pdf).expect("write the PDF the external engines read");
 
         let readings = readings(&pdf, &path);
@@ -307,7 +409,7 @@ fn the_file_reads_the_same_way_whoever_reads_it() {
 #[test]
 fn every_section_the_page_prints_is_a_heading_in_the_structure_tree() {
     let resume = fixture();
-    let pdf = compile(&resume, &LayoutSettings::default());
+    let pdf = compile(&resume, &LayoutSettings::default(), DocumentLanguage::English);
     let tree = readers::structure(&pdf).expect("the PDF we just wrote has a structure tree");
 
     let tagged_headings: Vec<String> = tree
@@ -340,10 +442,14 @@ fn every_section_the_page_prints_is_a_heading_in_the_structure_tree() {
 
 #[test]
 fn every_layout_we_offer_exports_a_file_pdf_ua1_accepts() {
-    let resume = fixture();
-    for (scenario, layout) in scenarios() {
-        let engine = TypstEngine::new(template::generate_with_layout(&resume, &layout));
+    for case in scenarios() {
+        let engine = TypstEngine::new(template::generate_with_layout_and_language(
+            &case.resume(),
+            &case.layout,
+            case.language,
+        ));
         if let Err(why) = engine.compile_to_pdf_ua1() {
+            let scenario = case.name;
             panic!(
                 "“{scenario}” would export a file PDF/UA-1 refuses, and its rules are \
                  most of what a parser needs too:\n{why}"
@@ -458,7 +564,7 @@ fn every_attack_that_lands_is_one_the_lint_saw_coming() {
 
     for adversary in adversarial::all() {
         let pinned = fields::pin(&adversary.resume);
-        let warned: Vec<FieldId> = ats::lint(&adversary.resume)
+        let warned: Vec<FieldId> = ats::lint(&adversary.resume, DocumentLanguage::English)
             .into_iter()
             .filter_map(|f| f.at)
             .collect();

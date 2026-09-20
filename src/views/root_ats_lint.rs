@@ -28,7 +28,7 @@ pub(super) fn findings_for_view(doc: &ResumeDoc, preset: Option<usize>) -> Vec<F
     if let Some(index) = preset {
         reading.apply_preset(index);
     }
-    ats::lint(&reading.compose())
+    ats::lint(&reading.compose(), reading.language())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -204,7 +204,10 @@ impl Root {
                 }
             }
             AtsRemedy::StandardHeading => {
-                let standard = ResumeDoc::default_section_title(finding.section);
+                // In the reading's own language: replacing `Meine Reise` with
+                // `Work Experience` fixes the parser and breaks the CV.
+                let standard =
+                    ats::preferred_heading(finding.section, self.doc.language());
                 if self.doc.section_title(finding.section) != standard {
                     self.checkpoint();
                     self.doc.set_section_title(finding.section, standard);

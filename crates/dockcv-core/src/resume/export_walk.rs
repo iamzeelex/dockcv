@@ -11,7 +11,7 @@
 //! `EDUCATION` in text, `## Education` in Markdown and a bold run in DOCX, and
 //! pushing that behind a trait would buy nothing but indirection.
 
-use super::dates::DateFormat;
+use super::dates::DateStyle;
 use super::model::{Resume, ResumeDate, ResumeDoc, SectionKind};
 
 /// The sections of `resume`, in the order they print.
@@ -77,9 +77,9 @@ pub fn resolve_section_title(resume: &Resume, kind: SectionKind) -> String {
 
 /// `start – end`, either end alone, or nothing — in the document's own date
 /// format, so an export never prints a date the page does not.
-pub fn format_date_range(start: &ResumeDate, end: &ResumeDate, date_format: DateFormat) -> String {
-    let start_str = start.display(date_format);
-    let end_str = end.display(date_format);
+pub fn format_date_range(start: &ResumeDate, end: &ResumeDate, dates: DateStyle) -> String {
+    let start_str = start.display_in(dates.format, dates.language);
+    let end_str = end.display_in(dates.format, dates.language);
     if !start_str.is_empty() && !end_str.is_empty() {
         format!("{start_str} - {end_str}")
     } else if !start_str.is_empty() {
@@ -89,7 +89,7 @@ pub fn format_date_range(start: &ResumeDate, end: &ResumeDate, date_format: Date
         // A parser cannot tell the difference between the two from a bare start
         // date, and "is this person available" is a question it is built to
         // answer, so the word the page prints is the word they all print now.
-        format!("{start_str} - Present")
+        format!("{start_str} - {}", dates.language.present())
     } else if !end_str.is_empty() {
         end_str
     } else {
@@ -202,6 +202,30 @@ pub(crate) fn sample_resume() -> super::model::Resume {
 
 #[cfg(test)]
 mod tests {
+    /// Every text emitter goes through here, so this is the one place a
+    /// German CV could stop being German. It did: the shape was threaded and
+    /// the language was not, so DOCX, plain text and Markdown printed
+    /// `Mar 2021 - Present` under a page reading `Mär 2021 - Heute`.
+    #[test]
+    fn a_date_range_is_written_in_the_readings_own_language() {
+        use crate::resume::model::{DateFormat, DateStyle, DocumentLanguage, ResumeDate};
+
+        let start = ResumeDate::new("2021-03-04");
+        let open = ResumeDate::new("");
+
+        let english = format_date_range(&start, &open, DateStyle::plain(DateFormat::DayMonShortYear));
+        assert!(english.contains("Mar"), "{english}");
+        assert!(english.ends_with("Present"), "{english}");
+
+        let german = format_date_range(
+            &start,
+            &open,
+            DateStyle::new(DateFormat::DayMonShortYear, DocumentLanguage::German),
+        );
+        assert!(german.contains("Mär"), "{german}");
+        assert!(german.ends_with("Heute"), "{german}");
+    }
+
     use super::*;
     use crate::resume::model::{CustomSectionId, SectionKind};
 

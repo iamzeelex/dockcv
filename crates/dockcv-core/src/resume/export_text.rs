@@ -11,7 +11,7 @@
 
 use std::fmt::Write as _;
 
-use super::dates::DateFormat;
+use super::dates::DateStyle;
 use super::export_walk::{
     format_date_range, is_section_empty, ordered_sections, resolve_section_title,
 };
@@ -49,11 +49,11 @@ pub const WRAP_WIDTH: usize = 72;
 
 /// Export a composed [`Resume`] into clean, plain-text format.
 pub fn export_plain_text(resume: &Resume) -> String {
-    export_plain_text_with_date_format(resume, DateFormat::default())
+    export_plain_text_in(resume, DateStyle::default())
 }
 
 /// Export a composed [`Resume`] with an explicit date format.
-pub fn export_plain_text_with_date_format(resume: &Resume, date_format: DateFormat) -> String {
+pub fn export_plain_text_in(resume: &Resume, dates: DateStyle) -> String {
     let mut out = String::new();
 
     // 1. Header / Basics
@@ -95,23 +95,23 @@ pub fn export_plain_text_with_date_format(resume: &Resume, date_format: DateForm
         match kind {
             SectionKind::Profile => {}
             SectionKind::Work => {
-                write_work_section(&mut out, &resume.work, date_format);
+                write_work_section(&mut out, &resume.work, dates);
             }
             SectionKind::Education => {
-                write_education_section(&mut out, &resume.education, date_format);
+                write_education_section(&mut out, &resume.education, dates);
             }
             SectionKind::Skills => {
                 write_skills_section(&mut out, &resume.skills);
             }
             SectionKind::Certificates => {
-                write_certificates_section(&mut out, &resume.certificates, date_format);
+                write_certificates_section(&mut out, &resume.certificates, dates);
             }
             SectionKind::Organizations => {
-                write_volunteer_section(&mut out, &resume.volunteer, date_format);
+                write_volunteer_section(&mut out, &resume.volunteer, dates);
             }
             SectionKind::Custom(id) => {
                 if let Some(cs) = resume.custom_sections.iter().find(|s| s.id == id) {
-                    write_custom_section(&mut out, cs, date_format);
+                    write_custom_section(&mut out, cs, dates);
                 }
             }
         }
@@ -170,7 +170,7 @@ fn write_basics(out: &mut String, b: &Basics) {
     }
 }
 
-fn write_work_section(out: &mut String, work: &[Work], date_format: DateFormat) {
+fn write_work_section(out: &mut String, work: &[Work], dates: DateStyle) {
     for (i, w) in work.iter().enumerate() {
         if i > 0 {
             out.push('\n');
@@ -192,7 +192,7 @@ fn write_work_section(out: &mut String, work: &[Work], date_format: DateFormat) 
         }
         write_wrapped(out, &line, 0, 0);
 
-        let date_str = format_date_range(&w.start_date, &w.end_date, date_format);
+        let date_str = format_date_range(&w.start_date, &w.end_date, dates);
         if !date_str.is_empty() {
             let _ = writeln!(out, "{date_str}");
         }
@@ -209,7 +209,7 @@ fn write_work_section(out: &mut String, work: &[Work], date_format: DateFormat) 
     }
 }
 
-fn write_education_section(out: &mut String, edu: &[Education], date_format: DateFormat) {
+fn write_education_section(out: &mut String, edu: &[Education], dates: DateStyle) {
     for (i, e) in edu.iter().enumerate() {
         if i > 0 {
             out.push('\n');
@@ -227,7 +227,7 @@ fn write_education_section(out: &mut String, edu: &[Education], date_format: Dat
 
         write_wrapped(out, &heading, 0, 0);
 
-        let date_str = format_date_range(&e.start_date, &e.end_date, date_format);
+        let date_str = format_date_range(&e.start_date, &e.end_date, dates);
         if !date_str.is_empty() {
             let _ = writeln!(out, "{date_str}");
         }
@@ -254,13 +254,13 @@ fn write_skills_section(out: &mut String, skills: &[SkillGroup]) {
     }
 }
 
-fn write_certificates_section(out: &mut String, certs: &[Certificate], date_format: DateFormat) {
+fn write_certificates_section(out: &mut String, certs: &[Certificate], dates: DateStyle) {
     for c in certs {
         let mut line = c.name.clone();
         if !c.issuer.is_empty() {
             line.push_str(&format!(" - {}", c.issuer));
         }
-        let date_str = c.date.display(date_format);
+        let date_str = c.date.display_in(dates.format, dates.language);
         if !date_str.is_empty() {
             line.push_str(&format!(" ({date_str})"));
         }
@@ -271,7 +271,7 @@ fn write_certificates_section(out: &mut String, certs: &[Certificate], date_form
     }
 }
 
-fn write_volunteer_section(out: &mut String, vol: &[Volunteer], date_format: DateFormat) {
+fn write_volunteer_section(out: &mut String, vol: &[Volunteer], dates: DateStyle) {
     for (i, v) in vol.iter().enumerate() {
         if i > 0 {
             out.push('\n');
@@ -289,7 +289,7 @@ fn write_volunteer_section(out: &mut String, vol: &[Volunteer], date_format: Dat
 
         write_wrapped(out, &heading, 0, 0);
 
-        let date_str = format_date_range(&v.start_date, &v.end_date, date_format);
+        let date_str = format_date_range(&v.start_date, &v.end_date, dates);
         if !date_str.is_empty() {
             let _ = writeln!(out, "{date_str}");
         }
@@ -301,16 +301,16 @@ fn write_volunteer_section(out: &mut String, vol: &[Volunteer], date_format: Dat
     }
 }
 
-fn write_custom_section(out: &mut String, cs: &ComposedCustomSection, date_format: DateFormat) {
+fn write_custom_section(out: &mut String, cs: &ComposedCustomSection, dates: DateStyle) {
     for (i, e) in cs.entries.iter().enumerate() {
         if i > 0 {
             out.push('\n');
         }
-        write_custom_entry(out, e, date_format);
+        write_custom_entry(out, e, dates);
     }
 }
 
-fn write_custom_entry(out: &mut String, e: &CustomEntry, date_format: DateFormat) {
+fn write_custom_entry(out: &mut String, e: &CustomEntry, dates: DateStyle) {
     let mut heading = if !e.title.is_empty() && !e.subtitle.is_empty() {
         format!("{} - {}", e.title, e.subtitle)
     } else if !e.title.is_empty() {
@@ -326,7 +326,7 @@ fn write_custom_entry(out: &mut String, e: &CustomEntry, date_format: DateFormat
         write_wrapped(out, &heading, 0, 0);
     }
 
-    let date_str = format_date_range(&e.start_date, &e.end_date, date_format);
+    let date_str = format_date_range(&e.start_date, &e.end_date, dates);
     if !date_str.is_empty() {
         let _ = writeln!(out, "{date_str}");
     }

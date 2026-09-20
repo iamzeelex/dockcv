@@ -56,6 +56,13 @@ impl Root {
                     let composed = export_doc.compose();
                     let layout =
                         profiles.resolve(export_doc.layout_profile.as_deref(), export_doc.layout);
+                    // The profile decides the shape of a date, the reading
+                    // decides the words in it. Every format below gets both, so
+                    // a German CV is not English in five of the six.
+                    let dates = crate::resume::model::DateStyle::new(
+                        layout.date_format,
+                        export_doc.language(),
+                    );
                     match format {
                         ExportFormat::Pdf => {
                             let source = crate::resume::template::generate_for_with_profiles(
@@ -69,27 +76,18 @@ impl Root {
                                 .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::Docx => {
-                            let bytes = crate::resume::export_docx_with_date_format(
-                                &composed,
-                                layout.date_format,
-                            )
+                            let bytes = crate::resume::export_docx_in(&composed, dates)
                             .map_err(|e| format!("DOCX generation failed: {e}"))?;
                             std::fs::write(&write_path, bytes)
                                 .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::PlainText => {
-                            let text = crate::resume::export_plain_text_with_date_format(
-                                &composed,
-                                layout.date_format,
-                            );
+                            let text = crate::resume::export_plain_text_in(&composed, dates);
                             std::fs::write(&write_path, text.as_bytes())
                                 .map_err(|e| format!("write failed: {e}"))
                         }
                         ExportFormat::Markdown => {
-                            let md = crate::resume::export_markdown_with_date_format(
-                                &composed,
-                                layout.date_format,
-                            );
+                            let md = crate::resume::export_markdown_in(&composed, dates);
                             std::fs::write(&write_path, md.as_bytes())
                                 .map_err(|e| format!("write failed: {e}"))
                         }

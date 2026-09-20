@@ -139,6 +139,31 @@ pub enum DateFormat {
     DotDayFirst,
 }
 
+/// How a date is written down: the shape, and the language its words are in.
+///
+/// The two travel together or they come apart. Every emitter used to thread a
+/// bare `DateFormat` and reach [`DocumentLanguage::English`] at the bottom, so
+/// a German CV exported to DOCX, plain text or Markdown printed `Mar 2021 -
+/// Present` under a page that said `Mär 2021 - Heute`. One parameter cannot
+/// be half-passed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DateStyle {
+    pub format: DateFormat,
+    pub language: DocumentLanguage,
+}
+
+impl DateStyle {
+    pub const fn new(format: DateFormat, language: DocumentLanguage) -> Self {
+        Self { format, language }
+    }
+
+    /// The shape alone, in English — for a composed `Resume`, which carries no
+    /// language of its own.
+    pub const fn plain(format: DateFormat) -> Self {
+        Self::new(format, DocumentLanguage::English)
+    }
+}
+
 impl DateFormat {
     pub fn label(self) -> &'static str {
         match self {
