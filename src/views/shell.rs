@@ -1398,6 +1398,7 @@ impl Shell {
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_else(|| "resume".to_string());
             let failed_name = filename.clone();
+            let failed_path = file_path.clone();
             let _ = this.update(cx, |this, cx| {
                 this.import_step = ImportStep::Parsing { filename };
                 cx.notify();
@@ -1418,6 +1419,7 @@ impl Shell {
                 Err(error) => {
                     this.import_step = ImportStep::CouldNotRead {
                         filename: failed_name,
+                        path: Some(failed_path),
                         error: Box::new(error),
                     };
                     cx.notify();

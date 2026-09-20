@@ -46,7 +46,8 @@ pub fn import_pdf(path: &Path) -> Result<ImportedDoc, ImportError> {
                  setting that keeps the text rather than flattening the page",
             )
             .remedy("If you still have the original, import the .docx instead")
-            .remedy("Run the scan through OCR first, then import the result"));
+            .remedy("Run the scan through OCR first, then import the result")
+            .no_text_layer());
     }
 
     // A PDF records where glyphs landed, never the order they were typed in, so

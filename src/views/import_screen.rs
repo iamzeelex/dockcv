@@ -42,10 +42,42 @@ enum Mark {
 /// and opens the editor — so the third is never `Here`. That is not a gap: it
 /// describes what is going to happen, which is what a person reading step one
 /// wants to know.
+///
+/// The words are the person's, not ours. "Three calm steps" was a claim about
+/// our design rather than information, and an odd one to make over a flow that
+/// can fail. "Facts stay visible beside warnings" was the same idea in jargon;
+/// what it means is that you see what came out before anything is saved.
 const STEPS: [(&str, &str); 3] = [
-    ("Choose a file", "Nothing is written yet."),
-    ("Review the split", "Facts stay visible beside warnings."),
-    ("Open your CV", "Continue only when it looks right."),
+    ("Pick the file", "Nothing is saved yet."),
+    ("See what came out", "Section by section, before it becomes a CV."),
+    ("Keep it", "Only then is anything written to your vault."),
+];
+
+/// The questions people have with a file in their hand and a drop zone in
+/// front of them.
+///
+/// Four, and each answers something that decides what the person does next —
+/// not a help page. The one this replaces was a single paragraph about scans
+/// doing the work of all four, which meant the other three went unanswered:
+/// whether their file is at risk, what happens when the parser is wrong, and
+/// which of the files on their disk to reach for.
+const FAQ: [(&str, &str); 4] = [
+    (
+        "Does this change my file?",
+        "No. DockCV reads it and writes a new document into your vault. The file you picked is          left exactly as it was, wherever it was.",
+    ),
+    (
+        "Which file works best?",
+        "The one the app you wrote it in exports: a Word .docx, or a PDF straight out of that          app. A PDF that has been printed and scanned is the hardest thing to read.",
+    ),
+    (
+        "What if my PDF is a picture?",
+        "Scans and flattened exports have no text in them, so there is nothing to read. DockCV          says so rather than making an empty CV, and offers what to try instead.",
+    ),
+    (
+        "What if it gets something wrong?",
+        "You see every section before anything is saved, with the parser's own doubts marked.          One click throws the whole import away.",
+    ),
 ];
 
 impl Shell {
@@ -98,8 +130,9 @@ impl Shell {
                             // work. This describes the thing the person is
                             // actually weighing up before they hand over a file.
                             .child(
-                                "DockCV keeps the original file out of your vault until you \
-                                 have seen what was recognised and what needs your decision.",
+                                "Pick a file and DockCV shows you what it found, section by \
+                                 section, before anything is saved. Your file is read, never \
+                                 changed, and never leaves this machine.",
                             ),
                     ),
             )
@@ -166,17 +199,32 @@ impl Shell {
             ImportStep::Parsing { filename } => {
                 import_flow::render_parsing_step(cx, filename).into_any_element()
             }
-            ImportStep::CouldNotRead { filename, error } => import_flow::render_could_not_read(
-                cx,
+            ImportStep::CouldNotRead {
                 filename,
+                path,
                 error,
-                |this, cx| {
-                    this.import_step = ImportStep::Step1Drop;
-                    cx.notify();
-                },
-                |this, cx| this.start_blank_cv(cx),
-            )
-            .into_any_element(),
+            } => div()
+                .flex()
+                .flex_col()
+                .child(import_flow::render_could_not_read(
+                    cx,
+                    filename,
+                    error,
+                    |this, cx| {
+                        this.import_step = ImportStep::Step1Drop;
+                        cx.notify();
+                    },
+                    |this, cx| this.start_blank_cv(cx),
+                ))
+                // Only under a file that is a picture. Offered under "this is
+                // not readable JSON" it would be advice to ask a model about a
+                // download that got cut off.
+                .children(
+                    error
+                        .is_unreadable_image()
+                        .then(|| self.render_assistant_handoff(cx, path.as_deref())),
+                )
+                .into_any_element(),
             ImportStep::Step2Review { imported } => import_flow::render_step2_review_split(
                 cx,
                 imported,
@@ -240,7 +288,7 @@ impl Shell {
                     .text_style(TextStyle::eyebrow())
                     .text_color(theme.text_subtle)
                     .mb(px(14.0))
-                    .child(TextStyle::eyebrow().apply_case("Three calm steps")),
+                    .child(TextStyle::eyebrow().apply_case("What happens")),
             )
             .children(STEPS.iter().enumerate().map(|(index, (title, promise))| {
                 let mark = match index.cmp(&reached) {
@@ -311,7 +359,7 @@ impl Shell {
                     )
             }))
             .child(
-                // Said here, before it happens, rather than only in the
+                // Answered here, before the attempt, rather than only in the
                 // failure state a person reaches already annoyed.
                 div()
                     .mt(px(22.0))
@@ -320,26 +368,28 @@ impl Shell {
                     .border_color(theme.border)
                     .flex()
                     .flex_col()
-                    .gap(px(7.0))
-                    .child(
+                    .gap(px(13.0))
+                    .children(FAQ.iter().map(|(question, answer)| {
                         div()
-                            .font_family(SANS)
-                            .text_size(px(12.0))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text)
-                            .child("About scans"),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .line_height(px(17.0))
-                            .text_color(theme.text_muted)
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.0))
                             .child(
-                                "If a PDF is a picture rather than text, DockCV says so and \
-                                 suggests exporting the original again or running OCR. It will \
-                                 not create a blank CV and pretend the import worked.",
-                            ),
-                    ),
+                                div()
+                                    .font_family(SANS)
+                                    .text_size(px(11.5))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(theme.text)
+                                    .child(*question),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .line_height(px(16.0))
+                                    .text_color(theme.text_muted)
+                                    .child(*answer),
+                            )
+                    })),
             )
     }
 }

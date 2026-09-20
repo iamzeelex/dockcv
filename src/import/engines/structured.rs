@@ -21,17 +21,28 @@ pub fn import_structured(path: &Path) -> Result<ImportedDoc, ImportError> {
             .remedy("Open it in the editor it came from and save it as UTF-8 text")
     })?;
 
+    import_structured_text(&content)
+}
+
+/// The same, from text that never was a file.
+///
+/// Split out for the assistant hand-off (`views/import_assistant.rs`), where
+/// what comes back is pasted rather than picked. It is the same engine and the
+/// same errors on purpose: a JSON Resume from a chat window and one from disk
+/// are the same document, and the review that follows has to be the same
+/// review.
+pub fn import_structured_text(content: &str) -> Result<ImportedDoc, ImportError> {
     // An empty file is not a document that disappoints us, and saying "it
     // parsed, but it does not carry a name" about nothing at all is the kind of
     // message that makes a person doubt the file rather than the picker.
     if content.trim().is_empty() {
-        return Err(ImportError::new("This file is empty")
+        return Err(ImportError::new("There is nothing here to read")
             .detail("There is nothing in it to read — not a CV, not anything else.")
             .remedy("Check you picked the file you meant, and that it finished downloading"));
     }
 
     // Typst AltaCV first: it is the one shape that is unambiguous on sight.
-    if let Some(resume) = altacv::import(&content) {
+    if let Some(resume) = altacv::import(content) {
         let doc = ResumeDoc::from_resume(resume, "Base");
         let mut imported = ImportedDoc::new("Typst (AltaCV)", doc);
         imported.observe();
@@ -41,13 +52,13 @@ pub fn import_structured(path: &Path) -> Result<ImportedDoc, ImportError> {
     // JSON Resume, read against **its** schema. Deserializing the spec straight
     // into our `Resume` is what used to fail on `basics.location`, and the
     // failure was then swallowed into a prose import.
-    if let Some(imported) = json_resume::import(&content) {
+    if let Some(imported) = json_resume::import(content) {
         return Ok(imported);
     }
 
     // A document DockCV itself exported, which *is* our shape. Last, because a
     // JSON Resume must never reach it.
-    if let Ok(resume) = serde_json::from_str::<Resume>(&content) {
+    if let Ok(resume) = serde_json::from_str::<Resume>(content) {
         if !resume.basics.name.trim().is_empty() || !resume.work.is_empty() {
             let doc = ResumeDoc::from_resume(resume, "Base");
             let mut imported = ImportedDoc::new("DockCV JSON", doc);
@@ -60,7 +71,7 @@ pub fn import_structured(path: &Path) -> Result<ImportedDoc, ImportError> {
     // through — a download that stopped, half a clipboard — does not parse at
     // all, and telling its owner the document is the wrong shape sends them
     // looking in the wrong place.
-    if let Err(why) = serde_json::from_str::<serde_json::Value>(&content) {
+    if let Err(why) = serde_json::from_str::<serde_json::Value>(content) {
         return Err(ImportError::new("This file is not readable JSON")
             .detail(format!(
                 "It stops making sense at line {}, column {} — which usually means it was \

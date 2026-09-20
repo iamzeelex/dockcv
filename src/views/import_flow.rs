@@ -29,15 +29,27 @@ use crate::import::model::{ImportedDoc, Unplaced};
 use crate::import::notes::Part;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
-/// The formats the importer reads, named for the drop zone.
+/// The formats the importer reads, named the way a person would name them.
 ///
 /// A statement of fact, not a mode: the engine is chosen from the file's own
 /// extension by `import::import_file`, so nothing here changes behaviour and
 /// there is nothing for the user to get wrong.
-const ACCEPTED_FORMATS: [&str; 5] = ["PDF", "DOCX", "LinkedIn .zip", "JSON Resume", "TXT / MD"];
-
-/// Where the LinkedIn archive comes from.
-const LINKEDIN_HINT: &str = "LinkedIn → Settings → Data privacy → Get a copy of your data";
+///
+/// `DOCX` and `TXT / MD` were file extensions wearing the clothes of a
+/// product feature. Somebody with a CV in Word does not think "I have a
+/// DOCX"; they think "I have a Word file". And `LinkedIn .zip` named the
+/// rarest of the three things LinkedIn can give you while the commonest —
+/// the PDF from your own profile — was not on the list at all, though it is
+/// the file this importer is most carefully tested against
+/// (`import/foreign_cvs.rs`).
+const ACCEPTED_FORMATS: [&str; 6] = [
+    "PDF",
+    "Word",
+    "Markdown",
+    "JSON Resume",
+    "Plain text",
+    "LinkedIn",
+];
 
 /// The active step in the import wizard.
 #[derive(Clone, Default)]
@@ -58,6 +70,10 @@ pub enum ImportStep {
     /// questions: whether the file is at fault, and where to go instead.
     CouldNotRead {
         filename: String,
+        /// Where it is, so the assistant hand-off can put it under the
+        /// pointer. `None` when there is no file — a clipboard paste that
+        /// would not parse has a reason but no path.
+        path: Option<std::path::PathBuf>,
         error: Box<crate::import::ImportError>,
     },
 }
@@ -316,8 +332,8 @@ pub fn render_drop_panel<V: 'static>(
                         .text_color(theme.text_muted)
                         .text_center()
                         .child(
-                            "or choose a file from your computer. Text PDFs, DOCX, LinkedIn \
-                             exports, JSON Resume and Markdown are supported.",
+                            "or choose one from your computer. DockCV reads it — it never \
+                             changes it.",
                         ),
                 )
                 .child(
@@ -363,15 +379,18 @@ pub fn render_drop_panel<V: 'static>(
                 .justify_between()
                 .gap(px(10.0))
                 .child(
-                    // The LinkedIn archive is three clicks deep in a settings
-                    // screen most people have never opened, and naming the
-                    // format without saying where to get it is a dead end.
+                    // Naming LinkedIn without saying which of its three
+                    // downloads you mean is a dead end, and the one we used to
+                    // name was the wrong one: the data archive takes a day to
+                    // arrive and most people have never opened that settings
+                    // screen. The profile PDF is two clicks and is the file
+                    // more people import than any other.
                     div()
                         .flex_1()
-                        .min_w(px(200.0))
+                        .min_w(px(220.0))
                         .text_style(TextStyle::meta())
                         .text_color(theme.text_subtle)
-                        .child(LINKEDIN_HINT),
+                        .child("From LinkedIn: your profile → More → Save to PDF"),
                 )
                 .child(
                     Button::new("skip-start-blank")

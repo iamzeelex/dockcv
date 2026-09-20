@@ -24,6 +24,14 @@ pub struct ImportError {
     /// What to try, best first. May be empty; the screen always offers to start
     /// a blank CV regardless, because that is the one route that always works.
     pub remedies: Vec<String>,
+    /// The file is a picture of a document rather than a document.
+    ///
+    /// A flag rather than a match on the headline. The headline is copy and
+    /// will be reworded; a screen that decides what to offer by reading our own
+    /// prose breaks the day somebody improves it. This one distinction earns a
+    /// field because only this failure has a route out that the others do not
+    /// — see `views/import_assistant.rs`.
+    pub no_text_layer: bool,
 }
 
 impl ImportError {
@@ -32,6 +40,7 @@ impl ImportError {
             headline: headline.into(),
             detail: String::new(),
             remedies: Vec::new(),
+            no_text_layer: false,
         }
     }
 
@@ -43,6 +52,17 @@ impl ImportError {
     pub fn remedy(mut self, remedy: impl Into<String>) -> Self {
         self.remedies.push(remedy.into());
         self
+    }
+
+    /// Mark this as "the pages are images".
+    pub fn no_text_layer(mut self) -> Self {
+        self.no_text_layer = true;
+        self
+    }
+
+    /// Whether a model reading the picture is worth offering.
+    pub fn is_unreadable_image(&self) -> bool {
+        self.no_text_layer
     }
 }
 
