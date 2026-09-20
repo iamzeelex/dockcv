@@ -629,6 +629,14 @@ mod tests {
             "the user must be told the file is not at fault, got: {}",
             error.detail
         );
+        // The flag, not the wording, is what puts the assistant hand-off on
+        // screen (`views/import_assistant.rs`). Asserted here because the
+        // route out of this dead end disappears silently if it is ever lost,
+        // and nothing else in the build would notice.
+        assert!(
+            error.is_unreadable_image(),
+            "a picture of a document has to be marked as one"
+        );
         assert!(
             error.remedies.len() >= 2,
             "a dead end needs somewhere to go, got {:?}",

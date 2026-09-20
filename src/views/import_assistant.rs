@@ -327,6 +327,21 @@ mod tests {
     /// The instruction that keeps a transcription a transcription. If this
     /// sentence ever leaves the prompt, the model is free to fill a gap with
     /// something plausible and nobody downstream can tell.
+    /// How long the deeplink actually is. Not an assertion about taste: a
+    /// query string is the one part of this hand-off with a hard ceiling, and
+    /// a prompt that gets truncated by a browser or a CDN fails silently —
+    /// the assistant opens with half an instruction and transcribes what it
+    /// feels like.
+    #[test]
+    fn the_deeplink_fits_in_a_url() {
+        let encoded = encode(&transcription_prompt());
+        let longest = "https://claude.ai/new?q=".len() + encoded.len();
+        println!("PROBE prompt {} chars, encoded {}, URL {longest}", transcription_prompt().len(), encoded.len());
+        // 2000 is the floor every mainstream browser and CDN is safe under;
+        // IE's old 2083 is the origin of the number and nothing sane is lower.
+        assert!(longest < 2000, "the deeplink is {longest} characters");
+    }
+
     #[test]
     fn the_prompt_forbids_guessing() {
         let prompt = transcription_prompt();
