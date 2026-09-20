@@ -100,6 +100,9 @@ pub struct Shell {
     pub(super) gallery_creating: bool,
     /// A version being renamed from its row on the front door.
     pub(super) renaming_version: Option<super::front_door_version::VersionRename>,
+    /// A version being built, in memory and not on disk. See
+    /// `version_draft.rs` — discarding it leaves the vault untouched.
+    pub(super) drafting: Option<Box<super::version_draft::VersionDraft>>,
     /// The CV the app would reopen on its own — `config`'s `last_document`,
     /// held here so the front door does not read the config file per frame.
     pub(super) last_opened: Option<PathBuf>,
@@ -355,6 +358,7 @@ impl Shell {
             rename_field: None,
             gallery_creating: false,
             renaming_version: None,
+            drafting: None,
             last_opened: config::load().last_document,
             tailoring: None,
             import_step: ImportStep::default(),

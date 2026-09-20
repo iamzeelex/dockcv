@@ -109,6 +109,12 @@ impl Shell {
                 );
         }
 
+        // The version constructor, same argument: its own heading, because it
+        // is about one application rather than about the list.
+        if self.drafting.is_some() {
+            return self.render_version_draft(cx);
+        }
+
         // Its own screen, its own heading: `import_screen.rs`. The gallery's
         // header used to stay above it, offering to search a list that was not
         // showing and to add a CV you were in the middle of adding.

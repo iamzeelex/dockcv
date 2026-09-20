@@ -45,6 +45,27 @@ fn full_application() -> Application {
 }
 
 /// A fully populated application round-trips through TOML unchanged.
+/// A card made in the app and a card read from disk have to agree about what
+/// "no status yet" is. They did not: serde defaulted a missing status to
+/// wishlist while `Application::default()` gave the empty string, so every
+/// card the app created with `..Default::default()` was written back as
+/// `status = ""` — and the next read warned about a word it did not know and
+/// treated it as wishlist anyway.
+#[test]
+fn a_new_card_is_on_the_wishlist_before_anything_is_written() {
+    use crate::resume::model::{Application, ApplicationStatus};
+
+    let made = Application::default();
+    assert_eq!(made.status_word, ApplicationStatus::Wishlist.word());
+    assert_eq!(made.status(), ApplicationStatus::Wishlist);
+
+    // And it survives the disk as that word rather than as an empty one.
+    let text = toml::to_string_pretty(&made).expect("serializes");
+    assert!(text.contains("status = \"wishlist\""), "{text}");
+    let back: Application = toml::from_str(&text).expect("round-trips");
+    assert_eq!(back.status_word, made.status_word);
+}
+
 #[test]
 fn application_round_trips_through_toml() {
     let apps = Applications {

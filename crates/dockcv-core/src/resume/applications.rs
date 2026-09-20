@@ -120,7 +120,7 @@ pub struct Snapshot {
 }
 
 /// One card on the Applications board.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Application {
     pub company: String,
     pub role: String,
@@ -320,6 +320,34 @@ pub struct StageChange {
     /// The stage moved into, as the word — the form that round-trips, for the
     /// same reason [`Application::status_word`] is stored that way.
     pub to: String,
+}
+
+impl Default for Application {
+    /// Hand-written for one field. `status_word` carries a serde default so a
+    /// card read from disk without a status is a wishlist card; the derived
+    /// `Default` gave it `""` instead, and every card made in the app with
+    /// `..Default::default()` was written back as `status = ""` — which the
+    /// next read then warned about and silently treated as wishlist. A card
+    /// with no status is not a card, and the two defaults have to agree.
+    fn default() -> Self {
+        Self {
+            company: String::new(),
+            role: String::new(),
+            status_word: wishlist_word(),
+            created: String::new(),
+            applied: None,
+            url: String::new(),
+            notes: String::new(),
+            compensation: String::new(),
+            closure_note: None,
+            closed_as: None,
+            sent_as: None,
+            next_step: None,
+            snapshots: Vec::new(),
+            history: Vec::new(),
+            rounds: Vec::new(),
+        }
+    }
 }
 
 impl Application {

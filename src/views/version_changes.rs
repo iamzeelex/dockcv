@@ -10,7 +10,7 @@
 //!
 //! Pure, so the rules can be tested without a window.
 
-use crate::resume::model::{ResumeDoc, SectionKind, VariantId};
+use crate::resume::model::{Preset, ResumeDoc, SectionKind, VariantId};
 
 /// One available change.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,6 +89,43 @@ pub(super) fn available(doc: &ResumeDoc, source: usize) -> Vec<Change> {
 /// How many of them the working copy currently has.
 pub(super) fn applied_count(changes: &[Change]) -> usize {
     changes.iter().filter(|change| change.applied).count()
+}
+
+/// Turn one change on, or take it back off.
+///
+/// **Off means what the source reads**, not what the document would read on
+/// its own. That is the whole of why this takes the source preset: a change is
+/// defined against a starting point, so undoing one has to land back on that
+/// starting point or the count above starts lying — a change you switched off
+/// would still be a difference from the source, and the screen would say
+/// `2 changes` about a version that has three.
+pub(super) fn toggle(doc: &mut ResumeDoc, source: &Preset, change: &Change) {
+    let section = change.section;
+    match change.kind {
+        ChangeKind::Variant(id) => {
+            if change.applied {
+                if let Some(back) = source.variant_for(section) {
+                    doc.set_active_variant_by_id(section, back);
+                }
+                if source.hidden.contains(&section) && !doc.hidden_sections.contains(&section) {
+                    doc.hidden_sections.push(section);
+                }
+            } else {
+                // Reading a cut of a section means the section is in the
+                // document. Leaving it hidden would pin a variant nobody can
+                // see and count it as a change to a page it does not reach.
+                doc.hidden_sections.retain(|s| *s != section);
+                doc.set_active_variant_by_id(section, id);
+            }
+        }
+        ChangeKind::Hide => {
+            if change.applied {
+                doc.hidden_sections.retain(|s| *s != section);
+            } else if !doc.hidden_sections.contains(&section) {
+                doc.hidden_sections.push(section);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -194,6 +231,56 @@ mod tests {
             .collect();
         assert_eq!(education.len(), 1);
         assert_eq!(education[0].kind, ChangeKind::Hide);
+    }
+
+    /// Off is the source's answer, not the document's. A change switched on
+    /// and then off has to leave the working copy reading exactly what it read
+    /// before, or the count on screen stops meaning anything.
+    #[test]
+    fn turning_a_change_off_lands_back_on_the_source() {
+        let mut doc = doc_with_two_work_cuts();
+        let source = doc.presets[0].clone();
+        let before = doc.active_variant_id(SectionKind::Work);
+
+        let other = available(&doc, 0)
+            .into_iter()
+            .find(|c| c.section == SectionKind::Work && matches!(c.kind, ChangeKind::Variant(_)))
+            .expect("the other cut is offered");
+        toggle(&mut doc, &source, &other);
+        assert_eq!(applied_count(&available(&doc, 0)), 1);
+        assert_ne!(doc.active_variant_id(SectionKind::Work), before);
+
+        let on = available(&doc, 0)
+            .into_iter()
+            .find(|c| c.kind == other.kind)
+            .expect("still offered, now applied");
+        assert!(on.applied);
+        toggle(&mut doc, &source, &on);
+        assert_eq!(doc.active_variant_id(SectionKind::Work), before);
+        assert_eq!(applied_count(&available(&doc, 0)), 0);
+    }
+
+    /// Choosing a cut of a section puts the section back in the document —
+    /// a pinned variant of a hidden section is a change that reaches no page.
+    #[test]
+    fn reading_a_cut_unhides_the_section_it_belongs_to() {
+        let mut doc = doc_with_two_work_cuts();
+        let source = doc.presets[0].clone();
+
+        let hide = available(&doc, 0)
+            .into_iter()
+            .find(|c| c.section == SectionKind::Work && c.kind == ChangeKind::Hide)
+            .expect("Work can be left out");
+        toggle(&mut doc, &source, &hide);
+        assert!(doc.is_hidden(SectionKind::Work));
+
+        let other = available(&doc, 0)
+            .into_iter()
+            .find(|c| c.section == SectionKind::Work && matches!(c.kind, ChangeKind::Variant(_)))
+            .expect("the other cut is still offered");
+        toggle(&mut doc, &source, &other);
+        assert!(!doc.is_hidden(SectionKind::Work));
+        assert_eq!(applied_count(&available(&doc, 0)), 1, "hiding is no longer one of them");
     }
 
     #[test]

@@ -59,9 +59,9 @@ pub mod settings_window;
 mod setup;
 mod shell;
 mod tailor;
-// Wired into the version screen in the next step; its rules are tested now.
-#[cfg(test)]
 mod version_changes;
+mod version_draft;
+mod version_draft_view;
 mod sidebar;
 mod update_notice;
 mod vault_cache;

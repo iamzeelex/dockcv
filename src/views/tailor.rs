@@ -28,12 +28,9 @@ use gpui::{div, px, Context, Entity, FontWeight, SharedString, Window};
 
 use dockcv_ui_components::{Button, ButtonExt, Disableable, TextField, TextFieldState, MONO, SANS};
 
-use crate::resume::model::{Application, SentCv};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
-use crate::vault;
 
 use super::front_door::{readings, Reading};
-use super::save_status;
 use super::shell::Shell;
 
 /// The sheet's live state. Takes over the front door's body the way the
@@ -83,12 +80,19 @@ impl Shell {
             .map(|(row, index)| (row.path.clone(), index))
     }
 
-    /// Make the card, make the reading, pin one to the other, and open it.
+    /// Hand the named job to the constructor.
+    ///
+    /// This used to make the preset, make the application card, pin them to
+    /// each other and open the matrix — all on the strength of a company name
+    /// typed into a box. Three things were written before the person had seen
+    /// anything, and the first change of mind left a card pinned to a preset
+    /// that had been deleted.
+    ///
+    /// Now the sheet does what a sheet should: it collects the two facts the
+    /// screen after it needs. `version_draft.rs` writes, once, on `Save
+    /// version`.
     pub(super) fn start_tailoring(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(sheet) = self.tailoring.as_ref() else {
-            return;
-        };
-        let Some(vault) = self.vault.clone() else {
             return;
         };
         let company = sheet.company.read(cx).value(cx).trim().to_string();
@@ -100,62 +104,9 @@ impl Shell {
             return;
         }
 
-        // The reading first: if the document will not load there is nothing to
-        // pin a card to, and a card pinned to nothing is the bookkeeping gap
-        // the board already has to apologise for.
-        let Ok(mut doc) = vault::load(&path) else {
-            save_status::record(
-                cx,
-                "tailoring",
-                Err(format!("{} could not be read", path.display())),
-            );
-            cx.notify();
-            return;
-        };
-        let name = unique_preset_name(&doc, &company);
-        let Some(index) = doc.add_preset_from(base, name.clone()) else {
-            return;
-        };
-        // Stand the document in the new reading, so opening the matrix shows it
-        // as ACTIVE rather than as one more column you have to find.
-        doc.apply_preset(index);
-        let on_disk = vault::OnDisk::read(&path);
-        let result = vault::save(&doc, &path, on_disk);
-        if result.is_err() {
-            save_status::record_document(cx, &path, on_disk, result);
-            cx.notify();
-            return;
-        }
-
-        let stem = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let mut applications = vault::load_applications(&vault);
-        applications.entries.push(Application {
-            company,
-            role,
-            created: vault::today_iso(),
-            // Pinned from the start. The card is on the wishlist, so nothing
-            // has been sent — `record_for` will not count it until it moves,
-            // which is what `furthest` is for.
-            sent_as: Some(SentCv {
-                document: stem,
-                preset: name,
-            }),
-            ..Default::default()
-        });
-        save_status::record(
-            cx,
-            "applications board",
-            vault::save_applications(&vault, &applications),
-        );
-
         self.tailoring = None;
-        self.reading_pages.retain(|(p, _), _| *p != path);
-        self.open_preset_matrix(path, cx);
+        self.open_version_draft(path, base, company, role, cx);
         let _ = window;
-        cx.notify();
     }
 
     /// The sheet.
@@ -293,7 +244,7 @@ impl Shell {
 /// A preset's name is how the board, the export filename and the funnel all
 /// refer to it, so two readings of one document sharing a name would make three
 /// surfaces ambiguous at once.
-fn unique_preset_name(doc: &crate::resume::model::ResumeDoc, company: &str) -> String {
+pub(super) fn unique_preset_name(doc: &crate::resume::model::ResumeDoc, company: &str) -> String {
     let taken = |name: &str| doc.presets.iter().any(|p| p.name == name);
     if !taken(company) {
         return company.to_string();
