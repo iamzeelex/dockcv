@@ -22,7 +22,8 @@
 //! | Personality | Who reads this way |
 //! |---|---|
 //! | [`content_order`] | a parser that trusts the file's own order — the cheapest thing anyone writes |
-//! | [`sorted`] | `pdf-extract` (ours), pdfminer, PDFBox: glyphs sorted by where they landed |
+//! | sorted | pdfminer, PDFBox, `pdftotext`: glyphs sorted by where they landed — all three are measured directly, see `ats/external.rs` |
+//! | our importer | what a DockCV file meets when somebody re-imports it (`import/engines/pdf.rs`) |
 //! | layout | `pdftotext -layout`, which keeps columns and is where two-column CVs go wrong — external, see `external.rs` |
 //! | [`structure`] | a tag-aware reader: the document's own tree, not a guess from geometry |
 //!
@@ -33,8 +34,6 @@
 //! mechanism the importer will use on other people's tagged files (B5).
 
 use std::collections::BTreeMap;
-#[cfg(test)]
-use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use lopdf::content::Content;
 use lopdf::{Dictionary, Document, Object, ObjectId};
@@ -60,19 +59,6 @@ pub fn content_order(pdf: &[u8]) -> Result<String, String> {
     let pages: Vec<u32> = doc.get_pages().keys().copied().collect();
     doc.extract_text(&pages)
         .map_err(|e| format!("content-order extraction failed: {e}"))
-}
-
-/// What a parser that sorts glyphs by position sees — ours, pdfminer's,
-/// PDFBox's default.
-///
-/// `pdf-extract` answers constructs it does not handle by panicking rather
-/// than by returning an error (see `import/engines/pdf.rs` for the full note),
-/// so the call is caught the same way the importer catches it.
-#[cfg(test)] // the conformance harness's reading, not the importer's
-pub fn sorted(pdf: &[u8]) -> Result<String, String> {
-    catch_unwind(AssertUnwindSafe(|| pdf_extract::extract_text_from_mem(pdf)))
-        .map_err(|_| "sorted extraction panicked inside pdf-extract".to_string())?
-        .map_err(|e| format!("sorted extraction failed: {e}"))
 }
 
 /// What a tag-aware reader sees: the document's own structure tree, in order,

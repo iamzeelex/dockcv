@@ -43,78 +43,25 @@ use super::readers;
 /// Every line here is a defect DockCV ships today, measured rather than
 /// guessed. Deleting a line is how a fix is declared.
 ///
-/// Every line below is one defect seen in every reading, and it is **ours
-/// rather than the file's**: `pdf-extract` joins the first bullet of a job to the
-/// entry summary above it (`…owns the event-sourcing stack.• Migrated a…`),
-/// where the seven other readings — including the file's own content order and
-/// its structure tree, which tags the list as `L / LI / Lbl / LBody` — put it
-/// on a line of its own. So the page is right and the reader is wrong, and the
-/// fix belongs in the importer rather than in the template: changing the
-/// spacing on every CV anyone exports to suit one extractor's line heuristic
-/// is the tail wagging the dog. Recorded here so it cannot be forgotten, and
-/// so the day `pdf-extract` or its replacement stops doing it, these lines
-/// have to go.
+/// **It is empty, and that is a result rather than an oversight.** It held
+/// nine lines — one per scenario, all the same field — recorded against a
+/// reading called `sorted` that was `pdf_extract::extract_text_from_mem`, the
+/// crate's demo sink. Measured against the readers that actually exist, it was
+/// alone: `pdftotext` in all three modes, pdfminer.six, Apache PDFBox, the
+/// file's own content order, its structure tree and DockCV's own importer all
+/// put that bullet on its own line, in all nine readings. The page was
+/// uniformly spaced where it was accused of being tight — 12.78pt from the
+/// entry summary to the first bullet, and 12.78pt from that bullet to the next.
 ///
-/// That this list gained exactly two lines when the German and renamed-heading
-/// readings arrived — and no others — is the useful half of adding them: a
-/// heading renamed to `Core Competencies` and a page of `Mär`/`Heute` under
-/// `Berufserfahrung` come back whole from every reader that reads the default.
-const KNOWN_GAPS: &[Gap] = &[
-    Gap {
-        scenario: "default",
-        engine: "sorted",
-        what: "work 0 bullet 0",
-        owner: "B5, import side",
-    },
-    Gap {
-        scenario: "headings as typed",
-        engine: "sorted",
-        what: "work 0 bullet 0",
-        owner: "B5, import side",
-    },
-    Gap {
-        scenario: "heading rule to margin",
-        engine: "sorted",
-        what: "work 0 bullet 0",
-        owner: "B5, import side",
-    },
-    Gap {
-        scenario: "heading band",
-        engine: "sorted",
-        what: "work 0 bullet 0",
-        owner: "B5, import side",
-    },
-    Gap {
-        scenario: "contacts in two columns",
-        engine: "sorted",
-        what: "work 0 bullet 0",
-        owner: "B5, import side",
-    },
-    Gap {
-        scenario: "skills as pills",
-        engine: "sorted",
-        what: "work 0 bullet 0",
-        owner: "B5, import side",
-    },
-    Gap {
-        scenario: "ATS-safe",
-        engine: "sorted",
-        what: "work 0 bullet 0",
-        owner: "B5, import side",
-    },
-    Gap {
-        scenario: "renamed headings",
-        engine: "sorted",
-        what: "work 0 bullet 0",
-        owner: "B5, import side",
-    },
-    Gap {
-        scenario: "German",
-        engine: "sorted",
-        what: "work 0 bullet 0",
-        owner: "B5, import side",
-    },
-];
+/// So the gap was the straw man's, and the straw man is gone: the column is
+/// the importer now, which is the reader a DockCV file actually meets when
+/// somebody re-imports it, and the market is measured directly by the five
+/// engines `scripts/ats-tools.sh` installs.
+///
+/// The list stays because the next real gap goes in it, and because the test
+/// below fails when a line in it starts passing — a list of things that were
+/// once wrong is worse than no list.
+const KNOWN_GAPS: &[Gap] = &[];
 
 #[derive(Debug, PartialEq, Eq)]
 struct Gap {
@@ -290,8 +237,8 @@ fn readings(pdf: &[u8], path: &Path) -> Vec<(String, String)> {
             readers::content_order(pdf).unwrap_or_default(),
         ),
         (
-            "sorted".to_string(),
-            readers::sorted(pdf).unwrap_or_default(),
+            "our importer".to_string(),
+            crate::import::engines::pdf::read_as_the_importer_does(path).unwrap_or_default(),
         ),
         (
             "structure tree".to_string(),

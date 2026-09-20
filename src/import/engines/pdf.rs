@@ -105,6 +105,18 @@ fn extract_text(path: &Path) -> Result<String, String> {
     }
 }
 
+/// The importer's own reading, for the conformance harness.
+///
+/// The harness used to model a glyph-sorting reader with
+/// `pdf_extract::extract_text_from_mem`, which is the crate's demo sink and
+/// not what anything reads a CV with — including us, since [`Lines`] exists.
+/// This is the reader a DockCV file actually meets when somebody re-imports
+/// it, so it is the one worth a column.
+#[cfg(test)]
+pub fn read_as_the_importer_does(path: &Path) -> Result<String, String> {
+    extract_text(path)
+}
+
 fn read_pages(path: &Path) -> Result<String, pdf_extract::OutputError> {
     let mut doc = pdf_extract::Document::load(path)?;
     if doc.is_encrypted() {
