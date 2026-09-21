@@ -143,6 +143,35 @@ impl Shell {
     /// adding. A screen that is doing one thing says which.
     pub(super) fn render_import_screen(&self, cx: &mut Context<Self>) -> Div {
         let theme = *cx.theme();
+        // The heading follows the screen.
+        //
+        // `Bring in an existing CV` over `Pick a file and DockCV shows you
+        // what it found` stayed put while the screen underneath said the file
+        // would not open — a page with two titles, the stale one on top,
+        // promising something the panel had just failed to do. The lede stays
+        // a promise at every step; what changes is which promise is still
+        // true.
+        let (title, lede): (&str, &str) = match &self.import_step {
+            ImportStep::Step1Drop => (
+                "Bring in an existing CV",
+                "Pick a file and we'll show you what we found, section by section, before                  anything is saved. Your file is read, never changed, and never leaves this                  machine.",
+            ),
+            ImportStep::Parsing { .. } => (
+                "Reading your file",
+                "Nothing is written yet — this is us looking, not saving.",
+            ),
+            ImportStep::Step2Review { .. } => (
+                "Here is what we found",
+                "Look it over. Nothing reaches your vault until you say so, and one click                  throws the whole thing away.",
+            ),
+            // No second explanation: the card below says what is wrong with
+            // the file. This says the thing the card does not — that it cost
+            // them nothing.
+            ImportStep::CouldNotRead { .. } => (
+                "That one will not open",
+                "Nothing was saved, and your file is exactly as you left it.",
+            ),
+        };
 
         let heading = div()
             .flex()
@@ -164,23 +193,14 @@ impl Shell {
                         div()
                             .text_style(TextStyle::title())
                             .text_color(theme.text)
-                            .child("Bring in an existing CV"),
+                            .child(title),
                     )
                     .child(
                         div()
                             .max_w(px(560.0))
                             .text_style(TextStyle::body())
                             .text_color(theme.text_muted)
-                            // The promise, where the promise belongs. The old
-                            // subtitle — "we'll split it into sections and
-                            // blocks you can edit right away" — described our
-                            // work. This describes the thing the person is
-                            // actually weighing up before they hand over a file.
-                            .child(
-                                "Pick a file and DockCV shows you what it found, section by \
-                                 section, before anything is saved. Your file is read, never \
-                                 changed, and never leaves this machine.",
-                            ),
+                            .child(lede),
                     ),
             )
             .child(

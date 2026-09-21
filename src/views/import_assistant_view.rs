@@ -11,13 +11,15 @@
 //! — because that is what decides whether they will be pasting anything back.
 
 use gpui::prelude::*;
-use gpui::{div, px, AnyElement, ClickEvent, Context, Div, FontWeight, SharedString};
+use gpui::{div, px, ClickEvent, Context, Div, FontWeight, SharedString};
 
 use dockcv_ui_components::{lucide, Button, ButtonExt, Icon, Sizable, Spinner, MONO, SANS};
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
-use super::import_assistant::{route_url, Assistant, LocalRun, Route, Trust, Via, ASSISTANTS};
+use super::import_assistant::{
+    route_url, verified_note, Assistant, LocalRun, Route, Via, ASSISTANTS,
+};
 use super::shell::Shell;
 
 impl Shell {
@@ -56,7 +58,7 @@ impl Shell {
                             .text_size(px(15.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text)
-                            .child("Read it with an assistant"),
+                            .child("Let your assistant help you out"),
                     )
                     .child(
                         div()
@@ -65,9 +67,9 @@ impl Shell {
                             .line_height(px(17.0))
                             .text_color(theme.text_muted)
                             .child(
-                                "It reads the pages and writes out a CV DockCV can take. The \
-                                 instructions go to your clipboard whichever you pick, so paste \
-                                 them if the box comes up empty.",
+                                "It can read the pages for you and hand back a CV we \
+                                 understand. Whichever you pick, we put the instructions on \
+                                 your clipboard too — paste them if the box opens empty.",
                             ),
                     ),
             )
@@ -147,17 +149,16 @@ impl Shell {
                             .child(assistant.name),
                     ),
             )
-            .children({
-                let best = assistant.best().map(|route| route.id);
+            .children(
                 assistant
-                    .routes
-                    .iter()
-                    .filter(|route| route.via.available())
-                    .map(move |route| {
-                        self.render_route(cx, route, path, route.label, best == Some(route.id))
+                    .ordered()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, route)| {
+                        self.render_route(cx, route, path, route.label, index == 0)
                     })
-                    .collect::<Vec<_>>()
-            })
+                    .collect::<Vec<_>>(),
+            )
     }
 
     /// The ones whose only way in is a browser, on one line.
@@ -240,19 +241,17 @@ impl Shell {
             .gap(px(3.0))
             .child(
                 Button::new(SharedString::from(route.id))
-                    // The one that asks least of the person is outlined; the
-                    // rest are text. Four buttons of equal weight said the
-                    // four ways in were equally good, and they are not —
-                    // Cowork arrives with the file attached and a browser
-                    // needs it dragged in.
+                    // The one that asks least of the person is outlined and
+                    // carries the glyph; the rest are plain text. Four buttons
+                    // of equal weight said the four ways in were equally good,
+                    // and a glyph on each turned a row into a row of boxes.
                     .map(|button| {
                         if lead {
-                            button.action_secondary()
+                            button.action_secondary().icon(route.via.icon())
                         } else {
                             button.quiet().text_color(theme.text_muted)
                         }
                     })
-                    .icon(route.via.icon())
                     .tooltip(match route.via {
                         Via::Cli { .. } => "Runs here and reads the answer itself",
                         Via::Cowork => "Opens Cowork with the PDF attached",
@@ -280,7 +279,7 @@ impl Shell {
                     }))
                     .child(label),
             )
-            .children(self.trust_mark(cx, route.trust))
+
     }
 
     /// For the assistant that is not on the list, which is most of them.
@@ -304,10 +303,9 @@ impl Shell {
                     // short because opening somebody else's app is the part we
                     // cannot do, and none of the work depends on it.
                     .child(
-                        "Using something else — Gemini in a browser, a model on your own \
-                         machine, something we have never heard of? Nothing here depends on \
-                         DockCV knowing it. Take the instructions and the file, and bring the \
-                         answer back.",
+                        "Not seeing yours? It still works. Any assistant can do this — take \
+                         the instructions and your file to whichever one you like, and bring \
+                         its answer back here.",
                     ),
             )
             .child(
@@ -348,7 +346,7 @@ impl Shell {
                         div()
                             .text_style(TextStyle::eyebrow())
                             .text_color(theme.text_subtle)
-                            .child(TextStyle::eyebrow().apply_case("When it answers")),
+                            .child(TextStyle::eyebrow().apply_case("When it answers you")),
                     )
                     .child(
                         div()
@@ -356,8 +354,9 @@ impl Shell {
                             .line_height(px(17.0))
                             .text_color(theme.text_muted)
                             .child(
-                                "Copy its whole reply — DockCV finds the CV inside it and shows \
-                                 you what it read. Nothing is saved until you say so.",
+                                "Copy the whole reply and bring it back. We will find the CV \
+                                 inside it and show you what it says — nothing is saved until \
+                                 you are happy with it.",
                             ),
                     ),
             )
@@ -401,7 +400,7 @@ impl Shell {
                             .text_size(px(12.0))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(theme.text)
-                            .child(format!("{} is reading the pages…", run.tool)),
+                            .child(format!("{} is reading your CV…", run.tool)),
                     ),
             )
             .child(
@@ -419,54 +418,19 @@ impl Shell {
                     .text_size(px(11.0))
                     .text_color(theme.text_muted)
                     .child(
-                        "Reading a page of images is slow. Leaving this screen stops DockCV \
-                         waiting for it.",
+                        "Reading a page of pictures takes a while. Leave this screen and we \
+                         stop waiting for it.",
                     ),
             )
     }
 
-    /// The mark that invites a bug report.
-    ///
-    /// A dot, not a circled `i`. Seven of those down a column stopped being a
-    /// mark and became a texture — and the glyph said "info", which reads as
-    /// help rather than as caution. One line under the list says what a dot
-    /// means, once, instead of a tooltip nobody hovers.
-    fn trust_mark(&self, cx: &mut Context<Self>, trust: Trust) -> Option<AnyElement> {
-        let theme = *cx.theme();
-        (trust == Trust::Unverified).then(|| {
-            div()
-                .flex_none()
-                .w(px(4.0))
-                .h(px(4.0))
-                .rounded_full()
-                .bg(theme.warning.opacity(0.75))
-                .into_any_element()
-        })
-    }
-
-    /// What the dots mean, said once.
+    /// Which of these we have actually seen work.
     fn render_trust_note(&self, cx: &mut Context<Self>) -> Div {
         let theme = *cx.theme();
         div()
-            .flex()
-            .items_center()
-            .gap(px(6.0))
-            .child(
-                div()
-                    .flex_none()
-                    .w(px(4.0))
-                    .h(px(4.0))
-                    .rounded_full()
-                    .bg(theme.warning.opacity(0.75)),
-            )
-            .child(
-                div()
-                    .text_size(px(10.5))
-                    .text_color(theme.text_subtle)
-                    // Written to be acted on. The dot exists so that a route
-                    // which quietly does nothing becomes a message naming the
-                    // assistant, which is the only way the list gets fixed.
-                    .child("not verified by us yet — tell us if one misbehaves"),
-            )
+            .text_size(px(11.0))
+            .line_height(px(16.0))
+            .text_color(theme.text_subtle)
+            .child(verified_note())
     }
 }

@@ -91,7 +91,10 @@ impl Via {
         use dockcv_ui_components::lucide;
         match self {
             Via::Cli { .. } => lucide("square-terminal"),
-            Via::Cowork | Via::Code => lucide("window-maximize"),
+            // A workspace, not a window outline: `window-maximize` at this
+            // size is an empty rectangle, which reads as an unticked checkbox.
+            Via::Cowork => lucide("layout-dashboard"),
+            Via::Code => lucide("square-terminal"),
             Via::Web { .. } => lucide("globe"),
         }
     }
@@ -148,18 +151,26 @@ impl Route {
 }
 
 impl Assistant {
-    /// The route this assistant leads with — the one that asks least of the
-    /// person.
-    pub(super) fn best(&self) -> Option<&'static Route> {
-        self.routes
-            .iter()
-            .filter(|route| route.via.available())
-            .min_by_key(|route| route.rank())
-    }
-
     /// Whether any of its routes can be taken here.
     pub(super) fn reachable(&self) -> bool {
         self.routes.iter().any(|route| route.via.available())
+    }
+
+    /// Its routes, easiest first.
+    ///
+    /// Sorted rather than left in declaration order, because the row is read
+    /// left to right and the outlined one was landing wherever it happened to
+    /// sit — third in Claude's row, first in ChatGPT's. Four rows with the
+    /// emphasis in four different places is the ragged look; the lead is
+    /// always the first thing after the name now.
+    pub(super) fn ordered(&self) -> Vec<&'static Route> {
+        let mut routes: Vec<&'static Route> = self
+            .routes
+            .iter()
+            .filter(|route| route.via.available())
+            .collect();
+        routes.sort_by_key(|route| route.rank());
+        routes
     }
 
     /// An assistant whose only way in is a browser is a row that says its own
@@ -298,6 +309,49 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
         }],
     },
 ];
+
+/// The ones we have actually seen work, named.
+///
+/// Third attempt at this, and the first two failed the same way. A circled `i`
+/// beside seven buttons was a texture rather than a mark, and the glyph said
+/// "info" when it meant "caution". A 4px dot was smaller and no clearer. Both
+/// were trying to annotate eleven controls with a fact about four of them.
+///
+/// So it is a sentence. It names the verified ones, which is short, and says
+/// what to do when one of the others misbehaves — which is the only reason the
+/// distinction is on screen at all: a route that quietly does nothing has to
+/// become a message naming the assistant, or the list never gets fixed.
+pub(super) fn verified_note() -> String {
+    let names: Vec<&str> = ASSISTANTS
+        .iter()
+        .filter(|assistant| assistant.reachable())
+        .flat_map(|assistant| {
+            assistant
+                .ordered()
+                .into_iter()
+                .filter(|route| route.trust == Trust::Verified)
+                .map(move |route| (assistant.name, route.label))
+        })
+        .map(|(name, label)| if label == "Browser" { name } else { label })
+        .collect();
+
+    match names.len() {
+        0 => "None of these are verified yet — tell us how yours goes.".to_string(),
+        _ => format!(
+            "We have checked {}. The rest should work the same way — tell us if one does not.",
+            join_with_and(&names)
+        ),
+    }
+}
+
+/// `a, b and c`.
+fn join_with_and(names: &[&str]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => one.to_string(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
 
 /// Which of the command-line tools are actually installed.
 ///
@@ -724,6 +778,32 @@ mod tests {
             "Here is the JSON Resume:\n\n{\"basics\":{\"name\":\"A\"}}\n\nLet me know if you need changes.",
         ] {
             assert_eq!(extract_json(wrapped), want, "failed on {wrapped:?}");
+        }
+    }
+
+    /// The note names what we have checked, and the point of it is that the
+    /// list stays true as the table changes — a sentence claiming Perplexity
+    /// is verified would be worse than no sentence at all.
+    #[test]
+    fn the_note_names_only_what_is_verified() {
+        let note = super::verified_note();
+        for assistant in super::ASSISTANTS {
+            for route in assistant.routes {
+                if route.trust == super::Trust::Verified && route.via.available() {
+                    let named = if route.label == "Browser" {
+                        assistant.name
+                    } else {
+                        route.label
+                    };
+                    assert!(note.contains(named), "{named:?} is verified but not in: {note}");
+                }
+            }
+        }
+        for unverified in ["Perplexity", "Le Chat", "Grok"] {
+            assert!(
+                !note.contains(unverified),
+                "{unverified:?} has never been checked: {note}"
+            );
         }
     }
 
