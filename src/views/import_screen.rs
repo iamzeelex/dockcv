@@ -101,14 +101,16 @@ const FAQ: [(&str, &str); 4] = [
          PDF that has been printed and scanned is the hardest thing to read.",
     ),
     (
-        "What if my PDF is a picture?",
-        "Scans and flattened exports have no text in them, so there is nothing to read. DockCV says \
-         so rather than making an empty CV, and offers what to try instead.",
-    ),
-    (
         "What if it gets something wrong?",
         "You see every section before anything is saved, with the parser's own doubts marked. One \
          click throws the whole import away.",
+    ),
+    // Last on purpose: the failure screen answers this one itself, and drops
+    // exactly it by taking all but the final entry.
+    (
+        "What if my PDF is a picture?",
+        "Scans and flattened exports have no text in them, so there is nothing to read. DockCV says \
+         so rather than making an empty CV, and offers to have an assistant read it.",
     ),
 ];
 
@@ -347,7 +349,7 @@ impl Shell {
                 // laid out beside it. A FAQ entry the page is an instance of
                 // reads as a product that has not noticed where it is.
                 if matches!(self.import_step, ImportStep::CouldNotRead { .. }) {
-                    &FAQ[..FAQ.len() - 2]
+                    &FAQ[..FAQ.len() - 1]
                 } else {
                     &FAQ[..]
                 },
@@ -529,6 +531,19 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
+    /// The failure screen drops exactly one question — the one it is already
+    /// an instance of — by taking all but the last entry. That only works
+    /// while that entry *is* last, and nothing about reordering a const array
+    /// would complain.
+    #[test]
+    fn the_question_the_failure_screen_answers_itself_is_the_last_one() {
+        let (question, _) = super::FAQ.last().expect("a list");
+        assert!(
+            question.to_lowercase().contains("picture"),
+            "the slice in `render_import_rail` drops the last entry, and it is {question:?}"
+        );
+    }
+
     /// Every rail string reads as a sentence.
     ///
     /// The four answers shipped once with ten spaces in the middle of them —
