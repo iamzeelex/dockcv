@@ -54,8 +54,19 @@ pub(crate) fn get_single_date_regex() -> &'static Regex {
     // A year, and the month and day after it when they are there. Matching the
     // year alone left `-11-07` behind out of `2021-11-07`, which then read as
     // text: a certificate's issuer came back as `Company  2021-11-07`.
+    //
+    // The second branch is the year *last*: `01/2022`, `15.01.2022`. Three of
+    // the seven formats `DateFormat` offers write dates that way, and with only
+    // the first branch the year matched and the month was left over as text —
+    // so a CV DockCV itself exported under `SlashMonthFirst` did not read back.
+    // One separator between the parts, never a run and never whitespace: `[\s-]`
+    // here would let a line ending in a figure donate it to the date below, the
+    // bug `get_date_range_regex` documents at length.
     SINGLE_DATE_REGEX.get_or_init(|| {
-        Regex::new(r"(?i)\b(19|20)(\d{2}|XX)(?:[-/.][0-9]{1,2}(?:[-/.][0-9]{1,2})?)?\b").unwrap()
+        Regex::new(
+            r"(?i)\b(?:(19|20)(\d{2}|XX)(?:[-/.][0-9]{1,2}(?:[-/.][0-9]{1,2})?)?|(?:[0-9]{1,2}[-/.])?[0-9]{1,2}[-/.](19|20)\d{2})\b",
+        )
+        .unwrap()
     })
 }
 
@@ -140,21 +151,28 @@ pub(crate) fn looks_like_degree(line: &str) -> bool {
     )
 }
 
-/// Does the line end in `(2023-04)` — a date in brackets, closing it?
+/// Does the line end in `(2023-04)` or `(Nov 1921)` — a date in brackets,
+/// closing it?
+///
+/// This once required the brackets to hold no letter at all, on the reasoning
+/// that a word in there means it is not a date. That was true of every format
+/// the *default* produced and false of five of the seven the app ships: a
+/// month is a word. The cost was two certificates read as one, because the
+/// line `Nobel Prize in Physics - Royal Swedish Academy of Sciences (Nov 1921)`
+/// looked unfinished and swallowed the one after it — the exact failure the
+/// caller's comment in `classifier.rs` says this exists to prevent, back again
+/// under a different date format.
+///
+/// [`is_only_dates`] is the right test: it strips the date regexes *and* the
+/// month names and then insists nothing alphanumeric is left, so `Nov 1921`
+/// passes and `(see appendix)` does not.
 pub(crate) fn ends_with_parenthesised_date(line: &str) -> bool {
     let trimmed = line.trim_end();
     let Some(rest) = trimmed.strip_suffix(')') else {
         return false;
     };
-    // Its own test rather than `is_only_dates`, which reads a *range* and says
-    // no to the bare `2023-04` a certificate is stamped with: a year, and
-    // nothing that could be a word.
-    rest.rfind('(').is_some_and(|at| {
-        let inner = rest[at + 1..].trim();
-        !inner.is_empty()
-            && get_single_date_regex().is_match(inner)
-            && !inner.chars().any(char::is_alphabetic)
-    })
+    rest.rfind('(')
+        .is_some_and(|at| is_only_dates(rest[at + 1..].trim()))
 }
 
 /// Is the line nothing but a date or a date range?

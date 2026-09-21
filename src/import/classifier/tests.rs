@@ -657,3 +657,33 @@ fn a_line_that_cannot_be_placed_is_offered_as_a_section_the_person_names() {
         ["Member of the Prussian Academy", "Willing to relocate"]
     );
 }
+
+/// Five of the seven date formats DockCV ships put a month *name* in the
+/// brackets a certificate closes with. The guard that stops the next line being
+/// swallowed used to reject any letter in there, so it worked for the ISO
+/// default and for nothing else — two certificates came back as one.
+#[test]
+fn a_certificate_closes_its_line_whichever_way_the_date_is_spelled() {
+    for tail in [
+        "Copley Medal - Royal Society (1925-11)",
+        "Copley Medal - Royal Society (Nov 1925)",
+        "Copley Medal - Royal Society (November 1925)",
+        "Copley Medal - Royal Society (11/1925)",
+        "Copley Medal - Royal Society (11.1925)",
+    ] {
+        assert!(
+            entries::ends_with_parenthesised_date(tail),
+            "{tail} should read as a finished record"
+        );
+    }
+    for prose in [
+        "Presented the result to the committee (see appendix)",
+        "Ran the review (with two colleagues)",
+        "Nobel Prize in Physics",
+    ] {
+        assert!(
+            !entries::ends_with_parenthesised_date(prose),
+            "{prose} is not a date"
+        );
+    }
+}
