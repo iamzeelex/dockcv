@@ -52,7 +52,7 @@ gpui = { git = "https://github.com/zed-industries/zed" }
 image = "0.25"
 smallvec = "1"
 serde = { version = "1.0.228", features = ["derive"] }
-toml = "0.8"
+toml = "1.1"
 # PDF text extraction, pure Rust. Deliberately *not* `pdfium-render`: that binds
 # to a libpdfium the app does not ship, so import died at runtime on any machine
 # without one — see the note in src/import/engines/pdf.rs.
