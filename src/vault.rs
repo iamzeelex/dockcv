@@ -12,13 +12,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::resume::model::ResumeDoc;
 
+mod notebooks;
+
 /// The vault's notebooks, re-exported so `vault::load_applications` and its
 /// eighty-odd siblings keep working.
 ///
 /// The same move `model.rs` makes after C14: the code moves, the path does
 /// not. A split that renames every call site is a split nobody can review,
 /// and the paths are what the rest of the app reads this module by.
-pub use crate::vault_files::*;
+pub use notebooks::*;
 
 const VAULT_DIR_NAME: &str = "cvault";
 pub(crate) const LIBRARY_FILE: &str = "library.toml";
@@ -811,27 +813,17 @@ pub fn load_seen(path: &Path) -> Result<(ResumeDoc, OnDisk), String> {
     Ok((doc, OnDisk::of(&text)))
 }
 
+// Four test modules, one per question asked of the store. They sat beside this
+// file under `#[path]` attributes until the directory they wanted existed.
 #[cfg(test)]
-#[path = "vault_write_tests.rs"]
-mod vault_write_tests;
-
+mod notebooks_tests;
 #[cfg(test)]
-#[path = "vault_shape_tests.rs"]
-mod vault_shape_tests;
-
+mod schema_tests;
 #[cfg(test)]
-#[path = "vault_schema_tests.rs"]
-mod vault_schema_tests;
-
+mod shape_tests;
 #[cfg(test)]
-#[path = "vault_files_tests.rs"]
-mod vault_files_tests;
+mod write_tests;
 
-/// The date `days` ago, as `YYYY-MM-DD`.
-///
-/// Same clock and same algorithm as [`today_iso`], so a window counted back
-/// from today and the dates it is compared against cannot disagree about what
-/// day it is.
 /// Today's date as `YYYY-MM-DD`, computed from the system clock without any
 /// date-library dependency (Howard Hinnant's civil-from-days algorithm).
 pub fn today_iso() -> String {
@@ -844,6 +836,11 @@ pub fn today_iso() -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// The date `days` ago, as `YYYY-MM-DD`.
+///
+/// Same clock and same algorithm as [`today_iso`], so a window counted back
+/// from today and the dates it is compared against cannot disagree about what
+/// day it is.
 pub fn iso_days_ago(days: i64) -> String {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)

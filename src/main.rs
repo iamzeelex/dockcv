@@ -24,7 +24,6 @@ mod render;
 mod theme;
 mod update;
 mod vault;
-mod vault_files;
 mod views;
 
 // The engine lives in `dockcv-core` now — see that crate's manifest for why.
