@@ -47,12 +47,16 @@ impl Shell {
                     .flex_col()
                     .gap(px(4.0))
                     .child(
+                        // A heading, at heading weight. `Or have an assistant
+                        // read it` in body semibold read as one more
+                        // paragraph in a column of paragraphs, on the section
+                        // that is the actual answer to the failure above it.
                         div()
                             .font_family(SANS)
-                            .text_size(px(13.0))
+                            .text_size(px(15.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text)
-                            .child("Or have an assistant read it"),
+                            .child("Read it with an assistant"),
                     )
                     .child(
                         div()
@@ -61,10 +65,9 @@ impl Shell {
                             .line_height(px(17.0))
                             .text_color(theme.text_muted)
                             .child(
-                                "It transcribes the pages and answers with a CV DockCV can \
-                                 read. You see every section before anything is saved — and \
-                                 whichever you pick, the instructions go to your clipboard too, \
-                                 so paste them if the box comes up empty.",
+                                "It reads the pages and writes out a CV DockCV can take. The \
+                                 instructions go to your clipboard whichever you pick, so paste \
+                                 them if the box comes up empty.",
                             ),
                     ),
             )
@@ -85,6 +88,7 @@ impl Shell {
                             .map(|assistant| self.render_assistant_row(cx, assistant, path)),
                     )
                     .children(self.render_browser_only(cx, path))
+                    .child(div().mt(px(9.0)).child(self.render_trust_note(cx)))
             }))
             .children((!running).then(|| self.render_anything_else(cx, path)))
             .children((!running).then(|| self.render_bring_it_back(cx)))
@@ -114,9 +118,21 @@ impl Shell {
                     .items_center()
                     .gap(px(7.0))
                     .child(
+                        // On a tile, at full text colour. A 14px monochrome
+                        // glyph in `text_muted` beside a 12.5px label is
+                        // punctuation — the eye reads one grey smudge per row
+                        // and scans the words instead, which is the whole of
+                        // what a mark is meant to save it from.
                         div()
                             .flex_none()
-                            .text_color(theme.text_muted)
+                            .w(px(26.0))
+                            .h(px(26.0))
+                            .rounded(theme.radius_sm())
+                            .bg(theme.hover)
+                            .text_color(theme.text)
+                            .flex()
+                            .items_center()
+                            .justify_center()
                             .child(match assistant.mark {
                                 Some(mark) => Icon::new(mark).small().into_any_element(),
                                 None => Icon::new(lucide("bot")).small().into_any_element(),
@@ -131,13 +147,17 @@ impl Shell {
                             .child(assistant.name),
                     ),
             )
-            .children(
+            .children({
+                let best = assistant.best().map(|route| route.id);
                 assistant
                     .routes
                     .iter()
                     .filter(|route| route.via.available())
-                    .map(|route| self.render_route(cx, route, path, route.label)),
-            )
+                    .map(move |route| {
+                        self.render_route(cx, route, path, route.label, best == Some(route.id))
+                    })
+                    .collect::<Vec<_>>()
+            })
     }
 
     /// The ones whose only way in is a browser, on one line.
@@ -196,7 +216,7 @@ impl Shell {
                     // buttons all saying `Browser` under a heading that
                     // already says it would be the same repetition in one
                     // line instead of four.
-                    self.render_route(cx, route, path, assistant.name)
+                    self.render_route(cx, route, path, assistant.name, false)
                 })),
         )
     }
@@ -208,6 +228,7 @@ impl Shell {
         route: &'static Route,
         path: &std::path::Path,
         label: &'static str,
+        lead: bool,
     ) -> Div {
         let theme = *cx.theme();
         let file = path.to_path_buf();
@@ -219,9 +240,19 @@ impl Shell {
             .gap(px(3.0))
             .child(
                 Button::new(SharedString::from(route.id))
-                    .quiet()
+                    // The one that asks least of the person is outlined; the
+                    // rest are text. Four buttons of equal weight said the
+                    // four ways in were equally good, and they are not —
+                    // Cowork arrives with the file attached and a browser
+                    // needs it dragged in.
+                    .map(|button| {
+                        if lead {
+                            button.action_secondary()
+                        } else {
+                            button.quiet().text_color(theme.text_muted)
+                        }
+                    })
                     .icon(route.via.icon())
-                    .text_color(theme.text)
                     .tooltip(match route.via {
                         Via::Cli { .. } => "Runs here and reads the answer itself",
                         Via::Cowork => "Opens Cowork with the PDF attached",
@@ -395,17 +426,47 @@ impl Shell {
     }
 
     /// The mark that invites a bug report.
+    ///
+    /// A dot, not a circled `i`. Seven of those down a column stopped being a
+    /// mark and became a texture — and the glyph said "info", which reads as
+    /// help rather than as caution. One line under the list says what a dot
+    /// means, once, instead of a tooltip nobody hovers.
     fn trust_mark(&self, cx: &mut Context<Self>, trust: Trust) -> Option<AnyElement> {
         let theme = *cx.theme();
         (trust == Trust::Unverified).then(|| {
             div()
-                .flex()
-                .items_center()
-                .text_color(theme.warning.opacity(0.8))
-                // Not a badge. A badge beside every second button is a row of
-                // warnings; this is a mark you notice when you look at one.
-                .child(Icon::new(lucide("info")).xsmall())
+                .flex_none()
+                .w(px(4.0))
+                .h(px(4.0))
+                .rounded_full()
+                .bg(theme.warning.opacity(0.75))
                 .into_any_element()
         })
+    }
+
+    /// What the dots mean, said once.
+    fn render_trust_note(&self, cx: &mut Context<Self>) -> Div {
+        let theme = *cx.theme();
+        div()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(4.0))
+                    .h(px(4.0))
+                    .rounded_full()
+                    .bg(theme.warning.opacity(0.75)),
+            )
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .text_color(theme.text_subtle)
+                    // Written to be acted on. The dot exists so that a route
+                    // which quietly does nothing becomes a message naming the
+                    // assistant, which is the only way the list gets fixed.
+                    .child("not verified by us yet — tell us if one misbehaves"),
+            )
     }
 }

@@ -130,7 +130,33 @@ pub(super) struct Assistant {
     pub routes: &'static [Route],
 }
 
+impl Route {
+    /// How much of the work this route does without the person.
+    ///
+    /// Used to pick which one an assistant leads with. They are not equal and
+    /// the screen was drawing them as though they were: a terminal finishes on
+    /// its own, Cowork arrives with the file attached, Code arrives with the
+    /// folder, and a browser needs the file dragged in by hand.
+    pub(super) fn rank(&self) -> u8 {
+        match self.via {
+            Via::Cli { .. } => 0,
+            Via::Cowork => 1,
+            Via::Code => 2,
+            Via::Web { .. } => 3,
+        }
+    }
+}
+
 impl Assistant {
+    /// The route this assistant leads with — the one that asks least of the
+    /// person.
+    pub(super) fn best(&self) -> Option<&'static Route> {
+        self.routes
+            .iter()
+            .filter(|route| route.via.available())
+            .min_by_key(|route| route.rank())
+    }
+
     /// Whether any of its routes can be taken here.
     pub(super) fn reachable(&self) -> bool {
         self.routes.iter().any(|route| route.via.available())
@@ -261,7 +287,7 @@ pub(super) const ASSISTANTS: &[Assistant] = &[
     },
     Assistant {
         name: "Grok",
-        mark: None,
+        mark: Some(dockcv_ui_components::DockIcon::BrandX),
         routes: &[Route {
             id: "grok-web",
             label: "Browser",

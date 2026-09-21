@@ -76,6 +76,10 @@ pub enum DockIcon {
     BrandGemini,
     BrandPerplexity,
     BrandMistral,
+    /// xAI's mark, which Grok ships under. Not Grok's own — simple-icons
+    /// carries none — and used here because the company is recognisable where
+    /// a blank glyph is not.
+    BrandX,
 }
 
 /// A Lucide glyph that ships in the upstream bundle but is missing from
@@ -147,6 +151,7 @@ dock_icons! {
     BrandGemini => "brand-gemini",
     BrandPerplexity => "brand-perplexity",
     BrandMistral => "brand-mistral",
+    BrandX => "brand-x",
 }
 
 /// The application's asset source: Lucide first, then the DockCV adds.

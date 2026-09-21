@@ -342,7 +342,15 @@ impl Shell {
             .child(self.render_rail_notes(
                 cx,
                 "Questions",
-                &FAQ,
+                // Not "what if my PDF is a picture?" on the screen that is
+                // currently showing a PDF that is a picture, with the answer
+                // laid out beside it. A FAQ entry the page is an instance of
+                // reads as a product that has not noticed where it is.
+                if matches!(self.import_step, ImportStep::CouldNotRead { .. }) {
+                    &FAQ[..FAQ.len() - 2]
+                } else {
+                    &FAQ[..]
+                },
                 self.import_notes.faq,
                 |notes| &mut notes.faq,
             ))

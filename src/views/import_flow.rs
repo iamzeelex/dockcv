@@ -667,6 +667,18 @@ pub fn render_step2_review_split<V: 'static>(
 /// because writing the CV by hand is the one route that cannot fail, and a
 /// person who has just been told their file will not open should not have to
 /// work out that it is still available.
+/// A file that would not come in, said as one object rather than three.
+///
+/// It used to open with a `COULD NOT READ` eyebrow, then a serif headline
+/// saying the same thing in a sentence, then a paragraph saying it a third
+/// time — while the one piece of information that was actually *this person's*,
+/// the name of their file, sat between them as grey mono. So the file is the
+/// subject now: its name is the heading, and what is wrong with it is the line
+/// underneath.
+///
+/// The order of the rest is inverted too. `Start a blank CV` was
+/// `action_primary`, which made the loudest control on the screen the one that
+/// gives up — on a screen that now has a real answer directly below it.
 pub fn render_could_not_read<V: 'static>(
     cx: &mut Context<V>,
     filename: &str,
@@ -675,128 +687,114 @@ pub fn render_could_not_read<V: 'static>(
     on_start_blank: impl Fn(&mut V, &mut Context<V>) + 'static + Copy,
 ) -> impl IntoElement {
     let theme = *cx.theme();
+    // The remedy that points at the panel below is not a bullet — that panel
+    // *is* the answer, and a list item saying "look down" is a link that is
+    // not one.
+    let elsewhere: Vec<&String> = error
+        .remedies
+        .iter()
+        .filter(|remedy| !remedy.contains("just below"))
+        .collect();
 
     div()
         .w_full()
-        .min_h(px(205.0))
         .flex()
         .flex_col()
-        .justify_center()
-        .gap(px(6.0))
         .child(
             div()
                 .flex()
-                .items_center()
-                .gap(px(9.0))
-                .mb(px(6.0))
-                .child(
-                    Icon::new(IconName::TriangleAlert)
-                        .with_size(theme.icon_md())
-                        .text_color(theme.warning),
-                )
+                .items_start()
+                .gap(px(13.0))
+                .px(px(14.0))
+                .py(px(13.0))
+                .rounded(theme.radius_md())
+                .border_1()
+                .border_color(theme.warning.opacity(0.35))
+                .bg(theme.warning.opacity(0.06))
                 .child(
                     div()
-                        .text_style(TextStyle::eyebrow())
+                        .flex_none()
+                        .w(px(34.0))
+                        .h(px(34.0))
+                        .rounded(theme.radius_sm())
+                        .bg(theme.warning.opacity(0.14))
                         .text_color(theme.warning)
-                        .child(TextStyle::eyebrow().apply_case("Could not read")),
-                ),
-        )
-        .child(
-            div()
-                .text_style(TextStyle::title())
-                .text_color(theme.text)
-                .child(error.headline.clone()),
-        )
-        .child(
-            div()
-                .mt(px(2.0))
-                .text_style(TextStyle::meta())
-                .text_color(theme.text_subtle)
-                .child(filename.to_string()),
-        )
-        .children((!error.detail.is_empty()).then(|| {
-            div()
-                .mt(px(14.0))
-                .text_style(TextStyle::prose())
-                .text_color(theme.text_muted)
-                .child(error.detail.clone())
-        }))
-        .children((!error.remedies.is_empty()).then(|| {
-            div()
-                .mt(px(20.0))
-                .flex()
-                .flex_col()
-                .gap(px(8.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(Icon::new(IconName::File).with_size(theme.icon_md())),
+                )
                 .child(
                     div()
-                        .text_style(TextStyle::eyebrow())
-                        .text_color(theme.text_subtle)
-                        .mb(px(2.0))
-                        .child(TextStyle::eyebrow().apply_case("What to try")),
-                )
-                .children(error.remedies.iter().map(|remedy| {
-                    div()
+                        .flex_1()
+                        .min_w_0()
                         .flex()
-                        .items_start()
-                        .gap(px(9.0))
+                        .flex_col()
+                        .gap(px(3.0))
                         .child(
+                            // The name of their file, at the size of the thing
+                            // the screen is about — which it is.
                             div()
-                                .flex_none()
-                                .mt(px(6.0))
-                                .w(px(4.0))
-                                .h(px(4.0))
-                                .rounded_full()
-                                .bg(theme.text_subtle),
+                                .font_family(MONO)
+                                .text_size(px(13.5))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(theme.text)
+                                .child(filename.to_string()),
                         )
                         .child(
                             div()
                                 .text_style(TextStyle::body())
                                 .text_color(theme.text_muted)
-                                .child(remedy.clone()),
-                        )
-                }))
-        }))
-        .child(
-            div()
-                .mt(px(28.0))
-                .pt(px(20.0))
-                .border_t_1()
-                .border_color(theme.border)
-                .flex()
-                .flex_col()
-                .gap(px(12.0))
-                .child(
-                    div()
-                        .text_style(TextStyle::body())
-                        .text_color(theme.text_muted)
-                        .child(
-                            "You do not have to import anything. Start a blank CV and write it \
-                             here — you can always bring a file in later.",
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(10.0))
-                        .child(
-                            Button::new("could-not-read-blank")
-                                .action_primary()
-                                .label("Start a blank CV")
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                                    on_start_blank(this, cx);
-                                })),
-                        )
-                        .child(
-                            Button::new("could-not-read-retry")
-                                .action_secondary()
-                                .label("Try another file")
-                                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                                    on_retry(this, cx);
-                                })),
+                                .child(if error.detail.is_empty() {
+                                    error.headline.clone()
+                                } else {
+                                    error.detail.clone()
+                                }),
                         ),
                 ),
         )
+        .children((!elsewhere.is_empty()).then(|| {
+            div()
+                .mt(px(12.0))
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap(px(10.0))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(200.0))
+                        .text_size(px(11.5))
+                        .line_height(px(17.0))
+                        .text_color(theme.text_subtle)
+                        // The alternatives, as one sentence rather than a
+                        // bulleted list. They are things to do somewhere else,
+                        // and a list gives them the weight of a plan.
+                        .child(format!("{}.", elsewhere
+                            .iter()
+                            .map(|r| r.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", or "))),
+                )
+                .child(
+                    Button::new("could-not-read-retry")
+                        .quiet()
+                        .text_color(theme.text_muted)
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            on_retry(this, cx);
+                        }))
+                        .child("Try another file"),
+                )
+                .child(
+                    Button::new("could-not-read-blank")
+                        .quiet()
+                        .text_color(theme.text_muted)
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                            on_start_blank(this, cx);
+                        }))
+                        .child("Start a blank CV"),
+                )
+        }))
 }
 
 #[cfg(test)]
