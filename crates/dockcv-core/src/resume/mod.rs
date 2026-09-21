@@ -29,6 +29,8 @@ pub mod outcomes;
 pub mod presets;
 mod profiles;
 pub mod template;
+mod template_dict;
+mod template_page;
 mod versioning;
 
 pub use document_toml::parse_document_toml;
