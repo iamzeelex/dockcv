@@ -9,7 +9,7 @@
 //! a template whose whole CV is one table (a common shape) imported as nothing.
 //!
 //! So the split is: this engine produces
-//! [`LogicalLine`](crate::import::layout::LogicalLine)s from the markup, a PDF
+//! [`LogicalLine`](crate::import::lines::LogicalLine)s from the markup, a PDF
 //! produces them by measuring the page, and
 //! [`classify_lines`](crate::import::classifier::classify_lines) — the half that
 //! knows what a résumé is — is shared. Only the *evidence* differs between
@@ -24,8 +24,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
 use crate::import::classifier::{classify_lines, join_split_entry_headers};
-use crate::import::classifier_headings::names_a_section;
-use crate::import::layout::{without_bullet, LineKind, LogicalLine};
+use crate::import::classifier::headings::names_a_section;
+use crate::import::lines::{without_bullet, LineKind, LogicalLine};
 use crate::import::model::ImportedDoc;
 
 const MAX_DOCX_SIZE: u64 = 50 * 1024 * 1024; // 50 MB

@@ -6,7 +6,7 @@
 
 use super::*;
 // The classifier is four files now; the tests are about all of it.
-use crate::import::classifier_headings::*;
+use crate::import::classifier::headings::*;
 
 /// A phone number with a country code and no separator inside the local
 /// part — an ordinary Berlin number — used to fall through: the pattern

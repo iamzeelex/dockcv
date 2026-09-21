@@ -10,13 +10,13 @@
 use serde::Deserialize;
 use std::sync::OnceLock;
 
-use super::classifier::SectionKind;
-use super::classifier_entries::{get_single_date_regex, sanitize_header_line};
+use super::SectionKind;
+use super::entries::{get_single_date_regex, sanitize_header_line};
 
 /// The shipped table: language → its words for each section.
 pub(crate) type Taxonomy = std::collections::BTreeMap<String, LanguageCorpus>;
 
-static TAXONOMY_TOML: &str = include_str!("../../assets/taxonomy.toml");
+static TAXONOMY_TOML: &str = include_str!("../../../assets/taxonomy.toml");
 
 static INDEXED_TAXONOMY: OnceLock<IndexedTaxonomy> = OnceLock::new();
 

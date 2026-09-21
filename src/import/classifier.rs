@@ -1,7 +1,10 @@
 //! Semantic classification, NLP fuzzy matching, and entity extraction for raw text blocks.
 
+pub mod contact;
+pub mod entries;
+pub mod headings;
 
-use crate::import::layout;
+use crate::import::lines;
 use crate::import::model::{ImportedDoc, Unplaced};
 use crate::import::notes::{Note, Part};
 use crate::resume::model::{
@@ -9,35 +12,19 @@ use crate::resume::model::{
     Work,
 };
 
-use super::classifier_entries::{
+use self::entries::{
     attach_entry_url, clean_bullet, ends_with_parenthesised_date, get_date_range_regex,
     get_single_date_regex, is_only_dates, looks_like_degree,
     looks_like_institution, parse_certificate, split_keywords, split_skill_group,
     strip_running_header,
 };
-use super::classifier_headings::{
+use self::headings::{
     classify_header, is_section_header, title_case,
 };
-use super::classifier_contact::{
+use self::contact::{
     absorb_contact, contact_region, get_email_regex, get_phone_regex, get_url_regex,
     looks_like_contact_line, network_of, trim_url_tail,
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SectionKind {
@@ -52,40 +39,11 @@ pub enum SectionKind {
     Unknown,
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /// Classify a raw text stream into a candidate [`ImportedDoc`].
 ///
 /// The path for formats that carry **no structure** — a PDF's text layer, a
 /// plain-text file. Everything a section parser needs has to be recovered from
-/// typography here, which is what [`layout::logical_lines`] does. A format that
+/// typography here, which is what [`lines::logical_lines`] does. A format that
 /// reports its own structure should build the lines itself and call
 /// [`classify_lines`] instead of flattening to text first: the flattening is
 /// lossy and the recovery is a guess, however good.
@@ -106,7 +64,7 @@ pub fn classify_raw_text(format_name: &str, raw_text: &str) -> ImportedDoc {
         .filter(|n| n.len() >= 4 && !n.contains('@'))
         .unwrap_or_default();
     let fragments = [name_fragment, email];
-    // Leading whitespace is carried through: `layout` reads it to tell an
+    // Leading whitespace is carried through: `lines` reads it to tell an
     // indented list item from a date range at the margin, and to join a wrapped
     // item back onto the one it belongs to. `strip_running_header` trims, so
     // the indent is measured here and put back.
@@ -128,7 +86,7 @@ pub fn classify_raw_text(format_name: &str, raw_text: &str) -> ImportedDoc {
     // Physical line boxes become logical lines: a bullet broken by the text
     // measure is one bullet again, and the section parsers below never have to
     // guess whether a line is a new item or the tail of the last one.
-    let lines = layout::logical_lines(&cleaned, is_section_header, |l| {
+    let lines = lines::logical_lines(&cleaned, is_section_header, |l| {
         // "Does this line already carry its dates?" — asked of the line above,
         // to decide whether the next one continues it. A certificate is written
         // `Name - Issuer (2023-04)`: one date, not a range, and nothing after
@@ -154,12 +112,12 @@ pub fn classify_raw_text(format_name: &str, raw_text: &str) -> ImportedDoc {
 /// gallery — imported as two jobs that had dates and no employer, no title and
 /// no bullets. Both directions are handled: the dates can precede their entry
 /// or follow it.
-pub fn join_split_entry_headers(lines: Vec<layout::LogicalLine>) -> Vec<layout::LogicalLine> {
-    let mut out: Vec<layout::LogicalLine> = Vec::with_capacity(lines.len());
+pub fn join_split_entry_headers(lines: Vec<lines::LogicalLine>) -> Vec<lines::LogicalLine> {
+    let mut out: Vec<lines::LogicalLine> = Vec::with_capacity(lines.len());
     let mut pending_dates: Option<String> = None;
 
     for line in lines {
-        if line.kind != layout::LineKind::Heading && is_only_dates(&line.text) {
+        if line.kind != lines::LineKind::Heading && is_only_dates(&line.text) {
             // An entry's own address sits on a line of its own between the
             // title and the dates — both the Word and the Markdown readers put
             // it there so `attach_entry_url` can pick it up — and it is not a
@@ -167,7 +125,7 @@ pub fn join_split_entry_headers(lines: Vec<layout::LogicalLine>) -> Vec<layout::
             // - 1900-07`, which is no longer an address, so the school's link
             // was dropped and the string became an entry of its own.
             let owner = match out.last() {
-                Some(last) if layout::is_lone_address(&last.text) => out.len().checked_sub(2),
+                Some(last) if lines::is_lone_address(&last.text) => out.len().checked_sub(2),
                 _ => out.len().checked_sub(1),
             };
             match owner.and_then(|at| out.get_mut(at)) {
@@ -177,11 +135,11 @@ pub fn join_split_entry_headers(lines: Vec<layout::LogicalLine>) -> Vec<layout::
                 // stapled them to the entry's first bullet instead, leaving the
                 // entry itself undated.
                 Some(prev)
-                    if prev.kind != layout::LineKind::Heading
-                        && prev.kind != layout::LineKind::Bullet =>
+                    if prev.kind != lines::LineKind::Heading
+                        && prev.kind != lines::LineKind::Bullet =>
                 {
                     prev.text = format!("{} {}", prev.text, line.text);
-                    prev.kind = layout::LineKind::EntryHeader;
+                    prev.kind = lines::LineKind::EntryHeader;
                 }
                 // A section heading or a list above, so nothing there can own
                 // them: this template printed the dates first, and the entry is
@@ -195,12 +153,12 @@ pub fn join_split_entry_headers(lines: Vec<layout::LogicalLine>) -> Vec<layout::
             // unless it is a list item, which is content under an entry and
             // never an entry itself.
             Some(dates)
-                if line.kind != layout::LineKind::Heading
-                    && line.kind != layout::LineKind::Bullet =>
+                if line.kind != lines::LineKind::Heading
+                    && line.kind != lines::LineKind::Bullet =>
             {
-                out.push(layout::LogicalLine::new(
+                out.push(lines::LogicalLine::new(
                     format!("{} {}", line.text, dates),
-                    layout::LineKind::EntryHeader,
+                    lines::LineKind::EntryHeader,
                 ))
             }
             // A heading or a bullet follows: the dates belonged to the entry
@@ -208,7 +166,7 @@ pub fn join_split_entry_headers(lines: Vec<layout::LogicalLine>) -> Vec<layout::
             Some(dates) => {
                 if let Some(prev) = out
                     .last_mut()
-                    .filter(|p| p.kind == layout::LineKind::EntryHeader)
+                    .filter(|p| p.kind == lines::LineKind::EntryHeader)
                 {
                     prev.text = format!("{} {}", prev.text, dates);
                 }
@@ -220,15 +178,14 @@ pub fn join_split_entry_headers(lines: Vec<layout::LogicalLine>) -> Vec<layout::
     out
 }
 
-
 /// Turn logical lines into a candidate [`ImportedDoc`].
 ///
 /// The shared half of the importer: every format ends up here, whether its
 /// structure was measured out of a page (PDF) or read off the markup (DOCX).
 /// What differs between formats is only how good the evidence was — which is
-/// why [`layout::LineKind::EntryHeader`] exists: DOCX can state that a line
+/// why [`lines::LineKind::EntryHeader`] exists: DOCX can state that a line
 /// opens an entry, and a PDF can only infer it from a date range.
-pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> ImportedDoc {
+pub fn classify_lines(format_name: &str, lines: Vec<lines::LogicalLine>) -> ImportedDoc {
     let mut resume = Resume::default();
     let mut unplaced = Vec::new();
 
@@ -311,7 +268,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
     // work history. Filing a degree under Work is wrong and is *visibly*
     // wrong, where losing it is neither — so the reading is stated in a note
     // rather than performed quietly.
-    let has_headings = lines.iter().any(|l| l.kind == layout::LineKind::Heading);
+    let has_headings = lines.iter().any(|l| l.kind == lines::LineKind::Heading);
     let implicit_work_at = if has_headings {
         None
     } else {
@@ -343,12 +300,12 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
         // and became a section of its own, taking the degree out of Education.
         let next_is_dates = lines
             .get(idx + 1)
-            .is_some_and(|l| l.kind != layout::LineKind::Heading && is_only_dates(&l.text));
+            .is_some_and(|l| l.kind != lines::LineKind::Heading && is_only_dates(&l.text));
         if Some(idx) == implicit_work_at {
             current_section = SectionKind::Work;
             seen.push(SectionKind::Work);
         }
-        if entry.kind == layout::LineKind::Heading {
+        if entry.kind == lines::LineKind::Heading {
             current_section = classify_header(&entry.text);
             // A document never has two Work sections. When a second heading
             // classifies as one already used, the taxonomy is stretching — the
@@ -382,7 +339,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
         // an entry of its own, so a section of one certificate imported as two,
         // the second of them called `https://certificate.com`.
         if !entry.is_bullet()
-            && layout::is_lone_address(line)
+            && lines::is_lone_address(line)
             && attach_entry_url(current_section, &mut resume, &mut custom, line)
         {
             continue;
@@ -416,7 +373,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                     // `Mathematics, Physics, and Chemistry Tutor` in half, and
                     // removing a single year left the rest of the range behind
                     // as `–Current` in the middle of the title.
-                    let header = layout::EntryHeader::parse(line, get_date_range_regex());
+                    let header = lines::EntryHeader::parse(line, get_date_range_regex());
                     let (start, end, rest) = if header.start.is_empty() {
                         // No range: a lone year, as a project usually carries.
                         let year = get_single_date_regex()
@@ -502,9 +459,9 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 // Infrastructure` / `Sembly AI … Oct 2019 – Jul 2021` — in
                 // which case the entry is already open and waiting for its
                 // employer and dates rather than being a second one.
-                let stated = entry.kind == layout::LineKind::EntryHeader;
+                let stated = entry.kind == lines::LineKind::EntryHeader;
                 if stated || get_date_range_regex().is_match(line) {
-                    let header = layout::EntryHeader::parse(line, get_date_range_regex());
+                    let header = lines::EntryHeader::parse(line, get_date_range_regex());
                     // A format that *states* an entry opens here is never
                     // second-guessed. The merge below is for the inferred case,
                     // where a role was printed on the line above its employer
@@ -578,9 +535,9 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                 // completes the entry opened by the line before it rather than
                 // starting a second one. Reading each line as its own entry is
                 // why a CV with two degrees imported as one.
-                let stated = entry.kind == layout::LineKind::EntryHeader;
+                let stated = entry.kind == lines::LineKind::EntryHeader;
                 if stated || get_date_range_regex().is_match(line) {
-                    let header = layout::EntryHeader::parse(line, get_date_range_regex());
+                    let header = lines::EntryHeader::parse(line, get_date_range_regex());
                     let awaiting = resume
                         .education
                         .last_mut()
@@ -643,7 +600,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                     // Otherwise coursework, thesis, honours — not gated on the
                     // entry being dated, since a DOCX template states where an
                     // entry begins and may carry no date at all.
-                    let text = layout::without_bullet(line).to_string();
+                    let text = lines::without_bullet(line).to_string();
                     if last.institution.is_empty() && looks_like_institution(&text) {
                         last.institution = text;
                     } else if last.study_type.is_empty() && looks_like_degree(&text) {
@@ -653,7 +610,7 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                     }
                 } else {
                     resume.education.push(Education {
-                        study_type: layout::without_bullet(line).to_string(),
+                        study_type: lines::without_bullet(line).to_string(),
                         ..Default::default()
                     });
                 }
@@ -704,9 +661,9 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
                     continue;
                 }
 
-                let stated = entry.kind == layout::LineKind::EntryHeader;
+                let stated = entry.kind == lines::LineKind::EntryHeader;
                 if stated || get_date_range_regex().is_match(line) {
-                    let header = layout::EntryHeader::parse(line, get_date_range_regex());
+                    let header = lines::EntryHeader::parse(line, get_date_range_regex());
                     let awaiting = resume
                         .volunteer
                         .last_mut()
@@ -851,5 +808,4 @@ pub fn classify_lines(format_name: &str, lines: Vec<layout::LogicalLine>) -> Imp
 }
 
 #[cfg(test)]
-#[path = "classifier_tests.rs"]
 mod tests;

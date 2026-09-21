@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 
-use crate::import::layout::without_bullet;
+use crate::import::lines::without_bullet;
 use crate::import::model::{ImportedDoc, Unplaced, UnplacedSource};
 use crate::import::notes::{Note, Part};
 use crate::resume::model::{

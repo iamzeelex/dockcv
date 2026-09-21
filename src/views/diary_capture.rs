@@ -36,7 +36,7 @@
 //! requires — every draft shows where it came from — and
 //! which is also the only way to check the split did not mangle anything.
 
-use crate::import::layout::{starts_with_bullet, without_bullet};
+use crate::import::lines::{starts_with_bullet, without_bullet};
 
 /// ASCII list markers, which people type and typesetters do not.
 ///

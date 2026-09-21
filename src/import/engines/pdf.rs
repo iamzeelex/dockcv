@@ -293,7 +293,7 @@ impl pdf_extract::OutputDev for Lines {
 /// every employer it had.
 fn read_the_sidebar(imported: &mut ImportedDoc, bytes: &[u8]) {
     use crate::import::classifier::SectionKind;
-    use crate::import::classifier_headings::classify_header;
+    use crate::import::classifier::headings::classify_header;
 
     for section in crate::import::pdf_tags::sections(bytes) {
         if section.items.is_empty() {
@@ -318,7 +318,7 @@ fn read_the_sidebar(imported: &mut ImportedDoc, bytes: &[u8]) {
                 let block = section.items.join("\n");
                 let profile = imported.doc.profile.active_mut();
                 if profile.phone.is_empty() {
-                    if let Some(found) = crate::import::classifier_contact::first_phone(&block) {
+                    if let Some(found) = crate::import::classifier::contact::first_phone(&block) {
                         profile.phone = found;
                     }
                 }
@@ -350,8 +350,8 @@ fn name_from_headings(headings: &[String]) -> Option<String> {
             // asks which section a heading belongs to and is happy with a
             // substring — which is how `Top Skills` was a heading nothing called
             // a section, and became somebody's name.
-            && !crate::import::classifier_headings::names_a_section(&text.to_lowercase())
-            && crate::import::classifier_headings::classify_header(text)
+            && !crate::import::classifier::headings::names_a_section(&text.to_lowercase())
+            && crate::import::classifier::headings::classify_header(text)
                 == crate::import::classifier::SectionKind::Unknown;
         plausible.then(|| text.to_string())
     })

@@ -9,11 +9,11 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-use super::layout;
+use crate::import::lines;
 use crate::resume::model::{NetworkProfile, Resume};
 
-use super::classifier::SectionKind;
-use super::classifier_headings::classify_header;
+use super::SectionKind;
+use super::headings::classify_header;
 
 static EMAIL_REGEX: OnceLock<Regex> = OnceLock::new();
 
@@ -329,12 +329,12 @@ pub(crate) fn looks_like_place(line: &str) -> bool {
 /// line as contact-block material in that case (`SectionKind::Unknown` runs
 /// `absorb_contact` over all of them), and having the two disagree about where
 /// the block ends would be worse than the degenerate case itself.
-pub(crate) fn contact_region(lines: &[layout::LogicalLine]) -> String {
+pub(crate) fn contact_region(lines: &[lines::LogicalLine]) -> String {
     let mut region: Vec<&str> = Vec::new();
     let mut in_contact_section = true;
 
     for line in lines {
-        if line.kind == layout::LineKind::Heading {
+        if line.kind == lines::LineKind::Heading {
             in_contact_section = classify_header(&line.text) == SectionKind::Contact;
             continue;
         }

@@ -2,7 +2,7 @@
 //!
 //! Markdown states its own structure — `##` is a section, `###` opens an entry,
 //! `-` is a list item — and the shared classifier is built to be *told* those
-//! things ([`layout::LineKind`]) rather than to infer them from typography.
+//! things ([`lines::LineKind`]) rather than to infer them from typography.
 //! Handing a Markdown file to the plain-prose path threw all of that away and
 //! then guessed it back, badly: `## Work Experience` became a section titled
 //! `## Work Experience`, `### Senior Platform Engineer, Kollekt` became one of
@@ -16,8 +16,8 @@
 //! line, and `**Kollekt**` is not a different employer from `Kollekt`.
 
 use crate::import::classifier::{classify_lines};
-use crate::import::classifier_entries::is_only_dates;
-use crate::import::layout::{LineKind, LogicalLine};
+use crate::import::classifier::entries::is_only_dates;
+use crate::import::lines::{LineKind, LogicalLine};
 use crate::import::model::ImportedDoc;
 
 /// Read a Markdown CV.

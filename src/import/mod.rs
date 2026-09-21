@@ -6,13 +6,10 @@
 
 pub mod bidi;
 pub mod classifier;
-pub mod classifier_contact;
-pub mod classifier_entries;
-pub mod classifier_headings;
 pub mod error;
 #[cfg(test)]
 pub mod foreign_cvs;
-pub mod layout;
+pub mod lines;
 pub mod model;
 pub mod notes;
 pub mod pdf_tags;

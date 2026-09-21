@@ -15,9 +15,9 @@ use regex::Regex;
 
 use crate::resume::model::{Certificate, CustomEntry, Resume};
 
-use super::layout;
+use crate::import::lines;
 
-use super::classifier::SectionKind;
+use super::SectionKind;
 
 static DATE_RANGE_REGEX: OnceLock<Regex> = OnceLock::new();
 
@@ -232,7 +232,7 @@ pub(crate) fn parse_certificate(text: &str) -> Certificate {
         .filter(|_| date.is_empty() || url.is_empty())
     {
         let inner = head[open + 1..head.len() - 1].trim();
-        if url.is_empty() && layout::is_lone_address(inner) {
+        if url.is_empty() && lines::is_lone_address(inner) {
             url = inner.to_string();
         } else if date.is_empty() && is_only_dates(inner) {
             date = inner.to_string();
@@ -249,7 +249,7 @@ pub(crate) fn parse_certificate(text: &str) -> Certificate {
     if url.is_empty() {
         let address = head
             .split_whitespace()
-            .find(|token| layout::is_lone_address(token));
+            .find(|token| lines::is_lone_address(token));
         if let Some(address) = address {
             let rest = head.replace(address, " ");
             if rest.split_whitespace().count() > 0 {
