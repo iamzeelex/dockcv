@@ -1768,7 +1768,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
- "toml 0.8.23",
+ "toml 1.1.2+spec-1.1.0",
  "zip",
 ]
 
@@ -1783,7 +1783,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "toml 0.8.23",
+ "toml 1.1.2+spec-1.1.0",
  "typst",
  "typst-assets",
  "typst-layout",
@@ -1814,7 +1814,7 @@ version = "0.3.0"
 dependencies = [
  "dockcv-core",
  "serde_json",
- "toml 0.8.23",
+ "toml 1.1.2+spec-1.1.0",
  "wasm-bindgen",
 ]
 
