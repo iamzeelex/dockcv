@@ -183,6 +183,27 @@ struct Shape {
     custom: Vec<(String, usize)>,
 }
 
+/// The date, not the string that spells it.
+///
+/// A text export prints a date in the document's `DateFormat` and the importer
+/// reads back what was printed, so the two texts agree only while the print
+/// format happens to match the one the vault stores. They did, once, because
+/// `DateFormat` defaulted to ISO — which is why this comparison looked exact
+/// and was not. What a round trip owes a date is the day it names.
+fn same_date(date: &dockcv_core::resume::dates::ResumeDate) -> String {
+    match date.parse() {
+        Some(civil) => format!(
+            "{:04}-{:02}-{:02}",
+            civil.year,
+            civil.month.unwrap_or(0),
+            civil.day.unwrap_or(0)
+        ),
+        // `Present`, `ongoing`, or anything the user typed that is not a date:
+        // there the text *is* the value.
+        None => date.text.trim().to_lowercase(),
+    }
+}
+
 fn shape_of(doc: &ResumeDoc) -> Shape {
     Shape {
         work: doc
@@ -192,8 +213,8 @@ fn shape_of(doc: &ResumeDoc) -> Shape {
             .map(|w| {
                 (
                     w.highlights.len(),
-                    w.start_date.text.clone(),
-                    w.end_date.text.clone(),
+                    same_date(&w.start_date),
+                    same_date(&w.end_date),
                 )
             })
             .collect(),
@@ -452,9 +473,12 @@ fn a_number_in_front_of_a_range() {
     for (format, path) in write_exports(&dir, &doc) {
         let back = import_file(&path).unwrap_or_else(|e| panic!("{format}: {e}"));
         let job = &back.doc.work.active()[0];
+        // By value, not by spelling: what this guards is that `Company Number 4`
+        // and `Engineer Grade 3` do not donate their digits to the date, and
+        // that is true whichever format the document prints its dates in.
         assert_eq!(
-            (job.start_date.text.as_str(), job.end_date.text.as_str()),
-            ("2019-06", "2022-01"),
+            (same_date(&job.start_date), same_date(&job.end_date)),
+            ("2019-06-00".to_string(), "2022-01-00".to_string()),
             "{format} read the dates out of the employer's number"
         );
     }
@@ -1068,3 +1092,4 @@ fn a_tagged_sidebar_gives_up_its_skills() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+

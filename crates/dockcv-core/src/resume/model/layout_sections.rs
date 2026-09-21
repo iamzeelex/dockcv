@@ -496,7 +496,7 @@ impl ContactLayout {
 /// detail, which needs an icon font in the document — the vendored AltaCV
 /// package carries FontAwesome for exactly that — and wiring one into this
 /// template is its own piece of work rather than a fourth dropdown.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HeaderLayout {
     #[serde(default)]
     pub align: HeaderAlign,
@@ -506,8 +506,30 @@ pub struct HeaderLayout {
     /// separator because it is the same question — what goes between items in
     /// a run — and a second enum saying it would be a second thing to keep in
     /// step.
-    #[serde(default)]
+    ///
+    /// The *default* is not shared, and that is the whole difference between
+    /// the two runs: a skill is one word, while the first contact detail is a
+    /// place and reads `Copenhagen, Denmark`. With commas between items too,
+    /// `Copenhagen, Denmark, nora@…` gives the reader no way to tell the
+    /// country from the next field, and a comma left at a line break sits
+    /// there pointing at nothing. A middot cannot be mistaken for punctuation
+    /// inside a value.
+    #[serde(default = "contact_separator")]
     pub separator: SkillSeparator,
+}
+
+fn contact_separator() -> SkillSeparator {
+    SkillSeparator::Middot
+}
+
+impl Default for HeaderLayout {
+    fn default() -> Self {
+        Self {
+            align: HeaderAlign::default(),
+            contacts: ContactLayout::default(),
+            separator: contact_separator(),
+        }
+    }
 }
 
 /// What one section sets differently from the document's own layout.
@@ -616,10 +638,14 @@ impl SectionOverrides {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum HeadingStyle {
-    /// A filled band across the column. What every document did before this.
-    #[default]
+    /// A filled band across the column. What every document did before this,
+    /// and no longer the default — the note above this enum already said why,
+    /// and then shipped the thing it was arguing against. Six grey bars are
+    /// the heaviest marks on a page whose heaviest mark should be the name.
     Band,
-    /// A hairline under the heading, the full width of the column.
+    /// A hairline under the heading, the full width of the column. The default:
+    /// it divides without filling, and it is what most typeset CVs do.
+    #[default]
     Rule,
     /// The heading, then a hairline carrying on to the right margin. Costs no
     /// line of its own, which on a full CV is a section's worth of space.

@@ -121,9 +121,16 @@ pub struct CivilDate {
 #[serde(rename_all = "snake_case")]
 pub enum DateFormat {
     /// `2022-01-15` — what the vault files themselves use.
-    #[default]
+    ///
+    /// Not the default, and the reason is that it once was. A CV printing
+    /// `2015-09 – 2017-06` reads like a log line, and the app disagreed with
+    /// itself besides: the editor's own month and year pickers say `Sep 2015`
+    /// while the page said `2015-09`. A storage format is not a typographic
+    /// choice, and it became one here only because both live on the same enum.
     Iso,
-    /// `Jan 2022` · `15 Jan 2022`
+    /// `Jan 2022` · `15 Jan 2022` — the default, and what the editor's date
+    /// pickers already show.
+    #[default]
     DayMonShortYear,
     /// `January 2022` · `15th January 2022`
     DayOrdinalMonthYear,
