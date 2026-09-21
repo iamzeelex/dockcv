@@ -465,6 +465,20 @@ pub(crate) fn build_window_options(
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar,
         window_decorations,
+        // A floor for the layout, rather than a fixed width chased out of
+        // every control that has one.
+        //
+        // The rail is 228 and does not shrink — it is navigation, and a nav
+        // rail narrow enough to be unreadable has stopped being one. Beside it
+        // the widest pane that cannot wrap any further is the import screen's
+        // panel at 380 plus its 68 of padding. Below about 700 the panel
+        // starts leaving the window, and nothing in GPUI stops a person
+        // dragging there, because no minimum was ever set.
+        //
+        // Every screen is built to reflow above this, so this is the width the
+        // reflow is designed *for* rather than a number that merely happens to
+        // work today.
+        window_min_size: Some(gpui::size(px(760.0), px(560.0))),
         ..Default::default()
     }
 }

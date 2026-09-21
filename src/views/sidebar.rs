@@ -157,11 +157,32 @@ impl Shell {
                     .pb(px(20.0))
                     .flex()
                     .items_baseline()
-                    .font_family(SANS)
-                    .text_size(px(17.0))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(div().text_color(theme.text).child("Dock"))
-                    .child(div().text_color(theme.accent).child("CV")),
+                    .gap(px(7.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_baseline()
+                            .font_family(SANS)
+                            .text_size(px(17.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(div().text_color(theme.text).child("Dock"))
+                            .child(div().text_color(theme.accent).child("CV")),
+                    )
+                    .child(
+                        // Which build this is.
+                        //
+                        // The one piece of the mockup's header that was worth
+                        // taking: everything else it put here was decoration,
+                        // and this answers a question that comes up every time
+                        // somebody reports something — theirs, and ours when
+                        // we read the report. From the manifest, so it cannot
+                        // drift from what was actually compiled.
+                        div()
+                            .font_family(MONO)
+                            .text_size(px(10.0))
+                            .text_color(theme.text_subtle)
+                            .child(env!("CARGO_PKG_VERSION")),
+                    ),
             )
             .child(
                 div()
@@ -339,6 +360,18 @@ impl Shell {
     /// is the same string on every row.
     fn render_recent(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         const SHOWN: usize = 3;
+
+        // Not on the CVs screen, which already is this list.
+        //
+        // The three most recently touched documents, in a vault sorted by
+        // recency, are the first three cards to the right of the rail —
+        // printed twice, a hundred pixels apart, with the same names and the
+        // same ages. It earns its place on Library, Diary and Applications,
+        // where it is the way back into a document and there is no list to
+        // duplicate.
+        if matches!(self.screen, Screen::Gallery) {
+            return None;
+        }
 
         let theme = *cx.theme();
         let now = std::time::SystemTime::now()
