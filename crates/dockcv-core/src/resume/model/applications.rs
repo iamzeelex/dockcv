@@ -514,6 +514,3 @@ impl Applications {
     }
 }
 
-#[cfg(test)]
-#[path = "applications_tests.rs"]
-mod tests;

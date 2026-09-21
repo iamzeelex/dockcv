@@ -1,6 +1,6 @@
 //! Operations that compose and manage a versioned resume document.
 
-use super::model::*;
+use super::*;
 
 impl ResumeDoc {
     /// Wrap a flat resume as a document with one variant per section.
@@ -809,6 +809,3 @@ fn take_if<T: Clone + Default>(keep: bool, value: &T) -> T {
     }
 }
 
-#[cfg(test)]
-#[path = "document_variants_tests.rs"]
-mod tests;

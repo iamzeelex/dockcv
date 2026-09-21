@@ -15,7 +15,7 @@ use typst::foundations::{Bytes, Datetime, Duration};
 use typst::layout::{Abs, Frame, FrameItem, Transform};
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 
-use crate::resume::altacv_package;
+use crate::resume::altacv::package;
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 #[cfg(feature = "raster")]
@@ -770,7 +770,7 @@ impl World for TypstEngine {
         // document that imports the package still renders with no network and
         // no package cache (US-10).
         let path = virtual_path_of(&id);
-        if let Some(text) = altacv_package::source(&path) {
+        if let Some(text) = package::source(&path) {
             return Ok(Source::new(id, text.to_string()));
         }
         Err(FileError::Other(Some(
@@ -780,7 +780,7 @@ impl World for TypstEngine {
 
     fn file(&self, id: FileId) -> FileResult<Bytes> {
         let path = virtual_path_of(&id);
-        if let Some(data) = altacv_package::bytes(&path) {
+        if let Some(data) = package::bytes(&path) {
             return Ok(Bytes::new(data));
         }
         Err(FileError::Other(Some(

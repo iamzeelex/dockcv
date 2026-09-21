@@ -20,7 +20,7 @@ use dockcv_ui_components::{
 };
 
 use crate::config;
-use crate::resume::export_names::{resolve_destination, Destination, OnCollision};
+use crate::resume::export::names::{resolve_destination, Destination, OnCollision};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
@@ -303,7 +303,7 @@ impl Root {
     pub(super) fn export_destination(&self, cx: &Context<Self>) -> Option<Destination> {
         let sheet = self.export_sheet.as_ref()?;
         let typed = sheet.stem.read(cx).value(cx);
-        let stem = crate::resume::export_names::sanitize_filename_stem(typed.as_ref());
+        let stem = crate::resume::export::names::sanitize_filename_stem(typed.as_ref());
         let proposed = sheet
             .folder
             .join(format!("{stem}.{}", sheet.format.extension()));

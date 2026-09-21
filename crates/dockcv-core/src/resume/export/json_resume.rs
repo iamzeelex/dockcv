@@ -20,9 +20,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::export_text::strip_typst_markup;
-use super::links;
-use super::model::{
+use super::text::strip_typst_markup;
+use crate::resume::links;
+use crate::resume::model::{
     Basics as CoreBasics, Certificate as CoreCert, Education as CoreEdu,
     NetworkProfile as CoreProfile, Resume, ResumeDate, SkillGroup as CoreSkill,
     Volunteer as CoreVol, Work as CoreWork,
@@ -647,7 +647,7 @@ fn convert_skill(s: &CoreSkill) -> SchemaSkill {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resume::export_walk::sample_resume;
+    use crate::resume::export::walk::sample_resume;
 
     /// Every date in the file matches the pattern the schema validates with.
     ///

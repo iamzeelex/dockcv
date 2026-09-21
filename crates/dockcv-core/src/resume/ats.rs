@@ -20,8 +20,8 @@
 
 use super::dates::{CivilDate, ResumeDate};
 use super::edit::FieldId;
-use super::export_text::strip_typst_markup;
-use super::export_walk::{is_section_empty, ordered_sections, resolve_section_title};
+use crate::resume::export::text::strip_typst_markup;
+use crate::resume::export::walk::{is_section_empty, ordered_sections, resolve_section_title};
 use super::model::{DocumentLanguage, Resume, ResumeDoc, SectionKind};
 
 /// One fact about the document, and where it lives.

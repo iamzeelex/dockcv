@@ -15,7 +15,7 @@ use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement, SharedString};
 
 use dockcv_ui_components::{Button, ButtonExt, Disableable, IconName, ScrollableElement};
 
-use crate::resume::export_names::{plan_batch, OnCollision, PlannedExport};
+use crate::resume::export::names::{plan_batch, OnCollision, PlannedExport};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use super::shell::{Screen, Shell};

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::model::ResumeDoc;
+use crate::resume::model::ResumeDoc;
 
 /// The longest filename stem we will produce.
 ///

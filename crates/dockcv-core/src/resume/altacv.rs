@@ -10,6 +10,8 @@
 //! Anything we don't model (the import, the `#alta(..)` call, `image`,
 //! `interests`, …) is simply ignored.
 
+pub mod package;
+
 use typst::syntax::{ast, ast::AstNode, Source, SyntaxKind, SyntaxNode};
 
 use crate::resume::model::{

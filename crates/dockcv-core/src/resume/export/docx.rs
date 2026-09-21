@@ -10,13 +10,13 @@ use docx_rs::{
     LevelText, NumberFormat, Numbering, NumberingId, Paragraph, Run, Start, Style, StyleType,
 };
 
-use super::dates::DateStyle;
-use super::export_text::strip_typst_markup;
-use super::export_walk::{
+use crate::resume::dates::DateStyle;
+use super::text::strip_typst_markup;
+use super::walk::{
     format_date_range, is_section_empty, ordered_sections, resolve_section_title,
 };
-use super::links;
-use super::model::{
+use crate::resume::links;
+use crate::resume::model::{
     Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
     SkillGroup, Volunteer, Work,
 };
@@ -535,7 +535,7 @@ fn write_docx_custom_entry(mut docx: Docx, e: &CustomEntry, dates: DateStyle) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resume::export_walk::sample_resume;
+    use crate::resume::export::walk::sample_resume;
 
     /// A writer nobody reads back is a writer that silently drifts, so this
     /// opens what it wrote with the same library Word would and checks the
@@ -592,8 +592,8 @@ mod tests {
         }
 
         // Headings are headings: an outline level, not merely bold text.
-        for kind in crate::resume::export_walk::ordered_sections(&resume) {
-            let title = crate::resume::export_walk::resolve_section_title(&resume, kind);
+        for kind in crate::resume::export::walk::ordered_sections(&resume) {
+            let title = crate::resume::export::walk::resolve_section_title(&resume, kind);
             if title.is_empty() {
                 continue;
             }
@@ -606,7 +606,7 @@ mod tests {
         // Bullets are a list: the first highlight of every job, education entry,
         // organization and custom entry has a numbering property on it.
         for job in &resume.work {
-            let first = crate::resume::export_text::strip_typst_markup(&job.highlights[0]);
+            let first = crate::resume::export::text::strip_typst_markup(&job.highlights[0]);
             assert!(
                 bullets.contains(&first),
                 "the first bullet of {:?} is not a list item",
@@ -614,7 +614,7 @@ mod tests {
             );
         }
         for entry in resume.custom_sections.iter().flat_map(|cs| &cs.entries) {
-            let first = crate::resume::export_text::strip_typst_markup(&entry.highlights[0]);
+            let first = crate::resume::export::text::strip_typst_markup(&entry.highlights[0]);
             assert!(bullets.contains(&first), "{first:?} is not a list item");
         }
         assert!(

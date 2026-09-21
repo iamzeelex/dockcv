@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::dates::DateFormat;
+use crate::resume::dates::DateFormat;
 use super::layout_sections::{EntryLayout, HeaderLayout, HeadingLayout, SkillsLayout};
 
 // ---------------------------------------------------------------------------
@@ -411,6 +411,3 @@ fn default_show_link_marks() -> bool {
     true
 }
 
-#[cfg(test)]
-#[path = "layout_tests.rs"]
-mod tests;

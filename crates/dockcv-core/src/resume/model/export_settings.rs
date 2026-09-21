@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::model::ResumeDoc;
+use super::ResumeDoc;
 
 /// What the filename pattern's tokens stand for on one particular export.
 ///
@@ -134,7 +134,7 @@ impl ExportSettings {
         };
         result = result.replace("{name}", name_val);
 
-        super::export_names::sanitize_filename_stem(&result)
+        crate::resume::export::names::sanitize_filename_stem(&result)
     }
 }
 

@@ -5,7 +5,7 @@
 
 use crate::resume::model::{Margins, PageSize, TypeSizes};
 use crate::resume::template::*;
-use crate::resume::template_page::*;
+use crate::resume::template::page::*;
 
 #[test]
 fn default_layout_renders_the_old_hard_coded_values() {

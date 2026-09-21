@@ -4,19 +4,19 @@
 //! each section in resolved `section_order`, hard-wrapped at 72 columns, with
 //! no fancy glyphs or box-drawing characters.
 //!
-//! The wrapping itself is [`super::export_wrap`], which measures columns
+//! The wrapping itself is [`super::wrap`], which measures columns
 //! rather than bytes and finds break opportunities in scripts that do not
 //! separate words with spaces. This is the format an ATS is most likely to
 //! read cleanly, and a CV is as often in Russian or Japanese as in English.
 
 use std::fmt::Write as _;
 
-use super::dates::DateStyle;
-use super::export_walk::{
+use crate::resume::dates::DateStyle;
+use super::walk::{
     format_date_range, is_section_empty, ordered_sections, resolve_section_title,
 };
-use super::export_wrap;
-use super::model::{
+use super::wrap;
+use crate::resume::model::{
     Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
     SkillGroup, Volunteer, Work,
 };
@@ -38,7 +38,7 @@ use super::model::{
 ///   convention, and the reason applies here unchanged.
 /// * **Scripts that are two columns wide.** At 72 a Japanese line holds 36
 ///   characters, which is close to the norm for Japanese body text. That fell
-///   out of measuring width instead of bytes (see [`super::export_wrap`]) and is
+///   out of measuring width instead of bytes (see [`super::wrap`]) and is
 ///   worth keeping in mind before anyone tunes this number for English alone.
 ///
 /// Deliberately not a setting. It is one more control on a screen that has
@@ -403,7 +403,7 @@ pub fn strip_typst_markup(input: &str) -> String {
 /// A bullet, hard-wrapped with its continuation lines hanging under the text
 /// rather than under the marker.
 fn write_bullet(out: &mut String, text: &str) {
-    export_wrap::wrap_into(out, text, "  * ", 4, WRAP_WIDTH);
+    wrap::wrap_into(out, text, "  * ", 4, WRAP_WIDTH);
 }
 
 /// A paragraph, hard-wrapped, with `first_indent` spaces on its first line and
@@ -422,7 +422,7 @@ fn write_separated(out: &mut String, parts: &[&str], separator: &str) {
         } else {
             format!("{line}{separator}{part}")
         };
-        if line.is_empty() || export_wrap::width(&candidate) <= WRAP_WIDTH {
+        if line.is_empty() || wrap::width(&candidate) <= WRAP_WIDTH {
             line = candidate;
         } else {
             let _ = writeln!(out, "{line}");
@@ -436,13 +436,13 @@ fn write_separated(out: &mut String, parts: &[&str], separator: &str) {
 
 fn write_wrapped(out: &mut String, text: &str, first_indent: usize, rest_indent: usize) {
     let first_prefix = " ".repeat(first_indent);
-    export_wrap::wrap_into(out, text, &first_prefix, rest_indent, WRAP_WIDTH);
+    wrap::wrap_into(out, text, &first_prefix, rest_indent, WRAP_WIDTH);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resume::export_walk::sample_resume;
+    use crate::resume::export::walk::sample_resume;
     use crate::resume::model::*;
 
     #[test]
@@ -493,7 +493,7 @@ mod tests {
     #[track_caller]
     fn assert_within_the_column(exported: &str) {
         for (i, line) in exported.lines().enumerate() {
-            let columns = crate::resume::export_wrap::width(line);
+            let columns = crate::resume::export::wrap::width(line);
             assert!(
                 columns <= WRAP_WIDTH,
                 "line {i} is {columns} columns wide, over {WRAP_WIDTH}: {line:?}"

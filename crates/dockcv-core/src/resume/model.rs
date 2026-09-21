@@ -11,14 +11,36 @@
 
 use serde::{Deserialize, Serialize};
 
-pub use super::applications::*;
+// What this file re-exports, it owns, and `model/` is where those files live.
+// `dates` and `language` are the exceptions and stay siblings: a `ResumeDate`
+// and a `DocumentLanguage` are vocabulary the importer, the ATS lint and the
+// editor's date pickers all read, not state this module keeps.
+mod applications;
+mod document_variants;
+mod export_settings;
+mod layout;
+mod layout_sections;
+pub mod profiles;
+mod versioning;
+
+// The three files in `model/` that are only tests. A test file sharing a
+// directory with its subject has to carry the subject's name, and only the
+// parent of both can declare it.
+#[cfg(test)]
+mod applications_tests;
+#[cfg(test)]
+mod document_variants_tests;
+#[cfg(test)]
+mod layout_tests;
+
+pub use self::applications::*;
+pub use self::export_settings::*;
+pub use self::layout::*;
+pub use self::layout_sections::*;
+pub use self::profiles::{builtin as builtin_profile, *};
+pub use self::versioning::*;
 pub use super::dates::{DateFormat, DateStyle, ResumeDate};
-pub use super::export_settings::*;
 pub use super::language::DocumentLanguage;
-pub use super::layout::*;
-pub use super::layout_sections::*;
-pub use super::profiles::*;
-pub use super::versioning::*;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Resume {

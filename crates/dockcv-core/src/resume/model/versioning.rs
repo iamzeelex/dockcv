@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::model::CustomSectionId;
+use super::CustomSectionId;
 
 // ---------------------------------------------------------------------------
 // Per-section versioning

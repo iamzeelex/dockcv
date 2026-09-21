@@ -10,7 +10,7 @@
 use crate::resume::links;
 use crate::resume::model::{DateFormat, DocumentLanguage, Resume, ResumeDoc, SectionKind};
 
-use super::template_page::{renderer_key, section_key};
+use super::page::{renderer_key, section_key};
 
 pub(super) fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat, language: DocumentLanguage) {
     s.push_str("(\n");

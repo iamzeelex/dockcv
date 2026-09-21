@@ -11,8 +11,8 @@
 //! `EDUCATION` in text, `## Education` in Markdown and a bold run in DOCX, and
 //! pushing that behind a trait would buy nothing but indirection.
 
-use super::dates::DateStyle;
-use super::model::{Resume, ResumeDate, ResumeDoc, SectionKind};
+use crate::resume::dates::DateStyle;
+use crate::resume::model::{Resume, ResumeDate, ResumeDoc, SectionKind};
 
 /// The sections of `resume`, in the order they print.
 ///
@@ -107,8 +107,8 @@ pub fn format_date_range(start: &ResumeDate, end: &ResumeDate, dates: DateStyle)
 /// Every section kind is populated, so a test that walks `SectionKind` finds
 /// content for each one.
 #[cfg(test)]
-pub(crate) fn sample_resume() -> super::model::Resume {
-    use super::model::*;
+pub(crate) fn sample_resume() -> crate::resume::model::Resume {
+    use crate::resume::model::*;
 
     Resume {
         basics: Basics {
@@ -240,11 +240,11 @@ mod tests {
     fn every_section_kind_reaches_every_emitter() {
         let resume = sample_resume();
 
-        let text = crate::resume::export_text::export_plain_text(&resume);
-        let markdown = crate::resume::export_markdown::export_markdown(&resume);
+        let text = crate::resume::export::text::export_plain_text(&resume);
+        let markdown = crate::resume::export::markdown::export_markdown(&resume);
         #[cfg(feature = "docx")]
         let docx = {
-            let bytes = crate::resume::export_docx::export_docx(&resume).expect("docx");
+            let bytes = crate::resume::export::docx::export_docx(&resume).expect("docx");
             docx_text(&bytes)
         };
 
@@ -289,8 +289,8 @@ mod tests {
         resume.education.clear();
         assert!(is_section_empty(&resume, SectionKind::Education));
 
-        let text = crate::resume::export_text::export_plain_text(&resume);
-        let markdown = crate::resume::export_markdown::export_markdown(&resume);
+        let text = crate::resume::export::text::export_plain_text(&resume);
+        let markdown = crate::resume::export::markdown::export_markdown(&resume);
         assert!(!text.contains("EDUCATION"));
         assert!(!markdown.contains("## Education"));
     }
@@ -373,7 +373,7 @@ mod tests {
         resume.volunteer[0].url = "opensource.example.org".into();
 
         // 1. Plain Text: heading (url)
-        let text = crate::resume::export_text::export_plain_text(&resume);
+        let text = crate::resume::export::text::export_plain_text(&resume);
         assert!(
             text.contains("Staff Software Engineer, Tech Corp (Mountain View, CA)")
                 && text.contains("(techcorp.example.com)"),
@@ -389,7 +389,7 @@ mod tests {
         );
 
         // 2. Markdown: ### [Heading](url)
-        let md = crate::resume::export_markdown::export_markdown(&resume);
+        let md = crate::resume::export::markdown::export_markdown(&resume);
         assert!(
             md.contains("### [Staff Software Engineer, Tech Corp](https://techcorp.example.com) (Mountain View, CA)"),
             "Markdown must format work heading as inline link, got:\n{md}"
@@ -408,7 +408,7 @@ mod tests {
         // 3. DOCX: contains text and links
         #[cfg(feature = "docx")]
         {
-            let docx_bytes = crate::resume::export_docx::export_docx(&resume).expect("docx export");
+            let docx_bytes = crate::resume::export::docx::export_docx(&resume).expect("docx export");
             let read = docx_rs::read_docx(&docx_bytes).expect("docx read");
             let mut hyperlink_texts: Vec<String> = Vec::new();
             for child in read.document.children {
@@ -477,7 +477,7 @@ mod tests {
 
         // 4. JSON Resume: exports work and volunteer url
         let json_resume =
-            crate::resume::export_json_resume::export_json_resume(&resume).expect("json resume");
+            crate::resume::export::json_resume::export_json_resume(&resume).expect("json resume");
         assert!(
             json_resume.contains("https://techcorp.example.com"),
             "JSON Resume must contain work url"

@@ -18,7 +18,7 @@ use gpui::{
 use dockcv_ui_components::{TextFieldEvent, TextFieldState};
 
 use crate::config;
-use crate::resume::export_names::{plan_batch, OnCollision};
+use crate::resume::export::names::{plan_batch, OnCollision};
 use crate::resume::model::{DiaryEntry, ResumeDoc, SectionKind};
 use crate::resume::template;
 use crate::theme::ActiveTheme;

@@ -424,7 +424,7 @@ fn word_readings(path: &std::path::Path, bytes: &[u8]) -> Vec<(String, String)> 
 #[test]
 fn the_word_file_reads_the_same_way_whoever_reads_it() {
     let resume = fixture();
-    let bytes = dockcv_core::resume::export_docx::export_docx(&resume)
+    let bytes = dockcv_core::resume::export::docx::export_docx(&resume)
         .expect("the fixture exports to .docx");
     let path = std::env::temp_dir().join("dockcv-ats.docx");
     std::fs::write(&path, &bytes).expect("write the file the external readers open");
@@ -448,7 +448,7 @@ fn the_word_file_reads_the_same_way_whoever_reads_it() {
 #[test]
 fn the_word_file_says_what_its_headings_and_its_lists_are() {
     let resume = fixture();
-    let bytes = dockcv_core::resume::export_docx::export_docx(&resume)
+    let bytes = dockcv_core::resume::export::docx::export_docx(&resume)
         .expect("the fixture exports to .docx");
     let paragraphs = docx::paragraphs(&bytes).expect("we can read back what we just wrote");
 
@@ -525,7 +525,7 @@ fn every_attack_that_lands_is_one_the_lint_saw_coming() {
         ));
         std::fs::write(&path, &pdf).expect("write");
 
-        let bytes = dockcv_core::resume::export_docx::export_docx(&adversary.resume)
+        let bytes = dockcv_core::resume::export::docx::export_docx(&adversary.resume)
             .unwrap_or_else(|why| panic!("“{}” does not export to .docx: {why}", adversary.name));
         let word_path = std::env::temp_dir().join(format!(
             "dockcv-adv-{}.docx",

@@ -6,12 +6,12 @@
 
 use std::fmt::Write as _;
 
-use super::dates::DateStyle;
-use super::export_walk::{
+use crate::resume::dates::DateStyle;
+use super::walk::{
     format_date_range, is_section_empty, ordered_sections, resolve_section_title,
 };
-use super::links;
-use super::model::{
+use crate::resume::links;
+use crate::resume::model::{
     Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
     SkillGroup, Volunteer, Work,
 };
@@ -395,7 +395,7 @@ pub fn typst_to_markdown(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resume::export_walk::sample_resume;
+    use crate::resume::export::walk::sample_resume;
     use crate::resume::model::*;
 
     #[test]

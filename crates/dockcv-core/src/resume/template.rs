@@ -16,12 +16,15 @@
 //! blocks, keeping the author's emphasis markup — see `neutralize` for the
 //! syntax that is escaped instead, and why.
 
+mod dict;
+mod page;
+
 use crate::resume::model::{
     DocumentLanguage, LayoutSettings, ProfileCatalog, Resume, ResumeDoc,
 };
 
-use super::template_dict::resume_to_dict_into;
-use super::template_page::{
+use self::dict::resume_to_dict_into;
+use self::page::{
     document_metadata_into, no_heading_into, page_setup_into, section_layout_into,
 };
 
@@ -37,7 +40,7 @@ use super::template_page::{
 /// [`page_setup_into`] from the document's own `LayoutSettings` (C1, US-07).
 /// This is still one self-contained block — no packages, no network, bundled
 /// fonts only (US-10).
-const RENDERER: &str = include_str!("renderer.typ");
+const RENDERER: &str = include_str!("template/renderer.typ");
 
 /// Build the full Typst document for a resume, using the default layout
 /// (A4, the original margins/text-scale/leading `PREAMBLE` used to hard-code).
@@ -375,7 +378,7 @@ mod empty_document_tests {
 #[cfg(test)]
 mod date_format_tests {
     use super::*;
-    use crate::resume::template_dict::neutralize;
+    use crate::resume::template::dict::neutralize;
     use crate::resume::model::{
         DateFormat, DocumentLanguage, LayoutSettings, Resume, SectionKind, Work,
     };
@@ -623,13 +626,10 @@ mod date_format_tests {
 }
 
 #[cfg(test)]
-#[path = "template_heading_tests.rs"]
 mod heading_tests;
 
 #[cfg(test)]
-#[path = "template_layout_tests.rs"]
 mod layout_tests;
 
 #[cfg(test)]
-#[path = "template_tests.rs"]
-mod generator_tests;
+mod tests;

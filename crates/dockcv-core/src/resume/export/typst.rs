@@ -3,8 +3,8 @@
 //! Produces standalone `.typ` source that compiles with the Typst CLI to the
 //! identical typeset layout produced by DockCV.
 
-use super::model::{DocumentLanguage, LayoutSettings, Resume, ResumeDoc};
-use super::template;
+use crate::resume::model::{DocumentLanguage, LayoutSettings, Resume, ResumeDoc};
+use crate::resume::template;
 
 /// Export a [`ResumeDoc`] to a complete, standalone Typst source string.
 ///
@@ -68,7 +68,7 @@ mod tests {
         let english = export_typst_with_layout(&doc.compose(), &doc.layout);
         assert!(english.contains("lang: \"en\""));
     }
-    use crate::resume::export_walk::sample_resume;
+    use crate::resume::export::walk::sample_resume;
     use crate::typst_engine::TypstEngine;
 
     /// The `.typ` we hand a Typst user has to be the whole document.
