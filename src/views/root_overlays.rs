@@ -8,8 +8,8 @@ use gpui::{
 
 use super::root_preview_chrome::{MAX_ZOOM_PCT, MIN_ZOOM_PCT};
 use dockcv_ui_components::{
-    lucide, Button, ButtonExt, Disableable, Icon, IconName, ListItem, ListItemExt,
-    ScrollableElement, Sizable, TextField, CHROME_HEIGHT, SANS,
+    lucide, Button, ButtonExt, Disableable, IconName, ListItem, ListItemExt,
+    ScrollableElement, Selectable, TextField, CHROME_HEIGHT, SANS,
 };
 
 use crate::resume::model::SectionKind;
@@ -93,6 +93,7 @@ impl Root {
                     ),
             )
             .child(div().flex_1())
+            .child(self.render_save_indicator(cx))
             .child(self.render_preset_control(cx))
             // D-7: quick-capture into the Diary. `.tooltip` is the fix §7
             // names for P-09 — a bare word next to Export PDF read as inert;
@@ -103,6 +104,7 @@ impl Root {
             .child(
                 Button::new("layout-rail")
                     .toolbar()
+                    .selected(self.editor_mode == super::root_editor_state::EditorMode::Layout)
                     .gap(px(6.0))
                     .label("Layout")
                     .tooltip("Page size, margins and text scale")
@@ -127,6 +129,7 @@ impl Root {
                         this.open_capture_sheet(window, cx);
                     })),
             )
+            .child(toolbar_rule(theme.border))
             .child(
                 Button::new("undo")
                     .icon_only()
@@ -155,6 +158,7 @@ impl Root {
                         this.redo_document(window, cx);
                     })),
             )
+            .child(toolbar_rule(theme.border))
             .child(
                 Button::new("export-pdf")
                     .toolbar_primary()
@@ -171,6 +175,41 @@ impl Root {
                         this.export_pdf_checked(window, cx);
                     })),
             )
+    }
+
+    /// Whether the file has what is on screen.
+    ///
+    /// Two words and a dot, and they are never both absent: the vault is the
+    /// product, so "is it written down" is not a transient toast. Green when
+    /// the disk agrees, muted while it does not — including after a write that
+    /// failed, where the banner carries the reason and this keeps carrying the
+    /// fact.
+    fn render_save_indicator(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = *cx.theme();
+        let (dot, label) = if self.unsaved {
+            (theme.text_subtle, "Unsaved")
+        } else {
+            (theme.success, "Saved")
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .mr(px(4.0))
+            .child(
+                div()
+                    .size(px(6.0))
+                    .rounded_full()
+                    .flex_none()
+                    .bg(dot),
+            )
+            .child(
+                div()
+                    .text_style(TextStyle::meta())
+                    .text_color(theme.text_subtle)
+                    .child(label),
+            )
+            .into_any_element()
     }
 
     /// The modal overlay listing diary entries for inserting one as a highlight.
@@ -255,8 +294,7 @@ impl Root {
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.diary_picker = None;
                                 cx.notify();
-                            }))
-                            .child(Icon::new(IconName::Close).with_size(cx.theme().icon_sm())),
+                            })),
                     ),
             )
             .child(list);
@@ -341,8 +379,7 @@ impl Root {
                             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                                 this.library_picker = None;
                                 cx.notify();
-                            }))
-                            .child(Icon::new(IconName::Close).with_size(cx.theme().icon_sm())),
+                            })),
                     ),
             )
             .child(list);
@@ -635,14 +672,12 @@ impl Root {
                     .items_start()
                     .justify_center()
                     .overflow_y_scrollbar()
-                    .pt(px(34.0))
-                    .pb(px(34.0))
+                    // The same inset on all four sides, and the same constant
+                    // `effective_zoom_pct` subtracts — a fit computed against
+                    // one padding and drawn inside another is not a fit.
+                    .p(px(super::root_preview_chrome::PREVIEW_GUTTER))
                     .child(content),
             )
-            // C2: the layout rail floats over the canvas rather than taking a
-            // column, so opening it does not re-centre the page you opened it
-            // to measure. See `root_layout_rail.rs` for that ruling (O-1).
-            .children(self.layout_rail_open.then(|| self.render_layout_rail(cx)))
             .child(self.render_preview_toolbar(cx))
     }
 
@@ -663,13 +698,29 @@ impl Root {
         let root = cx.weak_entity();
         canvas(
             |_, _, _| (),
-            move |bounds, _, window: &mut Window, _cx: &mut App| {
+            move |bounds, _, window: &mut Window, cx: &mut App| {
+                // The same bounds the gesture is tested against are the ones a
+                // fit mode needs, so this canvas reports them. Written only on
+                // a change: an unconditional `notify` from paint is a repaint
+                // loop, and the pane's own size does not depend on the sheet
+                // inside it (the scroller is `size_full`), so this settles in
+                // one extra frame.
+                let measured = (f32::from(bounds.size.width), f32::from(bounds.size.height));
+                let _ = root.update(cx, |this, cx| {
+                    if this.preview_pane != Some(measured) {
+                        this.preview_pane = Some(measured);
+                        cx.notify();
+                    }
+                });
                 let root = root.clone();
                 window.on_mouse_event(move |event: &PinchEvent, phase, window, cx| {
                     if phase != DispatchPhase::Bubble || !bounds.contains(&event.position) {
                         return;
                     }
                     let _ = root.update(cx, |this, cx| {
+                        // Pinching is asking for a size by hand, so the fit
+                        // modes let go — from wherever they had the page.
+                        this.take_manual_zoom();
                         // `delta` is a fraction: 0.1 means "10% larger".
                         this.zoom_pct =
                             (this.zoom_pct * (1.0 + event.delta)).clamp(MIN_ZOOM_PCT, MAX_ZOOM_PCT);
@@ -698,4 +749,19 @@ impl Root {
     // the zoom controls (US-07) and the page counter (US-08), both specced in
     // the Typst-controls spec; `PageGeometry::page_count` is already
     // available for the latter.
+}
+
+/// A hairline between two groups of toolbar controls.
+///
+/// `Layout` is a mode, `Capture` is an action, and undo/redo are the document's
+/// history — three kinds of thing drawn identically and spaced identically, so
+/// the bar read as one undifferentiated run of seven controls.
+fn toolbar_rule(color: gpui::Hsla) -> AnyElement {
+    div()
+        .w(px(1.0))
+        .h(px(18.0))
+        .flex_none()
+        .mx(px(2.0))
+        .bg(color)
+        .into_any_element()
 }

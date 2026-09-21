@@ -34,6 +34,7 @@ use crate::vault;
 use super::confirm;
 use super::save_status;
 
+use super::root_editor_state::{EditorMode, EditorSelection, LayoutCategory};
 use super::root_section_rename::SectionRename;
 use super::root_section_variants::VariantRename;
 
@@ -240,17 +241,34 @@ pub struct Root {
     /// when an edit doesn't change the rendered output (e.g. renaming a
     /// variant or preset).
     pub(super) last_source: String,
-    /// Identities of expanded section cards. Keyed by `SectionKind` rather
-    /// than a title string — a custom section's title is user-editable
-    /// (D-9), and keying expand/collapse state by text that can change on
-    /// every keystroke would both collide (two custom sections both titled
-    /// "New Section" until renamed) and reset on every edit.
+    /// Which navigator branches show their entries. Only the selected
+    /// section's branch is drawn, so at most one of these is visible at a
+    /// time; the set remembers the rest, so returning to a section finds it
+    /// the way you left it.
+    ///
+    /// Keyed by `SectionKind` rather than a title string — a custom section's
+    /// title is user-editable (D-9), and keying expand/collapse state by text
+    /// that can change on every keystroke would both collide (two custom
+    /// sections both titled "New Section" until renamed) and reset on every
+    /// edit.
     pub(super) expanded: HashSet<SectionKind>,
     /// The section keyboard navigation (`FocusNextSection`/`FocusPrevSection`)
-    /// currently points at — always one of the six fixed `SectionKind`s, never
-    /// empty, so every other keyboard action (`ToggleFocusedSection`,
+    /// currently points at — always a section the document actually has,
+    /// custom ones included, and never empty, so every other keyboard action
+    /// (`ToggleFocusedSection`,
     /// `NextVariant`, `FocusNextField`, …) always has a section to act on.
     pub(super) focused_section: SectionKind,
+    pub(super) selection: EditorSelection,
+    pub(super) editor_mode: EditorMode,
+    /// Whether the document on screen differs from the one on disk.
+    ///
+    /// True from the edit until the debounced write lands, and it *stays* true
+    /// when that write fails — which is the whole point. The banner explains a
+    /// failure; this says, at all times and without being asked, whether the
+    /// file has what you are looking at. In a product whose entire promise is
+    /// that the data is yours in a folder you own, that is the one fact that
+    /// may never be absent from the screen.
+    pub(super) unsaved: bool,
     /// One live text-input state per addressable field, plus the subscription
     /// that writes its changes back into `doc`. Rebuilt whenever the model
     /// changes underneath — see [`Root::sync_fields`].
@@ -349,17 +367,24 @@ pub struct Root {
     /// frame would make the gesture stutter. `+`/`-` still land exactly on a
     /// step — a user who asks for 100% gets 100%.
     pub(super) zoom_pct: f32,
+    /// How the sheet is sized against the pane — and therefore whether
+    /// `zoom_pct` is in force at all. Ephemeral like the zoom itself.
+    pub(super) preview_fit: super::root_preview_chrome::PreviewFit,
+    /// The preview pane's own size in display pixels, written each paint by the
+    /// canvas in `render_preview`. A fit mode is a question about the pane, and
+    /// GPUI only answers it at layout time.
+    pub(super) preview_pane: Option<(f32, f32)>,
     /// The scale the last render was rasterized at, so a zoom change can tell
     /// whether it needs a sharper pass.
     pub(super) last_scale: f32,
     /// The compiler's last measurement of the laid-out pages.
     pub(super) geometry: Option<PageGeometry>,
-    pub(super) layout_rail_open: bool,
-    /// Which of the rail's groups is expanded. One at a time: the rail is
-    /// 220px of a window someone is reading a document in, and four headings
-    /// with one open is a shorter thing to scan than nine controls in a
-    /// column. Typography first, because type is what people change first.
-    pub(super) layout_group: usize,
+    /// Which category Layout mode is showing. One at a time, listed down the
+    /// panel's own left column — the same navigator-and-inspector shape
+    /// Content mode uses, so switching modes changes what the two columns hold
+    /// and not how the panel is read. Typography first, because type is what
+    /// people change first.
+    pub(super) layout_category: LayoutCategory,
     /// The rail's two sliders. Built lazily — a `SliderState` needs a
     /// `Window`, which `Root::new` does not have, same as `Root::fields`.
     pub(super) margin_slider: Option<Entity<SliderState>>,
@@ -416,6 +441,9 @@ impl Root {
             last_source: String::new(),
             expanded: HashSet::from([SectionKind::Profile]),
             focused_section: SectionKind::Profile,
+            selection: EditorSelection::initial(),
+            editor_mode: EditorMode::Content,
+            unsaved: false,
             fields: HashMap::new(),
             fields_stale: false,
             focus_handle: cx.focus_handle(),
@@ -437,10 +465,13 @@ impl Root {
             initialized: false,
             last_crisp: None,
             zoom_pct: 100.0,
+            // A CV is read at column width, and a sheet floating small in the
+            // middle of a wide pane is the state nobody would have chosen.
+            preview_fit: super::root_preview_chrome::PreviewFit::Width,
+            preview_pane: None,
             last_scale: 0.0,
             geometry: None,
-            layout_rail_open: false,
-            layout_group: 0,
+            layout_category: LayoutCategory::Typography,
             margin_slider: None,
             scale_slider: None,
             slider_subscriptions: Vec::new(),
@@ -517,6 +548,13 @@ impl Root {
             // See `save_block_to_library`: no library pool for custom sections.
             Profile | Custom(_) => {}
         }
+        self.selection = EditorSelection {
+            section,
+            item: super::root_editor_state::item_count(&self.doc, section).checked_sub(1),
+        };
+        self.focused_section = section;
+        self.expanded.insert(section);
+        self.editor_mode = EditorMode::Content;
         self.library_picker = None;
         self.fields_stale = true;
         cx.notify();
@@ -729,6 +767,7 @@ impl Root {
         let executor = cx.background_executor().clone();
 
         let seen = self.on_disk;
+        self.unsaved = true;
         self.save_task = Some(cx.spawn(async move |this, cx| {
             executor.timer(SAVE_DEBOUNCE).await;
             let result = executor
@@ -737,9 +776,16 @@ impl Root {
                     async move { vault::save(&doc, &path, seen) }
                 })
                 .await;
+            let written = result.is_ok();
             cx.update(|cx| {
                 let now = save_status::record_document(cx, &path, seen, result);
-                let _ = this.update(cx, |this, _| this.on_disk = now);
+                let _ = this.update(cx, |this, _| {
+                    this.on_disk = now;
+                    // A refused or failed write leaves this set: the banner
+                    // says what went wrong, this keeps saying that the file
+                    // does not have your edit.
+                    this.unsaved = !written;
+                });
                 // The banner lives on `Shell`'s frame, which nothing else here
                 // touches, so this write needs its own repaint request.
                 cx.refresh_windows();
@@ -1145,12 +1191,12 @@ impl Root {
         self.step_section(-1, window, cx);
     }
 
-    /// Move [`Root::focused_section`] to the next/previous of the six fixed
-    /// sections, wrapping, and blur whatever field currently has OS focus —
+    /// Move through the document's actual section order, including custom
+    /// sections, and blur whatever field currently has OS focus —
     /// moving the navigation cursor away from a field you're mid-edit in
     /// should stop reading as "still editing here".
     fn step_section(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
-        let sections = ResumeDoc::SECTIONS;
+        let sections = self.doc.sections();
         let current = sections
             .iter()
             .position(|&s| s == self.focused_section)
@@ -1158,6 +1204,9 @@ impl Root {
         let len = sections.len() as isize;
         let next = (current as isize + delta).rem_euclid(len) as usize;
         self.focused_section = sections[next];
+        self.selection = EditorSelection::for_section(&self.doc, sections[next]);
+        self.expanded.insert(sections[next]);
+        self.editor_mode = EditorMode::Content;
         self.focus_handle.focus(window, cx);
         cx.notify();
     }
@@ -1205,6 +1254,7 @@ impl Root {
         let next = (current + delta).rem_euclid(count as isize) as usize;
         self.checkpoint();
         self.doc.set_active_variant(section, next);
+        self.selection.normalize(&self.doc);
         self.schedule_save(cx);
         self.fields_stale = true;
         cx.notify();
@@ -1291,6 +1341,11 @@ impl Root {
             None => ids.len() - 1,
         };
 
+        self.selection = EditorSelection {
+            section,
+            item: ids[next_index].item_index(),
+        };
+        self.editor_mode = EditorMode::Content;
         if let Some(binding) = self.fields.get(&ids[next_index]) {
             let handle = binding.state.read(cx).focus_handle(cx);
             handle.focus(window, cx);
@@ -1394,6 +1449,8 @@ impl Render for Root {
             self.external_change_pending = false;
             self.adopt_external_change(window, cx);
         }
+        self.selection.normalize(&self.doc);
+        self.focused_section = self.selection.section;
         self.sync_fields(window, cx);
         self.ensure_layout_sliders(window, cx);
         self.refresh_ats_findings();
@@ -1456,12 +1513,19 @@ impl Render for Root {
                         .child(
                             resizable_panel()
                                 .flex_none()
-                                .size(px(392.0))
+                                .size(px(520.0))
                                 // Below ~320 the two-column form collapses to one
                                 // useful column; above ~680 the preview stops being
                                 // a preview.
-                                .size_range(px(320.0)..px(680.0))
-                                .child(self.render_sidebar(cx)),
+                                .size_range(px(440.0)..px(680.0))
+                                .child(match self.editor_mode {
+                                    EditorMode::Content => {
+                                        self.render_sidebar(cx).into_any_element()
+                                    }
+                                    EditorMode::Layout => {
+                                        self.render_layout_panel(cx).into_any_element()
+                                    }
+                                }),
                         )
                         .child(resizable_panel().child(self.render_preview(cx))),
                 ),

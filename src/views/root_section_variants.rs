@@ -20,7 +20,7 @@ use gpui::{
 };
 
 use dockcv_ui_components::{
-    Button, ButtonExt, DockIcon, Field, Icon, IconName, Sizable, TextField, TextFieldEvent,
+    Button, ButtonExt, DockIcon, Field, IconName, Sizable, TextField, TextFieldEvent,
     TextFieldState, SANS,
 };
 
@@ -45,7 +45,7 @@ pub(super) struct VariantRename {
 
 impl Root {
     /// The per-section version timeline: a "Variant" kicker, a pill per named
-    /// variant (click to switch), a ✕ to delete the active one, and "+ new"
+    /// variant (click to switch), a ✕ to delete the active one, and "New variant"
     /// to duplicate it. Lives inside the section's own card (L-06) — a
     /// variant is a property of its section, not a global toolbar control.
     pub(super) fn variant_bar(&self, cx: &mut Context<Self>, section: SectionKind) -> AnyElement {
@@ -56,15 +56,22 @@ impl Root {
 
         // "Variant" kicker — panel chrome, sans rather than the mockup's
         // mono (design doc §5 flag), same reasoning as "SECTIONS" above.
-        let kicker = div()
-            .flex()
-            .items_center()
-            .gap(px(6.0))
-            .mb(px(7.0))
-            .font_family(SANS)
-            .text_size(px(10.0))
-            .text_color(theme.text_subtle)
-            .child("VARIANT");
+        //
+        // Dropped when the section has exactly one variant, which is most
+        // sections in most documents: a heading reading VARIANT above a single
+        // chip reading `Base` is a label for a label. With two or more the
+        // word earns its line, because then the row is a choice.
+        let kicker = (count > 1).then(|| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .mb(px(7.0))
+                .font_family(SANS)
+                .text_size(px(10.0))
+                .text_color(theme.text_subtle)
+                .child("VARIANT")
+        });
 
         // P-17 discoverability moved into the pills' own tooltips. Two `Kbd`
         // chips sitting after the kicker rendered as `^⇧↑ ^⇧↓` — glyph soup
@@ -117,6 +124,7 @@ impl Root {
                     this.flush_variant_rename(section, window, cx);
                     this.checkpoint();
                     this.doc.set_active_variant(section, i);
+                    this.selection.normalize(&this.doc);
                     this.schedule_save(cx);
                     this.fields_stale = true;
                     cx.notify();
@@ -218,14 +226,14 @@ impl Root {
                                 };
                                 this.checkpoint();
                                 this.doc.remove_variant(section, index);
+                                this.selection.normalize(&this.doc);
                                 this.schedule_save(cx);
                                 this.fields_stale = true;
                                 cx.notify();
                                 this.schedule_recompile(window, cx);
                             },
                         );
-                    }))
-                    .child(Icon::new(IconName::Close).with_size(cx.theme().icon_sm())),
+                    })),
             );
         }
 
@@ -244,14 +252,14 @@ impl Root {
                     this.schedule_recompile(window, cx);
                 }))
                 .icon(IconName::Plus)
-                .child("new"),
+                .child("New variant"),
         );
 
         div()
             .flex()
             .flex_col()
             .mb(px(16.0))
-            .child(kicker)
+            .children(kicker)
             .child(pill_row)
             .into_any_element()
     }

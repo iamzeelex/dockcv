@@ -13,6 +13,7 @@ mod root;
 mod root_ats_lint;
 mod root_custom_sections;
 mod root_dates;
+mod root_editor_state;
 mod root_export_rail;
 mod root_export_sheet;
 mod root_export_write;

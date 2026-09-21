@@ -9,7 +9,9 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, Context, FontWeight, IntoElement, Window};
 
-use dockcv_ui_components::{Button, ButtonExt, DropdownMenu, PopupMenu, PopupMenuItem, SANS};
+use dockcv_ui_components::{
+    Button, ButtonExt, DropdownMenu, PopupMenu, PopupMenuItem, StyledText, TextStyle, SANS,
+};
 
 use crate::resume::model::DocumentLanguage;
 use crate::theme::ActiveTheme;
@@ -169,7 +171,12 @@ impl Root {
                     name.clone()
                 }
             })
-            .unwrap_or_else(|| "No preset".to_string());
+            // Not "No preset" under an eyebrow reading PRESET — that says the same
+        // word twice and states the condition as an absence. The document
+        // always has a set of selections; when none of them is a saved preset,
+        // what you are looking at is the working copy, which is what the Preset
+        // Matrix has called it since C7.
+        .unwrap_or_else(|| "Working copy".to_string());
         let presets: Vec<String> = self.doc.presets.iter().map(|p| p.name.clone()).collect();
         let preset_languages: Vec<DocumentLanguage> = (0..self.doc.presets.len())
             .filter_map(|index| self.doc.language_for_preset(index))
@@ -196,11 +203,27 @@ impl Root {
             )
             .child(
                 div()
-                    .font_family(SANS)
-                    .text_size(px(13.0))
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(theme.text)
-                    .child(format!("{value} · {}", language.badge())),
+                    .flex()
+                    .items_baseline()
+                    .gap(px(6.0))
+                    .child(
+                        div()
+                            .font_family(SANS)
+                            .text_size(px(13.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(theme.text)
+                            .child(value),
+                    )
+                    // The language is a second axis, not part of the preset's
+                    // name. Joined into one string with a middot it read as
+                    // one value called "Academic · EN"; set apart and muted it
+                    // reads as what it is — this reading's language.
+                    .child(
+                        div()
+                            .text_style(TextStyle::meta())
+                            .text_color(theme.text_subtle)
+                            .child(language.badge()),
+                    ),
             )
             .dropdown_menu(move |menu, window, cx| {
                 let mut menu = menu;

@@ -40,12 +40,6 @@ impl Root {
             // reference away by the next frame; nothing to draw meanwhile.
             return div().into_any_element();
         };
-        let title = if section.title.trim().is_empty() {
-            "Untitled section".to_string()
-        } else {
-            section.title.clone()
-        };
-
         // The section's own title is renamed from its card header
         // (`root_section_rename.rs`), the same gesture a built-in section's
         // heading uses — not a field in the body. `FieldId::CustomSectionTitle`
@@ -55,22 +49,18 @@ impl Root {
 
         let entries = section.content.active();
         let count = entries.len();
-        for (i, entry) in entries.iter().enumerate() {
-            f.push(Self::wide(self.entry_header(
-                cx,
-                format!("Entry {}", i + 1),
-                ListId::CustomEntries(id),
-                i,
-                // No library pool for custom sections (`Root::save_block_to_library`
-                // doesn't have one either) — no ★.
-                None,
-            )));
+        for (i, entry) in entries
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| Some(*i) == self.selection.item)
+        {
             f.push(self.field(cx, FieldId::CustomEntryTitle(id, i), "Title"));
             f.push(self.field(cx, FieldId::CustomEntrySubtitle(id, i), "Subtitle"));
             f.extend(self.date_fields(
                 cx,
                 FieldId::CustomEntryStart(id, i),
                 FieldId::CustomEntryEnd(id, i),
+                "Ongoing",
             ));
             f.push(self.field(cx, FieldId::CustomEntryUrl(id, i), "URL"));
             let highlights: Vec<FieldId> = (0..entry.highlights.len())
@@ -88,14 +78,8 @@ impl Root {
                 ListId::CustomEntryHighlights(id, i),
             )));
         }
-        f.push(Self::wide(self.add_button(
-            cx,
-            "Add entry",
-            ListId::CustomEntries(id),
-        )));
 
-        let menu = self.section_menu_button(cx, id);
-        self.card(cx, SectionKind::Custom(id), title, count, f, Some(menu))
+        self.card(cx, SectionKind::Custom(id), count, f)
     }
 
     /// The "···" trigger on a custom section's card, offering the one action
@@ -123,6 +107,7 @@ impl Root {
                             this.checkpoint();
                             this.doc.remove_custom_section(id);
                             this.expanded.remove(&SectionKind::Custom(id));
+                            this.selection.normalize(&this.doc);
                             this.fields_stale = true;
                             this.schedule_save(cx);
                             cx.notify();

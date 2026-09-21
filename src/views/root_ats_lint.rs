@@ -196,6 +196,12 @@ impl Root {
     fn apply_ats_remedy(&mut self, finding: &Finding, window: &mut Window, cx: &mut Context<Self>) {
         self.focused_section = finding.section;
         self.expanded.insert(finding.section);
+        self.selection = super::root_editor_state::EditorSelection {
+            section: finding.section,
+            item: finding.at.and_then(|field| field.item_index()),
+        };
+        self.selection.normalize(&self.doc);
+        self.editor_mode = super::root_editor_state::EditorMode::Content;
 
         match remedy_for(finding) {
             AtsRemedy::FocusField(field) => {
@@ -206,8 +212,7 @@ impl Root {
             AtsRemedy::StandardHeading => {
                 // In the reading's own language: replacing `Meine Reise` with
                 // `Work Experience` fixes the parser and breaks the CV.
-                let standard =
-                    ats::preferred_heading(finding.section, self.doc.language());
+                let standard = ats::preferred_heading(finding.section, self.doc.language());
                 if self.doc.section_title(finding.section) != standard {
                     self.checkpoint();
                     self.doc.set_section_title(finding.section, standard);
@@ -321,6 +326,12 @@ impl Root {
         self.export_sheet = None;
         self.focused_section = first.section;
         self.expanded.insert(first.section);
+        self.selection = super::root_editor_state::EditorSelection {
+            section: first.section,
+            item: first.at.and_then(|field| field.item_index()),
+        };
+        self.selection.normalize(&self.doc);
+        self.editor_mode = super::root_editor_state::EditorMode::Content;
         cx.notify();
     }
 }

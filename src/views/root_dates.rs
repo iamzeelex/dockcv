@@ -17,7 +17,9 @@
 use gpui::prelude::*;
 use gpui::{div, px, Context, IntoElement, SharedString, Window};
 
-use dockcv_ui_components::{Button, ButtonExt, DropdownMenu, Field, PopupMenuItem};
+use dockcv_ui_components::{
+    Button, ButtonExt, Checkbox, DropdownMenu, Field, PopupMenuItem,
+};
 
 use crate::resume::edit::FieldId;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
@@ -55,6 +57,17 @@ fn current(text: &str) -> Option<(i32, u32)> {
     Some((parsed.year, parsed.month?))
 }
 
+/// Does this range have no end yet?
+///
+/// The renderer prints `start – Present` when the end is blank, so blank *is*
+/// the open state — and a file that spelled the word out means the same thing.
+/// One predicate for both, because the checkbox has to come up ticked for a CV
+/// imported from either.
+fn range_is_open(end_text: &str) -> bool {
+    end_text.trim().is_empty()
+        || crate::resume::dates::ResumeDate::new(end_text).names_the_present()
+}
+
 /// The first month the end may take in `year`, given the start.
 fn first_month_in(year: i32, floor: Option<(i32, u32)>) -> u32 {
     match floor {
@@ -64,47 +77,176 @@ fn first_month_in(year: i32, floor: Option<(i32, u32)>) -> u32 {
 }
 
 impl Root {
-    /// The two date controls of one entry.
+    /// One entry's dates: a range, and the switch that says it has not ended.
+    ///
+    /// A range is one fact, and it used to be drawn as two — `Start` and `End`,
+    /// two labels and four dropdowns filling a whole row each, for what a CV
+    /// prints as `2015 – 2017`. Here the two ends sit either side of an arrow
+    /// in one labelled field, which is also how the range reads on the page.
+    ///
+    /// The checkbox is the other half. An open end was expressible only by
+    /// leaving the end selectors alone, which looks exactly like not having
+    /// filled them in yet; `Present` on the page then arrived unannounced. Now
+    /// the state has a control, and the control says what it prints.
     pub(super) fn date_fields(
         &self,
         cx: &mut Context<Self>,
         start: FieldId,
         end: FieldId,
-    ) -> [Field; 2] {
+        ongoing: &'static str,
+    ) -> [Field; 1] {
+        let theme = *cx.theme();
         let floor = start.get(&self.doc).and_then(|t| current(t));
-        [
-            self.month_year_field(cx, start, "Start", None),
-            // `None` when the start is not a month and a year — there is
-            // nothing for the end to be after.
-            self.month_year_field(cx, end, "End", floor),
-        ]
+        let end_text = end.get(&self.doc).cloned().unwrap_or_default();
+        let is_open = range_is_open(&end_text);
+
+        [Field::new()
+            .col_span(2)
+            .gap(px(0.0))
+            .label_fn(move |_window, _cx| {
+                div()
+                    .text_style(TextStyle::label())
+                    .text_color(theme.text_muted)
+                    .child("Date range")
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(7.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.0))
+                            .child(div().flex_1().min_w_0().child(self.date_pair(
+                                cx,
+                                start,
+                                None,
+                                false,
+                            )))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .text_style(TextStyle::meta())
+                                    .text_color(theme.text_subtle)
+                                    .child("→"),
+                            )
+                            .child(div().flex_1().min_w_0().child(self.date_pair(
+                                cx,
+                                end,
+                                floor,
+                                is_open,
+                            ))),
+                    )
+                    .child(self.ongoing_toggle(cx, end, floor, is_open, ongoing)),
+            )]
+    }
+
+    /// The month and year selectors for one end of the range.
+    ///
+    /// `dimmed` is the open end: its menus still work — picking a date is how
+    /// you close the range — but they read as not currently saying anything.
+    fn date_pair(
+        &self,
+        cx: &mut Context<Self>,
+        field: FieldId,
+        floor: Option<(i32, u32)>,
+        dimmed: bool,
+    ) -> impl IntoElement {
+        let theme = *cx.theme();
+        let text = field.get(&self.doc).cloned().unwrap_or_default();
+        let value = current(&text);
+        // What is stored but not expressible stays on screen rather than being
+        // replaced by a placeholder that says "empty".
+        let leftover =
+            (value.is_none() && !text.trim().is_empty() && !dimmed).then(|| text.clone());
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(3.0))
+            .when(dimmed, |el| el.opacity(0.55))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(self.month_menu(cx, field, value, floor)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(self.year_menu(cx, field, value, floor)),
+                    ),
+            )
+            .children(leftover.map(|text| {
+                div()
+                    .text_style(TextStyle::meta())
+                    .text_color(theme.text_subtle)
+                    .child(text)
+            }))
+    }
+
+    /// `Current role — show "Present"`, and what ticking it does.
+    fn ongoing_toggle(
+        &self,
+        cx: &mut Context<Self>,
+        end: FieldId,
+        floor: Option<(i32, u32)>,
+        is_open: bool,
+        ongoing: &'static str,
+    ) -> impl IntoElement {
+        let label = format!("{ongoing} — print “Present”");
+        Checkbox::new(SharedString::from(format!("date-ongoing-{end:?}")))
+            .checked(is_open)
+            .label(label)
+            .on_click(cx.listener(
+                move |this, checked: &bool, window, cx| {
+                    if *checked {
+                        if let Some(slot) = end.get_mut(&mut this.doc) {
+                            slot.clear();
+                        }
+                        // Same trailer as `write_date`: a value changed, no
+                        // field was added or removed.
+                        this.schedule_save(cx);
+                        cx.notify();
+                        this.schedule_recompile(window, cx);
+                    } else {
+                        // Unticking has to leave a date behind or the control
+                        // would tick itself straight back on. Today, or the
+                        // start if the role began later than today somehow.
+                        let (y, m) = floor.unwrap_or_else(|| (last_year(), 12));
+                        let (y, m) = {
+                            use chrono::Datelike;
+                            let now = chrono::Local::now();
+                            if (now.year(), now.month()) >= (y, m) {
+                                (now.year(), now.month())
+                            } else {
+                                (y, m)
+                            }
+                        };
+                        this.write_date(end, y, m, window, cx);
+                    }
+                },
+            ))
     }
 
     /// One date with no counterpart — a certificate is issued on a date, it
-    /// does not run between two. Same control, no floor: there is nothing for
-    /// it to be after.
+    /// does not run between two. Same selectors, no floor and no range.
     pub(super) fn single_date_field(
         &self,
         cx: &mut Context<Self>,
         field: FieldId,
         label: &'static str,
     ) -> Field {
-        self.month_year_field(cx, field, label, None)
-    }
-
-    fn month_year_field(
-        &self,
-        cx: &mut Context<Self>,
-        field: FieldId,
-        label: &'static str,
-        floor: Option<(i32, u32)>,
-    ) -> Field {
         let theme = *cx.theme();
-        let text = field.get(&self.doc).cloned().unwrap_or_default();
-        let value = current(&text);
         let label: SharedString = label.into();
-        let leftover = (value.is_none() && !text.trim().is_empty()).then(|| text.clone());
-
         Field::new()
             .col_span(1)
             .label_fn(move |_window, _cx| {
@@ -113,41 +255,7 @@ impl Root {
                     .text_color(theme.text_muted)
                     .child(label.clone())
             })
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(3.0))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.0))
-                            // Each menu takes half the field, so the pair fills
-                            // the same box a text input would and the two
-                            // columns of the form still line up.
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .child(self.month_menu(cx, field, value, floor)),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .child(self.year_menu(cx, field, value, floor)),
-                            ),
-                    )
-                    // What is stored but not expressible stays on screen rather
-                    // than being replaced by a placeholder that says "empty".
-                    .children(leftover.map(|text| {
-                        div()
-                            .text_style(TextStyle::meta())
-                            .text_color(cx.theme().text_subtle)
-                            .child(text)
-                    })),
-            )
+            .child(self.date_pair(cx, field, None, false))
     }
 
     fn month_menu(
@@ -341,5 +449,23 @@ mod tests {
         // End was Mar 2026; the user picks 2024.
         let month = 3_u32.max(first_month_in(2024, floor));
         assert_eq!(format_date(2024, month), "Aug 2024");
+    }
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::range_is_open;
+
+    /// Blank is how the model says "still there", and it is what the renderer
+    /// turns into `Present`. The checkbox has to agree with both, including on
+    /// a CV imported from a file that wrote the word itself.
+    #[test]
+    fn an_open_range_is_recognised_however_it_was_written() {
+        for open in ["", "   ", "Present", "present", "ongoing", "Current"] {
+            assert!(range_is_open(open), "{open:?} should read as open");
+        }
+        for closed in ["2017-06", "Jun 2017", "2017"] {
+            assert!(!range_is_open(closed), "{closed:?} should read as closed");
+        }
     }
 }

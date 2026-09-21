@@ -74,6 +74,60 @@ pub enum FieldId {
 }
 
 impl FieldId {
+    /// Index of the repeatable entry that owns this field. Section-level
+    /// fields return `None`; the editor uses this to select an entry before
+    /// focusing a field that is not currently mounted.
+    pub fn item_index(&self) -> Option<usize> {
+        use FieldId::*;
+        match *self {
+            ProfileNetwork(i)
+            | ProfileUsername(i)
+            | ProfileUrl(i)
+            | WorkName(i)
+            | WorkPosition(i)
+            | WorkLocation(i)
+            | WorkStart(i)
+            | WorkEnd(i)
+            | WorkUrl(i)
+            | WorkSummary(i)
+            | EduInstitution(i)
+            | EduStudyType(i)
+            | EduStart(i)
+            | EduEnd(i)
+            | EduUrl(i)
+            | SkillName(i)
+            | CertName(i)
+            | CertIssuer(i)
+            | CertDate(i)
+            | CertUrl(i)
+            | VolOrg(i)
+            | VolPosition(i)
+            | VolStart(i)
+            | VolEnd(i)
+            | VolUrl(i)
+            | CustomEntryTitle(_, i)
+            | CustomEntrySubtitle(_, i)
+            | CustomEntryStart(_, i)
+            | CustomEntryEnd(_, i)
+            | CustomEntryUrl(_, i)
+            | WorkHighlight(i, _)
+            | EduHighlight(i, _)
+            | SkillKeyword(i, _)
+            | VolHighlight(i, _)
+            | CustomEntryHighlight(_, i, _) => Some(i),
+            Name
+            | Label
+            | Summary
+            | Email
+            | Phone
+            | Location
+            | Url
+            | CustomSectionTitle(_)
+            | VariantName(_)
+            | PresetName(_) => None,
+        }
+    }
+
     /// Multi-line fields accept `Enter` as a newline; single-line fields ignore
     /// it.
     pub fn multiline(&self) -> bool {

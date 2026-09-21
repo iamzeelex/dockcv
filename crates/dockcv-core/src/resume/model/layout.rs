@@ -52,6 +52,13 @@ impl PageSize {
         self.dimensions_mm().0 * 72.0 / 25.4
     }
 
+    /// Page height in typographic points. The companion to [`Self::width_pt`],
+    /// and what "fit the whole page in the pane" needs: one sheet's proportion,
+    /// not the rendered stack's, which is as tall as the CV is long.
+    pub fn height_pt(self) -> f32 {
+        self.dimensions_mm().1 * 72.0 / 25.4
+    }
+
     fn dimensions_mm(self) -> (f32, f32) {
         match self {
             PageSize::A4 => (210.0, 297.0),
