@@ -52,28 +52,50 @@ are both clean.** Never report success on a self-assessment; run the commands.
 
 ## Layout
 
+A directory here is a **facade file beside a directory of the same name** —
+`model.rs` + `model/`, `applications.rs` + `applications/`. The facade is the
+public face and the directory is what it is made of, so `resume::model::Resume`
+and `views::applications` keep resolving however the parts are rearranged. A
+group of three or more files sharing a prefix is that pattern written into
+filenames instead of the filesystem; give it the directory.
+
 ```
 src/
   main.rs           entry point, platform attributes
   app.rs            GPUI bootstrap: run loop, fonts, actions, menus, window
   config.rs         app-level prefs outside the vault (last vault path, …)
-  theme.rs          thin re-export of dockcv-ui-components::theme
-  vault.rs          File-over-App store: TOML on disk, one file per document
-  typst_engine.rs   in-process Typst compile → rasterized Pixels
+  logging.rs        where DockCV says what went wrong, in a file a user can send
+  update.rs         whether a newer DockCV exists — and nothing beyond finding out
   render.rs         Pixels → gpui::RenderImage (BGRA swap)
-  resume/
-    model.rs        ResumeDoc / Versioned<T> / Preset — the data model
-    edit.rs         FieldId / ListId addressing + key-event text editing
-    template.rs     codegen: Resume → self-contained Typst source
-    altacv.rs       AltaCV importer
+  theme.rs          thin re-export of dockcv-ui-components::theme
+  vault.rs   + vault/     File-over-App store: TOML on disk, one file per document
+                          notebooks.rs (library/diary/board/profiles) + four test files
+  import/                 the importer: engines/, classifier.rs + classifier/,
+                          lines.rs (PDF line boxes → the lines the author wrote)
+  ats/                    conformance harness — test-only until the ATS screen lands
   views/
-    shell.rs        screen router (Welcome/Setup/Gallery/Library/Diary/Applications/Editor)
-    sidebar.rs      the nav rail + `Shell::with_rail`, the vault chrome
-    root.rs         the résumé editor screen
-    root_undo.rs    document-level undo/redo — snapshot stacks + checkpoints
+    shell.rs      screen router (Welcome/Setup/Gallery/Library/Diary/Applications/Editor)
+    sidebar.rs    the nav rail + `Shell::with_rail`, the vault chrome
+    root*.rs      the résumé editor screen — the one family still flat
     vault_cache.rs  the vault parsed once per change, not once per frame
     save_status.rs  one banner for every failed vault read or write
     confirm.rs      the alert in front of anything that cannot be undone
+    applications.rs + applications/   the board, its cards, funnel and detail panel
+    library.rs      + library/        the block pool, its editor and usage
+    diary.rs        + diary/          the journal, capture and `Use in a CV →`
+    front_door.rs   + front_door/     rows, menus, and the version constructor
+    preset_matrix.rs + preset_matrix/ section × preset, its grid and batch export
+    import.rs       + import/         the screen: panels, assistant hand-off
+crates/dockcv-core/src/
+  typst_engine.rs   in-process Typst compile → rasterized Pixels
+  resume/
+    model.rs   + model/     ResumeDoc / Versioned<T> / Preset — the data model
+    template.rs + template/ codegen: Resume → Typst, and renderer.typ itself
+    export.rs  + export/    DOCX, Markdown, text, JSON Resume, Typst, filenames
+    altacv.rs  + altacv/    AltaCV importer and its vendored package
+    edit.rs                 FieldId / ListId addressing + key-event text editing
+    ats.rs                  what a parser will read differently from a person
+    dates.rs links.rs language.rs outcomes.rs presets.rs   shared vocabulary
 crates/ui-components/  reusable widgets + theme tokens (own crate, no app deps)
 .research/             read-only reference checkouts — never edit, never import
 ```
@@ -262,13 +284,14 @@ history is wrong the day the label is reworded.
   established error type in `vault.rs`/`typst_engine.rs`; stay consistent within a module.
 - Don't add dependencies without saying why in the PR/summary. `image`, `smallvec` and
   `typst*` versions are pinned to unify with GPUI's own tree — check before bumping.
-- Rust files stay under ~800 lines. `resume/model.rs` was split by domain in C14 (4376 → 596:
-  `versioning.rs`, `document_variants.rs`, `applications.rs`, `layout*.rs`, `export_settings.rs`,
-  each re-exported from `model.rs`, so existing paths still resolve). The worst still standing are
-  `resume/template.rs` (3114), `import/classifier.rs` (2569), `vault.rs` (2538), `views/shell.rs`
-  (1915) and `views/root.rs` (1647) — don't grow them, and prefer a new sibling file to another
-  hundred lines in one of these. `resume/presets.rs` and `views/front_door_menus.rs` are what that
-  looks like in practice.
+- Rust files stay under ~800 lines, and a file that has to grow gets a sibling in its own
+  directory rather than another hundred lines. C14 and C15 took `model.rs` (4376 → 596),
+  `template.rs` (3114 → 635), `classifier.rs` (2569 → 855) and `vault.rs` (2591 → 854) apart
+  this way; each kept its filename beside its directory, so every `resume::model::…` path
+  still resolves. The worst still standing are `views/shell.rs` (1934), `views/root.rs` (1676),
+  `typst_engine.rs` (1653) and `views/library.rs` (1116).
+- `#[path = "…"]` on a module declaration is the smell that a directory is missing. There were
+  eleven of them; there are none now. If you find yourself writing one, create the directory.
 
 ## Working style
 
