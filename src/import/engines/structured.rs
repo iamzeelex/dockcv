@@ -26,7 +26,7 @@ pub fn import_structured(path: &Path) -> Result<ImportedDoc, ImportError> {
 
 /// The same, from text that never was a file.
 ///
-/// Split out for the assistant hand-off (`views/import_assistant.rs`), where
+/// Split out for the assistant hand-off (`views/import/assistant.rs`), where
 /// what comes back is pasted rather than picked. It is the same engine and the
 /// same errors on purpose: a JSON Resume from a chat window and one from disk
 /// are the same document, and the review that follows has to be the same

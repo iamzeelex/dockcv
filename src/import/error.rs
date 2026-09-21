@@ -30,7 +30,7 @@ pub struct ImportError {
     /// will be reworded; a screen that decides what to offer by reading our own
     /// prose breaks the day somebody improves it. This one distinction earns a
     /// field because only this failure has a route out that the others do not
-    /// — see `views/import_assistant.rs`.
+    /// — see `views/import/assistant.rs`.
     pub no_text_layer: bool,
 }
 

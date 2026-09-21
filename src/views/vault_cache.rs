@@ -86,7 +86,7 @@ pub(super) struct VaultCache {
     /// `None` where the file did not parse. Kept rather than dropped because
     /// deriving a document's card summary already parses it — throwing the
     /// result away only bought a second parse for anything that needed the
-    /// document itself (`library_usage`).
+    /// document itself (`library/usage.rs`).
     documents: Vec<Option<ResumeDoc>>,
     library: Library,
     diary: Diary,
@@ -133,7 +133,7 @@ impl VaultCache {
     }
 
     /// Every document that parsed, paired with its summary — what
-    /// [`super::library_usage::UsageIndex`] walks. Unreadable files are
+    /// [`super::library::usage::UsageIndex`] walks. Unreadable files are
     /// skipped: they contribute no blocks, and counting them as empty would
     /// quietly lower a usage count for a file the user has not lost.
     pub(super) fn readable_documents(&self) -> impl Iterator<Item = (&DocMeta, &ResumeDoc)> {

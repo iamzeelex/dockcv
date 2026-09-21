@@ -26,17 +26,17 @@ use crate::theme::ThemeMode;
 use crate::typst_engine::{PageGeometry, TypstEngine};
 use crate::vault;
 
-use super::applications_data::{ApplicationSort, ApplicationsView};
-use super::applications_pin::PinPick;
+use super::applications::data::{ApplicationSort, ApplicationsView};
+use super::applications::pin::PinPick;
 use super::confirm;
-use super::diary_capture::DiaryPaste;
-use super::diary_use::DiaryUse;
+use super::diary::capture::DiaryPaste;
+use super::diary::use_in_cv::DiaryUse;
 use super::gallery_sort::GallerySort;
-use super::import_flow::ImportStep;
+use super::import::panels::ImportStep;
 use super::library::LibrarySort;
-use super::library_edit::LibraryEdit;
-use super::library_link::PushReview;
-use super::preset_matrix_export::BatchExportSheet;
+use super::library::edit::LibraryEdit;
+use super::library::link::PushReview;
+use super::preset_matrix::export::BatchExportSheet;
 use super::save_status;
 use super::update_notice::UpdateState;
 use super::vault_cache::{Fingerprint, VaultCache};
@@ -80,9 +80,9 @@ pub(super) enum Screen {
 
 pub struct Shell {
     pub(super) screen: Screen,
-    /// The batch export sheet (`preset_matrix_export.rs`): `Some` between
+    /// The batch export sheet (`preset_matrix/export.rs`): `Some` between
     /// choosing a folder and confirming the list of files it will receive.
-    pub(super) batch_export: Option<super::preset_matrix_export::BatchExportSheet>,
+    pub(super) batch_export: Option<super::preset_matrix::export::BatchExportSheet>,
     /// The active vault directory once chosen.
     pub(super) vault: Option<PathBuf>,
     /// Watches the vault for edits made outside DockCV, while the window is in
@@ -99,16 +99,16 @@ pub struct Shell {
     /// Whether the gallery is showing the "new document" template chooser.
     pub(super) gallery_creating: bool,
     /// A version being renamed from its row on the front door.
-    pub(super) renaming_version: Option<super::front_door_version::VersionRename>,
+    pub(super) renaming_version: Option<super::front_door::version::VersionRename>,
     /// Which note is open in each of the import rail's two lists.
-    pub(super) import_notes: super::import_screen::ImportNotes,
+    pub(super) import_notes: super::import::ImportNotes,
     /// A local assistant reading a scanned CV right now.
-    pub(super) import_run: Option<super::import_assistant::LocalRun>,
+    pub(super) import_run: Option<super::import::assistant::LocalRun>,
     /// A file picker is already on screen. See `import_existing_resume`.
     pub(super) import_picking: bool,
     /// A version being built, in memory and not on disk. See
-    /// `version_draft.rs` — discarding it leaves the vault untouched.
-    pub(super) drafting: Option<Box<super::version_draft::VersionDraft>>,
+    /// `front_door/draft.rs` — discarding it leaves the vault untouched.
+    pub(super) drafting: Option<Box<super::front_door::draft::VersionDraft>>,
     /// The CV the app would reopen on its own — `config`'s `last_document`,
     /// held here so the front door does not read the config file per frame.
     pub(super) last_opened: Option<PathBuf>,
@@ -183,10 +183,10 @@ pub struct Shell {
     pub(super) applications_sort: ApplicationSort,
     /// How far back Insights counts. Not persisted: it is a way of looking,
     /// not a property of the vault.
-    pub(super) applications_period: super::applications_funnel::Period,
+    pub(super) applications_period: super::applications::funnel::Period,
     /// The open detail panel, if any — the fields it is editing live with it,
     /// so closing the panel drops them.
-    pub(super) applications_detail: Option<super::applications_detail::ApplicationDetail>,
+    pub(super) applications_detail: Option<super::applications::detail::ApplicationDetail>,
     /// Which column's compose box is open, if any. `None` means the board
     /// shows no inline "new application" form.
     /// The compose box's two fields — company and role, the only two a new
@@ -1641,7 +1641,7 @@ impl Render for Shell {
             // It used to take the whole window as a modal, for a reason that
             // was true of the surface it had: a 560px card inside the
             // gallery's scroll, with the grid competing behind it. The fix was
-            // to stop being a card — `import_screen.rs` is the pane — and once
+            // to stop being a card — `import.rs` is the pane — and once
             // it is the pane there is nothing left for the rail to compete
             // with, and no reason for this one flow to be the screen where the
             // product's own furniture disappears.

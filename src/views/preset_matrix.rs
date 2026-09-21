@@ -8,8 +8,14 @@
 //! so showing *all* of them is simpler than making somebody pick two, and
 //! comparison is then what a grid does for free.
 //!
-//! Rendering lives in `preset_matrix_grid.rs`; this file is the state and the
+//! Rendering lives in `preset_matrix/grid.rs`; this file is the state and the
 //! questions the grid asks of it.
+
+pub(crate) mod actions;
+pub(crate) mod export;
+pub(crate) mod grid;
+#[cfg(test)]
+pub(crate) mod tests;
 
 use gpui::{Entity, Subscription};
 use std::collections::HashMap;

@@ -12,6 +12,10 @@
 //! inventing a number about the user's own corpus, which is the one thing
 //! this product must never do.
 
+pub(crate) mod edit;
+pub(crate) mod link;
+pub(crate) mod usage;
+
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement, SharedString};
 
@@ -26,9 +30,9 @@ use dockcv_ui_components::{
     Tag, TextField,
 };
 
-use super::applications_data::plural;
+use super::applications::data::plural;
 use super::confirm;
-use super::library_usage::UsageIndex;
+use super::library::usage::UsageIndex;
 use super::shell::{remove_at, Screen, Shell};
 
 /// The five section kinds that have a library pool, in the order the screen
@@ -826,7 +830,7 @@ impl Shell {
     fn used_in_line(
         &self,
         cx: &mut Context<Self>,
-        used_in: Vec<super::library_usage::DocumentRef>,
+        used_in: Vec<super::library::usage::DocumentRef>,
     ) -> AnyElement {
         let theme = *cx.theme();
         if used_in.is_empty() {

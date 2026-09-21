@@ -89,7 +89,7 @@ impl Shell {
     /// that had been deleted.
     ///
     /// Now the sheet does what a sheet should: it collects the two facts the
-    /// screen after it needs. `version_draft.rs` writes, once, on `Save
+    /// screen after it needs. `front_door/draft.rs` writes, once, on `Save
     /// version`.
     pub(super) fn start_tailoring(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(sheet) = self.tailoring.as_ref() else {

@@ -634,7 +634,7 @@ mod tests {
             error.detail
         );
         // The flag, not the wording, is what puts the assistant hand-off on
-        // screen (`views/import_assistant.rs`). Asserted here because the
+        // screen (`views/import/assistant.rs`). Asserted here because the
         // route out of this dead end disappears silently if it is ever lost,
         // and nothing else in the build would notice.
         assert!(

@@ -6,7 +6,7 @@
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement};
 
-use super::import_flow::ImportStep;
+use super::import::panels::ImportStep;
 use crate::resume::model::{Resume, ResumeDoc};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use dockcv_ui_components::{
@@ -115,7 +115,7 @@ impl Shell {
             return self.render_version_draft(cx);
         }
 
-        // Its own screen, its own heading: `import_screen.rs`. The gallery's
+        // Its own screen, its own heading: `import.rs`. The gallery's
         // header used to stay above it, offering to search a list that was not
         // showing and to add a CV you were in the middle of adding.
         if self.gallery_creating {

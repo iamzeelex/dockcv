@@ -5,7 +5,7 @@
 //!
 //! * **A level is not a reason.** `Medium` rendered as *"Partly guessed — worth
 //!   a look"*, which tells a user something is wrong and gives them nothing to
-//!   check it against. `import_flow.rs`'s own comment admitted as much.
+//!   check it against. `views/import/panels.rs`'s own comment admitted as much.
 //! * **It never varied.** `work` was set to `Medium` whenever the list was
 //!   non-empty, so the flag was lit on every import that found a job at all. A
 //!   marker that is always on is one the user learns to scroll past.

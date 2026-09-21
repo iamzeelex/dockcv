@@ -14,6 +14,13 @@
 //! So the rows are readings. The word "reading" is this file's, not the UI's:
 //! on screen a row is called by the preset's own name.
 
+pub(crate) mod changes;
+pub(crate) mod draft;
+pub(crate) mod draft_view;
+pub(crate) mod menus;
+pub(crate) mod rows;
+pub(crate) mod version;
+
 use std::path::PathBuf;
 
 use crate::resume::outcomes::PresetRecord;

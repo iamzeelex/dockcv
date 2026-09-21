@@ -12,6 +12,9 @@
 //! nothing may extract a number from prose and present it as fact (US-14) —
 //! that is the AI layer's job, behind review.
 
+pub(crate) mod capture;
+pub(crate) mod use_in_cv;
+
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement, SharedString};
 

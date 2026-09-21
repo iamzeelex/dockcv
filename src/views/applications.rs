@@ -19,6 +19,17 @@
 //! so it is rendered as a visibly inert pill — no id, no click handler, no
 //! hover — rather than an invented layout.
 
+pub(crate) mod analytics;
+pub(crate) mod card;
+pub(crate) mod data;
+pub(crate) mod detail;
+pub(crate) mod drag;
+pub(crate) mod funnel;
+pub(crate) mod list;
+pub(crate) mod menu;
+pub(crate) mod pin;
+pub(crate) mod snapshot;
+
 use gpui::prelude::*;
 use gpui::{
     div, px, AnyElement, App, ClickEvent, Context, FontWeight, IntoElement, SharedString, Window,
@@ -35,12 +46,12 @@ use crate::vault;
 
 use super::save_status;
 
-use super::applications_card::{card_meta, column_tint};
-use super::applications_data::{
+use super::applications::card::{card_meta, column_tint};
+use super::applications::data::{
     card_chip_text, interviews_this_week, matches_query, plural, sort_rows, status_title,
     ApplicationSort, ApplicationsView,
 };
-use super::applications_menu::{application_menu, MenuContext};
+use super::applications::menu::{application_menu, MenuContext};
 use super::shell::{remove_at, Shell};
 
 /// A small count, as a chip.
@@ -799,7 +810,7 @@ impl Shell {
         // The detail panel holds an index into the list that just shifted.
         // Left alone it would go on editing whichever card slid into the gap.
         if let Some(detail) = self.applications_detail.as_mut() {
-            match super::applications_detail::index_after_removal(detail.index, index) {
+            match super::applications::detail::index_after_removal(detail.index, index) {
                 Some(moved) => detail.index = moved,
                 None => self.applications_detail = None,
             }
