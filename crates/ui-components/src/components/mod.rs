@@ -11,10 +11,12 @@
 pub mod card;
 pub mod empty_state;
 pub mod icon;
+pub mod selectable_row;
 
 pub use card::{Card, CardVariant};
 pub use empty_state::EmptyState;
 pub use icon::{lucide, Assets, DockIcon, Icon, IconName};
+pub use selectable_row::SelectableRow;
 
 // --- upstream, re-exported under our roof ---
 pub use gpui_component::{

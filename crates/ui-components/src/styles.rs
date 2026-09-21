@@ -295,7 +295,9 @@ impl ButtonExt for Button {
 /// `ListItem` brings hover, `Selectable::selected`, `Disableable` and a click
 /// handler; what it does not bring is a focus ring or `Role::Button`, because it
 /// is a `Stateful<Div>` underneath. That gap is real and is recorded in
-/// the component audit.
+/// the component audit. Where a list is **navigated** rather than merely
+/// clicked — the editor's document navigator, its Layout categories — use
+/// [`SelectableRow`](crate::SelectableRow), which closes it.
 pub trait ListItemExt {
     /// A selectable row inside a panel, a sheet or the nav rail.
     ///
