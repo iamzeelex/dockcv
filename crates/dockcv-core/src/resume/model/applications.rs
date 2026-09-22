@@ -147,6 +147,20 @@ pub struct Application {
     /// The posting.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub url: String,
+    /// The posting's own text, as it was when you read it.
+    ///
+    /// Kept rather than fetched, because a link to a job is a link to a page
+    /// that will be taken down: three months later the board has forgotten the
+    /// role and the only record of what it asked for is this. It is what the
+    /// tailoring read matches against, and it is why "why did I send *that*
+    /// version" stays answerable after the fact.
+    ///
+    /// Someone else's words in the user's vault, which is fine here and only
+    /// here: the vault is a folder on their disk, nothing leaves it, and this
+    /// is the one place a job description is the *user's* record of a decision
+    /// rather than a publisher's copy.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub posting: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub notes: String,
     /// Free text: "$168k base · negotiating". Deliberately not a number —
@@ -337,6 +351,7 @@ impl Default for Application {
             created: String::new(),
             applied: None,
             url: String::new(),
+            posting: String::new(),
             notes: String::new(),
             compensation: String::new(),
             closure_note: None,

@@ -19,6 +19,7 @@ pub mod export;
 pub mod links;
 pub mod model;
 pub mod outcomes;
+pub mod posting;
 pub mod presets;
 pub mod template;
 
