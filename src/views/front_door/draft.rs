@@ -39,6 +39,12 @@ pub(crate) struct VersionDraft {
     pub doc: ResumeDoc,
     pub company: String,
     pub role: String,
+    /// The posting's text, on its way to the application card.
+    ///
+    /// Carried rather than re-asked: the sheet is where it was pasted, the card
+    /// is where it belongs, and the draft is the only thing that exists between
+    /// the two. Empty when the job was named without one.
+    pub posting: String,
     /// Which preset it started from.
     pub source: usize,
     /// The compiled page, once there is one. `None` is "not yet", never "no
@@ -87,6 +93,7 @@ impl Shell {
         source: usize,
         company: String,
         role: String,
+        posting: String,
         cx: &mut Context<Self>,
     ) {
         let Ok(mut doc) = vault::load(&path) else {
@@ -110,6 +117,7 @@ impl Shell {
             doc,
             company,
             role,
+            posting,
             source,
             page: None,
             geometry: None,
@@ -203,6 +211,7 @@ impl Shell {
         applications.entries.push(Application {
             company: draft.company.clone(),
             role: draft.role.clone(),
+            posting: draft.posting.clone(),
             created: vault::today_iso(),
             sent_as: Some(SentCv {
                 document: stem,
