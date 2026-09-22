@@ -27,7 +27,7 @@ use gpui::prelude::*;
 use gpui::{div, px, Context, Entity, FontWeight, SharedString, Window};
 
 use dockcv_ui_components::{
-    Button, ButtonExt, Disableable, SelectableRow, TextField, TextFieldState, MONO, SANS,
+    Button, ButtonExt, Disableable, SelectableRow, TextField, TextFieldState, SANS,
 };
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
@@ -73,7 +73,10 @@ impl Shell {
     pub(super) fn open_tailor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let company = cx.new(|cx| TextFieldState::single_line(window, cx));
         let role = cx.new(|cx| TextFieldState::single_line(window, cx));
-        let posting = cx.new(|cx| TextFieldState::multi_line(window, cx));
+        // `auto_grow` rather than a fixed box: a posting is two paragraphs or
+        // two pages, and a tall empty well above an empty card was most of what
+        // this screen looked like.
+        let posting = cx.new(|cx| TextFieldState::auto_grow(4, 14, window, cx));
         let base = self.busiest_reading();
 
         let handle = company.read(cx).focus_handle(cx);
@@ -264,7 +267,7 @@ impl Shell {
                         .child(
                             div()
                                 .truncate()
-                                .text_style(TextStyle::meta())
+                                .text_style(TextStyle::body())
                                 .text_color(theme.text_subtle)
                                 .child(self.base_choice_label(row)),
                         ),
@@ -276,7 +279,7 @@ impl Shell {
                         div()
                             .flex_none()
                             .px(px(8.0))
-                            .text_style(TextStyle::meta())
+                            .text_style(TextStyle::chip())
                             .text_color(if cov.matched.len() * 2 >= cov.total() {
                                 theme.success
                             } else {
@@ -313,41 +316,69 @@ impl Shell {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.0))
+                    .gap(px(5.0))
                     .child(
                         div()
-                            .text_style(TextStyle::title())
-                            .text_color(theme.text)
-                            .child("Tailor for a job"),
+                            .flex()
+                            .items_baseline()
+                            .justify_between()
+                            .gap(px(12.0))
+                            .child(
+                                div()
+                                    .text_style(TextStyle::title())
+                                    .text_color(theme.text)
+                                    .child("Tailor for a job"),
+                            )
+                            // Which of the two screens this is. The card used
+                            // to end in a button that left for another one
+                            // without ever saying there was another one.
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .text_style(TextStyle::chip())
+                                    .text_color(theme.text_subtle)
+                                    .child("STEP 1 OF 2"),
+                            ),
                     )
                     .child(
                         div()
                             .text_style(TextStyle::body())
                             .text_color(theme.text_muted)
                             .child(
-                                "Name the job, pick what to start from, and see what you \
-                                 have already written that it asks for.",
+                                "Copy a version you already have, change what does not fit, \
+                                 and save it under this job's name. Nothing is written until \
+                                 you save.",
                             ),
                     ),
             )
-            .child(
-                div()
+            .child({
+                // Built first: `tailor_step` takes `cx` too, and the two
+                // borrows cannot overlap inside one call.
+                let fields = div()
                     .flex()
                     .gap(px(12.0))
-                    .child(div().flex_1().min_w_0().child(self.tailor_field(
-                        cx,
-                        "Company",
-                        &sheet.company,
-                    )))
-                    .child(div().flex_1().min_w_0().child(self.tailor_field(
-                        cx,
-                        "Role",
-                        &sheet.role,
-                    ))),
-            )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(self.tailor_field(cx, "Company", &sheet.company)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(self.tailor_field(cx, "Role", &sheet.role)),
+                    )
+                    .into_any_element();
+                self.tailor_step(cx, 1, "The job", None, fields)
+            })
             .child(self.tailor_posting(cx, sheet))
-            .child(
-                self.tailor_group(cx, "START FROM", if rows.iter().any(|r| r.preset.is_some()) {
+            .child(self.tailor_step(
+                cx,
+                3,
+                "Start from",
+                Some("A copy of this becomes the new version."),
+                if rows.iter().any(|r| r.preset.is_some()) {
                     choices.into_any_element()
                 } else {
                     div()
@@ -355,8 +386,8 @@ impl Shell {
                         .text_color(theme.text_muted)
                         .child("No preset to start from yet — save one on a CV first.")
                         .into_any_element()
-                }),
-            )
+                },
+            ))
             .children(self.tailor_unused(cx))
             .child(
                 div()
@@ -390,91 +421,94 @@ impl Shell {
                     // one, and saying so is cheaper than the surprise.
                     .child(
                         div()
-                            .text_style(TextStyle::meta())
+                            .text_style(TextStyle::body())
                             .text_color(theme.text_subtle)
                             .child(
-                                "Opens the version constructor. Nothing is written to the \
-                                 vault until you save there.",
+                                "Next: choose which sections read differently, watch the \
+                                 page change, and save.",
                             ),
                     ),
             )
     }
 
     /// The posting box, and what the read of it found.
-    fn tailor_posting(
-        &self,
-        cx: &mut Context<Self>,
-        sheet: &TailorSheet,
-    ) -> impl IntoElement {
+    fn tailor_posting(&self, cx: &mut Context<Self>, sheet: &TailorSheet) -> impl IntoElement {
         let theme = *cx.theme();
         let read = sheet.read.as_ref();
         let has_text = !sheet.posting.read(cx).value(cx).trim().is_empty();
 
-        let terms_line = read.map(|r| {
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(px(5.0))
-                .children(r.terms.iter().map(|term| {
-                    div()
-                        .px(px(7.0))
-                        .py(px(2.0))
-                        .rounded(theme.radius_sm())
-                        .bg(theme.elevated)
-                        .text_style(TextStyle::meta())
-                        .text_color(theme.text_muted)
-                        .child(if term.count > 1 {
-                            format!("{} ×{}", term.word, term.count)
-                        } else {
-                            term.word.clone()
-                        })
-                }))
-        });
-
-        div()
+        let body = div()
             .flex()
             .flex_col()
-            .gap(px(7.0))
+            .gap(px(8.0))
             .child(
                 div()
                     .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .font_family(MONO)
-                            .text_size(px(11.0))
-                            .text_color(theme.text_subtle)
-                            .child("THE POSTING"),
-                    )
+                    .items_start()
+                    .gap(px(8.0))
+                    .child(div().flex_1().min_w_0().child(
+                        TextField::new(&sheet.posting).placeholder(
+                            "Paste the job description here",
+                        ),
+                    ))
                     .child(
                         Button::new("tailor-read")
-                            .quiet()
+                            .action_secondary()
+                            .flex_none()
                             .disabled(!has_text)
+                            .tooltip("Match it against your versions and your vault")
                             .on_click(cx.listener(|this, _, _window, cx| {
                                 this.read_posting(cx);
                             }))
                             .child(if read.is_some() { "Read again" } else { "Read it" }),
                     ),
             )
-            .child(
+            .children(read.map(|r| {
                 div()
-                    .h(px(108.0))
-                    .child(TextField::new(&sheet.posting)),
-            )
-            .when(read.is_none(), |el| {
-                el.child(
-                    div()
-                        .text_style(TextStyle::meta())
-                        .text_color(theme.text_subtle)
-                        .child(
-                            "Optional. Paste it and DockCV will say which of your versions \
-                             already answers it — and what you have written down that none \
-                             of them show.",
-                        ),
-                )
-            })
-            .children(terms_line)
+                    .flex()
+                    .flex_col()
+                    .gap(px(5.0))
+                    .child(
+                        div()
+                            .text_style(TextStyle::body())
+                            .text_color(theme.text_subtle)
+                            .child(format!(
+                                "It leans on {} term{}. The count beside each version below \
+                                 is how many of them that version already says.",
+                                r.terms.len(),
+                                if r.terms.len() == 1 { "" } else { "s" }
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap(px(5.0))
+                            .children(r.terms.iter().map(|term| {
+                                div()
+                                    .px(px(7.0))
+                                    .py(px(2.0))
+                                    .rounded(theme.radius_sm())
+                                    .bg(theme.elevated)
+                                    .text_style(TextStyle::chip())
+                                    .text_color(theme.text_muted)
+                                    .child(if term.count > 1 {
+                                        format!("{} ×{}", term.word, term.count)
+                                    } else {
+                                        term.word.clone()
+                                    })
+                            })),
+                    )
+            }))
+            .into_any_element();
+
+        self.tailor_step(
+            cx,
+            2,
+            "The posting",
+            Some("Optional — it is what the two lists below are measured against."),
+            body,
+        )
     }
 
     /// What the vault holds for the gaps in the chosen reading.
@@ -528,7 +562,7 @@ impl Shell {
                             div()
                                 .min_w_0()
                                 .truncate()
-                                .text_style(TextStyle::meta())
+                                .text_style(TextStyle::chip())
                                 .text_color(theme.accent)
                                 .child(item.terms.join(" · ")),
                         ),
@@ -540,9 +574,11 @@ impl Shell {
                         .child(body),
                 )
         });
-        Some(self.tailor_group(
+        Some(self.tailor_step(
             cx,
-            "YOU HAVE WRITTEN THIS DOWN",
+            4,
+            "You have written this down",
+            Some("In your vault, and not on the version above."),
             div()
                 .flex()
                 .flex_col()
@@ -551,36 +587,86 @@ impl Shell {
         ))
     }
 
-    /// An eyebrow and the thing under it.
-    fn tailor_group(
+    /// What this version has done, in a sentence. **Not its name** — the row
+    /// prints that above, and printing it twice was this screen's own bug.
+    fn base_choice_label(&self, row: &Reading) -> String {
+        let (stem, preset) = row.sent_as();
+        let record = self.cache.applications().record_for(stem, preset);
+        let record = match (record.sent, record.interviewed) {
+            (0, _) => "never sent".to_string(),
+            (1, 0) => "sent once, nothing back yet".to_string(),
+            (sent, 0) => format!("sent {sent} times, nothing back yet"),
+            (1, _) => "sent once, and it got an interview".to_string(),
+            (sent, 1) => format!("sent {sent} times, one interview"),
+            (sent, got) => format!("sent {sent} times, {got} interviews"),
+        };
+        match row.subtitle() {
+            Some(what) => format!("{what} · {record}"),
+            None => record,
+        }
+    }
+
+    /// One numbered part of the card.
+    ///
+    /// Numbers rather than three eyebrows, because the complaint the old screen
+    /// earned was not "this is ugly", it was "I cannot tell what I am doing" —
+    /// and a form with a count reads as a sequence where the same form without
+    /// one reads as a pile of boxes.
+    fn tailor_step(
         &self,
         cx: &mut Context<Self>,
-        label: &'static str,
+        number: u8,
+        title: &'static str,
+        note: Option<&'static str>,
         body: gpui::AnyElement,
     ) -> impl IntoElement {
         let theme = *cx.theme();
         div()
             .flex()
-            .flex_col()
-            .gap(px(7.0))
+            .gap(px(12.0))
             .child(
                 div()
-                    .font_family(MONO)
-                    .text_size(px(11.0))
-                    .text_color(theme.text_subtle)
-                    .child(label),
+                    .flex_none()
+                    .size(px(22.0))
+                    .mt(px(1.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(theme.elevated)
+                    .text_style(TextStyle::chip())
+                    .text_color(theme.text_muted)
+                    .child(number.to_string()),
             )
-            .child(body)
-    }
-
-    fn base_choice_label(&self, row: &Reading) -> String {
-        let (stem, preset) = row.sent_as();
-        let record = self.cache.applications().record_for(stem, preset);
-        let mut label = format!("{} · {}", row.stem, row.label());
-        if record.sent > 0 {
-            label.push_str(&format!("   sent {}", record.sent));
-        }
-        label
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_baseline()
+                            .gap(px(8.0))
+                            .child(
+                                div()
+                                    .text_style(TextStyle::control())
+                                    .text_color(theme.text)
+                                    .child(title),
+                            )
+                            .children(note.map(|note| {
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_style(TextStyle::body())
+                                    .text_color(theme.text_subtle)
+                                    .child(note)
+                            })),
+                    )
+                    .child(body),
+            )
     }
 
     fn tailor_field(
