@@ -23,6 +23,7 @@ use std::path::PathBuf;
 use gpui::{Context, Task};
 
 use crate::render::Rendered;
+use crate::resume::posting::{coverage, deciding_terms, gaps, unused, Coverage, Unused};
 use crate::resume::model::{Application, ResumeDoc, SectionKind, SentCv};
 use crate::typst_engine::PageGeometry;
 use crate::vault;
@@ -39,6 +40,12 @@ pub(crate) struct VersionDraft {
     pub doc: ResumeDoc,
     pub company: String,
     pub role: String,
+    /// The posting's text, on its way to the application card.
+    ///
+    /// Carried rather than re-asked: the sheet is where it was pasted, the card
+    /// is where it belongs, and the draft is the only thing that exists between
+    /// the two. Empty when the job was named without one.
+    pub posting: String,
     /// Which preset it started from.
     pub source: usize,
     /// The compiled page, once there is one. `None` is "not yet", never "no
@@ -47,6 +54,29 @@ pub(crate) struct VersionDraft {
     pub geometry: Option<PageGeometry>,
     pub compiling: bool,
     pub task: Option<Task<()>>,
+    /// The posting read against the page as it currently stands.
+    ///
+    /// `None` when the job was named without a posting. Recomputed on every
+    /// toggle, which is the point: the number says what *this* page answers,
+    /// so leaving a section out moves it, and the answer arrives while the
+    /// decision is being made rather than one screen earlier.
+    pub read: Option<DraftRead>,
+    /// What an assistant picked from the menu, once one has been asked.
+    ///
+    /// Suggestions, never applications: the rows it names are marked and the
+    /// person clicks them. Arriving is not consent.
+    pub advice: Option<super::advice::Advice>,
+    /// Set while a hand-off is staged, so the panel can say the prompt is on
+    /// the clipboard rather than leaving the person guessing what happened.
+    pub handed_off: bool,
+}
+
+/// What the posting asks of the page in front of you.
+pub(crate) struct DraftRead {
+    pub terms: usize,
+    pub coverage: Coverage,
+    /// Entries in the vault that answer what this page does not say.
+    pub unused: Vec<Unused>,
 }
 
 /// How large the preview page is rasterized. Fixed rather than
@@ -87,6 +117,7 @@ impl Shell {
         source: usize,
         company: String,
         role: String,
+        posting: String,
         cx: &mut Context<Self>,
     ) {
         let Ok(mut doc) = vault::load(&path) else {
@@ -110,13 +141,133 @@ impl Shell {
             doc,
             company,
             role,
+            posting,
             source,
             page: None,
             geometry: None,
             compiling: false,
             task: None,
+            read: None,
+            advice: None,
+            handed_off: false,
         }));
+        self.refresh_draft_read();
         self.compile_draft(cx);
+        cx.notify();
+    }
+
+    /// The page, the diary and the library together — what the vault knows.
+    fn draft_vault_corpus(&self, page: &str) -> String {
+        let mut corpus = page.to_string();
+        for entry in &self.cache.diary().entries {
+            corpus.push(' ');
+            corpus.push_str(&entry.text);
+        }
+        let library = self.cache.library();
+        for block in &library.work {
+            corpus.push_str(&format!(" {} {}", block.position, block.highlights.join(" ")));
+        }
+        for block in &library.skills {
+            corpus.push_str(&format!(" {} {}", block.name, block.keywords.join(" ")));
+        }
+        corpus
+    }
+
+    /// Read the draft's posting against the page the draft currently makes.
+    ///
+    /// Pure arithmetic over text the app already produces, same as the sheet's
+    /// read — and deliberately recomputed rather than carried across, because
+    /// the page changes under it. A coverage number copied from the previous
+    /// screen would be a claim about a document that no longer exists.
+    pub(crate) fn refresh_draft_read(&mut self) {
+        let Some(draft) = self.drafting.as_mut() else {
+            return;
+        };
+        let posting = draft.posting.clone();
+        if posting.trim().is_empty() {
+            draft.read = None;
+            return;
+        }
+        let page = crate::resume::export_plain_text(&draft.doc.compose());
+
+        // One version here, so `deciding_terms` reads as "how much of the
+        // posting's own vocabulary this page already shares" — which is the
+        // question on this screen, where there is nothing to choose between.
+        let terms = deciding_terms(&posting, std::slice::from_ref(&page));
+        let read = coverage(&terms, &page);
+        let vault = self.draft_vault_corpus(&page);
+        let missing = gaps(&posting, &page, &vault);
+        let found = unused(
+            &missing,
+            &self.cache.diary().entries,
+            self.cache.library(),
+            &page,
+        );
+
+        // Reborrowed: `self.cache` and `self.drafting` cannot be held at once.
+        if let Some(draft) = self.drafting.as_mut() {
+            draft.read = Some(DraftRead {
+                terms: terms.len(),
+                coverage: read,
+                unused: found,
+            });
+        }
+    }
+
+    /// The prompt for this draft: the posting, the menu, and the rules.
+    pub(crate) fn draft_advice_prompt(&self) -> Option<String> {
+        let draft = self.drafting.as_ref()?;
+        if draft.posting.trim().is_empty() {
+            return None;
+        }
+        let unused = draft
+            .read
+            .as_ref()
+            .map(|r| r.unused.clone())
+            .unwrap_or_default();
+        Some(super::advice::advice_prompt(
+            &draft.posting,
+            &draft.changes(),
+            &unused,
+        ))
+    }
+
+    /// Put the prompt where the person can use it whatever the route did.
+    ///
+    /// Every time, not only when the link cannot carry it: none of these links
+    /// can report back, and somebody looking at an empty composer should
+    /// already have the prompt in their hand.
+    pub(crate) fn stage_draft_advice(&mut self, cx: &mut Context<Self>) {
+        let Some(prompt) = self.draft_advice_prompt() else {
+            return;
+        };
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(prompt));
+        if let Some(draft) = self.drafting.as_mut() {
+            draft.handed_off = true;
+        }
+        cx.notify();
+    }
+
+    /// Read the answer off the clipboard and mark what it picked.
+    ///
+    /// **Marks, does not apply.** The rows it names get a line of the
+    /// assistant's reasoning beside them and stay unticked; the person is
+    /// still the one who decides what the CV says.
+    pub(crate) fn paste_draft_advice(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return;
+        };
+        let (changes, notes) = match self.drafting.as_ref() {
+            Some(draft) => (
+                draft.changes().len(),
+                draft.read.as_ref().map(|r| r.unused.len()).unwrap_or(0),
+            ),
+            None => return,
+        };
+        let advice = super::advice::parse_advice(&text, changes, notes);
+        if let Some(draft) = self.drafting.as_mut() {
+            draft.advice = Some(advice);
+        }
         cx.notify();
     }
 
@@ -139,6 +290,8 @@ impl Shell {
             return;
         };
         changes::toggle(&mut draft.doc, &source, change);
+        // The page just changed, so what it answers just changed with it.
+        self.refresh_draft_read();
         self.compile_draft(cx);
         cx.notify();
     }
@@ -157,6 +310,7 @@ impl Shell {
         }
         draft.source = source;
         draft.doc.apply_preset(source);
+        self.refresh_draft_read();
         self.compile_draft(cx);
         cx.notify();
     }
@@ -203,6 +357,7 @@ impl Shell {
         applications.entries.push(Application {
             company: draft.company.clone(),
             role: draft.role.clone(),
+            posting: draft.posting.clone(),
             created: vault::today_iso(),
             sent_as: Some(SentCv {
                 document: stem,

@@ -17,8 +17,8 @@ use dockcv_ui_components::{lucide, Button, ButtonExt, Icon, Sizable, Spinner, MO
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
-use super::assistant::{
-    route_url, verified_note, Assistant, LocalRun, Route, Via, ASSISTANTS,
+use crate::views::assistant::{
+    route_url, verified_note, Assistant, Handoff, LocalRun, Route, Via, ASSISTANTS,
 };
 use crate::views::shell::Shell;
 
@@ -271,7 +271,16 @@ impl Shell {
                                 // composer should already have the answer in
                                 // their hand rather than a reason to come back.
                                 this.stage_transcription(Some(file.clone()), cx);
-                                if let Some(url) = route_url(other, &file) {
+                                let job = Handoff {
+                                    prompt: match other {
+                                        Via::Code => {
+                                            super::assistant::local_prompt(&file)
+                                        }
+                                        _ => super::assistant::transcription_prompt(),
+                                    },
+                                    file: Some(file.clone()),
+                                };
+                                if let Some(url) = route_url(other, &job) {
                                     cx.open_url(&url);
                                 }
                             }

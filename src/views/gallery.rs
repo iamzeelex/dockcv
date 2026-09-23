@@ -88,25 +88,13 @@ impl Shell {
         // content, the page scrolled, and the action bar it pins to its own
         // bottom edge went below the fold — which is why the review step
         // appeared to have no way forward at all.
+        // Its own screen, its own heading — the same ruling the comment above
+        // makes for import, and for the same two reasons. The gallery's header
+        // offered to search a list that was not showing, and nesting the panel
+        // in the gallery's scroll left its height nothing to resolve against,
+        // so the action bar it pins to its own bottom edge went below the fold.
         if self.tailoring.is_some() {
-            return div()
-                .flex_1()
-                .min_w_0()
-                .h_full()
-                .flex()
-                .flex_col()
-                .child(top)
-                .child(
-                    div()
-                        .flex_1()
-                        .min_h_0()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .px(px(34.0))
-                        .pb(px(30.0))
-                        .child(self.render_tailor(cx)),
-                );
+            return self.render_tailor(cx);
         }
 
         // The version constructor, same argument: its own heading, because it

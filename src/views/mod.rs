@@ -1,6 +1,7 @@
 //! UI views layer.
 
 mod applications;
+mod assistant;
 mod confirm;
 mod diary;
 mod front_door;

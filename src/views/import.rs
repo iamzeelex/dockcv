@@ -392,7 +392,7 @@ impl Shell {
             .child(TextStyle::eyebrow().apply_case(text))
     }
 
-    fn render_step(
+    pub(super) fn render_step(
         &self,
         cx: &mut Context<Self>,
         index: usize,

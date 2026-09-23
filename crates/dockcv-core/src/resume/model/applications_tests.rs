@@ -27,6 +27,10 @@ fn full_application() -> Application {
             preset: "FAANG · concise".into(),
         }),
         url: "https://brambletech.example/careers/123".into(),
+        posting: "We are looking for a Staff Engineer to own our deployment \
+                  platform. You will lead the migration of forty services onto \
+                  one path."
+            .into(),
         notes: "Referred by Dana".into(),
         next_step: Some(NextStep {
             label: "Onsite".into(),
@@ -573,4 +577,34 @@ fn export_history_stops_growing_and_drops_the_oldest_first() {
         doc.export_history[MAX_EXPORT_HISTORY - 1].path,
         std::path::PathBuf::from(format!("/tmp/cv-{}.pdf", MAX_EXPORT_HISTORY + 9))
     );
+}
+
+/// A board written before the posting field existed still opens, and the key
+/// stays out of every card that has no posting.
+///
+/// The rule this guards is the one `ExportRecord` broke: a field added with a
+/// serde default costs nothing, and a file that does not use it must not grow.
+#[test]
+fn a_board_written_before_postings_opens_and_gains_no_key() {
+    let mut board = Applications {
+        entries: vec![Application {
+            company: "Northwind".into(),
+            role: "Platform Engineer".into(),
+            created: "2026-01-04".into(),
+            ..Default::default()
+        }],
+    };
+    let text = toml::to_string_pretty(&board).expect("serializes");
+    assert!(
+        !text.contains("posting"),
+        "a card with no posting must not carry the key:\n{text}"
+    );
+
+    let back: Applications = toml::from_str(&text).expect("an old board still opens");
+    assert_eq!(back.entries[0].posting, "");
+
+    board.entries[0].posting = "Own the deployment platform.".into();
+    let text = toml::to_string_pretty(&board).expect("serializes");
+    let back: Applications = toml::from_str(&text).expect("re-reads");
+    assert_eq!(back.entries[0].posting, "Own the deployment platform.");
 }

@@ -33,6 +33,16 @@ pub(crate) enum ChangeKind {
     Hide,
 }
 
+/// Is everything on offer a section you could drop?
+///
+/// A document nobody has written a second cut of still produces a row per
+/// hideable section, so the list is not empty — it is just useless. "Leave out
+/// Work Experience" is not a tailoring decision anybody makes, and three of
+/// them was the whole of what a freshly imported CV could offer.
+pub(crate) fn only_omissions(changes: &[Change]) -> bool {
+    !changes.is_empty() && changes.iter().all(|c| c.kind == ChangeKind::Hide)
+}
+
 /// Every change available against preset `source`, in the document's own
 /// section order.
 ///
@@ -287,5 +297,39 @@ mod tests {
     fn a_source_that_does_not_exist_offers_nothing() {
         let doc = doc_with_two_work_cuts();
         assert!(available(&doc, 9).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod omission_tests {
+    use super::*;
+    use crate::resume::model::{Resume, ResumeDoc, SectionKind};
+
+    /// A freshly imported CV has one cut of everything, so every row the list
+    /// can build is "leave this out" — and three of those is not a tailoring
+    /// screen. The panel says so instead of pretending to offer a choice.
+    #[test]
+    fn a_document_with_no_second_cut_offers_only_omissions() {
+        let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        doc.add_preset("Seed-stage");
+        let offered = available(&doc, 0);
+        assert!(
+            only_omissions(&offered),
+            "expected omissions only, got {offered:?}"
+        );
+
+        doc.add_variant(SectionKind::Skills);
+        let offered = available(&doc, 0);
+        assert!(
+            !only_omissions(&offered),
+            "a second cut of Skills is a real choice"
+        );
+    }
+
+    /// An empty list is a different state with different words, and
+    /// `only_omissions` must not claim it.
+    #[test]
+    fn nothing_on_offer_is_not_the_same_as_omissions_only() {
+        assert!(!only_omissions(&[]));
     }
 }
