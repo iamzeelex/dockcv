@@ -61,6 +61,14 @@ pub(crate) struct VersionDraft {
     /// so leaving a section out moves it, and the answer arrives while the
     /// decision is being made rather than one screen earlier.
     pub read: Option<DraftRead>,
+    /// What an assistant picked from the menu, once one has been asked.
+    ///
+    /// Suggestions, never applications: the rows it names are marked and the
+    /// person clicks them. Arriving is not consent.
+    pub advice: Option<super::advice::Advice>,
+    /// Set while a hand-off is staged, so the panel can say the prompt is on
+    /// the clipboard rather than leaving the person guessing what happened.
+    pub handed_off: bool,
 }
 
 /// What the posting asks of the page in front of you.
@@ -140,6 +148,8 @@ impl Shell {
             compiling: false,
             task: None,
             read: None,
+            advice: None,
+            handed_off: false,
         }));
         self.refresh_draft_read();
         self.compile_draft(cx);
@@ -202,6 +212,63 @@ impl Shell {
                 unused: found,
             });
         }
+    }
+
+    /// The prompt for this draft: the posting, the menu, and the rules.
+    pub(crate) fn draft_advice_prompt(&self) -> Option<String> {
+        let draft = self.drafting.as_ref()?;
+        if draft.posting.trim().is_empty() {
+            return None;
+        }
+        let unused = draft
+            .read
+            .as_ref()
+            .map(|r| r.unused.clone())
+            .unwrap_or_default();
+        Some(super::advice::advice_prompt(
+            &draft.posting,
+            &draft.changes(),
+            &unused,
+        ))
+    }
+
+    /// Put the prompt where the person can use it whatever the route did.
+    ///
+    /// Every time, not only when the link cannot carry it: none of these links
+    /// can report back, and somebody looking at an empty composer should
+    /// already have the prompt in their hand.
+    pub(crate) fn stage_draft_advice(&mut self, cx: &mut Context<Self>) {
+        let Some(prompt) = self.draft_advice_prompt() else {
+            return;
+        };
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(prompt));
+        if let Some(draft) = self.drafting.as_mut() {
+            draft.handed_off = true;
+        }
+        cx.notify();
+    }
+
+    /// Read the answer off the clipboard and mark what it picked.
+    ///
+    /// **Marks, does not apply.** The rows it names get a line of the
+    /// assistant's reasoning beside them and stay unticked; the person is
+    /// still the one who decides what the CV says.
+    pub(crate) fn paste_draft_advice(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return;
+        };
+        let (changes, notes) = match self.drafting.as_ref() {
+            Some(draft) => (
+                draft.changes().len(),
+                draft.read.as_ref().map(|r| r.unused.len()).unwrap_or(0),
+            ),
+            None => return,
+        };
+        let advice = super::advice::parse_advice(&text, changes, notes);
+        if let Some(draft) = self.drafting.as_mut() {
+            draft.advice = Some(advice);
+        }
+        cx.notify();
     }
 
     /// Throw the draft away. Nothing was written, so nothing is undone.

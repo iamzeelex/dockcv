@@ -103,7 +103,7 @@ pub struct Shell {
     /// Which note is open in each of the import rail's two lists.
     pub(super) import_notes: super::import::ImportNotes,
     /// A local assistant reading a scanned CV right now.
-    pub(super) import_run: Option<super::import::assistant::LocalRun>,
+    pub(super) import_run: Option<super::assistant::LocalRun>,
     /// A file picker is already on screen. See `import_existing_resume`.
     pub(super) import_picking: bool,
     /// A version being built, in memory and not on disk. See

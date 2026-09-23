@@ -22,6 +22,7 @@ use dockcv_ui_components::{
 };
 
 use crate::resume::posting::UnusedSource;
+use crate::views::assistant::{route_url, Handoff, ASSISTANTS};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use crate::views::shell::Shell;
@@ -336,6 +337,102 @@ impl Shell {
             )
     }
 
+    /// The hand-off: ask the assistant you already have which of these to use.
+    ///
+    /// Only with a posting, because without one there is nothing to ask about.
+    /// What goes out is the posting plus a menu DockCV built; what comes back
+    /// is a set of ids. The model cannot write a word onto the page, and the
+    /// rows it picks arrive **unticked** — see `advice.rs` for why that is the
+    /// whole design rather than a precaution.
+    fn render_draft_handoff(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let theme = *cx.theme();
+        let draft = self.drafting.as_ref()?;
+        if draft.posting.trim().is_empty() {
+            return None;
+        }
+        let staged = draft.handed_off;
+
+        let routes = ASSISTANTS.iter().filter_map(|assistant| {
+            let route = assistant.ordered().into_iter().find(|r| r.via.available())?;
+            let name = assistant.name;
+            let via = route.via;
+            Some(
+                Button::new(SharedString::from(format!("advice-{}", route.id)))
+                    .action_secondary()
+                    .icon(via.icon())
+                    .tooltip(format!("{name} · {}", route.label))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                        this.stage_draft_advice(cx);
+                        if let Some(prompt) = this.draft_advice_prompt() {
+                            let job = Handoff { prompt, file: None };
+                            if let Some(url) = route_url(via, &job) {
+                                cx.open_url(&url);
+                            }
+                        }
+                    }))
+                    .child(name),
+            )
+        });
+
+        Some(
+            div()
+                .mt(px(14.0))
+                .pt(px(14.0))
+                .border_t_1()
+                .border_color(theme.border)
+                .flex()
+                .flex_col()
+                .gap(px(8.0))
+                .child(
+                    div()
+                        .font_family(SANS)
+                        .text_size(px(14.0))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text)
+                        .child("Ask your assistant"),
+                )
+                .child(
+                    div()
+                        .text_style(TextStyle::body())
+                        .text_color(theme.text_subtle)
+                        .child(
+                            "It gets the posting and the list above, and is asked which to \
+                             pick — not to write anything. What it suggests arrives unticked.",
+                        ),
+                )
+                .child(div().flex().flex_wrap().gap(px(6.0)).children(routes))
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(6.0))
+                        .child(
+                            Button::new("advice-copy")
+                                .quiet()
+                                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                    this.stage_draft_advice(cx);
+                                }))
+                                .child("Copy the prompt"),
+                        )
+                        .child(
+                            Button::new("advice-paste")
+                                .quiet()
+                                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                    this.paste_draft_advice(cx);
+                                }))
+                                .child("Paste the answer"),
+                        ),
+                )
+                .children(staged.then(|| {
+                    div()
+                        .text_style(TextStyle::body())
+                        .text_color(theme.text_subtle)
+                        .child("The prompt is on your clipboard.")
+                })),
+        )
+    }
+
     /// What the posting asks of the page in front of you.
     ///
     /// The read used to live one screen back, on the sheet where you pick a
@@ -558,6 +655,7 @@ impl Shell {
                     )
             }))
             .children(self.render_draft_posting_read(cx))
+            .children(self.render_draft_handoff(cx))
             .child(
                 div()
                     .mt(px(14.0))
@@ -639,6 +737,17 @@ impl Shell {
         let theme = *cx.theme();
         let on = change.applied;
         let owned = change.clone();
+        // What the assistant said about this row, if one was asked. A
+        // suggestion and nothing more: it changes how the row *reads* and never
+        // whether it is on.
+        let suggested = self.drafting.as_ref().and_then(|d| {
+            d.advice
+                .as_ref()?
+                .changes
+                .iter()
+                .find(|(i, _)| *i == index)
+                .map(|(_, why)| why.clone())
+        });
         // The section under a cut's name — "Lead with outcomes / Work
         // Experience" — but not under `Leave out Work Experience`, which has
         // already said it.
@@ -665,6 +774,12 @@ impl Shell {
                 if on {
                     row.border_color(theme.accent.opacity(0.6))
                         .bg(theme.accent.opacity(0.08))
+                } else if suggested.is_some() {
+                    // Marked, not ticked. A dashed edge says "somebody
+                    // pointed at this" without the row claiming to be in.
+                    row.border_dashed()
+                        .border_color(theme.accent.opacity(0.55))
+                        .bg(theme.elevated)
                 } else {
                     row.border_color(theme.border).bg(theme.elevated)
                 }
@@ -725,7 +840,15 @@ impl Shell {
                                     .text_color(theme.text_muted)
                                     .child(line)
                             }),
-                    ),
+                    )
+                    .children(suggested.as_ref().filter(|why| !why.is_empty()).map(|why| {
+                        div()
+                            .mt(px(2.0))
+                            .text_size(px(10.5))
+                            .line_height(px(15.0))
+                            .text_color(theme.accent)
+                            .child(format!("Suggested — {why}"))
+                    })),
             )
             .child(
                 div()
@@ -733,7 +856,13 @@ impl Shell {
                     .font_family(MONO)
                     .text_size(px(10.0))
                     .text_color(if on { theme.accent } else { theme.text_subtle })
-                    .child(if on { "Included" } else { "Add" }),
+                    .child(if on {
+                        "Included"
+                    } else if suggested.is_some() {
+                        "Add · suggested"
+                    } else {
+                        "Add"
+                    }),
             )
             .into_any_element()
     }
