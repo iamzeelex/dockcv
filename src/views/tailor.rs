@@ -34,7 +34,7 @@ use dockcv_ui_components::{
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use crate::resume::posting::{
-    absent, coverage, deciding_terms, gaps, unused, Coverage, Term, Unused, UnusedSource,
+    coverage, deciding_terms, gaps, unused, Coverage, Term, Unused, UnusedSource,
 };
 use crate::resume::model::SectionKind;
 
@@ -70,9 +70,9 @@ impl TailorStep {
 ///
 /// The words are the person's, not ours — the same rule `import.rs` sets.
 const STEPS: [(&str, &str); 3] = [
-    ("Paste the posting", "Optional, and it never leaves this machine."),
-    ("Pick what to start from", "A copy of it becomes the new version."),
-    ("Name it", "Nothing is written until you save, one screen on."),
+    ("Paste the posting", "Optional. It is read here and sent nowhere."),
+    ("Pick a version to copy", "The one you pick is left untouched."),
+    ("Name the job", "Still nothing written — that happens one screen on."),
 ];
 
 /// The sheet's live state. Takes over the front door's body the way the
@@ -103,8 +103,6 @@ pub(super) struct PostingRead {
     pub coverage: Vec<((std::path::PathBuf, usize), Coverage)>,
     /// What the vault has for the gaps in the *selected* reading.
     pub unused: Vec<Unused>,
-    /// Names the posting asks for that the vault has never used.
-    pub absent: Vec<String>,
 }
 
 impl Shell {
@@ -261,14 +259,12 @@ impl Shell {
             self.cache.library(),
             &chosen,
         );
-        let never = absent(&text, &vault);
 
         if let Some(sheet) = self.tailoring.as_mut() {
             sheet.read = Some(PostingRead {
                 terms,
                 coverage: coverage_rows,
                 unused: found,
-                absent: never,
             });
         }
         cx.notify();
@@ -308,7 +304,7 @@ impl Shell {
     ///
     /// Pane-wide and flexible rather than a fixed 620px card, so it uses the
     /// window it is given instead of leaving two thirds of it empty.
-    pub(super) fn render_tailor(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_tailor(&self, cx: &mut Context<Self>) -> Div {
         let theme = *cx.theme();
         let Some(sheet) = self.tailoring.as_ref() else {
             return div();
@@ -339,6 +335,9 @@ impl Shell {
             .h_full()
             .flex()
             .flex_col()
+            .px(px(34.0))
+            .pt(px(30.0))
+            .pb(px(30.0))
             .child(
                 div()
                     .flex_none()
@@ -372,29 +371,127 @@ impl Shell {
                     .gap(px(22.0))
                     .child(self.render_tailor_rail(cx, sheet))
                     .child(
+                        // The panel is a frame with its own scroll, and the
+                        // buttons sit **outside** it. Inside, they went below
+                        // the fold the moment the vault had a few diary
+                        // entries — a screen with no visible way forward.
                         div()
-                            .id("tailor-panel")
                             .flex_1()
                             .min_w(px(360.0))
-                            .max_h_full()
-                            .overflow_y_scrollbar()
+                            .h_full()
+                            .flex()
+                            .flex_col()
                             .rounded(theme.radius_md())
                             .border_1()
                             .border_color(theme.border)
                             .bg(theme.surface)
-                            .p(px(22.0))
-                            .child(match sheet.step {
-                                TailorStep::Posting => {
-                                    self.render_tailor_posting(cx, sheet).into_any_element()
-                                }
-                                TailorStep::Version => {
-                                    self.render_tailor_version(cx, sheet).into_any_element()
-                                }
-                                TailorStep::Name => {
-                                    self.render_tailor_name(cx, sheet).into_any_element()
-                                }
-                            }),
+                            .child(
+                                div()
+                                    .id("tailor-panel")
+                                    .flex_1()
+                                    .min_h_0()
+                                    .overflow_y_scrollbar()
+                                    .p(px(22.0))
+                                    .child(match sheet.step {
+                                        TailorStep::Posting => self
+                                            .render_tailor_posting(cx, sheet)
+                                            .into_any_element(),
+                                        TailorStep::Version => self
+                                            .render_tailor_version(cx, sheet)
+                                            .into_any_element(),
+                                        TailorStep::Name => {
+                                            self.render_tailor_name(cx, sheet).into_any_element()
+                                        }
+                                    }),
+                            )
+                            .child(self.render_tailor_footer(cx, sheet)),
                     ),
+            )
+    }
+
+    /// The one row that never scrolls: what to press, and what it costs.
+    fn render_tailor_footer(&self, cx: &mut Context<Self>, sheet: &TailorSheet) -> Div {
+        let theme = *cx.theme();
+        let has_text = !sheet.posting.read(cx).value(cx).trim().is_empty();
+        let has_base = sheet.base.is_some();
+
+        let (primary, enabled, note): (&str, bool, &str) = match sheet.step {
+            TailorStep::Posting if has_text => {
+                ("Read it", true, "Matched against your own vault. Nothing is sent anywhere.")
+            }
+            TailorStep::Posting => (
+                "Choose by hand",
+                true,
+                "You can paste the posting later, or skip it entirely.",
+            ),
+            TailorStep::Version => (
+                "Use this one",
+                has_base,
+                "A copy of it becomes the new version. The original is untouched.",
+            ),
+            TailorStep::Name => (
+                "Start tailoring",
+                has_base,
+                "Opens the version constructor. Nothing is written until you save there.",
+            ),
+        };
+        let next = match sheet.step {
+            TailorStep::Posting => TailorStep::Version,
+            TailorStep::Version => TailorStep::Name,
+            TailorStep::Name => TailorStep::Name,
+        };
+        let back = match sheet.step {
+            TailorStep::Posting => None,
+            TailorStep::Version => Some(TailorStep::Posting),
+            TailorStep::Name => Some(TailorStep::Version),
+        };
+
+        div()
+            .flex_none()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(px(10.0))
+            .px(px(22.0))
+            .py(px(16.0))
+            .border_t_1()
+            .border_color(theme.border)
+            .child(
+                Button::new("tailor-primary")
+                    .action_primary()
+                    .disabled(!enabled)
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        if this.tailoring.as_ref().map(|s| s.step) == Some(TailorStep::Name) {
+                            this.start_tailoring(window, cx);
+                        } else {
+                            this.tailor_go(next, cx);
+                        }
+                    }))
+                    .child(primary),
+            )
+            .children(back.map(|step| {
+                Button::new("tailor-back")
+                    .quiet()
+                    .on_click(cx.listener(move |this, _, _window, cx| {
+                        this.tailor_go(step, cx);
+                    }))
+                    .child("Back")
+            }))
+            .child(
+                Button::new("tailor-cancel")
+                    .quiet()
+                    .on_click(cx.listener(|this, _, _window, cx| {
+                        this.cancel_tailor(cx);
+                    }))
+                    .child("Cancel"),
+            )
+            .child(div().flex_1().min_w(px(12.0)))
+            .child(
+                div()
+                    .min_w_0()
+                    .text_style(TextStyle::body())
+                    .text_color(theme.text_subtle)
+                    .child(note),
             )
     }
 
@@ -425,61 +522,24 @@ impl Shell {
     }
 
     /// Step 1: the posting.
-    fn render_tailor_posting(
-        &self,
-        cx: &mut Context<Self>,
-        sheet: &TailorSheet,
-    ) -> impl IntoElement {
+    fn render_tailor_posting(&self, cx: &mut Context<Self>, sheet: &TailorSheet) -> Div {
         let theme = *cx.theme();
-        let has_text = !sheet.posting.read(cx).value(cx).trim().is_empty();
+        let _ = cx;
         div()
             .flex()
             .flex_col()
-            .gap(px(14.0))
-            .child(TextField::new(&sheet.posting).placeholder(
-                "Paste the job description here",
-            ))
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        Button::new("tailor-read")
-                            .action_primary()
-                            .disabled(!has_text)
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.tailor_go(TailorStep::Version, cx);
-                            }))
-                            .child("Read it"),
-                    )
-                    .child(
-                        Button::new("tailor-skip")
-                            .quiet()
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.tailor_go(TailorStep::Version, cx);
-                            }))
-                            .child(if has_text { "Skip the read" } else { "I'll choose myself" }),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        Button::new("tailor-cancel")
-                            .quiet()
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.cancel_tailor(cx);
-                            }))
-                            .child("Cancel"),
-                    ),
-            )
+            .gap(px(12.0))
+            .child(TextField::new(&sheet.posting).placeholder("Paste the job description here"))
             .child(
                 div()
                     .text_style(TextStyle::body())
                     .text_color(theme.text_subtle)
                     .child(
-                        "The read is arithmetic over your own vault — which words your \
-                         versions disagree about, and which of them this job mentions. No \
-                         model is involved and nothing is sent anywhere.",
+                        "DockCV compares it with the CVs, the library and the diary you \
+                         already have, and shows which of your versions answers most of it. \
+                         That is arithmetic over your own words — no model, and nothing \
+                         leaves this machine. You can hand it to your assistant on the next \
+                         screen if you want a second opinion.",
                     ),
             )
     }
@@ -493,7 +553,6 @@ impl Shell {
         let theme = *cx.theme();
         let rows = readings(self.cache.metadata());
         let read = sheet.read.as_ref();
-        let has_base = sheet.base.is_some();
 
         let mut choices = div().flex().flex_col().gap(px(4.0));
         for row in &rows {
@@ -561,11 +620,35 @@ impl Shell {
             );
         }
 
+        let scored = read.map(|r| r.terms.len()).filter(|n| *n > 0);
+
         div()
             .flex()
             .flex_col()
             .gap(px(16.0))
-            .children(read.and_then(|r| self.render_tailor_score_note(cx, r)))
+            .child(
+                // The list is the decision, so it is what the eye lands on. A
+                // column header rather than a paragraph: the number on each row
+                // needs one word of explanation, not two sentences of it.
+                div()
+                    .flex()
+                    .items_baseline()
+                    .justify_between()
+                    .gap(px(10.0))
+                    .child(
+                        div()
+                            .text_style(TextStyle::eyebrow())
+                            .text_color(theme.text_subtle)
+                            .child(TextStyle::eyebrow().apply_case("Your versions")),
+                    )
+                    .children(scored.map(|n| {
+                        div()
+                            .flex_none()
+                            .text_style(TextStyle::eyebrow())
+                            .text_color(theme.text_subtle)
+                            .child(TextStyle::eyebrow().apply_case(&format!("answers / {n}")))
+                    })),
+            )
             .child(if rows.iter().any(|r| r.preset.is_some()) {
                 choices.into_any_element()
             } else {
@@ -575,153 +658,52 @@ impl Shell {
                     .child("No preset to start from yet — save one on a CV first.")
                     .into_any_element()
             })
+            .children(read.and_then(|r| self.render_tailor_score_note(cx, r)))
             .children(self.tailor_unused(cx))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        Button::new("tailor-to-name")
-                            .action_primary()
-                            .disabled(!has_base)
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.tailor_go(TailorStep::Name, cx);
-                            }))
-                            .child("Continue"),
-                    )
-                    .child(
-                        Button::new("tailor-back-posting")
-                            .quiet()
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.tailor_go(TailorStep::Posting, cx);
-                            }))
-                            .child("Back"),
-                    ),
-            )
     }
 
-    /// What the number beside each version means, and what the job asks for
-    /// that the vault has never heard of.
-    fn render_tailor_score_note(
-        &self,
-        cx: &mut Context<Self>,
-        read: &PostingRead,
-    ) -> Option<Div> {
+    /// The words the versions disagree about, under the list rather than over
+    /// it.
+    ///
+    /// It was above, and it was the first thing on the screen: two rows of
+    /// chips and a sentence, before anything you could click. The decision goes
+    /// first now and its footnote follows.
+    fn render_tailor_score_note(&self, cx: &mut Context<Self>, read: &PostingRead) -> Option<Div> {
         let theme = *cx.theme();
-        if read.terms.is_empty() && read.absent.is_empty() {
+        if read.terms.is_empty() {
             return None;
         }
         Some(
             div()
                 .flex()
                 .flex_col()
-                .gap(px(8.0))
-                .children((!read.terms.is_empty()).then(|| {
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(6.0))
-                        .child(
-                            div()
-                                .text_style(TextStyle::body())
-                                .text_color(theme.text_subtle)
-                                .child(format!(
-                                    "Your versions disagree about {} word{} this job uses. \
-                                     The count beside each one is how many it says.",
-                                    read.terms.len(),
-                                    if read.terms.len() == 1 { "" } else { "s" }
-                                )),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_wrap()
-                                .gap(px(4.0))
-                                .children(read.terms.iter().map(|term| {
-                                    div()
-                                        .px(px(7.0))
-                                        .py(px(2.0))
-                                        .rounded(theme.radius_sm())
-                                        .bg(theme.elevated)
-                                        .text_style(TextStyle::chip())
-                                        .text_color(theme.text_muted)
-                                        .child(term.word.clone())
-                                })),
-                        )
-                }))
-                .children((!read.absent.is_empty()).then(|| {
-                    // Deliberately outside the score: counting it would only
-                    // make every version look worse for the same reason.
+                .gap(px(6.0))
+                .pt(px(14.0))
+                .border_t_1()
+                .border_color(theme.border)
+                .child(
                     div()
                         .text_style(TextStyle::body())
                         .text_color(theme.text_subtle)
-                        .child(format!(
-                            "It also names {}, which your vault has never mentioned.",
-                            read.absent.join(", ")
-                        ))
-                })),
+                        .child("The words your versions disagree about:"),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(px(4.0))
+                        .children(read.terms.iter().map(|term| {
+                            div()
+                                .px(px(7.0))
+                                .py(px(2.0))
+                                .rounded(theme.radius_sm())
+                                .bg(theme.elevated)
+                                .text_style(TextStyle::chip())
+                                .text_color(theme.text_muted)
+                                .child(term.word.clone())
+                        })),
+                ),
         )
-    }
-
-    /// Step 3: the bookkeeping.
-    fn render_tailor_name(&self, cx: &mut Context<Self>, sheet: &TailorSheet) -> impl IntoElement {
-        let theme = *cx.theme();
-        let can_start = sheet.base.is_some();
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(16.0))
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(12.0))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(180.0))
-                            .child(self.tailor_field(cx, "Company", &sheet.company)),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(180.0))
-                            .child(self.tailor_field(cx, "Role", &sheet.role)),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        Button::new("tailor-start")
-                            .action_primary()
-                            .disabled(!can_start)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.start_tailoring(window, cx);
-                            }))
-                            .child("Start tailoring"),
-                    )
-                    .child(
-                        Button::new("tailor-back-version")
-                            .quiet()
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.tailor_go(TailorStep::Version, cx);
-                            }))
-                            .child("Back"),
-                    ),
-            )
-            .child(
-                div()
-                    .text_style(TextStyle::body())
-                    .text_color(theme.text_subtle)
-                    .child(
-                        "Next: choose which sections read differently, watch the page change, \
-                         and save.",
-                    ),
-            )
     }
 
     /// What the vault holds for the gaps in the chosen reading.
@@ -842,6 +824,43 @@ impl Shell {
             (Some(what), None) => Some(what),
             (None, record) => record,
         }
+    }
+
+    /// Step 3: the bookkeeping.
+    fn render_tailor_name(&self, cx: &mut Context<Self>, sheet: &TailorSheet) -> Div {
+        let theme = *cx.theme();
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(14.0))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(12.0))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(180.0))
+                            .child(self.tailor_field(cx, "Company", &sheet.company)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(180.0))
+                            .child(self.tailor_field(cx, "Role", &sheet.role)),
+                    ),
+            )
+            .child(
+                div()
+                    .text_style(TextStyle::body())
+                    .text_color(theme.text_subtle)
+                    .child(
+                        "The company name becomes the version's name, the export filename \
+                         and the card on the applications board. The role is what the board \
+                         shows under it.",
+                    ),
+            )
     }
 
     fn tailor_field(

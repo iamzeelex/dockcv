@@ -91,23 +91,6 @@ fn a_gap_is_something_the_vault_can_answer() {
     );
 }
 
-/// …and the one thing DockCV can say about a gap it cannot help with.
-#[test]
-fn what_the_vault_has_never_heard_of_is_named_separately() {
-    let vault = "Led the migration of 62 services onto one deployment path.";
-    let never = absent(POSTING, vault);
-    assert!(never.iter().any(|t| t == "Kubernetes"), "got {never:?}");
-    assert!(never.iter().any(|t| t == "SQL"), "got {never:?}");
-    assert!(
-        !never.iter().any(|t| t.eq_ignore_ascii_case("migration")),
-        "the vault knows it: {never:?}"
-    );
-    // Names, not words: the unfiltered version answered `forty` and `practice`.
-    for word in ["forty", "lead", "incident", "practice"] {
-        assert!(!never.iter().any(|t| t == word), "{word} is not a name: {never:?}");
-    }
-}
-
 /// Casing is the posting's, because the terms are shown back.
 #[test]
 fn a_term_keeps_the_casing_it_was_written_in() {
@@ -234,4 +217,41 @@ fn a_library_block_is_a_prompt_too() {
             section: SectionKind::Work
         }
     ));
+}
+
+/// One word in three shapes was three rows in the list, each counted
+/// separately against every version — while `answers` had always treated them
+/// as one word. The list is keyed by the stem the matcher compares with.
+#[test]
+fn one_word_in_three_shapes_is_one_term() {
+    let a = "we run a process".to_string();
+    let words: Vec<String> =
+        deciding_terms("Our process, our processes, and the processing of them.", &[a, String::new()])
+            .into_iter()
+            .map(|t| t.word)
+            .collect();
+    assert_eq!(words.len(), 1, "got {words:?}");
+}
+
+/// `export_plain_text` prints `EDUCATION` above the education section, so a
+/// posting using the word matched the page's furniture — and because a preset
+/// can hide a section, it differed between versions and scored.
+#[test]
+fn the_headings_dockcv_prints_are_not_the_jobs_vocabulary() {
+    let with = "EDUCATION MSc CERTIFICATIONS AWS SKILLS Rust".to_string();
+    let without = "MSc".to_string();
+    let words: Vec<String> = deciding_terms(
+        "Education and certifications matter. Skills: Rust, AWS.",
+        &[with, without],
+    )
+    .into_iter()
+    .map(|t| t.word)
+    .collect();
+    for chrome in ["Education", "certifications", "Skills"] {
+        assert!(
+            !words.iter().any(|w| w.eq_ignore_ascii_case(chrome)),
+            "{chrome} is our layout, not their job: {words:?}"
+        );
+    }
+    assert!(words.iter().any(|w| w == "Rust"), "got {words:?}");
 }

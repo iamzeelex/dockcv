@@ -145,39 +145,14 @@ pub fn gaps(posting: &str, page: &str, vault: &str) -> Vec<String> {
         .collect()
 }
 
-/// Names the posting uses that appear nowhere in the vault at all.
-///
-/// Short and separate, and deliberately not part of any score: this is the one
-/// thing DockCV can say about a gap it cannot help with. Telling somebody a job
-/// wants Terraform when they have never written a line about Terraform is
-/// useful; folding it into a coverage number would only make every version look
-/// worse for the same reason.
-///
-/// **Names only** — a capital letter or an acronym. The unfiltered version of
-/// this returned `forty`, `lead` and `practice` alongside `Kubernetes`, because
-/// "a word the vault has not used" catches every ordinary word the reader
-/// happens not to have written. A technology is a proper noun or an initialism
-/// nearly without exception, and that is cheap to test for.
-pub fn absent(posting: &str, vault: &str) -> Vec<String> {
-    let known = tokens_of(vault);
-    counted_terms(posting)
-        .into_iter()
-        .filter(|term| is_name(&term.word) && !answers(&known, &term.word))
-        .map(|term| term.word)
-        .take(8)
-        .collect()
-}
-
-/// Does this read as a name rather than as a word?
-fn is_name(word: &str) -> bool {
-    let mut chars = word.chars();
-    let first = chars.next().is_some_and(char::is_uppercase);
-    let acronym = word.chars().filter(|c| c.is_alphabetic()).count() >= 2
-        && word
-            .chars()
-            .all(|c| c.is_uppercase() || c.is_ascii_digit() || !c.is_alphabetic());
-    first || acronym
-}
+// `absent` lived here: the names a posting used that the vault had never
+// mentioned. It read, on a real posting, "It also names Capgemini, Canada,
+// Location, GCP, Equal, Opportunity, Indigenous, Choosing" — one useful item in
+// eight. A capital letter does not mean a technology; job postings capitalise
+// the company, the country, the equal-opportunity paragraph and the first word
+// of every sentence, and no cheap test separates those from `GCP`. The other
+// two signals are grounded in words the reader wrote, which is exactly what
+// this one could not be, and one honest list beats two with a bad one in it.
 
 /// Every term the posting uses, with its count, most-said first.
 fn counted_terms(posting: &str) -> Vec<Term> {
@@ -187,7 +162,11 @@ fn counted_terms(posting: &str) -> Vec<Term> {
         if word.is_empty() || !is_term(word) {
             continue;
         }
-        let key = fold(word);
+        // Keyed by the stem the matcher compares with, not by the folded word.
+        // Keying by the word put `process`, `processes` and `processing` in the
+        // list as three terms while `answers` treated them as one — so the same
+        // word was counted three times against every version.
+        let key = stem(&fold(word)).unwrap_or_else(|| fold(word));
         match seen.iter_mut().find(|(k, _, _)| *k == key) {
             Some((_, _, count)) => *count += 1,
             None => seen.push((key, word.to_string(), 1)),
@@ -374,8 +353,33 @@ fn is_term(word: &str) -> bool {
 /// `skills` without carrying every plural twice.
 fn is_stopword(word: &str) -> bool {
     let lower = word.to_lowercase();
-    STOPWORDS.contains(&lower.as_str()) || STOPWORDS.contains(&fold(&lower).as_str())
+    let folded = fold(&lower);
+    STOPWORDS.contains(&lower.as_str())
+        || STOPWORDS.contains(&folded.as_str())
+        || SECTION_WORDS.contains(&folded.as_str())
 }
+
+/// The headings DockCV prints on a CV.
+///
+/// `export_plain_text` emits `EDUCATION` and `CERTIFICATIONS` above the
+/// sections they name, so a posting using either word matched the *chrome* of
+/// the page rather than anything on it — and because a preset can hide a
+/// section, those words differed between versions and scored as deciding
+/// terms. They were telling the reader about DockCV's own layout.
+const SECTION_WORDS: &[&str] = &[
+    "profile",
+    "summary",
+    "work",
+    "experience",
+    "education",
+    "skill",
+    "certificate",
+    "certification",
+    "organization",
+    "volunteer",
+    "project",
+    "publication",
+];
 
 /// Words a posting is made of rather than about.
 ///
