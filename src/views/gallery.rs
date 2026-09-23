@@ -97,12 +97,13 @@ impl Shell {
                 .flex_col()
                 .child(top)
                 .child(
+                    // No `items_center`: the sheet is a screen with its own
+                    // rail now, not a card floating in the middle of a pane.
                     div()
                         .flex_1()
                         .min_h_0()
                         .flex()
                         .flex_col()
-                        .items_center()
                         .px(px(34.0))
                         .pb(px(30.0))
                         .child(self.render_tailor(cx)),

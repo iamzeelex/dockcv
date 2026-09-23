@@ -8,91 +8,115 @@ const POSTING: &str = "We are looking for a Platform Engineer to own our deploym
      run the incident review practice, and work with Kubernetes, Terraform and AWS. \
      Experience with Kubernetes is required. Strong SQL is a plus.";
 
+/// The heart of it: a word only helps choose between versions when the versions
+/// disagree about it. `deployment` is in both, so it breaks no tie however
+/// often the posting says it; `Kubernetes` is in one, so it does.
 #[test]
-fn a_posting_leads_with_what_it_repeats() {
-    let terms = terms(POSTING);
-    let at = |w: &str| terms.iter().position(|t| t.word == w);
-    let count = |w: &str| terms.iter().find(|t| t.word == w).map(|t| t.count);
+fn a_deciding_term_is_one_the_versions_disagree_about() {
+    let long = "Led the deployment platform migration. Kubernetes, Terraform.".to_string();
+    let short = "Led the deployment platform migration.".to_string();
+    let words: Vec<String> = deciding_terms(POSTING, &[long, short])
+        .into_iter()
+        .map(|t| t.word)
+        .collect();
 
-    // Three words are said twice; they come before everything said once, and
-    // among themselves they keep the order the posting introduced them in.
-    assert_eq!(count("Platform"), Some(2));
-    assert_eq!(count("deployment"), Some(2));
-    assert_eq!(count("Kubernetes"), Some(2));
-    assert!(at("Platform") < at("deployment"), "first mention breaks the tie");
-    assert!(at("Kubernetes") < at("Terraform"), "twice beats once");
-
-    assert!(at("AWS").is_some(), "an acronym is not too short to be a term");
-    assert!(at("SQL").is_some());
+    assert!(words.iter().any(|w| w == "Kubernetes"), "got {words:?}");
+    assert!(
+        !words.iter().any(|w| w.eq_ignore_ascii_case("deployment")),
+        "both versions say it, so it decides nothing: {words:?}"
+    );
+    assert!(
+        !words.iter().any(|w| w == "SQL"),
+        "neither version says it, so it is a gap and not a tie-break: {words:?}"
+    );
 }
 
-/// The words a posting is built out of are not what it is about.
+/// The frequency read this replaces called these terms, and they were most of
+/// what it found: a posting is mostly the sentence every posting is written in.
 #[test]
-fn scaffolding_is_not_a_term() {
-    let terms = terms(POSTING);
-    for noise in ["with", "will", "looking", "work", "team", "the", "our"] {
+fn the_frame_a_posting_shares_with_every_posting_cannot_reach_the_list() {
+    let a = "We work with our team on production services every year.".to_string();
+    let b = "Our team works on production.".to_string();
+    let words: Vec<String> = deciding_terms(
+        "You will work with our team on production services. Experience required.",
+        &[a, b],
+    )
+    .into_iter()
+    .map(|t| t.word)
+    .collect();
+    // `services` survives, and that is the rule working rather than failing:
+    // it is the reader's own word and their two versions disagree about it.
+    // What cannot get through is the frame — and the frequency read this
+    // replaces returned nothing but the frame.
+    for frame in ["work", "team", "production", "experience", "required", "year"] {
         assert!(
-            !terms.iter().any(|t| t.word.eq_ignore_ascii_case(noise)),
-            "{noise} should not be a term"
+            !words.iter().any(|w| w.eq_ignore_ascii_case(frame)),
+            "{frame} is the sentence, not the job: {words:?}"
         );
+    }
+}
+
+/// One version is a different question — there is nothing to tell apart — so
+/// the count becomes "how much of the posting's vocabulary this page shares".
+#[test]
+fn a_single_version_is_measured_against_itself() {
+    let only = "Kubernetes and Terraform, on one deployment path.".to_string();
+    let words: Vec<String> = deciding_terms(POSTING, std::slice::from_ref(&only))
+        .into_iter()
+        .map(|t| t.word)
+        .collect();
+    assert!(words.iter().any(|w| w == "Kubernetes"), "got {words:?}");
+    assert!(!words.iter().any(|w| w == "SQL"), "not on the page: {words:?}");
+}
+
+/// A gap is a word the vault knows and this page does not — which is what makes
+/// it worth offering something for.
+#[test]
+fn a_gap_is_something_the_vault_can_answer() {
+    let page = "Led the migration of 62 services onto one deployment path.";
+    let vault = "Ran the incident review practice. Data: PostgreSQL, SQL, ClickHouse.";
+    let found = gaps(POSTING, page, vault);
+    assert!(found.iter().any(|t| t == "SQL"), "got {found:?}");
+    assert!(
+        found.iter().any(|t| t.eq_ignore_ascii_case("incident")),
+        "got {found:?}"
+    );
+    assert!(
+        !found.iter().any(|t| t.eq_ignore_ascii_case("deployment")),
+        "the page already says it: {found:?}"
+    );
+    assert!(
+        !found.iter().any(|t| t == "Kubernetes"),
+        "the vault has never heard of it, so there is nothing to offer: {found:?}"
+    );
+}
+
+/// …and the one thing DockCV can say about a gap it cannot help with.
+#[test]
+fn what_the_vault_has_never_heard_of_is_named_separately() {
+    let vault = "Led the migration of 62 services onto one deployment path.";
+    let never = absent(POSTING, vault);
+    assert!(never.iter().any(|t| t == "Kubernetes"), "got {never:?}");
+    assert!(never.iter().any(|t| t == "SQL"), "got {never:?}");
+    assert!(
+        !never.iter().any(|t| t.eq_ignore_ascii_case("migration")),
+        "the vault knows it: {never:?}"
+    );
+    // Names, not words: the unfiltered version answered `forty` and `practice`.
+    for word in ["forty", "lead", "incident", "practice"] {
+        assert!(!never.iter().any(|t| t == word), "{word} is not a name: {never:?}");
     }
 }
 
 /// Casing is the posting's, because the terms are shown back.
 #[test]
 fn a_term_keeps_the_casing_it_was_written_in() {
-    let terms = terms("Kubernetes and kubernetes and KUBERNETES clusters");
+    let terms = deciding_terms(
+        "Kubernetes and kubernetes and KUBERNETES clusters",
+        &["we run Kubernetes".to_string(), String::new()],
+    );
     assert_eq!(terms[0].word, "Kubernetes");
     assert_eq!(terms[0].count, 3);
-}
-
-#[test]
-fn coverage_splits_what_a_cv_answers_from_what_it_does_not() {
-    let terms = terms(POSTING);
-    let cv = "Led the migration of 62 services onto one deployment path. Kubernetes, Terraform.";
-    let read = coverage(&terms, cv);
-    assert!(read.matched.iter().any(|t| t == "Kubernetes"));
-    assert!(read.matched.iter().any(|t| t.eq_ignore_ascii_case("migration")));
-    assert!(read.missing.iter().any(|t| t == "SQL"));
-    assert_eq!(read.total(), terms.len());
-}
-
-/// `deploy` and `deployment` are the same word to a reader, and the read has to
-/// agree or every second row is a false gap.
-/// Containment is not enough here: `migrate` is not a prefix of `migration`,
-/// they part at the seventh letter. A reader treats them as one word and so
-/// must the read, or half the rows are gaps that are not gaps.
-#[test]
-fn one_word_in_two_shapes_is_one_word() {
-    let terms = terms("Own the deployment path and lead the migration.");
-    let read = coverage(&terms, "I deploy services and migrate databases.");
-    assert!(
-        read.matched.iter().any(|t| t == "deployment"),
-        "deploy answers deployment: {read:?}"
-    );
-    assert!(
-        read.matched.iter().any(|t| t == "migration"),
-        "migrate answers migration: {read:?}"
-    );
-}
-
-/// The sentence a requirement arrives in is not the requirement.
-#[test]
-fn the_frame_a_posting_is_written_in_is_not_a_term() {
-    let terms = terms("Experience with Kubernetes required. Strong SQL skills preferred.");
-    let words: Vec<&str> = terms.iter().map(|t| t.word.as_str()).collect();
-    assert_eq!(words, vec!["Kubernetes", "SQL"], "got {words:?}");
-}
-
-/// …but a shared first syllable is not a shared word.
-#[test]
-fn a_shared_prefix_is_not_a_match() {
-    let terms = terms("Our data warehouse is central.");
-    let read = coverage(&terms, "I maintained a database.");
-    assert!(
-        read.missing.iter().any(|t| t == "data"),
-        "database must not answer data: {read:?}"
-    );
 }
 
 fn diary(text: &str, confidential: bool) -> DiaryEntry {
@@ -106,9 +130,9 @@ fn diary(text: &str, confidential: bool) -> DiaryEntry {
 
 #[test]
 fn the_vault_is_searched_for_what_the_reading_is_missing() {
-    let terms = terms(POSTING);
     let cv = "Led the migration of 62 services onto one deployment path.";
-    let missing = coverage(&terms, cv).missing;
+    let vault = format!("{cv} Ran the incident review practice. Data: SQL, ClickHouse.");
+    let missing = gaps(POSTING, cv, &vault);
 
     let entries = vec![
         diary("Ran the incident review practice: 41 reviews, no blame section.", false),
@@ -147,9 +171,8 @@ fn the_vault_is_searched_for_what_the_reading_is_missing() {
 /// is handed `None` and cannot print what it does not have.
 #[test]
 fn a_confidential_win_is_pointed_at_and_never_quoted() {
-    let terms = terms(POSTING);
-    let missing = coverage(&terms, "").missing;
     let secret = "Personal-data incident at client ACME, contained in one deployment.";
+    let missing = gaps(POSTING, "", secret);
     let found = unused(&missing, &[diary(secret, true)], &Library::default(), "");
 
     let entry = found.first().expect("it answers several gaps");
@@ -168,9 +191,8 @@ fn a_confidential_win_is_pointed_at_and_never_quoted() {
 /// however well it matches the posting.
 #[test]
 fn something_already_on_the_page_is_not_offered_again() {
-    let terms = terms(POSTING);
     let cv = "Ran the incident review practice for two years.";
-    let missing = coverage(&terms, cv).missing;
+    let missing = gaps(POSTING, cv, cv);
     let found = unused(
         &missing,
         &[diary("Started the incident review practice.", false)],
@@ -182,8 +204,8 @@ fn something_already_on_the_page_is_not_offered_again() {
 
 #[test]
 fn an_empty_posting_asks_nothing_of_anything() {
-    assert!(terms("").is_empty());
-    assert!(terms("   \n  ").is_empty());
+    assert!(deciding_terms("", &["anything".to_string()]).is_empty());
+    assert!(gaps("   \n  ", "", "anything at all").is_empty());
     let found = unused(&[], &[diary("Anything at all.", false)], &Library::default(), "");
     assert!(found.is_empty());
 }
@@ -192,8 +214,11 @@ fn an_empty_posting_asks_nothing_of_anything() {
 /// a prompt as a diary entry is.
 #[test]
 fn a_library_block_is_a_prompt_too() {
-    let terms = terms("Deep Kubernetes and Terraform experience required.");
-    let missing = coverage(&terms, "").missing;
+    let missing = gaps(
+        "Deep Kubernetes and Terraform experience required.",
+        "",
+        "Ran the Kubernetes fleet and the Terraform modules.",
+    );
     let library = Library {
         work: vec![Work {
             position: "Platform Engineer".into(),

@@ -1,16 +1,34 @@
 //! Reading a job posting against what the vault already holds.
 //!
 //! **Nothing here writes a CV, and nothing here is generated.** The output is a
-//! set of pointers: which of the terms a posting leans on a given reading
-//! already answers, and which diary entries and library blocks speak to the
-//! ones it does not. Every string that reaches the screen was typed by the
-//! posting's author or by the user — which is US-14's rule ("never invent a
-//! metric") applied one level up, to the whole surface.
+//! set of pointers: which words a posting uses that tell the user's own
+//! versions apart, and which diary entries and library blocks speak to the ones
+//! a given page does not say. Every string that reaches the screen was typed by
+//! the posting's author *and* by the user — which is US-14's rule ("never
+//! invent a metric") applied one level up, to the whole surface.
 //!
-//! That is also the answer to why this is not keyword matching in the sense
-//! that phrase usually means. Nothing is stuffed into the document. The
-//! posting is used the other way round: as a reason to look at something you
-//! already wrote down and forgot.
+//! ## Why frequency alone was noise
+//!
+//! The first pass took the words a posting repeats. That measures the posting,
+//! and a posting is mostly boilerplate: `platform` twice and `Kubernetes` twice
+//! score the same as `engineers` twice and `production` twice, and a list of
+//! twenty-four of them is a word cloud. It told the reader nothing they could
+//! act on, because most of it was not about them.
+//!
+//! What is cheap, local, and actually about them is **the user's own corpus**.
+//! Two questions, and each has its own function:
+//!
+//! - [`deciding_terms`] — words the posting uses that appear in *some* of the
+//!   reader's versions and not all of them. Those are the words a choice
+//!   between versions turns on, which is the only question the list is asked.
+//!   A word every version already carries cannot break a tie; a word none of
+//!   them carries is not a tie-break either, it is the next question.
+//! - [`gaps`] — words the posting uses that the vault knows *somewhere* and
+//!   this particular page does not say. That is what the diary and the library
+//!   are searched with.
+//!
+//! Both sets are grounded in text the user wrote, so neither can fill with
+//! noise about somebody else's prose.
 //!
 //! Pure — no vault, no I/O, no window — so all of it is testable.
 
@@ -66,12 +84,11 @@ pub enum UnusedSource {
     Library { section: SectionKind },
 }
 
-/// The most a coverage read reports on.
+/// The most a read reports on.
 ///
-/// A posting names a hundred distinct words and a read over all of them is a
-/// word cloud, not a read. Twenty-four is enough to carry a skills list plus
-/// whatever the prose repeats, and few enough to scan.
-const MAX_TERMS: usize = 24;
+/// Less load-bearing than it was: the filters above are what keep the list
+/// honest, and this only stops a pathological posting from producing a wall.
+const MAX_TERMS: usize = 16;
 
 /// The shortest word that can be a term.
 ///
@@ -80,12 +97,90 @@ const MAX_TERMS: usize = 24;
 /// by the acronym rule below instead.
 const MIN_LEN: usize = 4;
 
-/// Terms the posting leans on, most-repeated first.
+/// Words the posting uses that tell the reader's versions apart.
 ///
-/// Ties keep the order the posting introduced them in, so a skills list — every
-/// item once — comes back in the order it was written rather than alphabetised
-/// into something the reader has to re-find.
-pub fn terms(posting: &str) -> Vec<Term> {
+/// A term qualifies when the posting uses it, at least one version says it, and
+/// at least one does not. That last clause is the whole difference from the
+/// first pass: a word every version already carries cannot help choose between
+/// them, however often the posting repeats it, and a word none of them carries
+/// belongs to [`gaps`] instead.
+///
+/// With a single version there is nothing to tell apart, so the rule relaxes to
+/// "the posting says it and the version says it" — the count then reads as how
+/// much of the posting's own vocabulary the page already shares.
+///
+/// Ordered by how often the posting says it, ties keeping the posting's order.
+pub fn deciding_terms(posting: &str, readings: &[String]) -> Vec<Term> {
+    let counted = counted_terms(posting);
+    let seen: Vec<Vec<String>> = readings.iter().map(|r| tokens_of(r)).collect();
+    counted
+        .into_iter()
+        .filter(|term| {
+            let says: usize = seen.iter().filter(|t| answers(t, &term.word)).count();
+            match seen.len() {
+                0 => false,
+                1 => says == 1,
+                total => says > 0 && says < total,
+            }
+        })
+        .take(MAX_TERMS)
+        .collect()
+}
+
+/// Words the posting uses that the vault knows somewhere and this page does not
+/// say.
+///
+/// The other half, and a different question: not "which version" but "what else
+/// do I have". Grounded in `vault` — every CV, the library and the diary run
+/// together — so a term the user has never written about anywhere does not
+/// appear, because there would be nothing to offer for it.
+pub fn gaps(posting: &str, page: &str, vault: &str) -> Vec<String> {
+    let known = tokens_of(vault);
+    let on_page = tokens_of(page);
+    counted_terms(posting)
+        .into_iter()
+        .filter(|term| answers(&known, &term.word) && !answers(&on_page, &term.word))
+        .map(|term| term.word)
+        .take(MAX_TERMS)
+        .collect()
+}
+
+/// Names the posting uses that appear nowhere in the vault at all.
+///
+/// Short and separate, and deliberately not part of any score: this is the one
+/// thing DockCV can say about a gap it cannot help with. Telling somebody a job
+/// wants Terraform when they have never written a line about Terraform is
+/// useful; folding it into a coverage number would only make every version look
+/// worse for the same reason.
+///
+/// **Names only** — a capital letter or an acronym. The unfiltered version of
+/// this returned `forty`, `lead` and `practice` alongside `Kubernetes`, because
+/// "a word the vault has not used" catches every ordinary word the reader
+/// happens not to have written. A technology is a proper noun or an initialism
+/// nearly without exception, and that is cheap to test for.
+pub fn absent(posting: &str, vault: &str) -> Vec<String> {
+    let known = tokens_of(vault);
+    counted_terms(posting)
+        .into_iter()
+        .filter(|term| is_name(&term.word) && !answers(&known, &term.word))
+        .map(|term| term.word)
+        .take(8)
+        .collect()
+}
+
+/// Does this read as a name rather than as a word?
+fn is_name(word: &str) -> bool {
+    let mut chars = word.chars();
+    let first = chars.next().is_some_and(char::is_uppercase);
+    let acronym = word.chars().filter(|c| c.is_alphabetic()).count() >= 2
+        && word
+            .chars()
+            .all(|c| c.is_uppercase() || c.is_ascii_digit() || !c.is_alphabetic());
+    first || acronym
+}
+
+/// Every term the posting uses, with its count, most-said first.
+fn counted_terms(posting: &str) -> Vec<Term> {
     let mut seen: Vec<(String, String, usize)> = Vec::new();
     for raw in posting.split(|c: char| !(c.is_alphanumeric() || c == '+' || c == '#')) {
         let word = raw.trim_matches(|c: char| c == '+' || c == '#');
@@ -101,7 +196,6 @@ pub fn terms(posting: &str) -> Vec<Term> {
     // `sort_by_key` is stable, so equal counts keep their first-appearance
     // order — which is the posting's own.
     seen.sort_by_key(|(_, _, count)| std::cmp::Reverse(*count));
-    seen.truncate(MAX_TERMS);
     seen.into_iter()
         .map(|(_, word, count)| Term { word, count })
         .collect()

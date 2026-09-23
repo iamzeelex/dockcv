@@ -23,7 +23,7 @@ use std::path::PathBuf;
 use gpui::{Context, Task};
 
 use crate::render::Rendered;
-use crate::resume::posting::{coverage, terms, unused, Coverage, Unused};
+use crate::resume::posting::{coverage, deciding_terms, gaps, unused, Coverage, Unused};
 use crate::resume::model::{Application, ResumeDoc, SectionKind, SentCv};
 use crate::typst_engine::PageGeometry;
 use crate::vault;
@@ -146,6 +146,23 @@ impl Shell {
         cx.notify();
     }
 
+    /// The page, the diary and the library together — what the vault knows.
+    fn draft_vault_corpus(&self, page: &str) -> String {
+        let mut corpus = page.to_string();
+        for entry in &self.cache.diary().entries {
+            corpus.push(' ');
+            corpus.push_str(&entry.text);
+        }
+        let library = self.cache.library();
+        for block in &library.work {
+            corpus.push_str(&format!(" {} {}", block.position, block.highlights.join(" ")));
+        }
+        for block in &library.skills {
+            corpus.push_str(&format!(" {} {}", block.name, block.keywords.join(" ")));
+        }
+        corpus
+    }
+
     /// Read the draft's posting against the page the draft currently makes.
     ///
     /// Pure arithmetic over text the app already produces, same as the sheet's
@@ -156,19 +173,27 @@ impl Shell {
         let Some(draft) = self.drafting.as_mut() else {
             return;
         };
-        let terms = terms(&draft.posting);
-        if terms.is_empty() {
+        let posting = draft.posting.clone();
+        if posting.trim().is_empty() {
             draft.read = None;
             return;
         }
         let page = crate::resume::export_plain_text(&draft.doc.compose());
+
+        // One version here, so `deciding_terms` reads as "how much of the
+        // posting's own vocabulary this page already shares" — which is the
+        // question on this screen, where there is nothing to choose between.
+        let terms = deciding_terms(&posting, std::slice::from_ref(&page));
         let read = coverage(&terms, &page);
+        let vault = self.draft_vault_corpus(&page);
+        let missing = gaps(&posting, &page, &vault);
         let found = unused(
-            &read.missing,
+            &missing,
             &self.cache.diary().entries,
             self.cache.library(),
             &page,
         );
+
         // Reborrowed: `self.cache` and `self.drafting` cannot be held at once.
         if let Some(draft) = self.drafting.as_mut() {
             draft.read = Some(DraftRead {
