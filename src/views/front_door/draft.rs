@@ -23,6 +23,7 @@ use std::path::PathBuf;
 use gpui::{Context, Task};
 
 use crate::render::Rendered;
+use crate::resume::posting::{coverage, terms, unused, Coverage, Unused};
 use crate::resume::model::{Application, ResumeDoc, SectionKind, SentCv};
 use crate::typst_engine::PageGeometry;
 use crate::vault;
@@ -53,6 +54,21 @@ pub(crate) struct VersionDraft {
     pub geometry: Option<PageGeometry>,
     pub compiling: bool,
     pub task: Option<Task<()>>,
+    /// The posting read against the page as it currently stands.
+    ///
+    /// `None` when the job was named without a posting. Recomputed on every
+    /// toggle, which is the point: the number says what *this* page answers,
+    /// so leaving a section out moves it, and the answer arrives while the
+    /// decision is being made rather than one screen earlier.
+    pub read: Option<DraftRead>,
+}
+
+/// What the posting asks of the page in front of you.
+pub(crate) struct DraftRead {
+    pub terms: usize,
+    pub coverage: Coverage,
+    /// Entries in the vault that answer what this page does not say.
+    pub unused: Vec<Unused>,
 }
 
 /// How large the preview page is rasterized. Fixed rather than
@@ -123,9 +139,44 @@ impl Shell {
             geometry: None,
             compiling: false,
             task: None,
+            read: None,
         }));
+        self.refresh_draft_read();
         self.compile_draft(cx);
         cx.notify();
+    }
+
+    /// Read the draft's posting against the page the draft currently makes.
+    ///
+    /// Pure arithmetic over text the app already produces, same as the sheet's
+    /// read — and deliberately recomputed rather than carried across, because
+    /// the page changes under it. A coverage number copied from the previous
+    /// screen would be a claim about a document that no longer exists.
+    pub(crate) fn refresh_draft_read(&mut self) {
+        let Some(draft) = self.drafting.as_mut() else {
+            return;
+        };
+        let terms = terms(&draft.posting);
+        if terms.is_empty() {
+            draft.read = None;
+            return;
+        }
+        let page = crate::resume::export_plain_text(&draft.doc.compose());
+        let read = coverage(&terms, &page);
+        let found = unused(
+            &read.missing,
+            &self.cache.diary().entries,
+            self.cache.library(),
+            &page,
+        );
+        // Reborrowed: `self.cache` and `self.drafting` cannot be held at once.
+        if let Some(draft) = self.drafting.as_mut() {
+            draft.read = Some(DraftRead {
+                terms: terms.len(),
+                coverage: read,
+                unused: found,
+            });
+        }
     }
 
     /// Throw the draft away. Nothing was written, so nothing is undone.
@@ -147,6 +198,8 @@ impl Shell {
             return;
         };
         changes::toggle(&mut draft.doc, &source, change);
+        // The page just changed, so what it answers just changed with it.
+        self.refresh_draft_read();
         self.compile_draft(cx);
         cx.notify();
     }
@@ -165,6 +218,7 @@ impl Shell {
         }
         draft.source = source;
         draft.doc.apply_preset(source);
+        self.refresh_draft_read();
         self.compile_draft(cx);
         cx.notify();
     }

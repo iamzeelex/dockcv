@@ -264,13 +264,13 @@ impl Shell {
                                 .text_color(theme.text)
                                 .child(format!("{} · {}", row.stem, row.label())),
                         )
-                        .child(
+                        .children(self.base_choice_label(row).map(|line| {
                             div()
                                 .truncate()
                                 .text_style(TextStyle::body())
                                 .text_color(theme.text_subtle)
-                                .child(self.base_choice_label(row)),
-                        ),
+                                .child(line)
+                        })),
                 )
                 .when_some(cov, |el, cov| {
                     // The number is the reason this row is above or below the
@@ -351,6 +351,23 @@ impl Shell {
                             ),
                     ),
             )
+            .child(self.tailor_posting(cx, sheet))
+            .child(self.tailor_step(
+                cx,
+                2,
+                "Which version to start from",
+                Some("A copy of it becomes the new version."),
+                if rows.iter().any(|r| r.preset.is_some()) {
+                    choices.into_any_element()
+                } else {
+                    div()
+                        .text_style(TextStyle::body())
+                        .text_color(theme.text_muted)
+                        .child("No preset to start from yet — save one on a CV first.")
+                        .into_any_element()
+                },
+            ))
+            .children(self.tailor_unused(cx))
             .child({
                 // Built first: `tailor_step` takes `cx` too, and the two
                 // borrows cannot overlap inside one call.
@@ -370,25 +387,14 @@ impl Shell {
                             .child(self.tailor_field(cx, "Role", &sheet.role)),
                     )
                     .into_any_element();
-                self.tailor_step(cx, 1, "The job", None, fields)
+                self.tailor_step(
+                    cx,
+                    4,
+                    "Name it",
+                    Some("What the version, the file and the application card are called."),
+                    fields,
+                )
             })
-            .child(self.tailor_posting(cx, sheet))
-            .child(self.tailor_step(
-                cx,
-                3,
-                "Start from",
-                Some("A copy of this becomes the new version."),
-                if rows.iter().any(|r| r.preset.is_some()) {
-                    choices.into_any_element()
-                } else {
-                    div()
-                        .text_style(TextStyle::body())
-                        .text_color(theme.text_muted)
-                        .child("No preset to start from yet — save one on a CV first.")
-                        .into_any_element()
-                },
-            ))
-            .children(self.tailor_unused(cx))
             .child(
                 div()
                     .flex()
@@ -504,7 +510,7 @@ impl Shell {
 
         self.tailor_step(
             cx,
-            2,
+            1,
             "The posting",
             Some("Optional — it is what the two lists below are measured against."),
             body,
@@ -576,7 +582,7 @@ impl Shell {
         });
         Some(self.tailor_step(
             cx,
-            4,
+            3,
             "You have written this down",
             Some("In your vault, and not on the version above."),
             div()
@@ -589,20 +595,24 @@ impl Shell {
 
     /// What this version has done, in a sentence. **Not its name** — the row
     /// prints that above, and printing it twice was this screen's own bug.
-    fn base_choice_label(&self, row: &Reading) -> String {
+    fn base_choice_label(&self, row: &Reading) -> Option<String> {
         let (stem, preset) = row.sent_as();
         let record = self.cache.applications().record_for(stem, preset);
+        // Nothing when nothing has gone out. Five rows each reading `never
+        // sent` is a column with no information in it, and it crowded out the
+        // descriptions, which are the only thing that told the versions apart.
         let record = match (record.sent, record.interviewed) {
-            (0, _) => "never sent".to_string(),
-            (1, 0) => "sent once, nothing back yet".to_string(),
-            (sent, 0) => format!("sent {sent} times, nothing back yet"),
-            (1, _) => "sent once, and it got an interview".to_string(),
-            (sent, 1) => format!("sent {sent} times, one interview"),
-            (sent, got) => format!("sent {sent} times, {got} interviews"),
+            (0, _) => None,
+            (1, 0) => Some("sent once, nothing back yet".to_string()),
+            (sent, 0) => Some(format!("sent {sent} times, nothing back yet")),
+            (1, _) => Some("sent once, and it got an interview".to_string()),
+            (sent, 1) => Some(format!("sent {sent} times, one interview")),
+            (sent, got) => Some(format!("sent {sent} times, {got} interviews")),
         };
-        match row.subtitle() {
-            Some(what) => format!("{what} · {record}"),
-            None => record,
+        match (row.subtitle(), record) {
+            (Some(what), Some(record)) => Some(format!("{what} · {record}")),
+            (Some(what), None) => Some(what),
+            (None, record) => record,
         }
     }
 
@@ -656,10 +666,12 @@ impl Shell {
                                     .text_color(theme.text)
                                     .child(title),
                             )
+                            // Wraps rather than truncates. `Optional — it is
+                            // what the two lists below are measured agai…` is
+                            // worse than no note at all.
                             .children(note.map(|note| {
                                 div()
                                     .min_w_0()
-                                    .truncate()
                                     .text_style(TextStyle::body())
                                     .text_color(theme.text_subtle)
                                     .child(note)
@@ -709,7 +721,7 @@ pub(super) fn unique_preset_name(doc: &crate::resume::model::ResumeDoc, company:
 }
 
 /// A section's name in a sentence — `Library · Skills`.
-fn section_word(section: SectionKind) -> &'static str {
+pub(crate) fn section_word(section: SectionKind) -> &'static str {
     match section {
         SectionKind::Work => "Work",
         SectionKind::Education => "Education",

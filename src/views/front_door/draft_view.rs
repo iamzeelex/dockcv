@@ -21,6 +21,7 @@ use dockcv_ui_components::{
     Button, ButtonExt, DropdownMenu, PopupMenuItem, ScrollableElement, MONO, SANS,
 };
 
+use crate::resume::posting::UnusedSource;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
 use crate::views::shell::Shell;
@@ -74,7 +75,6 @@ impl Shell {
         let Some(draft) = self.drafting.as_ref() else {
             return div();
         };
-        let person = self.front_door_title();
         let role = if draft.role.trim().is_empty() {
             draft.company.clone()
         } else {
@@ -113,9 +113,18 @@ impl Shell {
                         div()
                             .text_style(TextStyle::body())
                             .text_color(theme.text_muted)
+                            // Not the person's name. `front_door_title` falls
+                            // back to "Your CVs" when the vault's documents
+                            // disagree about whose they are — a screen heading,
+                            // and it read as "a focused version of Your CVs's
+                            // CV". What the line is for is saying which
+                            // document and which version this copy came from,
+                            // which is more use than the name anyway.
                             .child(format!(
-                                "{} · a focused version of {person}'s CV.",
-                                draft.company
+                                "{} · a copy of {} from {}",
+                                draft.company,
+                                draft.source_name(),
+                                draft.stem()
                             )),
                     ),
             )
@@ -327,6 +336,151 @@ impl Shell {
             )
     }
 
+    /// What the posting asks of the page in front of you.
+    ///
+    /// The read used to live one screen back, on the sheet where you pick a
+    /// version — which answered "which one" and then threw the answer away
+    /// before the question it was really for. **This** is where the tailoring
+    /// happens: the number moves as you toggle, so leaving Skills out is
+    /// visibly a trade rather than a guess, and the entries below are things
+    /// the user wrote that this page does not say.
+    ///
+    /// Nothing here is generated, nothing is applied automatically, and a
+    /// confidential diary entry is named and never quoted (US-36) — the read
+    /// hands this function no text to print.
+    fn render_draft_posting_read(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let theme = *cx.theme();
+        let read = self.drafting.as_ref()?.read.as_ref()?;
+        let answered = read.coverage.matched.len();
+
+        Some(
+            div()
+                .mt(px(14.0))
+                .pt(px(14.0))
+                .border_t_1()
+                .border_color(theme.border)
+                .flex()
+                .flex_col()
+                .gap(px(8.0))
+                .child(
+                    div()
+                        .flex()
+                        .items_baseline()
+                        .justify_between()
+                        .gap(px(10.0))
+                        .child(
+                            div()
+                                .font_family(SANS)
+                                .text_size(px(14.0))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(theme.text)
+                                .child("What this job asks for"),
+                        )
+                        .child(
+                            div()
+                                .text_style(TextStyle::chip())
+                                .text_color(if answered * 2 >= read.terms {
+                                    theme.success
+                                } else {
+                                    theme.text_subtle
+                                })
+                                .child(format!("{answered} / {}", read.terms)),
+                        ),
+                )
+                .children((!read.coverage.missing.is_empty()).then(|| {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(5.0))
+                        .child(
+                            div()
+                                .text_style(TextStyle::body())
+                                .text_color(theme.text_subtle)
+                                .child("This page does not say:"),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .gap(px(4.0))
+                                .children(read.coverage.missing.iter().take(12).map(|term| {
+                                    div()
+                                        .px(px(6.0))
+                                        .py(px(1.0))
+                                        .rounded(theme.radius_sm())
+                                        .bg(theme.elevated)
+                                        .text_style(TextStyle::chip())
+                                        .text_color(theme.text_muted)
+                                        .child(term.clone())
+                                })),
+                        )
+                }))
+                .children((!read.unused.is_empty()).then(|| {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(6.0))
+                        .child(
+                            div()
+                                .text_style(TextStyle::body())
+                                .text_color(theme.text_subtle)
+                                .child("You have written this down:"),
+                        )
+                        .children(read.unused.iter().take(3).map(|item| {
+                            let (where_from, body) = match &item.source {
+                                UnusedSource::Diary { date, confidential } => (
+                                    format!("Diary · {date}"),
+                                    if *confidential {
+                                        "Marked confidential — open the Diary to read it."
+                                            .to_string()
+                                    } else {
+                                        item.text.clone().unwrap_or_default()
+                                    },
+                                ),
+                                UnusedSource::Library { section } => (
+                                    format!("Library · {}", crate::views::tailor::section_word(*section)),
+                                    item.text.clone().unwrap_or_default(),
+                                ),
+                            };
+                            div()
+                                .p(px(8.0))
+                                .rounded(theme.radius_sm())
+                                .bg(theme.elevated)
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.0))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_baseline()
+                                        .gap(px(7.0))
+                                        .child(
+                                            div()
+                                                .flex_none()
+                                                .text_style(TextStyle::chip())
+                                                .text_color(theme.text_subtle)
+                                                .child(where_from),
+                                        )
+                                        .child(
+                                            div()
+                                                .min_w_0()
+                                                .truncate()
+                                                .text_style(TextStyle::chip())
+                                                .text_color(theme.accent)
+                                                .child(item.terms.join(" · ")),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .text_style(TextStyle::body())
+                                        .text_color(theme.text_muted)
+                                        .child(body),
+                                )
+                        }))
+                }))
+        )
+    }
+
     /// Why this start, and what it becomes.
     fn render_draft_side(
         &self,
@@ -403,6 +557,7 @@ impl Shell {
                             ),
                     )
             }))
+            .children(self.render_draft_posting_read(cx))
             .child(
                 div()
                     .mt(px(14.0))
@@ -429,6 +584,23 @@ impl Shell {
                             .child(format!("{count} selected")),
                     ),
             )
+            .children(super::changes::only_omissions(changes).then(|| {
+                // The list is not empty here, it is just all omissions — which
+                // is what a document with no second cut of anything can offer,
+                // and not a decision anybody came to make.
+                div()
+                    .mt(px(10.0))
+                    .p(px(9.0))
+                    .rounded(theme.radius_sm())
+                    .bg(theme.elevated)
+                    .text_style(TextStyle::body())
+                    .text_color(theme.text_muted)
+                    .child(
+                        "The changes offered here are the other cuts of your sections. This CV \
+                         has none yet, so all it can offer is leaving a section out — write a \
+                         second version of a section in the editor and it appears here.",
+                    )
+            }))
             .child(if changes.is_empty() {
                 div()
                     .mt(px(10.0))
@@ -583,11 +755,15 @@ impl Shell {
                     .min_w(px(140.0))
                     .text_size(px(11.0))
                     .text_color(theme.text_subtle)
+                    // Only when there is something to say. `0 selected` is
+                    // already in the panel's own header, and `DRAFT · 0
+                    // CHANGES` is in the banner above it — three statements of
+                    // one fact on one screen.
                     .child(if count == 0 {
-                        format!("Nothing has changed in {source}.")
+                        String::new()
                     } else {
                         format!(
-                            "{count} change{} selected. The source stays unchanged.",
+                            "{count} change{} selected. {source} stays unchanged.",
                             if count == 1 { "" } else { "s" }
                         )
                     }),
