@@ -24,8 +24,8 @@ use crate::resume::export::names::{resolve_destination, Destination, OnCollision
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
-use super::root::Root;
-use super::shell::pick_dir;
+use super::Root;
+use crate::views::shell::pick_dir;
 
 /// Supported export formats in DockCV.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,7 +109,7 @@ impl ExportFormat {
 pub(super) const CURRENT_VIEW: &str = "Current view";
 
 /// The `{date}` token, in the only form that sorts correctly in Finder.
-pub(super) fn today() -> String {
+pub(crate) fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 

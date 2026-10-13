@@ -25,7 +25,7 @@ use crate::resume::model::{
 };
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
-use super::root::Root;
+use super::Root;
 
 /// The page sizes, in the order the segmented control draws them — which is
 /// also the order `ButtonGroup` reports a click by index.

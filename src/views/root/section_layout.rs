@@ -24,7 +24,7 @@ use crate::resume::model::{
     SectionKind, SectionOverrides,
 };
 
-use super::root::Root;
+use super::Root;
 
 impl Root {
     /// The section card's own layout control.

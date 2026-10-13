@@ -4,13 +4,13 @@
 use crate::resume::model::{ResumeDoc, SectionKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum EditorMode {
+pub(crate) enum EditorMode {
     Content,
     Layout,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum LayoutCategory {
+pub(crate) enum LayoutCategory {
     Typography,
     Page,
     Header,
@@ -21,7 +21,7 @@ pub(super) enum LayoutCategory {
 }
 
 impl LayoutCategory {
-    pub(super) const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::Typography,
         Self::Page,
         Self::Header,
@@ -31,7 +31,7 @@ impl LayoutCategory {
         Self::Export,
     ];
 
-    pub(super) fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Typography => "Typography",
             Self::Page => "Page",
@@ -47,27 +47,27 @@ impl LayoutCategory {
 /// `None` means the profile identity or an empty repeatable section. Every
 /// other selected entity is addressed by its active variant's current index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct EditorSelection {
-    pub(super) section: SectionKind,
-    pub(super) item: Option<usize>,
+pub(crate) struct EditorSelection {
+    pub(crate) section: SectionKind,
+    pub(crate) item: Option<usize>,
 }
 
 impl EditorSelection {
-    pub(super) fn initial() -> Self {
+    pub(crate) fn initial() -> Self {
         Self {
             section: SectionKind::Profile,
             item: None,
         }
     }
 
-    pub(super) fn for_section(doc: &ResumeDoc, section: SectionKind) -> Self {
+    pub(crate) fn for_section(doc: &ResumeDoc, section: SectionKind) -> Self {
         Self {
             section,
             item: (section != SectionKind::Profile && item_count(doc, section) > 0).then_some(0),
         }
     }
 
-    pub(super) fn normalize(&mut self, doc: &ResumeDoc) {
+    pub(crate) fn normalize(&mut self, doc: &ResumeDoc) {
         if !doc.sections().contains(&self.section) {
             *self = Self::initial();
             return;

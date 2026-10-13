@@ -28,6 +28,7 @@ use crate::resume::edit::{FieldId, ListId};
 use crate::resume::model::SectionKind;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
+use super::editor_state;
 use super::Root;
 
 /// C-1 (the editor-comfort notes): upstream's `Field` label inherits
@@ -41,7 +42,7 @@ impl Root {
     pub(super) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let section = self.selection.section;
-        let title = super::root_editor_state::section_label(&self.doc, section);
+        let title = editor_state::section_label(&self.doc, section);
         let rows: Vec<AnyElement> = self
             .doc
             .sections()
@@ -51,7 +52,7 @@ impl Root {
         let selected_entry = self
             .selection
             .item
-            .map(|i| super::root_editor_state::item_label(&self.doc, section, i));
+            .map(|i| editor_state::item_label(&self.doc, section, i));
 
         div()
             .flex()
@@ -189,8 +190,8 @@ impl Root {
         let theme = *cx.theme();
         let selected = self.selection.section == section;
         let expanded = self.expanded.contains(&section);
-        let count = super::root_editor_state::item_count(&self.doc, section);
-        let title = super::root_editor_state::section_label(&self.doc, section);
+        let count = editor_state::item_count(&self.doc, section);
+        let title = editor_state::section_label(&self.doc, section);
         let mut status = Vec::new();
         if self.doc.variant_names(section).len() > 1 {
             status.push(self.doc.variant_name(section).clone());
@@ -231,7 +232,7 @@ impl Root {
             )
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                 this.selection =
-                    super::root_editor_state::EditorSelection::for_section(&this.doc, section);
+                    editor_state::EditorSelection::for_section(&this.doc, section);
                 this.focused_section = section;
                 this.expanded.insert(section);
                 cx.notify();
@@ -264,7 +265,7 @@ impl Root {
                                 this.expanded.remove(&section);
                             }
                         } else {
-                            this.selection = super::root_editor_state::EditorSelection::for_section(
+                            this.selection = editor_state::EditorSelection::for_section(
                                 &this.doc, section,
                             );
                             this.focused_section = section;
@@ -300,7 +301,7 @@ impl Root {
                     cx,
                     section,
                     Some(index),
-                    super::root_editor_state::item_label(&self.doc, section, index),
+                    editor_state::item_label(&self.doc, section, index),
                 ));
             }
             if let Some(list) = Self::section_list(section) {
@@ -326,7 +327,7 @@ impl Root {
             .aria_label(label.clone())
             .child(div().w_full().min_w_0().truncate().child(label))
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                this.selection = super::root_editor_state::EditorSelection { section, item };
+                this.selection = editor_state::EditorSelection { section, item };
                 this.focused_section = section;
                 cx.notify();
             }))
@@ -383,9 +384,9 @@ impl Root {
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.checkpoint();
                 list.add(&mut this.doc);
-                this.selection = super::root_editor_state::EditorSelection {
+                this.selection = editor_state::EditorSelection {
                     section,
-                    item: Some(super::root_editor_state::item_count(&this.doc, section) - 1),
+                    item: Some(editor_state::item_count(&this.doc, section) - 1),
                 };
                 this.fields_stale = true;
                 this.schedule_save(cx);
@@ -635,7 +636,7 @@ impl Root {
                 this.checkpoint();
                 let id = this.doc.add_custom_section("New Section");
                 this.expanded.insert(SectionKind::Custom(id));
-                this.selection = super::root_editor_state::EditorSelection::for_section(
+                this.selection = editor_state::EditorSelection::for_section(
                     &this.doc,
                     SectionKind::Custom(id),
                 );
@@ -705,9 +706,9 @@ impl Root {
                     ListId::CustomEntries(id) => Some(SectionKind::Custom(id)),
                     _ => None,
                 } {
-                    this.selection = super::root_editor_state::EditorSelection {
+                    this.selection = editor_state::EditorSelection {
                         section,
-                        item: Some(super::root_editor_state::item_count(&this.doc, section) - 1),
+                        item: Some(editor_state::item_count(&this.doc, section) - 1),
                     };
                     this.focused_section = section;
                     this.expanded.insert(section);

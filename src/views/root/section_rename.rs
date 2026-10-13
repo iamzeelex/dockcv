@@ -34,8 +34,8 @@ use super::Root;
 
 /// Live state for whichever section's header is mid-rename. Only one at a
 /// time — [`Root::renaming_section`] holds it.
-pub(super) struct SectionRename {
-    pub(super) section: SectionKind,
+pub(crate) struct SectionRename {
+    pub(crate) section: SectionKind,
     field: Entity<TextFieldState>,
     /// Keeps the `TextFieldEvent` → commit/blur translation alive for as long
     /// as this rename is in progress.

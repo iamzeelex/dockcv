@@ -58,9 +58,9 @@ use crate::resume::model::{LayoutSettings, ATS_SAFE_PROFILE};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
-use super::root::{ProfileDetachment, ProfileFork, Root};
-use super::root_editor_state::{EditorMode, LayoutCategory};
-use super::save_status;
+use super::{ProfileDetachment, ProfileFork, Root};
+use super::editor_state::{EditorMode, LayoutCategory};
+use crate::views::save_status;
 
 impl Root {
     /// The page settings currently reaching the renderer.

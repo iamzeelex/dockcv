@@ -12,7 +12,7 @@ use dockcv_ui_components::{Button, ButtonExt, IconName, Selectable};
 
 use crate::theme::{ActiveTheme, TextStyle};
 
-use super::root::{CompileState, Root};
+use super::{CompileState, Root};
 
 /// Zoom steps the `−`/`+` buttons walk, in percent. A fixed ladder rather
 /// than a free multiplier: the design draws a percentage readout, and round
@@ -177,7 +177,7 @@ impl Root {
 
 /// How the paper is sized against the pane it sits in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum PreviewFit {
+pub(crate) enum PreviewFit {
     /// The sheet spans the pane, less the gutter. The default: a CV is read
     /// column-width, and every other size wastes the pane it is shown in.
     Width,

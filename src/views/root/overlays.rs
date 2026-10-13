@@ -6,7 +6,7 @@ use gpui::{
     IntoElement, PinchEvent, SharedString, TouchPhase, Window,
 };
 
-use super::root_preview_chrome::{MAX_ZOOM_PCT, MIN_ZOOM_PCT};
+use super::preview_chrome::{MAX_ZOOM_PCT, MIN_ZOOM_PCT};
 use dockcv_ui_components::{
     lucide, Button, ButtonExt, Disableable, IconName, ListItem, ListItemExt,
     ScrollableElement, Selectable, TextField, CHROME_HEIGHT, SANS,
@@ -16,8 +16,7 @@ use crate::resume::model::SectionKind;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
-use super::root::{ExportPdf, OpenCapture, RedoDocument, UndoDocument, EDITOR_CONTEXT};
-use super::{EditorEvent, Root};
+use super::{EditorEvent, ExportPdf, OpenCapture, RedoDocument, Root, UndoDocument, EDITOR_CONTEXT};
 
 impl Root {
     /// The merged toolbar: breadcrumb identity, the preset menu (P-01), and
@@ -104,7 +103,7 @@ impl Root {
             .child(
                 Button::new("layout-rail")
                     .toolbar()
-                    .selected(self.editor_mode == super::root_editor_state::EditorMode::Layout)
+                    .selected(self.editor_mode == super::editor_state::EditorMode::Layout)
                     .gap(px(6.0))
                     .label("Layout")
                     .tooltip("Page size, margins and text scale")
@@ -675,7 +674,7 @@ impl Root {
                     // The same inset on all four sides, and the same constant
                     // `effective_zoom_pct` subtracts — a fit computed against
                     // one padding and drawn inside another is not a fit.
-                    .p(px(super::root_preview_chrome::PREVIEW_GUTTER))
+                    .p(px(super::preview_chrome::PREVIEW_GUTTER))
                     .child(content),
             )
             .child(self.render_preview_toolbar(cx))

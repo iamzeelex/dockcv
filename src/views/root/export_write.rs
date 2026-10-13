@@ -13,9 +13,9 @@ use crate::resume::diagnostics::CompileMessage;
 use crate::typst_engine::Severity;
 use crate::vault;
 
-use super::root::{CompileState, Root};
-use super::root_export_sheet::{ExportFormat, CURRENT_VIEW};
-use super::save_status;
+use super::{CompileState, Root};
+use super::export_sheet::{ExportFormat, CURRENT_VIEW};
+use crate::views::save_status;
 
 impl Root {
     /// Write the file the sheet described, and nothing else.

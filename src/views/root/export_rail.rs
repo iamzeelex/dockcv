@@ -13,7 +13,7 @@ use dockcv_ui_components::{Button, ButtonExt, DropdownMenu, PopupMenuItem};
 use crate::resume::model::ExportSettings;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
-use super::root::Root;
+use super::Root;
 
 impl Root {
     /// The filename pattern, with a live example of what it names *this*
@@ -27,7 +27,7 @@ impl Root {
         let example_name = format!(
             "{}.pdf",
             self.doc
-                .export_filename_stem(preset_name, None, &super::root_export_sheet::today())
+                .export_filename_stem(preset_name, None, &super::export_sheet::today())
         );
 
         let current_pattern = &self.doc.export.filename_pattern;
@@ -128,7 +128,7 @@ impl Root {
                                     .text_color(theme.accent)
                                     .child(format!(
                                         "{} · {}",
-                                        super::root_export_sheet::format_label(&record.format),
+                                        super::export_sheet::format_label(&record.format),
                                         record.preset
                                     )),
                             )

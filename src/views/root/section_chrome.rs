@@ -12,7 +12,7 @@ use dockcv_ui_components::{Button, ButtonExt, IconName};
 use crate::resume::model::{SectionKind, TrimCandidate};
 use crate::theme::ActiveTheme;
 
-use super::root::Root;
+use super::Root;
 
 impl Root {
     /// The section header's show/hide toggle (O-13).

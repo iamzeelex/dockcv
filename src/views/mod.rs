@@ -11,26 +11,7 @@ mod import;
 mod library;
 mod preset_matrix;
 mod root;
-mod root_ats_lint;
-mod root_custom_sections;
-mod root_dates;
-mod root_editor_state;
-mod root_export_rail;
-mod root_export_sheet;
-mod root_export_write;
-mod root_highlights;
-mod root_layout_rail;
-mod root_layout_rows;
-mod root_overlays;
-mod root_preset_control;
-mod root_preview_chrome;
-mod root_section_chrome;
-mod root_section_drag;
-mod root_section_layout;
-mod root_section_rename;
-mod root_section_variants;
-mod root_sidebar;
-mod root_undo;
+pub(crate) use root::{ats_lint as root_ats_lint, export_sheet as root_export_sheet};
 pub mod save_status;
 pub mod settings_window;
 mod setup;
@@ -58,13 +39,14 @@ mod field_coverage {
     #[test]
     fn every_addressable_field_is_drawn_by_some_view() {
         const VIEWS: &[&str] = &[
-            include_str!("root_sidebar.rs"),
-            include_str!("root_custom_sections.rs"),
-            include_str!("root_section_variants.rs"),
-            include_str!("root_section_rename.rs"),
+            include_str!("root/sidebar.rs"),
+            include_str!("root/custom_sections.rs"),
+            include_str!("root/section_variants.rs"),
+            include_str!("root/section_rename.rs"),
             include_str!("preset_matrix.rs"),
             include_str!("root.rs"),
             include_str!("shell.rs"),
+            include_str!("shell/matrix_actions.rs"),
         ];
         // The contract, spelled out: adding a variant without adding it here
         // fails, which is the moment to confirm a view draws it.

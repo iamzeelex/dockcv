@@ -16,8 +16,7 @@ use dockcv_ui_components::{
 use crate::resume::model::DocumentLanguage;
 use crate::theme::ActiveTheme;
 
-use super::root::{NextPreset, EDITOR_CONTEXT};
-use super::{EditorEvent, Root};
+use super::{EditorEvent, NextPreset, Root, EDITOR_CONTEXT};
 
 impl Root {
     /// The first preset that exactly describes the working copy.
@@ -69,7 +68,7 @@ impl Root {
     /// case for a card whose chip you clicked because it is what you want. Then
     /// this only names the preset in the toolbar: no checkpoint, no save, no
     /// recompile of a page that has not changed.
-    pub(super) fn open_at_preset(
+    pub(crate) fn open_at_preset(
         &mut self,
         index: usize,
         window: &mut Window,

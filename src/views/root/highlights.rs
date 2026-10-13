@@ -20,7 +20,7 @@ use dockcv_ui_components::Field;
 use crate::resume::edit::{FieldId, ListId};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
-use super::root_sidebar::FIELD_LABEL_LINE_HEIGHT;
+use super::sidebar::FIELD_LABEL_LINE_HEIGHT;
 use super::Root;
 
 impl Root {

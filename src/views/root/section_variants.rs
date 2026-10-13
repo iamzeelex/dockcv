@@ -28,15 +28,15 @@ use crate::resume::edit::FieldId;
 use crate::resume::model::SectionKind;
 use crate::theme::ActiveTheme;
 
-use super::confirm;
+use crate::views::confirm;
 use super::Root;
 
 /// Live state while `section`'s active variant is mid-rename. One at a time
 /// across every section (`Root::renaming_variant` holds at most one) — same
 /// shape as [`super::root_section_rename::SectionRename`], the gesture this
 /// copies.
-pub(super) struct VariantRename {
-    pub(super) section: SectionKind,
+pub(crate) struct VariantRename {
+    pub(crate) section: SectionKind,
     field: Entity<TextFieldState>,
     /// Keeps the `TextFieldEvent` → commit/blur translation alive for as long
     /// as this rename is in progress.
@@ -117,8 +117,8 @@ impl Root {
                 })
                 .tooltip(format!(
                     "Switch to this variant  ·  {} / {}",
-                    super::root::keys::PREV_VARIANT,
-                    super::root::keys::NEXT_VARIANT
+                    super::keys::PREV_VARIANT,
+                    super::keys::NEXT_VARIANT
                 ))
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.flush_variant_rename(section, window, cx);

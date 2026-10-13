@@ -16,14 +16,14 @@ use crate::resume::edit::FieldId;
 use crate::resume::model::{ResumeDoc, SectionKind};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
-use super::root::Root;
+use super::Root;
 
 /// Lint the reading that would actually leave through an export.
 ///
 /// `None` is the working copy; `Some` first applies that preset to a clone, so
 /// switching the export-sheet preset changes the count before anything is
 /// written and without changing the editor behind the sheet.
-pub(super) fn findings_for_view(doc: &ResumeDoc, preset: Option<usize>) -> Vec<Finding> {
+pub(crate) fn findings_for_view(doc: &ResumeDoc, preset: Option<usize>) -> Vec<Finding> {
     let mut reading = doc.clone();
     if let Some(index) = preset {
         reading.apply_preset(index);
@@ -196,12 +196,12 @@ impl Root {
     fn apply_ats_remedy(&mut self, finding: &Finding, window: &mut Window, cx: &mut Context<Self>) {
         self.focused_section = finding.section;
         self.expanded.insert(finding.section);
-        self.selection = super::root_editor_state::EditorSelection {
+        self.selection = super::editor_state::EditorSelection {
             section: finding.section,
             item: finding.at.and_then(|field| field.item_index()),
         };
         self.selection.normalize(&self.doc);
-        self.editor_mode = super::root_editor_state::EditorMode::Content;
+        self.editor_mode = super::editor_state::EditorMode::Content;
 
         match remedy_for(finding) {
             AtsRemedy::FocusField(field) => {
@@ -326,12 +326,12 @@ impl Root {
         self.export_sheet = None;
         self.focused_section = first.section;
         self.expanded.insert(first.section);
-        self.selection = super::root_editor_state::EditorSelection {
+        self.selection = super::editor_state::EditorSelection {
             section: first.section,
             item: first.at.and_then(|field| field.item_index()),
         };
         self.selection.normalize(&self.doc);
-        self.editor_mode = super::root_editor_state::EditorMode::Content;
+        self.editor_mode = super::editor_state::EditorMode::Content;
         cx.notify();
     }
 }
