@@ -101,10 +101,22 @@ impl RenderOnce for EmptyState {
                 .child(body.to_string())
         });
 
-        let action = self.action.map(|action| div().mt_5().child(action));
-        let secondary = self
-            .secondary_action
-            .map(|action| div().mt_2().child(action));
+        let actions = match (self.action, self.secondary_action) {
+            (Some(primary), Some(secondary)) => Some(
+                div()
+                    .mt_5()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .justify_center()
+                    .gap_3()
+                    .child(primary)
+                    .child(secondary),
+            ),
+            (Some(primary), None) => Some(div().mt_5().child(primary)),
+            (None, Some(secondary)) => Some(div().mt_5().child(secondary)),
+            (None, None) => None,
+        };
 
         div()
             .flex()
@@ -117,8 +129,7 @@ impl RenderOnce for EmptyState {
             .children(icon)
             .child(headline)
             .children(body)
-            .children(action)
-            .children(secondary)
+            .children(actions)
     }
 }
 
@@ -136,6 +147,15 @@ mod tests {
         assert!(state.body.is_none());
         assert!(state.action.is_none());
         assert!(state.secondary_action.is_none());
+    }
+
+    #[test]
+    fn actions_are_recorded() {
+        let state = EmptyState::new("No CVs yet")
+            .action(div())
+            .secondary_action(div());
+        assert!(state.action.is_some());
+        assert!(state.secondary_action.is_some());
     }
 
     #[test]

@@ -64,10 +64,13 @@ impl Shell {
                             .max_w(px(540.0))
                             .text_style(TextStyle::body())
                             .text_color(theme.text_muted)
-                            .child(
+                            .child(if vault_is_empty {
+                                "Your central workspace for resumes. Import an existing CV \
+                                 or create a new one to begin."
+                            } else {
                                 "Use a saved version as a safe starting point, then create a \
-                                 focused version for the next role.",
-                            ),
+                                 focused version for the next role."
+                            }),
                     ),
             )
             .child(
@@ -77,8 +80,8 @@ impl Shell {
                     .items_center()
                     .justify_end()
                     .gap_3()
-                    .child(self.search_box(cx))
-                    .child(self.gallery_sort_control(cx))
+                    .children((!vault_is_empty).then(|| self.search_box(cx)))
+                    .children((!vault_is_empty).then(|| self.gallery_sort_control(cx)))
                     .child(self.render_add_cv(cx)),
             );
 
@@ -149,13 +152,21 @@ impl Shell {
     pub(super) fn render_gallery_empty(&self, cx: &mut Context<Self>) -> impl IntoElement {
         EmptyState::new("No CVs yet")
             .icon(IconName::File)
-            .body("Start with the job. You can import the CV you want to tailor in the next step.")
+            .body("Import your existing resume to get started, or build a new one from scratch.")
             .action(
-                Button::new("empty-new-cv")
+                Button::new("empty-import-cv")
                     .action_primary()
-                    .label("Create a version")
-                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                        this.open_tailor(window, cx);
+                    .label("Import a CV")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.open_import(cx);
+                    })),
+            )
+            .secondary_action(
+                Button::new("empty-start-scratch")
+                    .action_secondary()
+                    .label("Start from scratch")
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.start_blank_cv(cx);
                     })),
             )
     }
