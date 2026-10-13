@@ -273,64 +273,206 @@ fn ordinal(day: u32) -> String {
 
 /// Read a date from text, or decline.
 ///
-/// Accepts only forms that mean one thing: ISO (`2022`, `2022-01`,
-/// `2022-01-15`) and month-name forms (`Jan 2022`, `January 2022`,
-/// `15 January 2022`). See this module's header for why `01/02/2022` is
-/// deliberately refused.
+/// Accepts forms that denote an unambiguous date:
+/// - ISO (`2022`, `2022-01`, `2022-01-15`)
+/// - Month-name forms (`Jan 2022`, `Aug, 2025`, `Aug. 2025`, `15 March 2022`, `Авг 2024`, `März 2024`)
+/// - Unambiguous 2-part numeric forms (`08/2024`, `12/2025`, `08.2024`, `2024/08`, `08-2024`)
+/// - Unambiguous 3-part numeric forms (`15/08/2024`, `08/15/2024`, where day > 12)
+///
+/// Refuses truly ambiguous forms (`01/02/2022`, where day and month are both <= 12).
 fn parse_date(text: &str) -> Option<CivilDate> {
-    if text.is_empty() {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
         return None;
     }
 
-    // ISO, dash-separated.
-    let parts: Vec<&str> = text.split('-').collect();
-    if parts.len() <= 3
-        && parts
-            .iter()
-            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
-    {
-        let year: i32 = parts[0].parse().ok()?;
-        if parts[0].len() != 4 {
-            return None;
-        }
-        let month = parts.get(1).and_then(|m| m.parse::<u32>().ok());
-        let day = parts.get(2).and_then(|d| d.parse::<u32>().ok());
-        return valid(year, month, day);
-    }
-
-    // Month name, in either order, with an optional leading day.
-    let words: Vec<&str> = text.split_whitespace().collect();
+    // 1. Text with month names (e.g. "Jan 2022", "Aug, 2025", "Aug. 2025", "15 August 2024", "Август 2024")
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
     if (2..=3).contains(&words.len()) {
         let month = words.iter().find_map(|w| month_number(w));
-        let year = words
-            .iter()
-            .find_map(|w| (w.len() == 4).then(|| w.parse::<i32>().ok()).flatten());
+        let year = words.iter().find_map(|w| {
+            let digits: String = w.chars().filter(|c| c.is_ascii_digit()).collect();
+            if digits.len() == 4 {
+                digits.parse::<i32>().ok()
+            } else {
+                None
+            }
+        });
         let day = words.iter().find_map(|w| {
-            (w.len() <= 2)
-                .then(|| {
-                    w.trim_end_matches(|c: char| !c.is_ascii_digit())
-                        .parse::<u32>()
-                        .ok()
-                })
-                .flatten()
+            let digits: String = w.chars().filter(|c| c.is_ascii_digit()).collect();
+            if digits.is_empty() || digits.len() > 2 {
+                None
+            } else {
+                digits.parse::<u32>().ok()
+            }
         });
         if let (Some(month), Some(year)) = (month, year) {
             return valid(year, Some(month), day);
         }
     }
 
+    // 2. Numeric dates: separated by '-', '/', or '.'
+    let sep = if trimmed.contains('-') {
+        Some('-')
+    } else if trimmed.contains('/') {
+        Some('/')
+    } else if trimmed.contains('.') {
+        Some('.')
+    } else {
+        None
+    };
+
+    if let Some(sep) = sep {
+        let parts: Vec<&str> = trimmed.split(sep).map(str::trim).collect();
+        if parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())) {
+            match parts.len() {
+                1 if parts[0].len() == 4 => {
+                    let year = parts[0].parse::<i32>().ok()?;
+                    return valid(year, None, None);
+                }
+                // e.g. "08/2024", "2024/08", "08.2024", "2024.08", "08-2024", "2024-08"
+                2 => {
+                    let n0: u32 = parts[0].parse().ok()?;
+                    let n1: u32 = parts[1].parse().ok()?;
+                    // Year is first: e.g. 2024-08, 2024/08, 2024.08
+                    if parts[0].len() == 4 && (1..=12).contains(&n1) {
+                        return valid(n0 as i32, Some(n1), None);
+                    }
+                    // Year is second: e.g. 08/2024, 08.2024, 08-2024
+                    if parts[1].len() == 4 && (1..=12).contains(&n0) {
+                        return valid(n1 as i32, Some(n0), None);
+                    }
+                }
+                // e.g. "2024-08-15", "15/08/2024", "08/15/2024", "01/02/2022"
+                3 => {
+                    // Year is first (ISO format): YYYY-MM-DD
+                    if parts[0].len() == 4 {
+                        let year: i32 = parts[0].parse().ok()?;
+                        let month: u32 = parts[1].parse().ok()?;
+                        let day: u32 = parts[2].parse().ok()?;
+                        return valid(year, Some(month), Some(day));
+                    }
+                    // Year is last: DD/MM/YYYY or MM/DD/YYYY
+                    if parts[2].len() == 4 {
+                        let year: i32 = parts[2].parse().ok()?;
+                        let a: u32 = parts[0].parse().ok()?;
+                        let b: u32 = parts[1].parse().ok()?;
+                        // If same: e.g. 08/08/2024 -> month=8, day=8
+                        if a == b && (1..=12).contains(&a) {
+                            return valid(year, Some(a), Some(a));
+                        }
+                        // One is > 12 (must be day): e.g. 15/08/2024 or 08/15/2024
+                        if a > 12 && a <= 31 && (1..=12).contains(&b) {
+                            return valid(year, Some(b), Some(a));
+                        }
+                        if b > 12 && b <= 31 && (1..=12).contains(&a) {
+                            return valid(year, Some(a), Some(b));
+                        }
+                        // If both are <= 12 and a != b (e.g. 01/02/2022): ambiguous!
+                        return None;
+                    }
+                }
+                _ => {}
+            }
+        }
+    } else if trimmed.len() == 4 && trimmed.bytes().all(|b| b.is_ascii_digit()) {
+        let year = trimmed.parse::<i32>().ok()?;
+        return valid(year, None, None);
+    }
+
     None
 }
 
 fn month_number(word: &str) -> Option<u32> {
-    let word = word.trim_end_matches(',').to_lowercase();
-    (0..12)
-        .position(|month| {
-            let long = DocumentLanguage::English.month_long(month).to_lowercase();
-            let short = DocumentLanguage::English.month_short(month).to_lowercase();
-            long == word || short == word
-        })
-        .map(|i| i as u32 + 1)
+    let clean = word
+        .trim_matches(|c: char| !c.is_alphabetic())
+        .to_lowercase();
+    if clean.is_empty() {
+        return None;
+    }
+
+    let en: [&[&str]; 12] = [
+        &["january", "jan"],
+        &["february", "feb"],
+        &["march", "mar"],
+        &["april", "apr"],
+        &["may"],
+        &["june", "jun"],
+        &["july", "jul"],
+        &["august", "aug"],
+        &["september", "sep", "sept"],
+        &["october", "oct"],
+        &["november", "nov"],
+        &["december", "dec"],
+    ];
+
+    let de: [&[&str]; 12] = [
+        &["januar", "jän", "jäner"],
+        &["februar", "febr"],
+        &["märz", "maerz", "mär"],
+        &["april"],
+        &["mai"],
+        &["juni"],
+        &["juli"],
+        &["august"],
+        &["september"],
+        &["oktober", "okt"],
+        &["november"],
+        &["dezember", "dez"],
+    ];
+
+    let ru: [&[&str]; 12] = [
+        &["январь", "января", "янв"],
+        &["февраль", "февраля", "фев"],
+        &["март", "марта", "мар"],
+        &["апрель", "апреля", "апр"],
+        &["май", "мая"],
+        &["июнь", "июня", "июн"],
+        &["июль", "июля", "июл"],
+        &["август", "августа", "авг"],
+        &["сентябрь", "сентября", "сен", "сент"],
+        &["октябрь", "октября", "окт"],
+        &["ноябрь", "ноября", "ноя"],
+        &["декабрь", "декабря", "дек"],
+    ];
+
+    let ua: [&[&str]; 12] = [
+        &["січень", "січня", "січ"],
+        &["лютий", "лютого", "лют"],
+        &["березень", "березня", "бер"],
+        &["квітень", "квітня", "квіт"],
+        &["травень", "травня", "трав"],
+        &["червень", "червня", "черв"],
+        &["липень", "липня", "лип"],
+        &["серпень", "серпня", "серп"],
+        &["вересень", "вересня", "вер"],
+        &["жовтень", "жовтня", "жовт"],
+        &["листопад", "листопада", "лист"],
+        &["грудень", "грудня", "груд"],
+    ];
+
+    for (i, aliases) in en.iter().enumerate() {
+        if aliases.iter().any(|&a| clean == a) {
+            return Some((i + 1) as u32);
+        }
+    }
+    for (i, aliases) in de.iter().enumerate() {
+        if aliases.iter().any(|&a| clean == a) {
+            return Some((i + 1) as u32);
+        }
+    }
+    for (i, aliases) in ru.iter().enumerate() {
+        if aliases.iter().any(|&a| clean == a) {
+            return Some((i + 1) as u32);
+        }
+    }
+    for (i, aliases) in ua.iter().enumerate() {
+        if aliases.iter().any(|&a| clean == a) {
+            return Some((i + 1) as u32);
+        }
+    }
+
+    None
 }
 
 fn valid(year: i32, month: Option<u32>, day: Option<u32>) -> Option<CivilDate> {
@@ -454,6 +596,113 @@ mod tests {
                 year: 2022,
                 month: Some(3),
                 day: Some(15)
+            })
+        );
+    }
+
+    #[test]
+    fn unambiguous_numeric_and_punctuated_dates_parse_correctly() {
+        // Slashed MM/YYYY (the format from user CVs)
+        assert_eq!(
+            ResumeDate::new("08/2024").parse(),
+            Some(CivilDate {
+                year: 2024,
+                month: Some(8),
+                day: None,
+            })
+        );
+        assert_eq!(
+            ResumeDate::new("12/2025").parse(),
+            Some(CivilDate {
+                year: 2025,
+                month: Some(12),
+                day: None,
+            })
+        );
+        // Slashed YYYY/MM
+        assert_eq!(
+            ResumeDate::new("2024/08").parse(),
+            Some(CivilDate {
+                year: 2024,
+                month: Some(8),
+                day: None,
+            })
+        );
+        // Dotted MM.YYYY and YYYY.MM
+        assert_eq!(
+            ResumeDate::new("08.2024").parse(),
+            Some(CivilDate {
+                year: 2024,
+                month: Some(8),
+                day: None,
+            })
+        );
+        assert_eq!(
+            ResumeDate::new("2024.08").parse(),
+            Some(CivilDate {
+                year: 2024,
+                month: Some(8),
+                day: None,
+            })
+        );
+        // Dashed MM-YYYY
+        assert_eq!(
+            ResumeDate::new("08-2024").parse(),
+            Some(CivilDate {
+                year: 2024,
+                month: Some(8),
+                day: None,
+            })
+        );
+        // Punctuation in month names: "Aug, 2025", "Aug. 2025"
+        assert_eq!(
+            ResumeDate::new("Aug, 2025").parse(),
+            Some(CivilDate {
+                year: 2025,
+                month: Some(8),
+                day: None,
+            })
+        );
+        assert_eq!(
+            ResumeDate::new("Aug. 2025").parse(),
+            Some(CivilDate {
+                year: 2025,
+                month: Some(8),
+                day: None,
+            })
+        );
+        // Day > 12 is unambiguous
+        assert_eq!(
+            ResumeDate::new("15/08/2024").parse(),
+            Some(CivilDate {
+                year: 2024,
+                month: Some(8),
+                day: Some(15),
+            })
+        );
+        assert_eq!(
+            ResumeDate::new("08/15/2024").parse(),
+            Some(CivilDate {
+                year: 2024,
+                month: Some(8),
+                day: Some(15),
+            })
+        );
+        // Multilingual month names: Russian and German
+        assert_eq!(
+            ResumeDate::new("Авг 2024").parse(),
+            Some(CivilDate {
+                year: 2024,
+                month: Some(8),
+                day: None,
+            })
+        );
+        assert_eq!(
+            ResumeDate::new("März 2024").parse(),
+            Some(CivilDate {
+                year: 2024,
+                month: Some(3),
+                day: None,
             })
         );
     }
