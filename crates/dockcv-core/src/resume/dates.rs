@@ -58,19 +58,7 @@ impl ResumeDate {
     /// dropped and the fact recorded elsewhere. Asking here rather than in the
     /// emitter keeps the vocabulary in one place.
     pub fn names_the_present(&self) -> bool {
-        const PRESENT: [&str; 7] = [
-            "present",
-            "current",
-            "ongoing",
-            "now",
-            "to date",
-            "настоящее время",
-            "н.в.",
-        ];
-        let text = self.text.trim().trim_end_matches('.').to_lowercase();
-        PRESENT
-            .iter()
-            .any(|word| text == *word || text == format!("по {word}"))
+        crate::resume::locales::DateLocales::global().is_present(&self.text)
     }
 
     /// The text to print for this date under `format`.
@@ -384,95 +372,7 @@ fn parse_date(text: &str) -> Option<CivilDate> {
 }
 
 fn month_number(word: &str) -> Option<u32> {
-    let clean = word
-        .trim_matches(|c: char| !c.is_alphabetic())
-        .to_lowercase();
-    if clean.is_empty() {
-        return None;
-    }
-
-    let en: [&[&str]; 12] = [
-        &["january", "jan"],
-        &["february", "feb"],
-        &["march", "mar"],
-        &["april", "apr"],
-        &["may"],
-        &["june", "jun"],
-        &["july", "jul"],
-        &["august", "aug"],
-        &["september", "sep", "sept"],
-        &["october", "oct"],
-        &["november", "nov"],
-        &["december", "dec"],
-    ];
-
-    let de: [&[&str]; 12] = [
-        &["januar", "jän", "jäner"],
-        &["februar", "febr"],
-        &["märz", "maerz", "mär"],
-        &["april"],
-        &["mai"],
-        &["juni"],
-        &["juli"],
-        &["august"],
-        &["september"],
-        &["oktober", "okt"],
-        &["november"],
-        &["dezember", "dez"],
-    ];
-
-    let ru: [&[&str]; 12] = [
-        &["январь", "января", "янв"],
-        &["февраль", "февраля", "фев"],
-        &["март", "марта", "мар"],
-        &["апрель", "апреля", "апр"],
-        &["май", "мая"],
-        &["июнь", "июня", "июн"],
-        &["июль", "июля", "июл"],
-        &["август", "августа", "авг"],
-        &["сентябрь", "сентября", "сен", "сент"],
-        &["октябрь", "октября", "окт"],
-        &["ноябрь", "ноября", "ноя"],
-        &["декабрь", "декабря", "дек"],
-    ];
-
-    let ua: [&[&str]; 12] = [
-        &["січень", "січня", "січ"],
-        &["лютий", "лютого", "лют"],
-        &["березень", "березня", "бер"],
-        &["квітень", "квітня", "квіт"],
-        &["травень", "травня", "трав"],
-        &["червень", "червня", "черв"],
-        &["липень", "липня", "лип"],
-        &["серпень", "серпня", "серп"],
-        &["вересень", "вересня", "вер"],
-        &["жовтень", "жовтня", "жовт"],
-        &["листопад", "листопада", "лист"],
-        &["грудень", "грудня", "груд"],
-    ];
-
-    for (i, aliases) in en.iter().enumerate() {
-        if aliases.iter().any(|&a| clean == a) {
-            return Some((i + 1) as u32);
-        }
-    }
-    for (i, aliases) in de.iter().enumerate() {
-        if aliases.iter().any(|&a| clean == a) {
-            return Some((i + 1) as u32);
-        }
-    }
-    for (i, aliases) in ru.iter().enumerate() {
-        if aliases.iter().any(|&a| clean == a) {
-            return Some((i + 1) as u32);
-        }
-    }
-    for (i, aliases) in ua.iter().enumerate() {
-        if aliases.iter().any(|&a| clean == a) {
-            return Some((i + 1) as u32);
-        }
-    }
-
-    None
+    crate::resume::locales::DateLocales::global().month_number(word)
 }
 
 fn valid(year: i32, month: Option<u32>, day: Option<u32>) -> Option<CivilDate> {

@@ -1,0 +1,112 @@
+# Multilingual date and calendar vocabulary for DockCV.
+#
+# Contains month names, abbreviations, grammatical/declension variants,
+# and open-ended range markers ("Present", "Heute", "настоящее время")
+# for all supported languages.
+#
+# Adding or refining language date words is editing this file — no Rust code changes.
+
+[en]
+present = ["Present", "present", "current", "ongoing", "now", "to date", "till now"]
+months_long = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+]
+months_short = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+]
+extra_month_names = [
+  { month = 9, names = ["sept"] }
+]
+
+[de]
+present = ["Heute", "heute", "aktuell", "laufend", "derzeit", "zurzeit"]
+months_long = [
+  "Januar", "Februar", "März", "April", "Mai", "Juni",
+  "Juli", "August", "September", "Oktober", "November", "Dezember"
+]
+months_short = [
+  "Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
+  "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"
+]
+extra_month_names = [
+  { month = 1, names = ["jän", "jäner"] },
+  { month = 2, names = ["febr"] },
+  { month = 3, names = ["maerz"] }
+]
+
+[ru]
+present = ["настоящее время", "н.в.", "по н.в.", "по настоящее время", "сейчас"]
+months_long = [
+  "январь", "февраль", "март", "апрель", "май", "июнь",
+  "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"
+]
+months_short = [
+  "янв", "фев", "мар", "апр", "май", "июн",
+  "июл", "авг", "сен", "окт", "ноя", "дек"
+]
+extra_month_names = [
+  { month = 1, names = ["января"] },
+  { month = 2, names = ["февраля"] },
+  { month = 3, names = ["марта"] },
+  { month = 4, names = ["апреля"] },
+  { month = 5, names = ["мая"] },
+  { month = 6, names = ["июня"] },
+  { month = 7, names = ["июля"] },
+  { month = 8, names = ["августа"] },
+  { month = 9, names = ["сентября", "сент"] },
+  { month = 10, names = ["октября"] },
+  { month = 11, names = ["ноября"] },
+  { month = 12, names = ["декабря"] }
+]
+
+[uk]
+present = ["теперішній час", "дотепер", "зараз", "н.ч.", "по теперішній час"]
+months_long = [
+  "січень", "лютий", "березень", "квітень", "травень", "червень",
+  "липень", "серпень", "вересень", "жовтень", "листопад", "грудень"
+]
+months_short = [
+  "січ", "лют", "бер", "квіт", "трав", "черв",
+  "лип", "серп", "вер", "жовт", "лист", "груд"
+]
+extra_month_names = [
+  { month = 1, names = ["січня"] },
+  { month = 2, names = ["лютого"] },
+  { month = 3, names = ["березня"] },
+  { month = 4, names = ["квітня"] },
+  { month = 5, names = ["травня"] },
+  { month = 6, names = ["червня"] },
+  { month = 7, names = ["липня"] },
+  { month = 8, names = ["серпня"] },
+  { month = 9, names = ["вересня"] },
+  { month = 10, names = ["жовтня"] },
+  { month = 11, names = ["листопада"] },
+  { month = 12, names = ["грудня"] }
+]
+
+[fr]
+present = ["présent", "actuel", "en cours", "aujourd'hui"]
+months_long = [
+  "janvier", "février", "mars", "avril", "mai", "juin",
+  "juillet", "août", "septembre", "octobre", "novembre", "décembre"
+]
+months_short = [
+  "janv", "févr", "mars", "avr", "mai", "juin",
+  "juil", "août", "sept", "oct", "nov", "déc"
+]
+
+[es]
+present = ["presente", "actual", "actualidad", "en curso"]
+months_long = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+]
+months_short = [
+  "ene", "feb", "mar", "abr", "may", "jun",
+  "jul", "ago", "sep", "oct", "nov", "dic"
+]
+extra_month_names = [
+  { month = 9, names = ["setiembre", "set"] }
+]

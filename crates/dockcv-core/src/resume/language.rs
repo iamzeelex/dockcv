@@ -70,52 +70,16 @@ impl DocumentLanguage {
         }
     }
 
-    pub(crate) const fn month_long(self, month: usize) -> &'static str {
-        const EN: [&str; 12] = [
-            "January",
-            "February",
-            "March",
-            "April",
-            "May",
-            "June",
-            "July",
-            "August",
-            "September",
-            "October",
-            "November",
-            "December",
-        ];
-        const DE: [&str; 12] = [
-            "Januar",
-            "Februar",
-            "März",
-            "April",
-            "Mai",
-            "Juni",
-            "Juli",
-            "August",
-            "September",
-            "Oktober",
-            "November",
-            "Dezember",
-        ];
-        match self {
-            Self::English => EN[month],
-            Self::German => DE[month],
-        }
+    pub(crate) fn month_long(self, month: usize) -> &'static str {
+        crate::resume::locales::DateLocales::global()
+            .month_long(self.code(), month)
+            .unwrap_or("")
     }
 
-    pub(crate) const fn month_short(self, month: usize) -> &'static str {
-        const EN: [&str; 12] = [
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-        ];
-        const DE: [&str; 12] = [
-            "Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
-        ];
-        match self {
-            Self::English => EN[month],
-            Self::German => DE[month],
-        }
+    pub(crate) fn month_short(self, month: usize) -> &'static str {
+        crate::resume::locales::DateLocales::global()
+            .month_short(self.code(), month)
+            .unwrap_or("")
     }
 }
 

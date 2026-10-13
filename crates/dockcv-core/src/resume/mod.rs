@@ -15,6 +15,7 @@ pub mod diagnostics;
 mod document_toml;
 pub mod edit;
 pub mod language;
+pub mod locales;
 pub mod export;
 pub mod links;
 pub mod model;
