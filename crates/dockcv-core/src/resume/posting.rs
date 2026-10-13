@@ -32,6 +32,11 @@
 //!
 //! Pure — no vault, no I/O, no window — so all of it is testable.
 
+use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+
+use serde::Deserialize;
+
 use crate::resume::model::{DiaryEntry, Library, SectionKind};
 
 /// A word the posting leans on.
@@ -371,68 +376,60 @@ fn is_term(word: &str) -> bool {
     word.chars().count() >= MIN_LEN && word.chars().any(|c| c.is_alphabetic()) && !is_stopword(word)
 }
 
+static STOPWORDS_TOML: &str = include_str!("../../../../assets/stopwords.toml");
+static VOCABULARY: OnceLock<PostingVocabulary> = OnceLock::new();
+
+#[derive(Deserialize)]
+struct StopwordsFile {
+    #[serde(default)]
+    sections: Vec<String>,
+    #[serde(default)]
+    languages: HashMap<String, LanguageStopwords>,
+}
+
+#[derive(Deserialize)]
+struct LanguageStopwords {
+    #[serde(default)]
+    stopwords: Vec<String>,
+}
+
+struct PostingVocabulary {
+    stopwords: HashSet<String>,
+    sections: HashSet<String>,
+}
+
+fn vocabulary() -> &'static PostingVocabulary {
+    VOCABULARY.get_or_init(|| {
+        let file: StopwordsFile = toml::from_str(STOPWORDS_TOML)
+            .expect("embedded assets/stopwords.toml must be valid TOML");
+        let sections = file
+            .sections
+            .into_iter()
+            .map(|s| s.trim().to_lowercase())
+            .collect();
+        let mut stopwords = HashSet::new();
+        for lang_data in file.languages.into_values() {
+            for word in lang_data.stopwords {
+                stopwords.insert(word.trim().to_lowercase());
+            }
+        }
+        PostingVocabulary {
+            stopwords,
+            sections,
+        }
+    })
+}
+
 /// Both the word and its folded form, so the list can hold `skill` and catch
 /// `skills` without carrying every plural twice.
 fn is_stopword(word: &str) -> bool {
     let lower = word.to_lowercase();
     let folded = fold(&lower);
-    STOPWORDS.contains(&lower.as_str())
-        || STOPWORDS.contains(&folded.as_str())
-        || SECTION_WORDS.contains(&folded.as_str())
+    let vocab = vocabulary();
+    vocab.stopwords.contains(&lower)
+        || vocab.stopwords.contains(&folded)
+        || vocab.sections.contains(&folded)
 }
-
-/// The headings DockCV prints on a CV.
-///
-/// `export_plain_text` emits `EDUCATION` and `CERTIFICATIONS` above the
-/// sections they name, so a posting using either word matched the *chrome* of
-/// the page rather than anything on it — and because a preset can hide a
-/// section, those words differed between versions and scored as deciding
-/// terms. They were telling the reader about DockCV's own layout.
-const SECTION_WORDS: &[&str] = &[
-    "profile",
-    "summary",
-    "work",
-    "experience",
-    "education",
-    "skill",
-    "certificate",
-    "certification",
-    "organization",
-    "volunteer",
-    "project",
-    "publication",
-];
-
-/// Words a posting is made of rather than about.
-///
-/// English and German, because those are the languages a shipped reading can be
-/// written in (C5). The list is deliberately short: over-filtering hides real
-/// terms, and a stopword that slips through costs one row of a list the user is
-/// reading anyway.
-const STOPWORDS: &[&str] = &[
-    // English
-    "a", "about", "abs", "across", "all", "also", "and", "any", "are", "as", "at", "be", "been",
-    "both", "build", "but", "by", "can", "for", "from", "has", "have", "help", "here", "how",
-    "into", "is", "it", "its", "join", "just", "like", "look", "looking", "make", "many", "may",
-    "more", "most", "much", "must", "need", "new", "not", "of", "on", "one", "only", "or",
-    "other", "our", "out", "over", "role", "same", "she", "should", "so", "some", "strong",
-    "such", "team", "than", "that", "the", "their", "them", "then", "there", "these", "they",
-    "this", "those", "through", "to", "up", "us", "use", "using", "very", "want", "was", "we",
-    "well", "what", "when", "where", "which", "while", "who", "why", "will", "with", "within",
-    "work", "working", "would", "you", "your",
-    // The frame a job posting is written in. `Experience with Kubernetes is
-    // required` is about Kubernetes; the other four words are the sentence it
-    // arrives in, and every posting has them, so they carry no signal at all
-    // while crowding out terms that do.
-    "ability", "experience", "experienced", "familiar", "including", "knowledge", "preferred",
-    "required", "requirements", "skill", "understanding", "year",
-    // German
-    "aber", "alle", "allen", "als", "auch", "auf", "aus", "bei", "bist", "dass", "dein", "dem",
-    "den", "der", "des", "die", "dir", "doch", "durch", "ein", "eine", "einem", "einen", "einer",
-    "für", "haben", "hast", "ihr", "ist", "kann", "mehr", "mit", "nach", "nicht", "noch", "oder",
-    "sehr", "sein", "sich", "sie", "sind", "über", "und", "uns", "unser", "von", "vor", "wie",
-    "wir", "zum", "zur",
-];
 
 #[cfg(test)]
 mod tests;

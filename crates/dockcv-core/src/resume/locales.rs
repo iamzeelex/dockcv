@@ -47,6 +47,10 @@ pub struct DateLocales {
     present_markers: HashSet<String>,
     /// Language code -> display data
     display: HashMap<String, LanguageDisplay>,
+    /// All month names & abbreviations across all languages, sorted by length descending
+    all_month_words_desc: Vec<String>,
+    /// All present markers across all languages, sorted by length descending
+    all_present_markers_desc: Vec<String>,
 }
 
 impl DateLocales {
@@ -62,6 +66,7 @@ impl DateLocales {
         let mut month_lookup = HashMap::new();
         let mut present_markers = HashSet::new();
         let mut display = HashMap::new();
+        let mut all_months = HashSet::new();
 
         for (lang, data) in file {
             let present_default = data
@@ -74,24 +79,38 @@ impl DateLocales {
                 let clean = p.trim().to_lowercase();
                 let stripped = clean.trim_end_matches('.').to_string();
                 present_markers.insert(clean.clone());
-                present_markers.insert(stripped.clone());
-                present_markers.insert(format!("по {clean}"));
-                present_markers.insert(format!("по {stripped}"));
+                if stripped != clean {
+                    present_markers.insert(stripped.clone());
+                }
+                if lang == "ru" || lang == "uk" {
+                    if !clean.starts_with("по ") {
+                        present_markers.insert(format!("по {clean}"));
+                    }
+                    if !stripped.starts_with("по ") {
+                        present_markers.insert(format!("по {stripped}"));
+                    }
+                }
             }
 
             for (idx, name) in data.months_long.iter().enumerate() {
                 let month_num = (idx + 1) as u32;
-                month_lookup.insert(name.trim().to_lowercase(), month_num);
+                let norm = name.trim().to_lowercase();
+                all_months.insert(norm.clone());
+                month_lookup.insert(norm, month_num);
             }
 
             for (idx, name) in data.months_short.iter().enumerate() {
                 let month_num = (idx + 1) as u32;
-                month_lookup.insert(name.trim().to_lowercase(), month_num);
+                let norm = name.trim().to_lowercase();
+                all_months.insert(norm.clone());
+                month_lookup.insert(norm, month_num);
             }
 
             for extra in &data.extra_month_names {
                 for name in &extra.names {
-                    month_lookup.insert(name.trim().to_lowercase(), extra.month);
+                    let norm = name.trim().to_lowercase();
+                    all_months.insert(norm.clone());
+                    month_lookup.insert(norm, extra.month);
                 }
             }
 
@@ -105,11 +124,33 @@ impl DateLocales {
             );
         }
 
+        let mut all_month_words_desc: Vec<String> = all_months.into_iter().collect();
+        all_month_words_desc.sort_by(|a, b| {
+            b.chars().count().cmp(&a.chars().count()).then_with(|| a.cmp(b))
+        });
+
+        let mut all_present_markers_desc: Vec<String> = present_markers.iter().cloned().collect();
+        all_present_markers_desc.sort_by(|a, b| {
+            b.chars().count().cmp(&a.chars().count()).then_with(|| a.cmp(b))
+        });
+
         Self {
             month_lookup,
             present_markers,
             display,
+            all_month_words_desc,
+            all_present_markers_desc,
         }
+    }
+
+    /// All registered month names and abbreviations across all locales, sorted longest first.
+    pub fn all_month_words_desc(&self) -> &[String] {
+        &self.all_month_words_desc
+    }
+
+    /// All registered present markers across all locales, sorted longest first.
+    pub fn all_present_markers_desc(&self) -> &[String] {
+        &self.all_present_markers_desc
     }
 
     /// Look up month number (1..=12) for a given word across all registered languages.
@@ -129,8 +170,6 @@ impl DateLocales {
         let stripped = clean.trim_end_matches('.');
         self.present_markers.contains(&clean)
             || self.present_markers.contains(stripped)
-            || self.present_markers.contains(&format!("по {clean}"))
-            || self.present_markers.contains(&format!("по {stripped}"))
     }
 
     /// Get the default "present" word for a given language code.
@@ -178,5 +217,13 @@ mod tests {
 
         assert_eq!(locales.present_word("en"), Some("Present"));
         assert_eq!(locales.present_word("de"), Some("Heute"));
+
+        assert!(locales.all_month_words_desc().contains(&"january".to_string()));
+        assert!(locales.all_month_words_desc().contains(&"jan".to_string()));
+        assert!(locales.all_month_words_desc().contains(&"märz".to_string()));
+        assert!(locales.all_month_words_desc().contains(&"лютого".to_string()));
+        assert!(locales.all_present_markers_desc().contains(&"present".to_string()));
+        assert!(locales.all_present_markers_desc().contains(&"heute".to_string()));
+        assert!(locales.all_present_markers_desc().contains(&"по н.в.".to_string()));
     }
 }

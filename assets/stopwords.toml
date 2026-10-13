@@ -1,0 +1,67 @@
+# Stopwords for job posting keyword analysis in DockCV.
+#
+# Words that job postings are made of rather than about.
+# Adding or refining stopwords is editing this file — leaving Rust code
+# clean of hardcoded language tables.
+
+# Document chrome words (headings and section names) that should not be scored as terms
+sections = [
+  "profile",
+  "summary",
+  "work",
+  "experience",
+  "education",
+  "skill",
+  "certificate",
+  "certification",
+  "organization",
+  "volunteer",
+  "project",
+  "publication",
+]
+
+[languages.en]
+stopwords = [
+  "a", "about", "abs", "across", "all", "also", "and", "any", "are", "as", "at", "be", "been",
+  "both", "build", "but", "by", "can", "for", "from", "has", "have", "help", "here", "how",
+  "into", "is", "it", "its", "join", "just", "like", "look", "looking", "make", "many", "may",
+  "more", "most", "much", "must", "need", "new", "not", "of", "on", "one", "only", "or",
+  "other", "our", "out", "over", "role", "same", "she", "should", "so", "some", "strong",
+  "such", "team", "than", "that", "the", "their", "them", "then", "there", "these", "they",
+  "this", "those", "through", "to", "up", "us", "use", "using", "very", "want", "was", "we",
+  "well", "what", "when", "where", "which", "while", "who", "why", "will", "with", "within",
+  "work", "working", "would", "you", "your",
+  # The frame a job posting is written in:
+  "ability", "experience", "experienced", "familiar", "including", "knowledge", "preferred",
+  "required", "requirements", "skill", "understanding", "year",
+]
+
+[languages.de]
+stopwords = [
+  "aber", "alle", "allen", "als", "auch", "auf", "aus", "bei", "bist", "dass", "dein", "dem",
+  "den", "der", "des", "die", "dir", "doch", "durch", "ein", "eine", "einem", "einen", "einer",
+  "für", "haben", "hast", "ihr", "ist", "kann", "mehr", "mit", "nach", "nicht", "noch", "oder",
+  "sehr", "sein", "sich", "sie", "sind", "über", "und", "uns", "unser", "von", "vor", "wie",
+  "wir", "zum", "zur",
+]
+
+[languages.ru]
+stopwords = [
+  "и", "в", "во", "не", "что", "он", "на", "я", "с", "со", "как", "а", "то", "все", "она",
+  "так", "его", "но", "да", "ты", "к", "у", "же", "вы", "за", "бы", "по", "только", "ее",
+  "мне", "было", "вот", "от", "меня", "еще", "нет", "о", "из", "ему", "теперь", "когда",
+  "даже", "ну", "ли", "если", "уже", "или", "ни", "быть", "был", "до", "вас", "вам", "ведь",
+  "там", "потом", "себя", "они", "тут", "где", "есть", "надо", "ней", "для", "мы", "тебя",
+  "их", "чем", "была", "сам", "чтоб", "без", "будет", "тогда", "кто", "этот", "того", "этого",
+  "какой", "этом", "один", "почти", "мой", "тем", "чтобы", "сейчас", "были", "куда", "всех",
+  "никогда", "можно", "при", "наконец", "об", "другой", "после", "над", "больше", "тот",
+  "через", "эти", "нас", "про", "них", "много", "эту", "моя", "хорошо", "этой", "перед",
+  "такой", "им", "более", "всегда", "между", "опыт", "требования", "работа",
+]
+
+[languages.uk]
+stopwords = [
+  "і", "в", "на", "не", "що", "він", "до", "з", "за", "як", "про", "а", "вони", "по", "ми",
+  "для", "й", "від", "це", "при", "ти", "щоб", "якщо", "та", "же", "чи", "вже", "але", "бути",
+  "все", "під", "дуже", "без", "був", "була", "були", "буде", "коли", "досвід", "робота", "вимоги",
+]

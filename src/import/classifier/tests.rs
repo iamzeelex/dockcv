@@ -569,6 +569,14 @@ fn test_date_range_regex_formats() {
     assert!(regex.is_match("Сентябрь 2019 – Настоящее время"));
     assert!(regex.is_match("01/2020 to 12/2022"));
     assert!(regex.is_match("Янв 2021 — по н.в."));
+    assert!(regex.is_match("März 2020 – Heute"));
+    assert!(regex.is_match("Лютий 2018 — теперішній час"));
+
+    assert!(is_only_dates("Jan 2020 - Dec 2022"));
+    assert!(is_only_dates("März 2020 – Heute"));
+    assert!(is_only_dates("Лютий 2018"));
+    assert!(is_only_dates("Август 2021"));
+    assert!(!is_only_dates("Acme Corp 2020"));
 }
 
 #[test]

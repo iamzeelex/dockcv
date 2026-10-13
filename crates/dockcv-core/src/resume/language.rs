@@ -63,11 +63,10 @@ impl DocumentLanguage {
 
     /// The word used when an end date is absent or explicitly says the role
     /// is current.
-    pub const fn present(self) -> &'static str {
-        match self {
-            Self::English => "Present",
-            Self::German => "Heute",
-        }
+    pub fn present(self) -> &'static str {
+        crate::resume::locales::DateLocales::global()
+            .present_word(self.code())
+            .unwrap_or("Present")
     }
 
     pub(crate) fn month_long(self, month: usize) -> &'static str {

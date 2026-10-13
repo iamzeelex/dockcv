@@ -259,3 +259,15 @@ fn the_headings_dockcv_prints_are_not_the_jobs_vocabulary() {
     }
     assert!(words.iter().any(|w| w == "Rust"), "got {words:?}");
 }
+
+#[test]
+fn stopwords_load_from_embedded_toml() {
+    assert!(is_stopword("experience"));
+    assert!(is_stopword("experiences"));
+    assert!(is_stopword("und"));
+    assert!(is_stopword("aber"));
+    assert!(is_stopword("education"));
+    assert!(is_stopword("требования"));
+    assert!(!is_stopword("Kubernetes"));
+    assert!(!is_stopword("Rust"));
+}

@@ -40,20 +40,18 @@ fn parse_iso(date: &str) -> Option<(i32, u32, u32)> {
     (1..=12).contains(&month).then_some((year, month, day))
 }
 
-const MONTHS: [(&str, &str); 12] = [
-    ("JAN", "January"),
-    ("FEB", "February"),
-    ("MAR", "March"),
-    ("APR", "April"),
-    ("MAY", "May"),
-    ("JUN", "June"),
-    ("JUL", "July"),
-    ("AUG", "August"),
-    ("SEP", "September"),
-    ("OCT", "October"),
-    ("NOV", "November"),
-    ("DEC", "December"),
-];
+fn diary_month_long(month: u32) -> &'static str {
+    crate::resume::locales::DateLocales::global()
+        .month_long("en", (month.saturating_sub(1)) as usize)
+        .unwrap_or("")
+}
+
+fn diary_month_short_badge(month: u32) -> String {
+    crate::resume::locales::DateLocales::global()
+        .month_short("en", (month.saturating_sub(1)) as usize)
+        .map(|s| s.to_ascii_uppercase())
+        .unwrap_or_else(|| "···".to_string())
+}
 
 impl Shell {
     pub(super) fn render_diary_screen(&self, cx: &mut Context<Self>) -> gpui::Div {
@@ -326,7 +324,7 @@ impl Shell {
                 return None;
             }
             let heading = label
-                .map(|(year, month)| format!("{} {year}", MONTHS[(month - 1) as usize].1))
+                .map(|(year, month)| format!("{} {year}", diary_month_long(month)))
                 .unwrap_or_else(|| "Undated".to_string());
             Some(
                 div()
@@ -370,7 +368,7 @@ impl Shell {
         let shell = cx.weak_entity();
         let is_confidential = entry.confidential;
         let (day, month) = match parse_iso(&entry.date) {
-            Some((_, m, d)) => (format!("{d:02}"), MONTHS[(m - 1) as usize].0.to_string()),
+            Some((_, m, d)) => (format!("{d:02}"), diary_month_short_badge(m)),
             None => ("--".to_string(), "···".to_string()),
         };
 
@@ -646,12 +644,12 @@ fn plural(n: usize) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{matches_diary_query, parse_iso, MONTHS};
+    use super::{diary_month_long, diary_month_short_badge, matches_diary_query, parse_iso};
     use crate::resume::model::DiaryEntry;
     use crate::views::shell::parse_tags;
 
-    /// The month index reaches straight into `MONTHS`, so a bad month must
-    /// never come back as `Some` — that would be an out-of-bounds panic on a
+    /// The month index resolves into localized date names, so a bad month must
+    /// never come back as `Some` — that would yield an invalid display on a
     /// hand-edited `diary.toml`, which is a file the user is invited to edit.
     #[test]
     fn search_reads_the_text_the_role_and_the_tags() {
@@ -685,8 +683,9 @@ mod tests {
         for month in 1..=12u32 {
             let date = format!("2026-{month:02}-01");
             let (_, parsed, _) = parse_iso(&date).expect("every real month parses");
-            // The indexing the card does, proven not to panic.
-            let _ = MONTHS[(parsed - 1) as usize];
+            // The localization the card does, proven to produce valid non-empty names.
+            assert!(!diary_month_long(parsed).is_empty());
+            assert_ne!(diary_month_short_badge(parsed), "···");
         }
     }
 

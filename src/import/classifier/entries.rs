@@ -13,6 +13,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
+use crate::resume::locales::DateLocales;
 use crate::resume::model::{Certificate, CustomEntry, Resume};
 
 use crate::import::lines;
@@ -23,10 +24,18 @@ static DATE_RANGE_REGEX: OnceLock<Regex> = OnceLock::new();
 
 static SINGLE_DATE_REGEX: OnceLock<Regex> = OnceLock::new();
 
-/// Comprehensive date range regex matching English, Russian, ISO (YYYY-MM), and numeric date formats.
+/// Comprehensive date range regex matching English, German, Russian, Ukrainian, French, Spanish,
+/// ISO (YYYY-MM), and numeric date formats, derived from `assets/dates.toml`.
 pub(crate) fn get_date_range_regex() -> &'static Regex {
     DATE_RANGE_REGEX.get_or_init(|| {
-        let months = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|янв(?:арь)?|фев(?:раль)?|мар(?:т)?|апр(?:ель)?|май|июн(?:ь)?|июл(?:ь)?|авг(?:уст)?|сен(?:тябрь)?|окт(?:ябрь)?|ноя(?:брь)?|дек(?:абрь)?)";
+        let locales = DateLocales::global();
+        let months_pattern = locales
+            .all_month_words_desc()
+            .iter()
+            .map(|w| regex::escape(w))
+            .collect::<Vec<_>>()
+            .join("|");
+        let months = format!("(?:{months_pattern})");
         let year = r"(?:[0-9]{4}|[0-9]{2}XX)";
         // The full ISO date comes first, because the alternation is ordered and
         // `2019-01` would otherwise win and leave `-01` behind: `2019-01-01 –
@@ -44,7 +53,26 @@ pub(crate) fn get_date_range_regex() -> &'static Regex {
         let date_elem = format!(
             r"(?:(?:{months}[\s./-]*{year})|(?:{year}[\s./-][0-9]{{1,2}}[\s./-][0-9]{{1,2}})|(?:{year}[\s./-][0-9]{{1,2}})|(?:[0-9]{{1,2}}[\s./-]{year})|(?:{year}))"
         );
-        let present = r"(?:present|current|till now|ongoing|настоящее время|н\.в\.|по н\.в\.|по настоящее время)";
+        let present_pattern = locales
+            .all_present_markers_desc()
+            .iter()
+            .map(|w| {
+                let esc = regex::escape(w);
+                let start_b = if w.chars().next().is_some_and(|c| c.is_alphanumeric()) {
+                    r"\b"
+                } else {
+                    ""
+                };
+                let end_b = if w.chars().last().is_some_and(|c| c.is_alphanumeric()) {
+                    r"\b"
+                } else {
+                    ""
+                };
+                format!("{start_b}{esc}{end_b}")
+            })
+            .collect::<Vec<_>>()
+            .join("|");
+        let present = format!("(?:{present_pattern})");
         let pattern = format!(r"(?i)(\b{date_elem}\b)\s*(?:–|—|-|~|to|по)\s*(\b{date_elem}\b|{present})");
         Regex::new(&pattern).unwrap()
     })
@@ -183,15 +211,15 @@ pub(crate) fn is_only_dates(line: &str) -> bool {
     }
     let stripped = get_date_range_regex().replace_all(trimmed, "");
     let stripped = get_single_date_regex().replace_all(&stripped, "");
-    let mut stripped = stripped
-        .to_lowercase()
-        .replace("present", "")
-        .replace("current", "")
-        .replace("ongoing", "");
+    let mut stripped = stripped.to_lowercase();
+    let locales = DateLocales::global();
+    for present in locales.all_present_markers_desc() {
+        stripped = stripped.replace(present, "");
+    }
     // A month is part of a date, and `Apr 2023` printed beside a certificate is
     // as much "only a date" as `2023` is. Without this the month was left over
     // and the line read as text.
-    for month in MONTH_NAMES {
+    for month in locales.all_month_words_desc() {
         stripped = stripped.replace(month, "");
     }
     // …but a date has a figure in it. Otherwise `May` — which is also a name —
@@ -200,35 +228,6 @@ pub(crate) fn is_only_dates(line: &str) -> bool {
         && stripped.chars().count() < trimmed.chars().count()
         && !stripped.chars().any(|c| c.is_alphanumeric())
 }
-
-/// Month names long and short, lowercase, longest first so `january` is
-/// removed whole rather than leaving `uary` behind after `jan`.
-pub(crate) const MONTH_NAMES: [&str; 24] = [
-    "january",
-    "february",
-    "september",
-    "november",
-    "december",
-    "october",
-    "august",
-    "march",
-    "april",
-    "june",
-    "july",
-    "may",
-    "jan",
-    "feb",
-    "mar",
-    "apr",
-    "jun",
-    "jul",
-    "aug",
-    "sep",
-    "sept",
-    "oct",
-    "nov",
-    "dec",
-];
 
 /// The three fields a certificate line carries.
 ///
