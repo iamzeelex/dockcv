@@ -150,9 +150,7 @@ impl Root {
         // and pushed rename / layout / visibility to the far right edge, three
         // unlabelled glyphs half a panel away from the thing they act on.
         div()
-            .min_w_0()
-            .flex_shrink_1()
-            .truncate()
+            .flex_none()
             .font_family(SANS)
             .text_size(px(15.0))
             .font_weight(FontWeight::SEMIBOLD)

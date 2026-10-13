@@ -47,17 +47,18 @@ impl Root {
         let theme = *cx.theme();
         let label: SharedString = label.into();
 
-        let mut rows = div().flex().flex_col().gap(px(6.0));
+        let mut rows = div().flex().flex_col().gap(px(8.0));
         for (index, &field) in fields.iter().enumerate() {
             rows = rows.child(
                 div()
                     .flex()
-                    .items_center()
-                    .gap(px(7.0))
+                    .items_start()
+                    .gap(px(8.0))
                     .child(
                         div()
+                            .pt(px(5.0))
                             .text_style(TextStyle::body())
-                            .text_color(theme.text_subtle)
+                            .text_color(theme.text_muted)
                             .child("•"),
                     )
                     .child(
@@ -67,7 +68,11 @@ impl Root {
                             .text_style(TextStyle::prose())
                             .child(self.field_box(field)),
                     )
-                    .child(self.remove_button(cx, list, index)),
+                    .child(
+                        div()
+                            .pt(px(3.0))
+                            .child(self.remove_button(cx, list, index)),
+                    ),
             );
         }
 

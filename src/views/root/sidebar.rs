@@ -17,7 +17,7 @@
 //! `add_button` building blocks defined below.
 
 use gpui::prelude::*;
-use gpui::{div, px, AnyElement, ClickEvent, Context, IntoElement, Pixels, SharedString};
+use gpui::{div, px, AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, SharedString};
 
 use dockcv_ui_components::{
     Button, ButtonExt, DockIcon, Field, Form, Icon, IconName, ScrollableElement, SelectableRow,
@@ -161,7 +161,9 @@ impl Root {
                                             div()
                                                 .min_w_0()
                                                 .truncate()
-                                                .text_style(TextStyle::meta())
+                                                .font_family(SANS)
+                                                .text_size(px(13.0))
+                                                .font_weight(FontWeight::MEDIUM)
                                                 .text_color(theme.text_muted)
                                                 .child(entry),
                                         )
@@ -425,14 +427,14 @@ impl Root {
                 FieldId::Email,
                 "Email",
                 DockIcon::Mail,
-                TextStyle::code(),
+                TextStyle::body(),
             ));
             f.push(self.field_with_icon(
                 cx,
                 FieldId::Phone,
                 "Phone",
                 DockIcon::Phone,
-                TextStyle::code(),
+                TextStyle::body(),
             ));
             f.push(self.field_with_icon(
                 cx,
@@ -446,7 +448,7 @@ impl Root {
                 FieldId::Url,
                 "Website",
                 DockIcon::Link,
-                TextStyle::code(),
+                TextStyle::body(),
             ));
             f.push(self.field(cx, FieldId::Summary, "Summary"));
         }
@@ -489,12 +491,21 @@ impl Root {
             ) {
                 f.push(highlights);
             }
-            f.push(Self::wide(self.add_button(
-                cx,
-                "Add highlight",
-                ListId::WorkHighlights(i),
-            )));
-            f.push(Self::wide(self.diary_picker_button(cx, i)));
+            f.push(Self::wide(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .mt(px(2.0))
+                    .mb(px(4.0))
+                    .child(div().flex_1().child(self.add_button(
+                        cx,
+                        "Add highlight",
+                        ListId::WorkHighlights(i),
+                    )))
+                    .child(div().flex_1().child(self.diary_picker_button(cx, i)))
+                    .into_any_element(),
+            ));
         }
         f.push(Self::wide(
             self.library_picker_button(cx, SectionKind::Work),

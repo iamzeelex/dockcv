@@ -18,7 +18,7 @@ use gpui::prelude::*;
 use gpui::{div, px, Context, IntoElement, SharedString, Window};
 
 use dockcv_ui_components::{
-    Button, ButtonExt, Checkbox, DropdownMenu, Field, PopupMenuItem,
+    Button, ButtonExt, Checkbox, DropdownMenu, Field, PopupMenuItem, Sizable, SANS,
 };
 
 use crate::resume::edit::FieldId;
@@ -202,12 +202,23 @@ impl Root {
         is_open: bool,
         ongoing: &'static str,
     ) -> impl IntoElement {
-        let label = format!("{ongoing} — print “Present”");
-        Checkbox::new(SharedString::from(format!("date-ongoing-{end:?}")))
-            .checked(is_open)
-            .label(label)
-            .on_click(cx.listener(
-                move |this, checked: &bool, window, cx| {
+        let label = match ongoing {
+            "Current role" => "Current role (Present)",
+            "Still studying" => "Currently studying (Present)",
+            "Still involved" => "Currently involved (Present)",
+            "Ongoing" => "Ongoing (Present)",
+            other => other,
+        };
+        div()
+            .mt(px(3.0))
+            .font_family(SANS)
+            .child(
+                Checkbox::new(SharedString::from(format!("date-ongoing-{end:?}")))
+                    .small()
+                    .checked(is_open)
+                    .label(SharedString::from(label))
+                    .on_click(cx.listener(
+                        move |this, checked: &bool, window, cx| {
                     if *checked {
                         if let Some(slot) = end.get_mut(&mut this.doc) {
                             slot.clear();
@@ -235,6 +246,7 @@ impl Root {
                     }
                 },
             ))
+            )
     }
 
     /// One date with no counterpart — a certificate is issued on a date, it
