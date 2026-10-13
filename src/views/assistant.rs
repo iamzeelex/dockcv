@@ -12,13 +12,14 @@
 //! asked to do, and the rules it has to keep. That is the part that is about
 //! the job, and it is the part worth reading beside the job.
 //!
-//! ## The rule every prompt here keeps
+//! ## What a route is allowed to do
 //!
-//! **A model may point at things; it may not write them.** The import prompt
-//! asks for a transcription and forbids inferring a field that is not on the
-//! page. The tailoring prompt hands over a menu that DockCV built and asks
-//! which items to pick. Neither can produce a sentence that reaches a CV,
-//! because in neither case is DockCV reading prose back out of the answer.
+//! Browser and Cowork tailoring prompts return IDs for the user to review;
+//! they cannot write into the CV. A local coding route is different by design:
+//! it can add a new variant and preset to the selected TOML file, but its prompt
+//! limits it to exact content already in that CV or `library.toml`. DockCV
+//! watches the file and asks before adopting those changes into an open draft.
+//! The import prompt remains a transcription and still forbids inferred facts.
 
 use gpui::Task;
 use std::path::{Path, PathBuf};
@@ -36,8 +37,8 @@ pub(crate) enum Trust {
 /// can do.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Via {
-    /// A command-line tool. It opens the file from its path and answers on
-    /// standard output, so this is the only route with no manual step at all.
+    /// A command-line coding assistant. It works in the file's folder and may
+    /// write the requested new CV variants; its response is shown on screen.
     Cli {
         program: &'static str,
         argv: &'static [&'static str],

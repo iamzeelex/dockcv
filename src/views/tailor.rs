@@ -24,21 +24,21 @@
 //! have been a parallel mechanism for something that works.
 
 use gpui::prelude::*;
-use gpui::{div, px, Context, Div, Entity, FontWeight, SharedString, Window};
+use gpui::{div, px, ClickEvent, Context, Div, Entity, FontWeight, SharedString, Window};
 
 use dockcv_ui_components::{
-    Button, ButtonExt, Disableable, ScrollableElement, SelectableRow, TextField,
-    TextFieldState, SANS,
+    Button, ButtonExt, Disableable, ScrollableElement, SelectableRow, TextField, TextFieldState,
+    SANS,
 };
 
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
+use crate::resume::model::SectionKind;
 use crate::resume::posting::{
     coverage, deciding_terms, gaps, unused, Coverage, Term, Unused, UnusedSource,
 };
-use crate::resume::model::SectionKind;
 
-use super::front_door::{readings, Reading};
+use super::front_door::{groups, readings, Reading};
 use super::shell::Shell;
 
 /// Where in the flow the sheet is.
@@ -70,9 +70,15 @@ impl TailorStep {
 ///
 /// The words are the person's, not ours — the same rule `import.rs` sets.
 const STEPS: [(&str, &str); 3] = [
-    ("Paste the posting", "Optional. It is read here and sent nowhere."),
-    ("Pick a version to copy", "The one you pick is left untouched."),
-    ("Name the job", "Still nothing written — that happens one screen on."),
+    ("Paste the posting", "Optional. Compared on this device."),
+    (
+        "Choose a starting CV",
+        "Saved version or current file; the source stays untouched.",
+    ),
+    (
+        "Name the job",
+        "A company name is required; nothing is saved yet.",
+    ),
 ];
 
 /// The sheet's live state. Takes over the front door's body the way the
@@ -84,9 +90,9 @@ pub(super) struct TailorSheet {
     /// The posting itself. Optional: naming the company is enough to start,
     /// and the read is what the text buys you.
     pub posting: Entity<TextFieldState>,
-    /// Which reading to start from: its document and its preset index.
-    /// `None` when the vault holds nothing to start from.
-    pub base: Option<(std::path::PathBuf, usize)>,
+    /// Which reading to start from: its document and optional preset index.
+    /// `None` as the preset means the document as it is saved now.
+    pub base: Option<(std::path::PathBuf, Option<usize>)>,
     pub step: TailorStep,
     /// The last read of the posting, or `None` before there has been one.
     ///
@@ -100,7 +106,7 @@ pub(super) struct TailorSheet {
 pub(super) struct PostingRead {
     pub terms: Vec<Term>,
     /// Per reading, how much of the posting it already answers.
-    pub coverage: Vec<((std::path::PathBuf, usize), Coverage)>,
+    pub coverage: Vec<((std::path::PathBuf, Option<usize>), Coverage)>,
     /// What the vault has for the gaps in the *selected* reading.
     pub unused: Vec<Unused>,
 }
@@ -109,15 +115,35 @@ impl Shell {
     /// Open the sheet, defaulting the base to the reading that has been sent
     /// most — the one that has been working is the one worth starting from.
     pub(super) fn open_tailor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_tailor_with_base(None, window, cx);
+    }
+
+    /// Open tailoring from the version whose menu the person chose.
+    pub(super) fn open_tailor_from(
+        &mut self,
+        path: std::path::PathBuf,
+        preset: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_tailor_with_base(Some((path, Some(preset))), window, cx);
+    }
+
+    fn open_tailor_with_base(
+        &mut self,
+        base: Option<(std::path::PathBuf, Option<usize>)>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let company = cx.new(|cx| TextFieldState::single_line(window, cx));
         let role = cx.new(|cx| TextFieldState::single_line(window, cx));
         // `auto_grow` rather than a fixed box: a posting is two paragraphs or
         // two pages, and a tall empty well above an empty card was most of what
         // this screen looked like.
         let posting = cx.new(|cx| TextFieldState::auto_grow(4, 14, window, cx));
-        let base = self.busiest_reading();
+        let base = base.or_else(|| self.busiest_reading());
 
-        let handle = company.read(cx).focus_handle(cx);
+        let handle = posting.read(cx).focus_handle(cx);
         self.tailoring = Some(TailorSheet {
             company,
             role,
@@ -131,7 +157,12 @@ impl Shell {
     }
 
     /// Move to a step, and read the posting on the way out of the first one.
-    pub(super) fn tailor_go(&mut self, step: TailorStep, cx: &mut Context<Self>) {
+    pub(super) fn tailor_go(
+        &mut self,
+        step: TailorStep,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let leaving_posting = self
             .tailoring
             .as_ref()
@@ -142,6 +173,14 @@ impl Shell {
         if leaving_posting {
             self.read_posting(cx);
         }
+        let focus = self.tailoring.as_ref().and_then(|sheet| match step {
+            TailorStep::Posting => Some(sheet.posting.read(cx).focus_handle(cx)),
+            TailorStep::Name => Some(sheet.company.read(cx).focus_handle(cx)),
+            TailorStep::Version => None,
+        });
+        if let Some(handle) = focus {
+            handle.focus(window, cx);
+        }
         cx.notify();
     }
 
@@ -151,16 +190,22 @@ impl Shell {
     }
 
     /// The reading the most applications went out under, or the first one.
-    fn busiest_reading(&self) -> Option<(std::path::PathBuf, usize)> {
+    fn busiest_reading(&self) -> Option<(std::path::PathBuf, Option<usize>)> {
         let rows = readings(self.cache.metadata());
         let applications = self.cache.applications();
         rows.iter()
+            .filter(|row| !row.unreadable)
             .filter_map(|row| Some((row, row.preset.as_ref()?.0)))
             .max_by_key(|(row, _)| {
                 let (stem, preset) = row.sent_as();
                 applications.record_for(stem, preset).sent
             })
-            .map(|(row, index)| (row.path.clone(), index))
+            .map(|(row, index)| (row.path.clone(), Some(index)))
+            .or_else(|| {
+                rows.iter()
+                    .find(|row| !row.unreadable)
+                    .map(|row| (row.path.clone(), None))
+            })
     }
 
     /// Every word the vault has: the readings, the library and the diary, run
@@ -188,8 +233,24 @@ impl Shell {
         for block in &library.skills {
             corpus.push_str(&format!(" {} {}", block.name, block.keywords.join(" ")));
         }
+        for block in &library.education {
+            corpus.push_str(&format!(
+                " {} {} {}",
+                block.institution,
+                block.study_type,
+                block.highlights.join(" ")
+            ));
+        }
         for block in &library.certificates {
             corpus.push_str(&format!(" {} {}", block.name, block.issuer));
+        }
+        for block in &library.volunteer {
+            corpus.push_str(&format!(
+                " {} {} {}",
+                block.position,
+                block.organization,
+                block.highlights.join(" ")
+            ));
         }
         corpus
     }
@@ -214,13 +275,19 @@ impl Shell {
         // One plain-text rendering per reading, from the cache rather than the
         // disk: the documents are already parsed, and a preset is applied to a
         // clone so nothing here can touch the working copy.
-        let mut readings_text: Vec<((std::path::PathBuf, usize), String)> = Vec::new();
+        let mut readings_text: Vec<((std::path::PathBuf, Option<usize>), String)> = Vec::new();
         for (meta, doc) in self.cache.readable_documents() {
+            if doc.active_preset_index().is_none() {
+                readings_text.push((
+                    (meta.path.clone(), None),
+                    crate::resume::export_plain_text(&doc.compose()),
+                ));
+            }
             for index in 0..doc.presets.len() {
                 let mut copy = doc.clone();
                 copy.apply_preset(index);
                 readings_text.push((
-                    (meta.path.clone(), index),
+                    (meta.path.clone(), Some(index)),
                     crate::resume::export_plain_text(&copy.compose()),
                 ));
             }
@@ -270,6 +337,12 @@ impl Shell {
         cx.notify();
     }
 
+    fn starting_point_available(&self, path: &std::path::PathBuf, preset: Option<usize>) -> bool {
+        self.cache.readable_documents().any(|(meta, doc)| {
+            meta.path == *path && preset.is_none_or(|index| doc.presets.get(index).is_some())
+        })
+    }
+
     /// Hand the named job to the constructor.
     ///
     /// This used to make the preset, make the application card, pin them to
@@ -288,15 +361,22 @@ impl Shell {
         let company = sheet.company.read(cx).value(cx).trim().to_string();
         let role = sheet.role.read(cx).value(cx).trim().to_string();
         let posting = sheet.posting.read(cx).value(cx).trim().to_string();
-        let Some((path, base)) = sheet.base.clone() else {
+        let base = sheet.base.clone();
+        let Some((path, source)) = base else {
             return;
         };
-        if company.is_empty() {
+        if company.is_empty() || !self.starting_point_available(&path, source) {
+            if let Some(sheet) = self.tailoring.as_mut() {
+                sheet.base = None;
+                sheet.step = TailorStep::Version;
+            }
+            cx.notify();
             return;
         }
 
-        self.tailoring = None;
-        self.open_version_draft(path, base, company, role, posting, cx);
+        if self.open_version_draft(path, source, company, role, posting, cx) {
+            self.tailoring = None;
+        }
         let _ = window;
     }
 
@@ -310,22 +390,31 @@ impl Shell {
             return div();
         };
 
-        let (title, lede): (&str, &str) = match sheet.step {
+        let has_readable_source = self.cache.readable_documents().next().is_some();
+        let (title, lede): (&str, String) = match sheet.step {
+            TailorStep::Posting if has_readable_source => (
+                "Tailor for a job",
+                "Paste the posting to compare it with your CVs and the notes already in your \
+                 vault, or skip it and choose a starting point by hand."
+                    .to_string(),
+            ),
             TailorStep::Posting => (
                 "Tailor for a job",
-                "Paste what they wrote and DockCV will say which of your versions already \
-                 answers it — and what you have written down that none of them show. Skip it \
-                 and you choose by hand.",
+                "Paste the posting now, then import the CV you want to use. Your job details \
+                 will stay in this flow."
+                    .to_string(),
             ),
             TailorStep::Version => (
-                "Which version to start from",
-                "A copy of the one you pick becomes the new version. The original is left \
-                 exactly as it is.",
+                "Choose a CV to start from",
+                "Pick a saved version, or use an imported CV as it is. DockCV works on a copy; \
+                 your source stays unchanged."
+                    .to_string(),
             ),
             TailorStep::Name => (
                 "Name it",
                 "This names the version, the file it exports as, and the card on the \
-                 applications board.",
+                 applications board."
+                    .to_string(),
             ),
         };
 
@@ -393,12 +482,12 @@ impl Shell {
                                     .overflow_y_scrollbar()
                                     .p(px(22.0))
                                     .child(match sheet.step {
-                                        TailorStep::Posting => self
-                                            .render_tailor_posting(cx, sheet)
-                                            .into_any_element(),
-                                        TailorStep::Version => self
-                                            .render_tailor_version(cx, sheet)
-                                            .into_any_element(),
+                                        TailorStep::Posting => {
+                                            self.render_tailor_posting(cx, sheet).into_any_element()
+                                        }
+                                        TailorStep::Version => {
+                                            self.render_tailor_version(cx, sheet).into_any_element()
+                                        }
                                         TailorStep::Name => {
                                             self.render_tailor_name(cx, sheet).into_any_element()
                                         }
@@ -413,26 +502,36 @@ impl Shell {
     fn render_tailor_footer(&self, cx: &mut Context<Self>, sheet: &TailorSheet) -> Div {
         let theme = *cx.theme();
         let has_text = !sheet.posting.read(cx).value(cx).trim().is_empty();
-        let has_base = sheet.base.is_some();
+        let has_base = sheet
+            .base
+            .as_ref()
+            .is_some_and(|(path, preset)| self.starting_point_available(path, *preset));
+        let has_company = !sheet.company.read(cx).value(cx).trim().is_empty();
 
         let (primary, enabled, note): (&str, bool, &str) = match sheet.step {
-            TailorStep::Posting if has_text => {
-                ("Read it", true, "Matched against your own vault. Nothing is sent anywhere.")
-            }
-            TailorStep::Posting => (
-                "Choose by hand",
+            TailorStep::Posting if has_text => (
+                "Read posting",
                 true,
-                "You can paste the posting later, or skip it entirely.",
+                "Compared with your vault on this device.",
+            ),
+            TailorStep::Posting => (
+                "Skip posting",
+                true,
+                "Choose a starting CV without pasting a job description.",
             ),
             TailorStep::Version => (
-                "Use this one",
+                "Continue",
                 has_base,
-                "A copy of it becomes the new version. The original is untouched.",
+                "The saved CV stays untouched. You can choose changes on the next screen.",
             ),
             TailorStep::Name => (
-                "Start tailoring",
-                has_base,
-                "Opens the version constructor. Nothing is written until you save there.",
+                "Build the version",
+                has_base && has_company,
+                if has_company {
+                    "Nothing is saved until you choose Save version on the next screen."
+                } else {
+                    "Add a company name to continue."
+                },
             ),
         };
         let next = match sheet.step {
@@ -464,7 +563,7 @@ impl Shell {
                         if this.tailoring.as_ref().map(|s| s.step) == Some(TailorStep::Name) {
                             this.start_tailoring(window, cx);
                         } else {
-                            this.tailor_go(next, cx);
+                            this.tailor_go(next, window, cx);
                         }
                     }))
                     .child(primary),
@@ -472,8 +571,8 @@ impl Shell {
             .children(back.map(|step| {
                 Button::new("tailor-back")
                     .quiet()
-                    .on_click(cx.listener(move |this, _, _window, cx| {
-                        this.tailor_go(step, cx);
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.tailor_go(step, window, cx);
                     }))
                     .child("Back")
             }))
@@ -528,18 +627,50 @@ impl Shell {
         div()
             .flex()
             .flex_col()
-            .gap(px(12.0))
-            .child(TextField::new(&sheet.posting).placeholder("Paste the job description here"))
+            .gap(px(14.0))
             .child(
                 div()
-                    .text_style(TextStyle::body())
-                    .text_color(theme.text_subtle)
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(10.0))
                     .child(
-                        "DockCV compares it with the CVs, the library and the diary you \
-                         already have, and shows which of your versions answers most of it. \
-                         That is arithmetic over your own words — no model, and nothing \
-                         leaves this machine. You can hand it to your assistant on the next \
-                         screen if you want a second opinion.",
+                        div()
+                            .text_style(TextStyle::eyebrow())
+                            .text_color(theme.text_subtle)
+                            .child(TextStyle::eyebrow().apply_case("Job description")),
+                    )
+                    .child(
+                        div()
+                            .text_style(TextStyle::chip())
+                            .text_color(theme.text_subtle)
+                            .child("OPTIONAL"),
+                    ),
+            )
+            .child(
+                TextField::new(&sheet.posting)
+                    .placeholder("Paste the full posting: responsibilities, requirements, and details…"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_start()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_style(TextStyle::body())
+                            .text_color(theme.accent)
+                            .child("↳"),
+                    )
+                    .child(
+                        div()
+                            .text_style(TextStyle::body())
+                            .text_color(theme.text_subtle)
+                            .child(
+                                "DockCV compares the posting with your own CVs, library, and diary \
+                                 on this device. Nothing is sent anywhere.",
+                            ),
                     ),
             )
     }
@@ -551,76 +682,130 @@ impl Shell {
         sheet: &TailorSheet,
     ) -> impl IntoElement {
         let theme = *cx.theme();
-        let rows = readings(self.cache.metadata());
+        let file_groups = groups(self.cache.metadata());
         let read = sheet.read.as_ref();
 
         let mut choices = div().flex().flex_col().gap(px(4.0));
-        for row in &rows {
-            let Some((index, _)) = row.preset.clone() else {
+        for group in &file_groups {
+            let mut available: Vec<_> = group
+                .readings
+                .iter()
+                .filter(|row| !row.unreadable)
+                .cloned()
+                .collect();
+            let has_current_file = self
+                .cache
+                .readable_documents()
+                .find(|(meta, _)| meta.path == group.path)
+                .is_some_and(|(_, doc)| doc.active_preset_index().is_none());
+            if has_current_file && available.iter().all(|row| row.preset.is_some()) {
+                available.insert(
+                    0,
+                    Reading {
+                        path: group.path.clone(),
+                        stem: group.stem.clone(),
+                        preset: None,
+                        description: None,
+                        based_on: None,
+                        modified_secs: group
+                            .readings
+                            .first()
+                            .and_then(|row| row.modified_secs),
+                        unreadable: false,
+                    },
+                );
+            }
+            if available.is_empty() {
                 continue;
-            };
-            let key = (row.path.clone(), index);
-            let chosen = sheet.base.as_ref() == Some(&key);
-            let cov = read.and_then(|r| {
-                r.coverage.iter().find(|(k, _)| *k == key).map(|(_, c)| c)
-            });
-            let path = row.path.clone();
-            choices = choices.child(
-                SelectableRow::new(SharedString::from(format!(
-                    "tailor-base-{}-{}",
-                    row.stem,
-                    row.label()
-                )))
-                .selected(chosen)
-                .aria_label(format!("{} · {}", row.stem, row.label()))
-                .child(
+            }
+            let group_has_multiple = available.len() > 1;
+            if group_has_multiple {
+                choices = choices.child(
                     div()
-                        .w_full()
+                        .mt(px(9.0))
+                        .mb(px(2.0))
                         .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap(px(1.0))
-                        .child(
-                            div()
-                                .truncate()
-                                .text_color(theme.text)
-                                .child(format!("{} · {}", row.stem, row.label())),
-                        )
-                        .children(self.base_choice_label(row).map(|line| {
-                            div()
-                                .truncate()
-                                .text_style(TextStyle::body())
-                                .text_color(theme.text_subtle)
-                                .child(line)
-                        })),
-                )
-                .when_some(cov.filter(|c| c.total() > 0), |el, cov| {
-                    el.trailing(
+                        .truncate()
+                        .text_style(TextStyle::eyebrow())
+                        .text_color(theme.text_subtle)
+                        .child(TextStyle::eyebrow().apply_case(&group.stem)),
+                );
+            }
+            for row in &available {
+                let preset = row.preset.as_ref().map(|(index, _)| *index);
+                let key = (row.path.clone(), preset);
+                let chosen = sheet.base.as_ref() == Some(&key);
+                let cov =
+                    read.and_then(|r| r.coverage.iter().find(|(k, _)| *k == key).map(|(_, c)| c));
+                let path = row.path.clone();
+                let title = match &row.preset {
+                    Some((_, name)) if group_has_multiple => name.clone(),
+                    Some((_, name)) => format!("{} · {name}", row.stem),
+                    None if group_has_multiple => "Current CV".to_string(),
+                    None => format!("{} · Current CV", row.stem),
+                };
+                let detail = if row.preset.is_none() {
+                    Some("Start from this file as it is now".to_string())
+                } else {
+                    self.base_choice_label(row)
+                };
+                let id_part = preset
+                    .map(|index| format!("preset-{index}"))
+                    .unwrap_or_else(|| "current".to_string());
+                choices = choices.child(
+                    SelectableRow::new(SharedString::from(format!(
+                        "tailor-base-{}-{id_part}",
+                        row.stem
+                    )))
+                    .selected(chosen)
+                    .aria_label(title.clone())
+                    .child(
                         div()
-                            .flex_none()
-                            .px(px(8.0))
-                            .text_style(TextStyle::chip())
-                            .text_color(if cov.matched.len() * 2 >= cov.total() {
-                                theme.success
-                            } else {
-                                theme.text_subtle
-                            })
-                            .child(format!("{} / {}", cov.matched.len(), cov.total())),
+                            .w_full()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .gap(px(1.0))
+                            .child(div().truncate().text_color(theme.text).child(title))
+                            .children(detail.map(|line| {
+                                div()
+                                    .truncate()
+                                    .text_style(TextStyle::body())
+                                    .text_color(theme.text_subtle)
+                                    .child(line)
+                            })),
                     )
-                })
-                .on_click(cx.listener(move |this, _, _window, cx| {
-                    if let Some(sheet) = this.tailoring.as_mut() {
-                        sheet.base = Some((path.clone(), index));
-                    }
-                    if this.tailoring.as_ref().is_some_and(|s| s.read.is_some()) {
-                        this.read_posting(cx);
-                    }
-                    cx.notify();
-                })),
-            );
+                    .when_some(cov.filter(|c| c.total() > 0), |el, cov| {
+                        el.trailing(
+                            div()
+                                .flex_none()
+                                .px(px(8.0))
+                                .text_style(TextStyle::chip())
+                                .text_color(if cov.matched.len() * 2 >= cov.total() {
+                                    theme.success
+                                } else {
+                                    theme.text_subtle
+                                })
+                                .child(format!("{} / {}", cov.matched.len(), cov.total())),
+                        )
+                    })
+                    .on_click(cx.listener(move |this, _, _window, cx| {
+                        if let Some(sheet) = this.tailoring.as_mut() {
+                            sheet.base = Some((path.clone(), preset));
+                        }
+                        if this.tailoring.as_ref().is_some_and(|s| s.read.is_some()) {
+                            this.read_posting(cx);
+                        }
+                        cx.notify();
+                    })),
+                );
+            }
         }
 
         let scored = read.map(|r| r.terms.len()).filter(|n| *n > 0);
+        let has_choices = file_groups
+            .iter()
+            .any(|group| group.readings.iter().any(|row| !row.unreadable));
 
         div()
             .flex()
@@ -639,27 +824,113 @@ impl Shell {
                         div()
                             .text_style(TextStyle::eyebrow())
                             .text_color(theme.text_subtle)
-                            .child(TextStyle::eyebrow().apply_case("Your versions")),
+                            .child(TextStyle::eyebrow().apply_case("Starting points")),
                     )
                     .children(scored.map(|n| {
                         div()
                             .flex_none()
                             .text_style(TextStyle::eyebrow())
                             .text_color(theme.text_subtle)
-                            .child(TextStyle::eyebrow().apply_case(&format!("answers / {n}")))
+                            .child(TextStyle::eyebrow().apply_case(&format!("matches / {n}")))
                     })),
             )
-            .child(if rows.iter().any(|r| r.preset.is_some()) {
+            .child(if has_choices {
                 choices.into_any_element()
             } else {
-                div()
-                    .text_style(TextStyle::body())
-                    .text_color(theme.text_muted)
-                    .child("No preset to start from yet — save one on a CV first.")
-                    .into_any_element()
+                self.render_tailor_no_sources(cx).into_any_element()
             })
+            .children((sheet.base.is_some() && read.is_some_and(|r| r.terms.is_empty())).then(
+                || {
+                    div()
+                        .px(px(12.0))
+                        .py(px(10.0))
+                        .rounded(theme.radius_sm())
+                        .bg(theme.elevated)
+                        .text_style(TextStyle::body())
+                        .text_color(theme.text_subtle)
+                        .child(
+                            "No clear requirements stood out in this posting. You can still \
+                             choose a starting CV and tailor it by hand.",
+                        )
+                },
+            ))
             .children(read.and_then(|r| self.render_tailor_score_note(cx, r)))
             .children(self.tailor_unused(cx))
+    }
+
+    fn render_tailor_no_sources(&self, cx: &mut Context<Self>) -> Div {
+        let theme = *cx.theme();
+        let has_files = !self.cache.metadata().is_empty();
+        div()
+            .flex()
+            .flex_col()
+            .items_start()
+            .gap(px(10.0))
+            .p(px(14.0))
+            .rounded(theme.radius_sm())
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.elevated)
+            .child(
+                div()
+                    .text_style(TextStyle::control())
+                    .text_color(theme.text)
+                    .child(if has_files {
+                        "There is no readable CV to start from yet."
+                    } else {
+                        "Bring in a CV to create a version."
+                    }),
+            )
+            .child(
+                div()
+                    .text_style(TextStyle::body())
+                    .text_color(theme.text_subtle)
+                    .child("Your job details will stay here while you import one."),
+            )
+            .child(
+                Button::new("tailor-import-cv")
+                    .action_primary()
+                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                        this.begin_tailor_import(cx);
+                    }))
+                    .child("Import a CV"),
+            )
+    }
+
+    pub(super) fn begin_tailor_import(&mut self, cx: &mut Context<Self>) {
+        self.gallery_creating = true;
+        self.import_step = super::import::panels::ImportStep::Step1Drop;
+        cx.notify();
+    }
+
+    /// Save an imported CV without leaving the application flow. The import
+    /// review has already been shown; after saving, the new file is selected
+    /// as the starting point and the pasted posting is read against it.
+    pub(super) fn create_tailoring_source(
+        &mut self,
+        doc: crate::resume::model::ResumeDoc,
+        filename_base: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(vault_dir) = self.vault.clone() else {
+            return;
+        };
+        match crate::vault::create_document(&vault_dir, &doc, filename_base) {
+            Ok(path) => {
+                super::save_status::record(cx, "document", Ok(()));
+                let revision = super::save_status::vault_revision(cx);
+                self.cache.refresh(Some(&vault_dir), revision);
+                if let Some(sheet) = self.tailoring.as_mut() {
+                    sheet.base = Some((path, None));
+                    sheet.step = TailorStep::Version;
+                }
+                self.gallery_creating = false;
+                self.import_step = super::import::panels::ImportStep::Step1Drop;
+                self.read_posting(cx);
+                cx.notify();
+            }
+            Err(message) => super::save_status::record(cx, "document", Err(message)),
+        }
     }
 
     /// The words the versions disagree about, under the list rather than over
@@ -670,7 +941,12 @@ impl Shell {
     /// first now and its footnote follows.
     fn render_tailor_score_note(&self, cx: &mut Context<Self>, read: &PostingRead) -> Option<Div> {
         let theme = *cx.theme();
-        if read.terms.is_empty() {
+        if read.terms.is_empty()
+            || self
+                .tailoring
+                .as_ref()
+                .is_none_or(|sheet| sheet.base.is_none())
+        {
             return None;
         }
         Some(
@@ -714,13 +990,15 @@ impl Shell {
     /// send does not mention them.
     fn tailor_unused(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let theme = *cx.theme();
-        let read = self.tailoring.as_ref()?.read.as_ref()?;
+        let sheet = self.tailoring.as_ref()?;
+        sheet.base.as_ref()?;
+        let read = sheet.read.as_ref()?;
         if read.unused.is_empty() {
             return None;
         }
         let rows = read.unused.iter().take(5).map(|item| {
             let (where_from, body) = match &item.source {
-                UnusedSource::Diary { date, confidential } => (
+                UnusedSource::Diary { date, confidential, .. } => (
                     format!("Diary · {date}"),
                     match (&item.text, confidential) {
                         // US-36: a confidential entry is never quoted outward.
@@ -731,7 +1009,7 @@ impl Shell {
                         (None, _) => String::new(),
                     },
                 ),
-                UnusedSource::Library { section } => (
+                UnusedSource::Library { section, .. } => (
                     format!("Library · {}", section_word(*section)),
                     item.text.clone().unwrap_or_default(),
                 ),
@@ -838,18 +1116,16 @@ impl Shell {
                     .flex()
                     .flex_wrap()
                     .gap(px(12.0))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(180.0))
-                            .child(self.tailor_field(cx, "Company", &sheet.company)),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(180.0))
-                            .child(self.tailor_field(cx, "Role", &sheet.role)),
-                    ),
+                    .child(div().flex_1().min_w(px(180.0)).child(self.tailor_field(
+                        cx,
+                        "Company · required",
+                        &sheet.company,
+                    )))
+                    .child(div().flex_1().min_w(px(180.0)).child(self.tailor_field(
+                        cx,
+                        "Role · optional",
+                        &sheet.role,
+                    ))),
             )
             .child(
                 div()
@@ -882,7 +1158,13 @@ impl Shell {
                     .text_color(theme.text_subtle)
                     .child(label),
             )
-            .child(TextField::new(state))
+            .child(
+                TextField::new(state).placeholder(if label.starts_with("Company") {
+                    "Company name"
+                } else {
+                    "Role title"
+                }),
+            )
     }
 }
 

@@ -101,18 +101,19 @@ impl VaultCache {
     ///
     /// `revision` is [`super::save_status::vault_revision`]; see the module
     /// docs for why both signals exist.
-    pub(super) fn refresh(&mut self, vault: Option<&Path>, revision: u64) {
+    pub(super) fn refresh(&mut self, vault: Option<&Path>, revision: u64) -> bool {
         let Some(dir) = vault else {
             // No vault open: drop whatever the last one left behind rather than
             // letting the welcome screen answer questions about it.
+            let changed = self.loaded_from.is_some();
             *self = Self::default();
-            return;
+            return changed;
         };
 
         let fingerprint = Fingerprint::of(dir);
         let same_vault = self.loaded_from.as_deref() == Some(dir);
         if same_vault && self.fingerprint == fingerprint && self.revision == revision {
-            return;
+            return false;
         }
 
         let loaded = vault::load_all(dir);
@@ -126,6 +127,7 @@ impl VaultCache {
         self.loaded_from = Some(dir.to_path_buf());
         self.fingerprint = fingerprint;
         self.revision = revision;
+        true
     }
 
     pub(super) fn metadata(&self) -> &[DocMeta] {

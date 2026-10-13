@@ -88,6 +88,13 @@ impl Shell {
         // content, the page scrolled, and the action bar it pins to its own
         // bottom edge went below the fold — which is why the review step
         // appeared to have no way forward at all.
+        // Its own screen, its own heading: `import.rs`. The gallery's
+        // header used to stay above it, offering to search a list that was not
+        // showing and to add a CV you were in the middle of adding.
+        if self.gallery_creating {
+            return self.render_import_screen(cx);
+        }
+
         // Its own screen, its own heading — the same ruling the comment above
         // makes for import, and for the same two reasons. The gallery's header
         // offered to search a list that was not showing, and nesting the panel
@@ -101,13 +108,6 @@ impl Shell {
         // is about one application rather than about the list.
         if self.drafting.is_some() {
             return self.render_version_draft(cx);
-        }
-
-        // Its own screen, its own heading: `import.rs`. The gallery's
-        // header used to stay above it, offering to search a list that was not
-        // showing and to add a CV you were in the middle of adding.
-        if self.gallery_creating {
-            return self.render_import_screen(cx);
         }
 
         let body: AnyElement = if vault_is_empty {
@@ -126,15 +126,22 @@ impl Shell {
             .flex()
             .flex_col()
             .child(top)
+            .children((!vault_is_empty).then(|| {
+                div()
+                    .flex_none()
+                    .px(px(34.0))
+                    .child(self.render_tailor_callout(cx))
+            }))
             .child(
                 div()
                     .id("gallery-scroll")
                     .flex_1()
                     .min_h_0()
+                    .flex()
+                    .flex_col()
                     .overflow_y_scrollbar()
                     .px(px(34.0))
                     .pb(px(30.0))
-                    .children((!vault_is_empty).then(|| self.render_tailor_callout(cx)))
                     .child(body),
             )
     }
@@ -142,18 +149,13 @@ impl Shell {
     pub(super) fn render_gallery_empty(&self, cx: &mut Context<Self>) -> impl IntoElement {
         EmptyState::new("No CVs yet")
             .icon(IconName::File)
-            .body("Start a new CV, or bring in one you already have.")
+            .body("Start with the job. You can import the CV you want to tailor in the next step.")
             .action(
                 Button::new("empty-new-cv")
                     .action_primary()
-                    .icon(IconName::Plus)
-                    .label("Bring in a CV")
-                    // US-01: an empty vault is usually somebody who already has
-                    // a CV and does not want to start at a blank screen, so
-                    // this goes to the import screen — which still offers the
-                    // blank document as its second button for the rarer case.
-                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                        this.open_import(cx);
+                    .label("Create a version")
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.open_tailor(window, cx);
                     })),
             )
     }
@@ -205,6 +207,10 @@ impl Shell {
     /// chooser with one option is a dialog box.
     pub(super) fn start_blank_cv(&mut self, cx: &mut Context<Self>) {
         let doc = ResumeDoc::from_resume(Resume::default(), "Base");
+        if self.tailoring.is_some() {
+            self.create_tailoring_source(doc, "cv", cx);
+            return;
+        }
         self.create_doc(doc, "cv", cx);
         self.gallery_creating = false;
         self.import_step = ImportStep::Step1Drop;

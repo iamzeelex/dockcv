@@ -79,9 +79,14 @@ pub struct Unused {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnusedSource {
     /// A win, by the date it was logged.
-    Diary { date: String, confidential: bool },
+    Diary {
+        /// Stable within the diary snapshot that produced this read.
+        index: usize,
+        date: String,
+        confidential: bool,
+    },
     /// A block in the pool, by the section it belongs to.
-    Library { section: SectionKind },
+    Library { section: SectionKind, index: usize },
 }
 
 /// The most a read reports on.
@@ -210,7 +215,7 @@ pub fn unused(
     let in_cv = tokens_of(already_in_cv);
     let mut out = Vec::new();
 
-    for entry in diary {
+    for (index, entry) in diary.iter().enumerate() {
         let hits = hits_for(missing, &entry.text);
         // Already on the page under some wording of its own is not a gap.
         if hits.is_empty() || hits.iter().all(|t| answers(&in_cv, t)) {
@@ -218,6 +223,7 @@ pub fn unused(
         }
         out.push(Unused {
             source: UnusedSource::Diary {
+                index,
                 date: entry.date.clone(),
                 confidential: entry.confidential,
             },
@@ -226,20 +232,21 @@ pub fn unused(
         });
     }
 
-    let mut push_block = |section: SectionKind, text: String| {
+    let mut push_block = |section: SectionKind, index: usize, text: String| {
         let hits = hits_for(missing, &text);
         if hits.is_empty() {
             return;
         }
         out.push(Unused {
-            source: UnusedSource::Library { section },
+            source: UnusedSource::Library { section, index },
             text: Some(text),
             terms: hits,
         });
     };
-    for block in &library.work {
+    for (index, block) in library.work.iter().enumerate() {
         push_block(
             SectionKind::Work,
+            index,
             format!(
                 "{} {} {} {}",
                 block.position,
@@ -249,21 +256,36 @@ pub fn unused(
             ),
         );
     }
-    for block in &library.skills {
+    for (index, block) in library.skills.iter().enumerate() {
         push_block(
             SectionKind::Skills,
+            index,
             format!("{} {}", block.name, block.keywords.join(" ")),
         );
     }
-    for block in &library.certificates {
+    for (index, block) in library.education.iter().enumerate() {
+        push_block(
+            SectionKind::Education,
+            index,
+            format!(
+                "{} {} {}",
+                block.institution,
+                block.study_type,
+                block.highlights.join(" ")
+            ),
+        );
+    }
+    for (index, block) in library.certificates.iter().enumerate() {
         push_block(
             SectionKind::Certificates,
+            index,
             format!("{} {}", block.name, block.issuer),
         );
     }
-    for block in &library.volunteer {
+    for (index, block) in library.volunteer.iter().enumerate() {
         push_block(
             SectionKind::Organizations,
+            index,
             format!(
                 "{} {} {}",
                 block.position,

@@ -138,7 +138,10 @@ fn the_vault_is_searched_for_what_the_reading_is_missing() {
     assert!(
         found.iter().any(|u| matches!(
             &u.source,
-            UnusedSource::Library { section: SectionKind::Skills }
+            UnusedSource::Library {
+                section: SectionKind::Skills,
+                ..
+            }
         )),
         "the skills block answers SQL: {found:?}"
     );
@@ -213,8 +216,9 @@ fn a_library_block_is_a_prompt_too() {
     let found = unused(&missing, &[], &library, "");
     assert!(matches!(
         found[0].source,
-        UnusedSource::Library {
-            section: SectionKind::Work
+            UnusedSource::Library {
+            section: SectionKind::Work,
+            ..
         }
     ));
 }

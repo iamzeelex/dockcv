@@ -18,10 +18,10 @@ use gpui::prelude::*;
 use gpui::{div, img, px, AnyElement, ClickEvent, Context, Div, FontWeight, SharedString};
 
 use dockcv_ui_components::{
-    Button, ButtonExt, DropdownMenu, PopupMenuItem, ScrollableElement, MONO, SANS,
+    Button, ButtonExt, Disableable, DropdownMenu, PopupMenuItem, ScrollableElement, MONO, SANS,
 };
 
-use crate::resume::posting::UnusedSource;
+use crate::resume::posting::{Unused, UnusedSource};
 use crate::views::assistant::{route_url, Handoff, ASSISTANTS};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 
@@ -204,7 +204,7 @@ impl Shell {
                                 div()
                                     .text_size(px(12.0))
                                     .text_color(theme.text_muted)
-                                    .child("· source stays unchanged"),
+                                .child("· source stays unchanged"),
                             ),
                     )
                     .child(
@@ -218,6 +218,34 @@ impl Shell {
                     ),
             )
             .child(self.render_draft_source_picker(cx, &source))
+            .children(draft.external_change_pending.then(|| {
+                div()
+                    .mt(px(10.0))
+                    .p(px(10.0))
+                    .rounded(theme.radius_sm())
+                    .bg(theme.warning.opacity(0.1))
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(220.0))
+                            .text_size(px(11.0))
+                            .text_color(theme.text_muted)
+                            .child("This CV file changed on disk. Reload to use the new variants; your current draft choices will be replaced."),
+                    )
+                    .child(
+                        Button::new("draft-reload-external")
+                            .action_secondary()
+                            .label("Reload from disk")
+                            .disabled(draft.advice_running)
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                                this.reload_draft_from_disk(cx);
+                            })),
+                    )
+            }))
     }
 
     fn render_draft_source_picker(&self, cx: &mut Context<Self>, source: &str) -> Div {
@@ -302,16 +330,42 @@ impl Shell {
                     )
                     .children(pages.map(|n| div().child(format!("Page 1 of {n}"))))
                     .child(div().flex_1())
-                    .children(pages.map(|n| {
+            .children(pages.map(|n| {
                         div()
                             .text_color(if fits { theme.success } else { theme.text_subtle })
                             .child(if fits {
                                 "Fits on one page".to_string()
                             } else {
                                 format!("{n} pages")
-                            })
-                    })),
+                    })
+                })),
             )
+            .children(draft.preview_error.as_ref().map(|error| {
+                div()
+                    .px(px(14.0))
+                    .py(px(10.0))
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(px(11.0))
+                            .text_color(theme.warning)
+                            .child(error.clone()),
+                    )
+                    .child(
+                        Button::new("draft-retry-preview")
+                            .quiet()
+                            .disabled(draft.compiling)
+                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                this.compile_draft(cx);
+                            }))
+                            .child("Retry"),
+                    )
+            }))
             .child(
                 div()
                     .p(px(16.0))
@@ -337,40 +391,66 @@ impl Shell {
             )
     }
 
-    /// The hand-off: ask the assistant you already have which of these to use.
+    /// Ask an assistant to compare this job, CV, and saved blocks.
     ///
     /// Only with a posting, because without one there is nothing to ask about.
-    /// What goes out is the posting plus a menu DockCV built; what comes back
-    /// is a set of ids. The model cannot write a word onto the page, and the
-    /// rows it picks arrive **unticked** — see `advice.rs` for why that is the
-    /// whole design rather than a precaution.
+    /// Browser routes return reviewed suggestions; local coding routes may add
+    /// exact saved blocks to a separate variant in the CV file.
     fn render_draft_handoff(&self, cx: &mut Context<Self>) -> Option<Div> {
         let theme = *cx.theme();
         let draft = self.drafting.as_ref()?;
         if draft.posting.trim().is_empty() {
             return None;
         }
-        let staged = draft.handed_off;
+        let advice_running = draft.advice_running;
 
         let routes = ASSISTANTS.iter().filter_map(|assistant| {
             let route = assistant.ordered().into_iter().find(|r| r.via.available())?;
             let name = assistant.name;
             let via = route.via;
+            let label = match via {
+                crate::views::assistant::Via::Cli { .. } => {
+                    format!("{name} · {}", route.label)
+                }
+                crate::views::assistant::Via::Code => "Claude Code".to_string(),
+                crate::views::assistant::Via::Cowork => "Claude Cowork".to_string(),
+                crate::views::assistant::Via::Web { .. } => name.to_string(),
+            };
             Some(
                 Button::new(SharedString::from(format!("advice-{}", route.id)))
                     .action_secondary()
                     .icon(via.icon())
                     .tooltip(format!("{name} · {}", route.label))
+                    .disabled(advice_running)
                     .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        this.stage_draft_advice(cx);
-                        if let Some(prompt) = this.draft_advice_prompt() {
-                            let job = Handoff { prompt, file: None };
-                            if let Some(url) = route_url(via, &job) {
-                                cx.open_url(&url);
+                        match via {
+                            crate::views::assistant::Via::Cli { program, argv } => {
+                                this.run_local_draft_assistant(program, argv, cx);
+                            }
+                            crate::views::assistant::Via::Code => {
+                                this.stage_draft_file_advice(cx);
+                                if let (Some(prompt), Some(file)) = (
+                                    this.draft_file_advice_prompt(),
+                                    this.drafting.as_ref().map(|draft| draft.path.clone()),
+                                ) {
+                                    let job = Handoff { prompt, file: Some(file) };
+                                    if let Some(url) = route_url(via, &job) {
+                                        cx.open_url(&url);
+                                    }
+                                }
+                            }
+                            other => {
+                                this.stage_draft_advice(cx);
+                                if let Some(prompt) = this.draft_advice_prompt() {
+                                    let job = Handoff { prompt, file: None };
+                                    if let Some(url) = route_url(other, &job) {
+                                        cx.open_url(&url);
+                                    }
+                                }
                             }
                         }
                     }))
-                    .child(name),
+                    .child(label),
             )
         });
 
@@ -396,8 +476,10 @@ impl Shell {
                         .text_style(TextStyle::body())
                         .text_color(theme.text_subtle)
                         .child(
-                            "It gets the posting and the list above, and is asked which to \
-                             pick — not to write anything. What it suggests arrives unticked.",
+                            "Browser prompts include the posting, redacted CV text and matching saved blocks. \
+                             A local coding assistant receives the posting and can read this CV plus \
+                             library.toml, add exact saved blocks as a separate variant, and create a \
+                             job-specific preset. DockCV flags file changes for reload.",
                         ),
                 )
                 .child(div().flex().flex_wrap().gap(px(6.0)).children(routes))
@@ -424,11 +506,11 @@ impl Shell {
                                 .child("Paste the answer"),
                         ),
                 )
-                .children(staged.then(|| {
+                .children(draft.advice_feedback.as_ref().map(|feedback| {
                     div()
                         .text_style(TextStyle::body())
-                        .text_color(theme.text_subtle)
-                        .child("The prompt is on your clipboard.")
+                        .text_color(if advice_running { theme.accent } else { theme.text_subtle })
+                        .child(feedback.clone())
                 })),
         )
     }
@@ -442,9 +524,8 @@ impl Shell {
     /// visibly a trade rather than a guess, and the entries below are things
     /// the user wrote that this page does not say.
     ///
-    /// Nothing here is generated, nothing is applied automatically, and a
-    /// confidential diary entry is named and never quoted (US-36) — the read
-    /// hands this function no text to print.
+    /// The count is a local keyword check, not a hiring score. Nothing here is
+    /// applied automatically, and confidential diary entries are never quoted.
     fn render_draft_posting_read(&self, cx: &mut Context<Self>) -> Option<Div> {
         let theme = *cx.theme();
         let read = self.drafting.as_ref()?.read.as_ref()?;
@@ -476,14 +557,30 @@ impl Shell {
                         .child(
                             div()
                                 .text_style(TextStyle::chip())
-                                .text_color(if answered * 2 >= read.terms {
+                                .text_color(if read.terms > 0 && answered * 2 >= read.terms {
                                     theme.success
                                 } else {
                                     theme.text_subtle
                                 })
-                                .child(format!("{answered} / {}", read.terms)),
+                                .child(if read.terms == 0 {
+                                    "No clear terms found".to_string()
+                                } else {
+                                    format!("{answered} / {} words found", read.terms)
+                                }),
                         ),
                 )
+                .children((read.terms == 0).then(|| {
+                    div()
+                        .text_style(TextStyle::body())
+                        .text_color(theme.text_muted)
+                        .child("Try pasting the full job description to compare its requirements with this CV.")
+                }))
+                .children((read.terms > 0).then(|| {
+                    div()
+                        .text_size(px(10.5))
+                        .text_color(theme.text_subtle)
+                        .child("A local keyword check against this CV, not a hiring score.")
+                }))
                 .children((!read.coverage.missing.is_empty()).then(|| {
                     div()
                         .flex()
@@ -512,7 +609,12 @@ impl Shell {
                                 })),
                         )
                 }))
-                .children((!read.unused.is_empty()).then(|| {
+                .children({
+                    let items: Vec<_> = super::advice::component_candidates(&read.unused)
+                        .into_iter()
+                        .map(|(_, item)| self.render_draft_unused_item(item, true, cx))
+                        .collect();
+                    (!items.is_empty()).then(|| {
                     div()
                         .flex()
                         .flex_col()
@@ -521,61 +623,138 @@ impl Shell {
                             div()
                                 .text_style(TextStyle::body())
                                 .text_color(theme.text_subtle)
-                                .child("You have written this down:"),
+                                .child("Saved CV blocks that match this job:"),
                         )
-                        .children(read.unused.iter().take(3).map(|item| {
-                            let (where_from, body) = match &item.source {
-                                UnusedSource::Diary { date, confidential } => (
-                                    format!("Diary · {date}"),
-                                    if *confidential {
-                                        "Marked confidential — open the Diary to read it."
-                                            .to_string()
-                                    } else {
-                                        item.text.clone().unwrap_or_default()
-                                    },
-                                ),
-                                UnusedSource::Library { section } => (
-                                    format!("Library · {}", crate::views::tailor::section_word(*section)),
-                                    item.text.clone().unwrap_or_default(),
-                                ),
-                            };
-                            div()
-                                .p(px(8.0))
-                                .rounded(theme.radius_sm())
-                                .bg(theme.elevated)
-                                .flex()
-                                .flex_col()
-                                .gap(px(2.0))
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_baseline()
-                                        .gap(px(7.0))
-                                        .child(
-                                            div()
-                                                .flex_none()
-                                                .text_style(TextStyle::chip())
-                                                .text_color(theme.text_subtle)
-                                                .child(where_from),
-                                        )
-                                        .child(
-                                            div()
-                                                .min_w_0()
-                                                .truncate()
-                                                .text_style(TextStyle::chip())
-                                                .text_color(theme.accent)
-                                                .child(item.terms.join(" · ")),
-                                        ),
-                                )
-                                .child(
-                                    div()
-                                        .text_style(TextStyle::body())
-                                        .text_color(theme.text_muted)
-                                        .child(body),
-                                )
-                        }))
-                }))
+                        .children(items)
+                    })
+                })
+                .children({
+                    let items: Vec<_> = read
+                        .unused
+                        .iter()
+                        .filter(|item| matches!(&item.source, UnusedSource::Diary { .. }))
+                        .take(5)
+                        .map(|item| self.render_draft_unused_item(item, false, cx))
+                        .collect();
+                    (!items.is_empty()).then(|| {
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.0))
+                            .child(
+                                div()
+                                    .text_style(TextStyle::body())
+                                    .text_color(theme.text_subtle)
+                                    .child("Related notes in your diary:"),
+                            )
+                            .children(items)
+                    })
+                })
         )
+    }
+
+    /// A posting match rendered from the exact source identity used by the
+    /// assistant prompt. Library items can be copied into a job-specific
+    /// variant; diary notes are read-only context and never sent to an assistant.
+    fn render_draft_unused_item(&self, item: &Unused, can_add: bool, cx: &mut Context<Self>) -> Div {
+        let theme = *cx.theme();
+        let (where_from, body) = match &item.source {
+            UnusedSource::Diary { date, confidential, .. } => (
+                format!("Diary · {date}"),
+                if *confidential {
+                    "Marked confidential — open the Diary to read it.".to_string()
+                } else {
+                    item.text.clone().unwrap_or_default()
+                },
+            ),
+            UnusedSource::Library { section, .. } => (
+                format!("Library · {}", crate::views::tailor::section_word(*section)),
+                item.text.clone().unwrap_or_default(),
+            ),
+        };
+        let suggested = self.drafting.as_ref().and_then(|draft| {
+            draft
+                .advice_components
+                .iter()
+                .find(|(source, snapshot, _)| {
+                    source == &item.source && snapshot == &body
+                })
+                .map(|(_, _, why)| why.clone())
+        });
+        let source = item.source.clone();
+        let added = self
+            .drafting
+            .as_ref()
+            .is_some_and(|draft| {
+                draft
+                    .added_components
+                    .contains(&(source.clone(), body.clone()))
+            });
+
+        div()
+            .p(px(8.0))
+            .rounded(theme.radius_sm())
+            .border_1()
+            .border_color(if suggested.is_some() { theme.accent.opacity(0.45) } else { theme.border })
+            .bg(theme.elevated)
+            .flex()
+            .flex_col()
+            .gap(px(2.0))
+            .child(
+                div()
+                    .flex()
+                    .items_baseline()
+                    .gap(px(7.0))
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_style(TextStyle::chip())
+                            .text_color(theme.text_subtle)
+                            .child(where_from),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_style(TextStyle::chip())
+                            .text_color(theme.accent)
+                            .child(item.terms.join(" · ")),
+                    ),
+            )
+            .child(
+                div()
+                    .text_style(TextStyle::body())
+                    .text_color(theme.text_muted)
+                    .child(body),
+            )
+            .children(suggested.as_ref().map(|why| {
+                div()
+                    .text_size(px(10.5))
+                    .line_height(px(15.0))
+                    .text_color(theme.accent)
+                    .child(format!("Suggested — {why}"))
+            }))
+            .children(can_add.then(|| {
+                Button::new(SharedString::from(format!(
+                    "draft-add-component-{}",
+                    match &source {
+                        UnusedSource::Library { section, index } => format!("{section:?}-{index}"),
+                        _ => String::new(),
+                    }
+                )))
+                .quiet()
+                .disabled(added)
+                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                    this.add_draft_component(source.clone(), cx);
+                }))
+                .child(if added {
+                    "Added to draft"
+                } else if suggested.is_some() {
+                    "Add suggested block"
+                } else {
+                    "Add block"
+                })
+            }))
     }
 
     /// Why this start, and what it becomes.
@@ -694,9 +873,8 @@ impl Shell {
                     .text_style(TextStyle::body())
                     .text_color(theme.text_muted)
                     .child(
-                        "The changes offered here are the other cuts of your sections. This CV \
-                         has none yet, so all it can offer is leaving a section out — write a \
-                         second version of a section in the editor and it appears here.",
+                        "This CV has no alternate section cuts yet. Add a relevant saved Library block above, \
+                         or write a second cut of a section in the editor; it will appear here.",
                     )
             }))
             .child(if changes.is_empty() {
@@ -705,9 +883,8 @@ impl Shell {
                     .text_style(TextStyle::body())
                     .text_color(theme.text_muted)
                     .child(
-                        "This CV has one cut of every section, so there is nothing to choose \
-                         between yet. Write a second version of a section in the editor and it \
-                         will appear here.",
+                        "This CV has one cut of every section, so there is nothing to choose between yet. \
+                         Add a relevant saved Library block above, or create a second cut in the editor.",
                     )
                     .into_any_element()
             } else {
@@ -740,13 +917,12 @@ impl Shell {
         // What the assistant said about this row, if one was asked. A
         // suggestion and nothing more: it changes how the row *reads* and never
         // whether it is on.
-        let suggested = self.drafting.as_ref().and_then(|d| {
-            d.advice
-                .as_ref()?
-                .changes
+        let suggested = self.drafting.as_ref().and_then(|draft| {
+            draft
+                .advice_changes
                 .iter()
-                .find(|(i, _)| *i == index)
-                .map(|(_, why)| why.clone())
+                .find(|(section, kind, _)| *section == change.section && *kind == change.kind)
+                .map(|(_, _, why)| why.clone())
         });
         // The section under a cut's name — "Lead with outcomes / Work
         // Experience" — but not under `Leave out Work Experience`, which has
@@ -869,6 +1045,12 @@ impl Shell {
 
     fn render_draft_actions(&self, cx: &mut Context<Self>, count: usize, source: &str) -> Div {
         let theme = *cx.theme();
+        let can_save = self.drafting.as_ref().is_some_and(|draft| {
+            draft.preview_current
+                && !draft.compiling
+                && !draft.advice_running
+                && !draft.external_change_pending
+        });
         div()
             .mt(px(14.0))
             .pt(px(12.0))
@@ -908,6 +1090,7 @@ impl Shell {
             .child(
                 Button::new("draft-save")
                     .action_primary()
+                    .disabled(!can_save)
                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                         this.save_version_draft(cx);
                     }))

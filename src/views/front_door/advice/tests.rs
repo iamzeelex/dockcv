@@ -16,9 +16,17 @@ fn change(name: &str, description: Option<&str>) -> Change {
 
 fn note(text: Option<&str>, confidential: bool) -> Unused {
     Unused {
-        source: UnusedSource::Diary {
-            date: "2026-03-12".into(),
-            confidential,
+        source: if confidential {
+            UnusedSource::Diary {
+                index: 0,
+                date: "2026-03-12".into(),
+                confidential,
+            }
+        } else {
+            UnusedSource::Library {
+                section: SectionKind::Work,
+                index: 0,
+            }
         },
         text: text.map(str::to_string),
         terms: vec!["incident".into()],
@@ -32,14 +40,17 @@ fn note(text: Option<&str>, confidential: bool) -> Unused {
 fn the_prompt_hands_over_a_menu_and_forbids_writing() {
     let prompt = advice_prompt(
         "We need a platform engineer.",
+        "Led platform reliability for five years.",
         &[change("Concise work", Some("Three bullets a role"))],
         &[note(Some("Ran the incident review practice."), false)],
+        &[],
     );
-    assert!(prompt.contains("C0: \"Concise work\" — Three bullets a role"));
-    assert!(prompt.contains("N0: Ran the incident review practice."));
+    assert!(prompt.contains("C0: Skills · \"Concise work\" — Three bullets a role"));
+    assert!(prompt.contains("N0: Work: Ran the incident review practice."));
+    assert!(prompt.contains("CURRENT CV: Led platform reliability"));
     let lower = prompt.to_lowercase();
-    assert!(lower.contains("do not write, rewrite or suggest any wording"));
-    assert!(lower.contains("only ids from the menu"));
+    assert!(lower.contains("never invent, rewrite or suggest wording"));
+    assert!(lower.contains("only ids from the menus"));
 }
 
 /// Every prompt that travels in a URL is one line — Claude Desktop was seen
@@ -48,20 +59,20 @@ fn the_prompt_hands_over_a_menu_and_forbids_writing() {
 fn the_prompt_is_one_line() {
     let prompt = advice_prompt(
         "We need someone.\n\nSecond paragraph.\n\tTabbed.",
+        "Current CV.",
         &[change("A", None)],
+        &[],
         &[],
     );
     assert!(!prompt.contains('\n'), "{prompt}");
     assert!(!prompt.contains('\t'), "{prompt}");
 }
 
-/// **US-36.** A confidential entry is named and never quoted — including to a
-/// model. The read hands this function `None` for its text, and what goes out
-/// is the fact that it exists.
+/// **US-36.** A confidential diary entry is not a candidate sent to the model.
 #[test]
-fn a_confidential_note_is_never_sent_verbatim() {
-    let prompt = advice_prompt("anything", &[], &[note(None, true)]);
-    assert!(prompt.contains("a diary entry from 2026-03-12, withheld"));
+fn a_confidential_note_is_not_sent() {
+    let prompt = advice_prompt("anything", "", &[], &[note(None, true)], &[]);
+    assert!(!prompt.contains("2026-03-12"));
     assert!(!prompt.to_lowercase().contains("acme"));
 }
 
@@ -70,7 +81,7 @@ fn a_confidential_note_is_never_sent_verbatim() {
 /// the end of the job.
 #[test]
 fn a_long_posting_is_cut_and_says_it_was() {
-    let prompt = advice_prompt(&"word ".repeat(4000), &[], &[]);
+    let prompt = advice_prompt(&"word ".repeat(4000), "Current CV", &[], &[], &[]);
     assert!(prompt.contains("[…truncated]"));
     assert!(prompt.chars().count() < 14_000, "{}", prompt.chars().count());
 }

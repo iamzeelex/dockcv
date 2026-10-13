@@ -214,7 +214,11 @@ impl Shell {
                     .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                         this.close_import(cx);
                     }))
-                    .child("‹ Back to CVs"),
+                    .child(if self.tailoring.is_some() {
+                        "‹ Back to job"
+                    } else {
+                        "‹ Back to CVs"
+                    }),
             );
 
         div()
@@ -308,9 +312,13 @@ impl Shell {
                 |this, cx| {
                     if let ImportStep::Step2Review { imported } = &this.import_step.clone() {
                         let doc = imported.doc.clone();
-                        this.create_doc(doc, "imported", cx);
-                        this.gallery_creating = false;
-                        this.import_step = ImportStep::Step1Drop;
+                        if this.tailoring.is_some() {
+                            this.create_tailoring_source(doc, "imported", cx);
+                        } else {
+                            this.create_doc(doc, "imported", cx);
+                            this.gallery_creating = false;
+                            this.import_step = ImportStep::Step1Drop;
+                        }
                     }
                 },
                 // Adopting mutates the *pending* import, not a document on

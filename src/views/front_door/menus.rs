@@ -192,10 +192,14 @@ impl Shell {
             ));
 
             let tailor = shell.clone();
+            let tailor_path = owned.clone();
             menu = menu.item(
                 PopupMenuItem::new(format!("Tailor from “{label}”…")).on_click(
                     move |_ev, window, cx| {
-                        let _ = tailor.update(cx, |this, cx| this.open_tailor(window, cx));
+                        let path = tailor_path.clone();
+                        let _ = tailor.update(cx, |this, cx| {
+                            this.open_tailor_from(path, index, window, cx)
+                        });
                     },
                 ),
             );
