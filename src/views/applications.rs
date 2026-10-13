@@ -745,10 +745,14 @@ impl Shell {
         application.advance_to(target, &vault::today_iso());
         applications.entries.push(application);
         let index = applications.entries.len() - 1;
-        save_status::record(
+        let path = vault::applications_path(&vault);
+        let seen = self.cache.applications_on_disk();
+        save_status::record_notebook(
             cx,
             "applications board",
-            vault::save_applications(&vault, &applications),
+            &path,
+            seen,
+            vault::save_applications_seen(&vault, &applications, seen),
         );
 
         self.open_application_detail(index, window, cx);
@@ -780,10 +784,14 @@ impl Shell {
                 first_send = true;
             }
         }
-        save_status::record(
+        let path = vault::applications_path(&vault);
+        let seen = self.cache.applications_on_disk();
+        save_status::record_notebook(
             cx,
             "applications board",
-            vault::save_applications(&vault, &applications),
+            &path,
+            seen,
+            vault::save_applications_seen(&vault, &applications, seen),
         );
         cx.notify();
 
@@ -801,10 +809,14 @@ impl Shell {
         };
         let mut applications = vault::load_applications(&vault);
         remove_at(&mut applications.entries, index);
-        save_status::record(
+        let path = vault::applications_path(&vault);
+        let seen = self.cache.applications_on_disk();
+        save_status::record_notebook(
             cx,
             "applications board",
-            vault::save_applications(&vault, &applications),
+            &path,
+            seen,
+            vault::save_applications_seen(&vault, &applications, seen),
         );
 
         // The detail panel holds an index into the list that just shifted.

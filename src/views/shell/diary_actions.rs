@@ -60,7 +60,15 @@ impl Shell {
                     source_doc: None,
                 },
             );
-            save_status::record(cx, "diary", vault::save_diary(&vault, &diary));
+            let path = vault::diary_path(&vault);
+            let seen = self.cache.diary_on_disk();
+            save_status::record_notebook(
+                cx,
+                "diary",
+                &path,
+                seen,
+                vault::save_diary_seen(&vault, &diary, seen),
+            );
         }
         field.update(cx, |state, cx| state.seed("", window, cx));
         if let Some(tag_field) = tag_field {
@@ -84,7 +92,15 @@ impl Shell {
             return;
         };
         entry.confidential = !entry.confidential;
-        save_status::record(cx, "diary", vault::save_diary(&vault, &diary));
+        let path = vault::diary_path(&vault);
+        let seen = self.cache.diary_on_disk();
+        save_status::record_notebook(
+            cx,
+            "diary",
+            &path,
+            seen,
+            vault::save_diary_seen(&vault, &diary, seen),
+        );
         cx.notify();
     }
 
@@ -94,7 +110,15 @@ impl Shell {
         };
         let mut diary = vault::load_diary(&vault);
         remove_at(&mut diary.entries, index);
-        save_status::record(cx, "diary", vault::save_diary(&vault, &diary));
+        let path = vault::diary_path(&vault);
+        let seen = self.cache.diary_on_disk();
+        save_status::record_notebook(
+            cx,
+            "diary",
+            &path,
+            seen,
+            vault::save_diary_seen(&vault, &diary, seen),
+        );
         cx.notify();
     }
 }

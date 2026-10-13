@@ -534,3 +534,97 @@ fn profiles_are_a_reserved_atomic_vault_file_and_usage_is_per_document() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn notebook_lost_update_prevention_and_atomic_writes() {
+    use crate::resume::model::{Applications, Diary, ProfileCatalog};
+    use crate::vault::{OnDisk, SaveError};
+
+    let dir = std::env::temp_dir().join(format!(
+        "dockcv-notebook-conflict-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("dir");
+
+    // 1. Library conflict detection
+    let (_lib, seen_lib) = super::load_library_seen(&dir);
+    assert_eq!(seen_lib, OnDisk::ABSENT);
+    super::save_library_seen(&dir, &Default::default(), seen_lib).expect("first save");
+    let (mut lib2, seen_lib2) = super::load_library_seen(&dir);
+    assert_ne!(seen_lib2, OnDisk::ABSENT);
+
+    // External change to library.toml
+    let lib_path = super::library_path(&dir);
+    std::fs::write(&lib_path, "work = []\n# external edit\n").expect("write external");
+
+    // Attempting to save with stale seen returns Conflict
+    lib2.work.push(crate::resume::model::Work {
+        name: "Acme".into(),
+        ..Default::default()
+    });
+    assert!(matches!(
+        super::save_library_seen(&dir, &lib2, seen_lib2),
+        Err(SaveError::Conflict)
+    ));
+
+    // 2. Diary conflict detection
+    let (_diary, seen_diary) = super::load_diary_seen(&dir);
+    super::save_diary_seen(&dir, &Diary::default(), seen_diary).expect("first diary save");
+    let (mut diary2, seen_diary2) = super::load_diary_seen(&dir);
+    let diary_path = super::diary_path(&dir);
+    std::fs::write(&diary_path, "entries = []\n# external diary edit\n").expect("write external");
+
+    diary2.entries.push(crate::resume::model::DiaryEntry {
+        text: "New entry".into(),
+        ..Default::default()
+    });
+    assert!(matches!(
+        super::save_diary_seen(&dir, &diary2, seen_diary2),
+        Err(SaveError::Conflict)
+    ));
+
+    // 3. Applications conflict detection
+    let (_apps, seen_apps) = super::load_applications_seen(&dir);
+    super::save_applications_seen(&dir, &Applications::default(), seen_apps)
+        .expect("first apps save");
+    let (mut apps2, seen_apps2) = super::load_applications_seen(&dir);
+    let apps_path = super::applications_path(&dir);
+    std::fs::write(&apps_path, "entries = []\n# external apps edit\n").expect("write external");
+
+    apps2.entries.push(crate::resume::model::Application {
+        company: "Beta".into(),
+        ..Default::default()
+    });
+    assert!(matches!(
+        super::save_applications_seen(&dir, &apps2, seen_apps2),
+        Err(SaveError::Conflict)
+    ));
+
+    // 4. Profiles conflict detection
+    let (_prof, seen_prof) = super::load_profiles_seen(&dir);
+    super::save_profiles_seen(&dir, &ProfileCatalog::default(), seen_prof)
+        .expect("first prof save");
+    let (mut prof2, seen_prof2) = super::load_profiles_seen(&dir);
+    let prof_path = super::profiles_path(&dir);
+    std::fs::write(&prof_path, "users = {}\n# external prof edit\n").expect("write external");
+
+    prof2.upsert("Custom", Default::default());
+    assert!(matches!(
+        super::save_profiles_seen(&dir, &prof2, seen_prof2),
+        Err(SaveError::Conflict)
+    ));
+
+    // 5. Atomic write helper replaces destination and cleans up
+    let test_file = dir.join("atomic_test.txt");
+    crate::vault::atomic_write(&test_file, "hello").expect("atomic write");
+    assert_eq!(std::fs::read_to_string(&test_file).unwrap(), "hello");
+    crate::vault::atomic_write(&test_file, "world").expect("atomic overwrite");
+    assert_eq!(std::fs::read_to_string(&test_file).unwrap(), "world");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

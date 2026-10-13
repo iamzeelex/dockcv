@@ -1110,7 +1110,15 @@ impl Shell {
             // No library pool for Profile or for custom sections (D-9).
             Profile | Custom(_) => {}
         }
-        save_status::record(cx, "library", vault::save_library(&vault, &library));
+        let path = vault::library_path(&vault);
+        let seen = self.cache.library_on_disk();
+        save_status::record_notebook(
+            cx,
+            "library",
+            &path,
+            seen,
+            vault::save_library_seen(&vault, &library, seen),
+        );
         cx.notify();
     }
 }

@@ -58,6 +58,7 @@ impl Shell {
                 // The line that says which vault a report is about.
                 log::info!("vault restored: {} ({documents} documents)", dir.display());
                 self.vault = Some(dir);
+                self.cache_stale = true;
                 self.screen = Screen::Gallery;
                 // Open into the CV the app was last in, not into a list of
                 // one. The reading needs no second field: applying a preset

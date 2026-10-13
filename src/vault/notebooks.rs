@@ -15,9 +15,30 @@ use std::path::{Path, PathBuf};
 use crate::resume::model::{ApplicationStatus, Applications, Diary, Library, ProfileCatalog};
 
 use crate::vault::{
-    list_documents, load, APPLICATIONS_FILE, DIARY_FILE, LIBRARY_FILE, PROFILES_FILE,
-    SNAPSHOTS_DIR,
+    atomic_write, list_documents, load, OnDisk, SaveError, APPLICATIONS_FILE, DIARY_FILE,
+    LIBRARY_FILE, PROFILES_FILE, SNAPSHOTS_DIR,
 };
+
+fn save_notebook<T: serde::Serialize>(
+    path: &Path,
+    data: &T,
+    seen: Option<OnDisk>,
+) -> Result<OnDisk, SaveError> {
+    let text = toml::to_string_pretty(data)
+        .map_err(|e| SaveError::Failed(format!("serialize: {e}")))?;
+    let current = OnDisk::read(path);
+    if let Some(seen) = seen {
+        if current != seen {
+            return Err(SaveError::Conflict);
+        }
+    }
+    let written = OnDisk::of(&text);
+    if written == current {
+        return Ok(current);
+    }
+    atomic_write(path, &text).map_err(SaveError::Failed)?;
+    Ok(written)
+}
 
 /// Path of the vault's block library file.
 pub fn library_path(vault_dir: &Path) -> PathBuf {
@@ -26,20 +47,35 @@ pub fn library_path(vault_dir: &Path) -> PathBuf {
 
 /// Load the vault's block library, or an empty one if absent / unreadable.
 pub fn load_library(vault_dir: &Path) -> Library {
-    fs::read_to_string(library_path(vault_dir))
-        .ok()
-        .and_then(|text| toml::from_str(&text).ok())
-        .unwrap_or_default()
+    load_library_seen(vault_dir).0
 }
 
-/// Atomically save the block library.
-pub fn save_library(vault_dir: &Path, library: &Library) -> Result<(), String> {
-    let text = toml::to_string_pretty(library).map_err(|e| format!("serialize: {e}"))?;
+/// Load the library and what was on disk, for checked writing later.
+pub fn load_library_seen(vault_dir: &Path) -> (Library, OnDisk) {
     let path = library_path(vault_dir);
-    let tmp = path.with_extension("toml.tmp");
-    fs::write(&tmp, text).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
-    Ok(())
+    let on_disk = OnDisk::read(&path);
+    let library = fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| toml::from_str(&text).ok())
+        .unwrap_or_default();
+    (library, on_disk)
+}
+
+/// Atomically save the block library without checking seen disk state.
+pub fn save_library(vault_dir: &Path, library: &Library) -> Result<(), String> {
+    save_notebook(&library_path(vault_dir), library, None)
+        .map(|_| ())
+        .map_err(|e| e.message())
+}
+
+/// Atomically save the block library, failing with [`SaveError::Conflict`] if the
+/// file on disk changed since `seen`.
+pub fn save_library_seen(
+    vault_dir: &Path,
+    library: &Library,
+    seen: OnDisk,
+) -> Result<OnDisk, SaveError> {
+    save_notebook(&library_path(vault_dir), library, Some(seen))
 }
 
 /// Path of the vault's diary file.
@@ -49,20 +85,35 @@ pub fn diary_path(vault_dir: &Path) -> PathBuf {
 
 /// Load the diary, or an empty one if absent / unreadable.
 pub fn load_diary(vault_dir: &Path) -> Diary {
-    fs::read_to_string(diary_path(vault_dir))
-        .ok()
-        .and_then(|text| toml::from_str(&text).ok())
-        .unwrap_or_default()
+    load_diary_seen(vault_dir).0
 }
 
-/// Atomically save the diary.
-pub fn save_diary(vault_dir: &Path, diary: &Diary) -> Result<(), String> {
-    let text = toml::to_string_pretty(diary).map_err(|e| format!("serialize: {e}"))?;
+/// Load the diary and what was on disk, for checked writing later.
+pub fn load_diary_seen(vault_dir: &Path) -> (Diary, OnDisk) {
     let path = diary_path(vault_dir);
-    let tmp = path.with_extension("toml.tmp");
-    fs::write(&tmp, text).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
-    Ok(())
+    let on_disk = OnDisk::read(&path);
+    let diary = fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| toml::from_str(&text).ok())
+        .unwrap_or_default();
+    (diary, on_disk)
+}
+
+/// Atomically save the diary without checking seen disk state.
+pub fn save_diary(vault_dir: &Path, diary: &Diary) -> Result<(), String> {
+    save_notebook(&diary_path(vault_dir), diary, None)
+        .map(|_| ())
+        .map_err(|e| e.message())
+}
+
+/// Atomically save the diary, failing with [`SaveError::Conflict`] if the
+/// file on disk changed since `seen`.
+pub fn save_diary_seen(
+    vault_dir: &Path,
+    diary: &Diary,
+    seen: OnDisk,
+) -> Result<OnDisk, SaveError> {
+    save_notebook(&diary_path(vault_dir), diary, Some(seen))
 }
 
 /// Path of the vault's applications file.
@@ -71,28 +122,19 @@ pub fn applications_path(vault_dir: &Path) -> PathBuf {
 }
 
 /// Load the applications board, or an empty one if absent / unreadable.
-///
-/// A missing `applications.toml` (every vault written before this feature)
-/// is exactly the empty-board case — never an error. `Applications::normalize`
-/// is the migration for files written before `Application::furthest` existed:
-/// it raises each entry's `furthest` to at least its current `status`, so an
-/// old row's conversion funnel isn't silently zeroed just because the field
-/// wasn't there to deserialize.
 pub fn load_applications(vault_dir: &Path) -> Applications {
-    let mut applications: Applications = fs::read_to_string(applications_path(vault_dir))
+    load_applications_seen(vault_dir).0
+}
+
+/// Load the applications board and what was on disk, for checked writing later.
+pub fn load_applications_seen(vault_dir: &Path) -> (Applications, OnDisk) {
+    let path = applications_path(vault_dir);
+    let on_disk = OnDisk::read(&path);
+    let mut applications: Applications = fs::read_to_string(&path)
         .ok()
         .and_then(|text| toml::from_str(&text).ok())
         .unwrap_or_default();
     for entry in &mut applications.entries {
-        // An empty status is ours, not the author's.
-        //
-        // The word is otherwise kept exactly as written, and deliberately: a
-        // hand-edited `status = "ofer"` must not be silently rewritten to
-        // `wishlist`, because then an offer stops having ever existed. `""` is
-        // the one value that rule does not protect — nobody types it. It came
-        // from `Application::default` disagreeing with serde's own default
-        // (fixed at the source), and every card the app made carried it. So it
-        // is filled in rather than warned about for the life of the vault.
         if entry.status_word.is_empty() {
             entry.status_word = ApplicationStatus::Wishlist.word().to_string();
         }
@@ -106,17 +148,24 @@ pub fn load_applications(vault_dir: &Path) -> Applications {
             );
         }
     }
-    applications
+    (applications, on_disk)
 }
 
-/// Atomically save the applications board.
+/// Atomically save the applications board without checking seen disk state.
 pub fn save_applications(vault_dir: &Path, applications: &Applications) -> Result<(), String> {
-    let text = toml::to_string_pretty(applications).map_err(|e| format!("serialize: {e}"))?;
-    let path = applications_path(vault_dir);
-    let tmp = path.with_extension("toml.tmp");
-    fs::write(&tmp, text).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
-    Ok(())
+    save_notebook(&applications_path(vault_dir), applications, None)
+        .map(|_| ())
+        .map_err(|e| e.message())
+}
+
+/// Atomically save the applications board, failing with [`SaveError::Conflict`] if the
+/// file on disk changed since `seen`.
+pub fn save_applications_seen(
+    vault_dir: &Path,
+    applications: &Applications,
+    seen: OnDisk,
+) -> Result<OnDisk, SaveError> {
+    save_notebook(&applications_path(vault_dir), applications, Some(seen))
 }
 
 /// Path of the vault's reusable layout profiles.
@@ -127,20 +176,36 @@ pub fn profiles_path(vault_dir: &Path) -> PathBuf {
 /// Load user profiles. Built-ins live in code, so a missing or unreadable
 /// file is exactly an empty user catalog and never prevents the vault opening.
 pub fn load_profiles(vault_dir: &Path) -> ProfileCatalog {
-    fs::read_to_string(profiles_path(vault_dir))
-        .ok()
-        .and_then(|text| toml::from_str(&text).ok())
-        .unwrap_or_default()
+    load_profiles_seen(vault_dir).0
 }
 
-/// Atomically save user profiles.
-pub fn save_profiles(vault_dir: &Path, profiles: &ProfileCatalog) -> Result<(), String> {
-    let text = toml::to_string_pretty(profiles).map_err(|e| format!("serialize: {e}"))?;
+/// Load user profiles and what was on disk, for checked writing later.
+pub fn load_profiles_seen(vault_dir: &Path) -> (ProfileCatalog, OnDisk) {
     let path = profiles_path(vault_dir);
-    let tmp = path.with_extension("toml.tmp");
-    fs::write(&tmp, text).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {}: {e}", path.display()))?;
-    Ok(())
+    let on_disk = OnDisk::read(&path);
+    let catalog = fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| toml::from_str(&text).ok())
+        .unwrap_or_default();
+    (catalog, on_disk)
+}
+
+/// Atomically save user profiles without checking seen disk state.
+#[allow(dead_code)]
+pub fn save_profiles(vault_dir: &Path, profiles: &ProfileCatalog) -> Result<(), String> {
+    save_notebook(&profiles_path(vault_dir), profiles, None)
+        .map(|_| ())
+        .map_err(|e| e.message())
+}
+
+/// Atomically save user profiles, failing with [`SaveError::Conflict`] if the
+/// file on disk changed since `seen`.
+pub fn save_profiles_seen(
+    vault_dir: &Path,
+    profiles: &ProfileCatalog,
+    seen: OnDisk,
+) -> Result<OnDisk, SaveError> {
+    save_notebook(&profiles_path(vault_dir), profiles, Some(seen))
 }
 
 /// Document stems whose working copy or any preset names `profile`.

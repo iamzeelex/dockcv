@@ -112,6 +112,7 @@ impl Shell {
     /// separate because it holds a document of its own; it is told to look, and
     /// looks on its next frame, where it has the `Window` a recompile needs.
     pub(crate) fn vault_changed_on_disk(&mut self, cx: &mut Context<Self>) {
+        self.cache_stale = true;
         if let Some(draft) = self.drafting.as_mut() {
             draft.external_change_pending = vault::OnDisk::read(&draft.path) != draft.on_disk;
         }

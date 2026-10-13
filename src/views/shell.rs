@@ -179,6 +179,9 @@ pub struct Shell {
     /// The vault, parsed once per change instead of once per frame. Refreshed
     /// at the top of `render`; every screen reads it rather than the disk.
     pub(super) cache: VaultCache,
+    /// Whether the cache needs to be rechecked against disk (e.g. after external
+    /// modification or window focus).
+    pub(super) cache_stale: bool,
 }
 
 impl Shell {
@@ -258,6 +261,7 @@ impl Shell {
             undo_histories: HashMap::new(),
             editing_path: None,
             cache: VaultCache::default(),
+            cache_stale: true,
         }
     }
 }

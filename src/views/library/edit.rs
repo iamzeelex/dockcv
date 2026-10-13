@@ -364,6 +364,7 @@ pub(crate) struct LibraryEdit {
     pub index: Option<usize>,
     /// One box per [`fields_for`] entry, in the same order.
     pub values: Vec<Entity<TextFieldState>>,
+    pub on_disk: vault::OnDisk,
     /// Kept so a keystroke re-renders the sheet — that is what keeps "Save
     /// block" from staying greyed out while you type into it. Dropped with the
     /// form, which is why the fields can be built per-opening.
@@ -424,6 +425,7 @@ impl Shell {
             section,
             index,
             values,
+            on_disk: self.cache.library_on_disk(),
             _subscriptions: subscriptions,
         });
         cx.notify();
@@ -470,7 +472,14 @@ impl Shell {
         // An all-blank form writes nothing — the sheet keeps Save disabled for
         // that case, and this is the guard behind the guard.
         if apply(&mut library, section, index, &values) {
-            save_status::record(cx, "library", vault::save_library(&vault, &library));
+            let path = vault::library_path(&vault);
+            save_status::record_notebook(
+                cx,
+                "library",
+                &path,
+                form.on_disk,
+                vault::save_library_seen(&vault, &library, form.on_disk),
+            );
         }
         self.library_edit = None;
 

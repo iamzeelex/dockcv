@@ -473,9 +473,12 @@ impl Root {
         };
         let mut profiles = self.profiles.clone();
         profiles.upsert(detachment.profile.clone(), self.doc.layout);
-        let result = vault::save_profiles(&self.vault_dir, &profiles);
-        save_status::record(cx, "profiles", result.clone());
-        if result.is_err() {
+        let path = vault::profiles_path(&self.vault_dir);
+        let result = vault::save_profiles_seen(&self.vault_dir, &profiles, self.profiles_on_disk);
+        let ok = result.is_ok();
+        self.profiles_on_disk =
+            save_status::record_notebook(cx, "profiles", &path, self.profiles_on_disk, result);
+        if !ok {
             return;
         }
         self.profiles = profiles;
@@ -541,9 +544,12 @@ impl Root {
         }
         let mut profiles = self.profiles.clone();
         profiles.upsert(name.clone(), self.doc.layout);
-        let result = vault::save_profiles(&self.vault_dir, &profiles);
-        save_status::record(cx, "profiles", result.clone());
-        if result.is_err() {
+        let path = vault::profiles_path(&self.vault_dir);
+        let result = vault::save_profiles_seen(&self.vault_dir, &profiles, self.profiles_on_disk);
+        let ok = result.is_ok();
+        self.profiles_on_disk =
+            save_status::record_notebook(cx, "profiles", &path, self.profiles_on_disk, result);
+        if !ok {
             return;
         }
         self.profiles = profiles;

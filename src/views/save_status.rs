@@ -177,6 +177,31 @@ pub fn record_document(
     }
 }
 
+/// Record a notebook write (`library`, `diary`, `applications board`, `profiles`),
+/// reporting external file conflicts identically to documents.
+pub fn record_notebook(
+    cx: &mut App,
+    what: &'static str,
+    path: &Path,
+    seen: vault::OnDisk,
+    result: Result<vault::OnDisk, vault::SaveError>,
+) -> vault::OnDisk {
+    match result {
+        Ok(now) => {
+            record(cx, what, Ok(()));
+            now
+        }
+        Err(vault::SaveError::Conflict) => {
+            report_conflict(cx, path);
+            seen
+        }
+        Err(error) => {
+            record(cx, what, Err(error.message()));
+            seen
+        }
+    }
+}
+
 /// Say that a file changed under a document we are holding, and that both
 /// versions are still here.
 ///

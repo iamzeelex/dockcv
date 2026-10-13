@@ -52,10 +52,18 @@ impl Render for Shell {
         self.ensure_inputs(window, cx);
         self.ensure_vault_watch(window, cx);
         // Before anything draws. Every screen below reads `self.cache` rather
-        // than the disk, so this one call is the whole of the vault I/O in a
-        // frame — and it does nothing at all unless the directory moved.
+        // than the disk. Only perform filesystem checks when a state change was
+        // signalled (save revision bumped, external change detected, or vault changed).
         let revision = save_status::vault_revision(cx);
-        let vault_changed = self.cache.refresh(self.vault.as_deref(), revision);
+        let needs_refresh = self.cache_stale
+            || self.cache.loaded_from() != self.vault.as_deref()
+            || self.cache.revision() != revision;
+        let vault_changed = if needs_refresh {
+            self.cache_stale = false;
+            self.cache.refresh(self.vault.as_deref(), revision)
+        } else {
+            false
+        };
         if vault_changed {
             self.refresh_draft_read();
         }

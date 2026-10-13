@@ -80,6 +80,7 @@ pub struct Root {
     /// User profiles from `<vault>/profiles.toml`. Built-ins are supplied by
     /// `ProfileCatalog` itself and therefore exist even when this is empty.
     pub(super) profiles: ProfileCatalog,
+    pub(super) profiles_on_disk: vault::OnDisk,
     /// Why a shared profile was detached by the first manual layout edit.
     /// Ephemeral interaction state; the durable result is `layout_profile =
     /// None` plus the copied-and-edited `layout` in the document.
@@ -271,7 +272,7 @@ impl Root {
             .unwrap_or_else(|| PathBuf::from("."));
         let library = vault::load_library(&vault_dir);
         let diary = vault::load_diary(&vault_dir);
-        let profiles = vault::load_profiles(&vault_dir);
+        let (profiles, profiles_on_disk) = vault::load_profiles_seen(&vault_dir);
 
         let engine = Arc::new(Mutex::new(TypstEngine::new(
             template::generate_for_with_profiles(&doc, &profiles),
@@ -288,6 +289,7 @@ impl Root {
             engine,
             doc,
             profiles,
+            profiles_on_disk,
             profile_detachment: None,
             profile_fork: None,
             ats_findings: Vec::new(),

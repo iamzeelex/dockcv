@@ -89,9 +89,13 @@ pub(super) struct VaultCache {
     /// document itself (`library/usage.rs`).
     documents: Vec<Option<ResumeDoc>>,
     library: Library,
+    library_on_disk: vault::OnDisk,
     diary: Diary,
+    diary_on_disk: vault::OnDisk,
     applications: Applications,
+    applications_on_disk: vault::OnDisk,
     profiles: ProfileCatalog,
+    profiles_on_disk: vault::OnDisk,
 }
 
 impl VaultCache {
@@ -119,15 +123,31 @@ impl VaultCache {
         let loaded = vault::load_all(dir);
         self.metadata = loaded.iter().map(|(meta, _)| meta.clone()).collect();
         self.documents = loaded.into_iter().map(|(_, doc)| doc).collect();
-        self.library = vault::load_library(dir);
-        self.diary = vault::load_diary(dir);
-        self.applications = vault::load_applications(dir);
-        self.profiles = vault::load_profiles(dir);
+        let (library, lib_on_disk) = vault::load_library_seen(dir);
+        let (diary, diary_on_disk) = vault::load_diary_seen(dir);
+        let (applications, apps_on_disk) = vault::load_applications_seen(dir);
+        let (profiles, prof_on_disk) = vault::load_profiles_seen(dir);
+        self.library = library;
+        self.library_on_disk = lib_on_disk;
+        self.diary = diary;
+        self.diary_on_disk = diary_on_disk;
+        self.applications = applications;
+        self.applications_on_disk = apps_on_disk;
+        self.profiles = profiles;
+        self.profiles_on_disk = prof_on_disk;
 
         self.loaded_from = Some(dir.to_path_buf());
         self.fingerprint = fingerprint;
         self.revision = revision;
         true
+    }
+
+    pub(super) fn loaded_from(&self) -> Option<&Path> {
+        self.loaded_from.as_deref()
+    }
+
+    pub(super) fn revision(&self) -> u64 {
+        self.revision
     }
 
     pub(super) fn metadata(&self) -> &[DocMeta] {
@@ -155,16 +175,33 @@ impl VaultCache {
         &self.library
     }
 
+    pub(super) fn library_on_disk(&self) -> vault::OnDisk {
+        self.library_on_disk
+    }
+
     pub(super) fn diary(&self) -> &Diary {
         &self.diary
+    }
+
+    pub(super) fn diary_on_disk(&self) -> vault::OnDisk {
+        self.diary_on_disk
     }
 
     pub(super) fn applications(&self) -> &Applications {
         &self.applications
     }
 
+    pub(super) fn applications_on_disk(&self) -> vault::OnDisk {
+        self.applications_on_disk
+    }
+
     pub(super) fn profiles(&self) -> &ProfileCatalog {
         &self.profiles
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn profiles_on_disk(&self) -> vault::OnDisk {
+        self.profiles_on_disk
     }
 }
 
@@ -317,6 +354,32 @@ mod tests {
         cache.refresh(Some(&dir), 1);
         assert_eq!(cache.metadata().len(), before, "still one document");
         assert_eq!(cache.revision, 1, "the bump was taken");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn notebook_on_disk_hashes_are_tracked_on_refresh() {
+        use crate::resume::model::DiaryEntry;
+        use crate::vault::OnDisk;
+
+        let dir = temp_vault("hashes");
+        let mut cache = VaultCache::default();
+        cache.refresh(Some(&dir), 0);
+        assert_eq!(cache.library_on_disk(), OnDisk::ABSENT);
+        assert_eq!(cache.diary_on_disk(), OnDisk::ABSENT);
+
+        let mut diary = Diary::default();
+        diary.entries.push(DiaryEntry {
+            date: "2026-09-01".into(),
+            text: "Entry".into(),
+            ..Default::default()
+        });
+        vault::save_diary(&dir, &diary).expect("save");
+
+        cache.refresh(Some(&dir), 1);
+        assert_ne!(cache.diary_on_disk(), OnDisk::ABSENT);
+        assert_eq!(cache.diary_on_disk(), OnDisk::read(&vault::diary_path(&dir)));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

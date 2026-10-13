@@ -12,7 +12,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::resume::model::ResumeDoc;
 
+mod atomic;
 mod notebooks;
+
+pub use atomic::atomic_write;
 
 /// The vault's notebooks, re-exported so `vault::load_applications` and its
 /// eighty-odd siblings keep working.
@@ -696,7 +699,7 @@ impl OnDisk {
             .unwrap_or(Self::ABSENT)
     }
 
-    fn of(text: &str) -> Self {
+    pub fn of(text: &str) -> Self {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         text.hash(&mut hasher);
@@ -749,11 +752,7 @@ pub fn save(doc: &ResumeDoc, path: &Path, seen: OnDisk) -> Result<OnDisk, SaveEr
         return Ok(current);
     }
 
-    let tmp = path.with_extension("toml.tmp");
-    fs::write(&tmp, text)
-        .map_err(|e| SaveError::Failed(format!("write {}: {e}", tmp.display())))?;
-    fs::rename(&tmp, path)
-        .map_err(|e| SaveError::Failed(format!("rename {}: {e}", path.display())))?;
+    atomic_write(path, &text).map_err(SaveError::Failed)?;
     Ok(written)
 }
 

@@ -44,6 +44,7 @@ const PANEL_WIDTH: f32 = 380.0;
 /// card ever opened, one dead subscription per visit.
 pub(crate) struct ApplicationDetail {
     pub(crate) index: usize,
+    pub(crate) on_disk: vault::OnDisk,
     company: Entity<TextFieldState>,
     role: Entity<TextFieldState>,
     url: Entity<TextFieldState>,
@@ -146,6 +147,7 @@ impl Shell {
 
         self.applications_detail = Some(ApplicationDetail {
             index,
+            on_disk: self.cache.applications_on_disk(),
             company,
             role,
             url,
@@ -186,10 +188,13 @@ impl Shell {
             let mut applications = vault::load_applications(&vault);
             if applications.entries.get(detail.index).is_some() {
                 crate::views::shell::remove_at(&mut applications.entries, detail.index);
-                save_status::record(
+                let path = vault::applications_path(&vault);
+                save_status::record_notebook(
                     cx,
                     "applications board",
-                    vault::save_applications(&vault, &applications),
+                    &path,
+                    detail.on_disk,
+                    vault::save_applications_seen(&vault, &applications, detail.on_disk),
                 );
             }
         }
@@ -213,10 +218,13 @@ impl Shell {
                 .is_some_and(is_unnamed);
             if blank {
                 crate::views::shell::remove_at(&mut applications.entries, detail.index);
-                save_status::record(
+                let path = vault::applications_path(&vault);
+                save_status::record_notebook(
                     cx,
                     "applications board",
-                    vault::save_applications(&vault, &applications),
+                    &path,
+                    detail.on_disk,
+                    vault::save_applications_seen(&vault, &applications, detail.on_disk),
                 );
             }
         }
@@ -260,11 +268,18 @@ impl Shell {
             return;
         }
         *app = updated;
-        save_status::record(
+        let path = vault::applications_path(&vault);
+        let seen = detail.on_disk;
+        let next_disk = save_status::record_notebook(
             cx,
             "applications board",
-            vault::save_applications(&vault, &applications),
+            &path,
+            seen,
+            vault::save_applications_seen(&vault, &applications, seen),
         );
+        if let Some(detail) = self.applications_detail.as_mut() {
+            detail.on_disk = next_disk;
+        }
         cx.notify();
     }
 
@@ -285,10 +300,14 @@ impl Shell {
             return;
         };
         change(app);
-        save_status::record(
+        let path = vault::applications_path(&vault);
+        let seen = self.cache.applications_on_disk();
+        save_status::record_notebook(
             cx,
             "applications board",
-            vault::save_applications(&vault, &applications),
+            &path,
+            seen,
+            vault::save_applications_seen(&vault, &applications, seen),
         );
         cx.notify();
     }
