@@ -133,117 +133,13 @@ const INVISIBLE: &[char] = &[
 /// English delegates to the product's own default rather than repeating it, so
 /// the two cannot drift apart.
 pub fn preferred_heading(kind: SectionKind, language: DocumentLanguage) -> &'static str {
-    use DocumentLanguage::*;
-    use SectionKind::*;
-    match (kind, language) {
-        (_, English) => ResumeDoc::default_section_title(kind),
-        (Profile, German) => "Profil",
-        (Work, German) => "Berufserfahrung",
-        (Education, German) => "Ausbildung",
-        (Skills, German) => "Kenntnisse",
-        (Certificates, German) => "Zertifikate",
-        (Organizations, German) => "Ehrenamt",
-        (Custom(_), German) => "",
+    if let SectionKind::Custom(_) = kind {
+        return "";
     }
+    crate::resume::taxonomy::SectionTaxonomy::global()
+        .preferred_heading(kind, language.code())
+        .unwrap_or_else(|| ResumeDoc::default_section_title(kind))
 }
-
-const KNOWN_HEADINGS: &[(SectionKind, &[&str])] = &[
-    (
-        SectionKind::Profile,
-        &[
-            "profile",
-            "summary",
-            "professional summary",
-            "about",
-            "about me",
-            "objective",
-            "career objective",
-            "про себе",
-            "о себе",
-            "резюме",
-            "profil",
-            "kurzprofil",
-            "über mich",
-            "zusammenfassung",
-        ],
-    ),
-    (
-        SectionKind::Work,
-        &[
-            "work experience",
-            "experience",
-            "professional experience",
-            "employment",
-            "employment history",
-            "work history",
-            "career history",
-            "досвід роботи",
-            "опыт работы",
-            "berufserfahrung",
-            "beruflicher werdegang",
-            "werdegang",
-            "praxiserfahrung",
-        ],
-    ),
-    (
-        SectionKind::Education,
-        &[
-            "education",
-            "education and training",
-            "academic background",
-            "освіта",
-            "образование",
-            "ausbildung",
-            "bildungsweg",
-            "akademischer werdegang",
-            "studium",
-        ],
-    ),
-    (
-        SectionKind::Skills,
-        &[
-            "skills",
-            "technical skills",
-            "core competencies",
-            "competencies",
-            "навички",
-            "навыки",
-            "kenntnisse",
-            "fähigkeiten",
-            "kompetenzen",
-            "fachkenntnisse",
-        ],
-    ),
-    (
-        SectionKind::Certificates,
-        &[
-            "certifications",
-            "certificates",
-            "licenses and certifications",
-            "licences and certifications",
-            "сертифікати",
-            "сертификаты",
-            "zertifikate",
-            "zertifizierungen",
-        ],
-    ),
-    (
-        SectionKind::Organizations,
-        &[
-            "volunteering",
-            "volunteer experience",
-            "volunteer",
-            "organizations",
-            "organisations",
-            "community involvement",
-            "волонтерство",
-            "громадська діяльність",
-            "ehrenamt",
-            "ehrenamtliche tätigkeit",
-            "engagement",
-        ],
-    ),
-];
 
 /// Every printed string in the document, with the field it came from.
 ///
@@ -386,14 +282,12 @@ pub fn lint(resume: &Resume, language: DocumentLanguage) -> Vec<Finding> {
             // `Publications` is advice to stop having one.
             continue;
         }
-        let Some(known) = KNOWN_HEADINGS.iter().find(|(k, _)| *k == kind) else {
-            continue;
-        };
         let title = resolve_section_title(resume, kind);
         if title.trim().is_empty() {
             continue;
         }
-        if !known.1.contains(&normalize_heading(&title).as_str()) {
+        let norm = normalize_heading(&title);
+        if !crate::resume::taxonomy::SectionTaxonomy::global().is_known_heading(kind, &norm) {
             out.push(Finding {
                 rule: Rule::HeadingNoParserKnows {
                     title,

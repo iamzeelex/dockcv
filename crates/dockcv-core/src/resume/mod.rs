@@ -22,6 +22,7 @@ pub mod model;
 pub mod outcomes;
 pub mod posting;
 pub mod presets;
+pub mod taxonomy;
 pub mod template;
 
 pub use document_toml::parse_document_toml;

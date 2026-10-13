@@ -21,17 +21,8 @@ static TAXONOMY_TOML: &str = include_str!("../../../assets/taxonomy.toml");
 static INDEXED_TAXONOMY: OnceLock<IndexedTaxonomy> = OnceLock::new();
 
 #[derive(Debug, Deserialize, Default)]
-pub(crate) struct LanguageCorpus {
-    en: Option<Vec<String>>,
-    ru: Option<Vec<String>>,
-    de: Option<Vec<String>>,
-    fr: Option<Vec<String>>,
-    es: Option<Vec<String>>,
-    it: Option<Vec<String>>,
-    pt: Option<Vec<String>>,
-    nl: Option<Vec<String>>,
-    pl: Option<Vec<String>>,
-}
+#[serde(transparent)]
+pub(crate) struct LanguageCorpus(std::collections::HashMap<String, Vec<String>>);
 
 pub(crate) struct KeywordEntry {
     clean: String,
@@ -49,11 +40,7 @@ pub(crate) struct IndexedTaxonomy {
 impl LanguageCorpus {
     pub(crate) fn all_keywords(&self) -> Vec<String> {
         let mut list = Vec::new();
-        let fields = [
-            &self.en, &self.ru, &self.de, &self.fr, &self.es, &self.it, &self.pt, &self.nl,
-            &self.pl,
-        ];
-        for items in fields.into_iter().flatten() {
+        for items in self.0.values() {
             list.extend(items.clone());
         }
         list
