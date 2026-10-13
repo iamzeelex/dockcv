@@ -89,7 +89,13 @@ impl Root {
         self.profile_detachment = None;
         self.profile_fork = None;
         self.reset_layout_sliders();
-        self.focus_handle.focus(window, cx);
+        if !self
+            .fields
+            .values()
+            .any(|b| b.state.read(cx).is_focused(window, cx))
+        {
+            self.focus_handle.focus(window, cx);
+        }
         cx.notify();
         self.schedule_recompile(window, cx);
         self.schedule_save(cx);

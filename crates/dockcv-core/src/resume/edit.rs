@@ -192,6 +192,49 @@ impl FieldId {
         })
     }
 
+    /// Which repeatable list this field belongs to, if any.
+    pub fn list_id(&self) -> Option<ListId> {
+        use FieldId::*;
+        match *self {
+            ProfileNetwork(_) | ProfileUsername(_) | ProfileUrl(_) => Some(ListId::Profiles),
+            WorkName(_)
+            | WorkPosition(_)
+            | WorkLocation(_)
+            | WorkStart(_)
+            | WorkEnd(_)
+            | WorkUrl(_)
+            | WorkSummary(_) => Some(ListId::Work),
+            WorkHighlight(i, _) => Some(ListId::WorkHighlights(i)),
+            EduInstitution(_)
+            | EduStudyType(_)
+            | EduStart(_)
+            | EduEnd(_)
+            | EduUrl(_) => Some(ListId::Education),
+            EduHighlight(i, _) => Some(ListId::EduHighlights(i)),
+            SkillName(_) => Some(ListId::Skills),
+            SkillKeyword(i, _) => Some(ListId::SkillKeywords(i)),
+            CertName(_) | CertIssuer(_) | CertDate(_) | CertUrl(_) => Some(ListId::Certificates),
+            VolOrg(_) | VolPosition(_) | VolStart(_) | VolEnd(_) | VolUrl(_) => Some(ListId::Volunteer),
+            VolHighlight(i, _) => Some(ListId::VolHighlights(i)),
+            CustomEntryTitle(id, _)
+            | CustomEntrySubtitle(id, _)
+            | CustomEntryStart(id, _)
+            | CustomEntryEnd(id, _)
+            | CustomEntryUrl(id, _) => Some(ListId::CustomEntries(id)),
+            CustomEntryHighlight(id, i, _) => Some(ListId::CustomEntryHighlights(id, i)),
+            Name
+            | Label
+            | Summary
+            | Email
+            | Phone
+            | Location
+            | Url
+            | CustomSectionTitle(_)
+            | VariantName(_)
+            | PresetName(_) => None,
+        }
+    }
+
     /// Every field the document currently addresses, in form order.
     ///
     /// Lives here, beside [`FieldId::get`], so it cannot drift from the
@@ -578,6 +621,107 @@ impl ListId {
             }
         }
     }
+
+    /// Number of items in this list in the document's active variant.
+    pub fn len(&self, doc: &ResumeDoc) -> usize {
+        match *self {
+            Self::Work => doc.work.active().len(),
+            Self::Education => doc.education.active().len(),
+            Self::Skills => doc.skills.active().len(),
+            Self::Certificates => doc.certificates.active().len(),
+            Self::Volunteer => doc.volunteer.active().len(),
+            Self::Profiles => doc.profile.active().profiles.len(),
+            Self::WorkHighlights(i) => doc
+                .work
+                .active()
+                .get(i)
+                .map(|w| w.highlights.len())
+                .unwrap_or(0),
+            Self::EduHighlights(i) => doc
+                .education
+                .active()
+                .get(i)
+                .map(|e| e.highlights.len())
+                .unwrap_or(0),
+            Self::VolHighlights(i) => doc
+                .volunteer
+                .active()
+                .get(i)
+                .map(|v| v.highlights.len())
+                .unwrap_or(0),
+            Self::SkillKeywords(i) => doc
+                .skills
+                .active()
+                .get(i)
+                .map(|s| s.keywords.len())
+                .unwrap_or(0),
+            Self::CustomEntries(id) => doc
+                .custom_section(id)
+                .map(|s| s.content.active().len())
+                .unwrap_or(0),
+            Self::CustomEntryHighlights(id, i) => doc
+                .custom_section(id)
+                .and_then(|s| s.content.active().get(i))
+                .map(|e| e.highlights.len())
+                .unwrap_or(0),
+        }
+    }
+
+    pub fn is_empty(&self, doc: &ResumeDoc) -> bool {
+        self.len(doc) == 0
+    }
+
+    /// Swap items at indices `a` and `b` in the list (bounds-checked).
+    pub fn swap(&self, doc: &mut ResumeDoc, a: usize, b: usize) {
+        if a == b {
+            return;
+        }
+        let len = self.len(doc);
+        if a >= len || b >= len {
+            return;
+        }
+        match *self {
+            Self::Work => doc.work.active_mut().swap(a, b),
+            Self::Education => doc.education.active_mut().swap(a, b),
+            Self::Skills => doc.skills.active_mut().swap(a, b),
+            Self::Certificates => doc.certificates.active_mut().swap(a, b),
+            Self::Volunteer => doc.volunteer.active_mut().swap(a, b),
+            Self::Profiles => doc.profile.active_mut().profiles.swap(a, b),
+            Self::WorkHighlights(i) => {
+                if let Some(w) = doc.work.active_mut().get_mut(i) {
+                    w.highlights.swap(a, b);
+                }
+            }
+            Self::EduHighlights(i) => {
+                if let Some(e) = doc.education.active_mut().get_mut(i) {
+                    e.highlights.swap(a, b);
+                }
+            }
+            Self::VolHighlights(i) => {
+                if let Some(v) = doc.volunteer.active_mut().get_mut(i) {
+                    v.highlights.swap(a, b);
+                }
+            }
+            Self::SkillKeywords(i) => {
+                if let Some(s) = doc.skills.active_mut().get_mut(i) {
+                    s.keywords.swap(a, b);
+                }
+            }
+            Self::CustomEntries(id) => {
+                if let Some(s) = doc.custom_section_mut(id) {
+                    s.content.active_mut().swap(a, b);
+                }
+            }
+            Self::CustomEntryHighlights(id, i) => {
+                if let Some(entry) = doc
+                    .custom_section_mut(id)
+                    .and_then(|s| s.content.active_mut().get_mut(i))
+                {
+                    entry.highlights.swap(a, b);
+                }
+            }
+        }
+    }
 }
 
 fn remove_at<T>(items: &mut Vec<T>, index: usize) {
@@ -761,5 +905,47 @@ mod tests {
 
         *id.get_mut(&mut doc).expect("the preset exists") = "Backend, concise".into();
         assert_eq!(doc.presets[0].name, "Backend, concise");
+    }
+
+    #[test]
+    fn list_id_and_field_id_mapping_and_list_swap() {
+        use crate::resume::model::{Resume, ResumeDoc, Work};
+
+        let mut doc = ResumeDoc::from_resume(
+            Resume {
+                work: vec![
+                    Work {
+                        position: "Dev 1".into(),
+                        highlights: vec!["Task 1A".into(), "Task 1B".into()],
+                        ..Default::default()
+                    },
+                    Work {
+                        position: "Dev 2".into(),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            "Base",
+        );
+
+        assert_eq!(FieldId::WorkPosition(0).list_id(), Some(ListId::Work));
+        assert_eq!(
+            FieldId::WorkHighlight(0, 0).list_id(),
+            Some(ListId::WorkHighlights(0))
+        );
+        assert_eq!(FieldId::Name.list_id(), None);
+
+        assert_eq!(ListId::Work.len(&doc), 2);
+        assert!(!ListId::Work.is_empty(&doc));
+        assert_eq!(ListId::WorkHighlights(0).len(&doc), 2);
+
+        ListId::Work.swap(&mut doc, 0, 1);
+        assert_eq!(doc.work.active()[0].position, "Dev 2");
+        assert_eq!(doc.work.active()[1].position, "Dev 1");
+
+        ListId::WorkHighlights(1).swap(&mut doc, 0, 1);
+        assert_eq!(doc.work.active()[1].highlights[0], "Task 1B");
+        assert_eq!(doc.work.active()[1].highlights[1], "Task 1A");
     }
 }
