@@ -27,6 +27,7 @@ use crate::theme::ActiveTheme;
 use crate::typst_engine::{PageGeometry, TypstEngine};
 use crate::vault;
 
+pub(crate) mod assistant_sheet;
 pub(crate) mod ats_lint;
 pub(crate) mod custom_sections;
 pub(crate) mod dates;
@@ -172,6 +173,8 @@ pub struct Root {
     /// The export sheet overlay (`root_export_sheet.rs`): `Some` while the user
     /// is choosing a format and a preset. One at a time, like `capture_sheet`.
     pub(super) export_sheet: Option<export_sheet::ExportSheetState>,
+    /// The assistant advice overlay (`assistant_sheet.rs`).
+    pub(super) assistant_sheet: Option<assistant_sheet::AssistantSheet>,
     /// The section header's rename control (`root_section_rename.rs`): `Some`
     /// while a section's printed heading is being edited inline. One at a
     /// time, and not part of `Root::fields` — it never addresses a `FieldId`,
@@ -316,6 +319,7 @@ impl Root {
             diary_picker: None,
             capture_sheet: None,
             export_sheet: None,
+            assistant_sheet: None,
             renaming_section: None,
             renaming_variant: None,
             retired_images: Vec::new(),
@@ -451,6 +455,11 @@ impl Render for Root {
                 self.export_sheet
                     .is_some()
                     .then(|| self.render_export_sheet(cx)),
+            )
+            .children(
+                self.assistant_sheet
+                    .as_ref()
+                    .map(|_| self.render_assistant_sheet(cx)),
             )
     }
 }

@@ -19,11 +19,14 @@
 //! `Shell` handle turns that into a `Context<Shell>`.
 
 use gpui::prelude::*;
-use gpui::{div, px, App, ClickEvent, Context, IntoElement, SharedString, WeakEntity, Window};
+use gpui::{
+    div, px, App, ClickEvent, Context, Entity, FontWeight, IntoElement, SharedString, WeakEntity,
+    Window,
+};
 
 use dockcv_ui_components::{
     Button, ButtonExt, ButtonVariants, SettingField, SettingGroup, SettingItem, SettingPage,
-    Settings,
+    Settings, TextField, TextFieldState, SANS,
 };
 
 use crate::config;
@@ -31,16 +34,35 @@ use crate::logging;
 use crate::theme::{ActiveTheme, StyledText, TextStyle, Theme, ThemeMode};
 use crate::update::Channel;
 use crate::vault;
+use crate::views::assistant;
 
 use super::shell::Shell;
 
 pub struct SettingsWindow {
     shell: WeakEntity<Shell>,
+    custom_cmd_field: Option<Entity<TextFieldState>>,
 }
 
 impl SettingsWindow {
     pub fn new(shell: WeakEntity<Shell>) -> Self {
-        Self { shell }
+        Self {
+            shell,
+            custom_cmd_field: None,
+        }
+    }
+
+    fn ensure_custom_cmd_field(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.custom_cmd_field.is_none() {
+            let initial = config::load().assistant_custom_cmd.unwrap_or_default();
+            let state = cx.new(|cx| {
+                let s = TextFieldState::single_line(window, cx);
+                if !initial.is_empty() {
+                    s.set_value(initial, window, cx);
+                }
+                s
+            });
+            self.custom_cmd_field = Some(state);
+        }
     }
 }
 
@@ -136,7 +158,8 @@ fn readout(text: String, mono: bool, cx: &App) -> impl IntoElement {
 }
 
 impl Render for SettingsWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.ensure_custom_cmd_field(window, cx);
         let theme = *cx.theme();
 
         div()
@@ -147,6 +170,7 @@ impl Render for SettingsWindow {
                 Settings::new("settings")
                     .sidebar_width(px(190.0))
                     .page(general_page(&self.shell))
+                    .page(assistants_page(&self.shell, &self.custom_cmd_field))
                     .page(storage_page(&self.shell)),
             )
     }
@@ -260,6 +284,325 @@ fn general_page(shell: &WeakEntity<Shell>) -> SettingPage {
                             .gap_2()
                             .children(ThemeMode::ALL.map(|mode| theme_chip(&for_theme, mode, cx)))
                             .into_any_element()
+                    }),
+                )),
+        )
+}
+
+fn assistants_page(
+    shell: &WeakEntity<Shell>,
+    custom_cmd_field: &Option<Entity<TextFieldState>>,
+) -> SettingPage {
+    let custom_cmd_for_field = custom_cmd_field.clone();
+    let shell_for_pref = shell.clone();
+    let shell_for_custom = shell.clone();
+    let shell_for_presets = shell.clone();
+
+    SettingPage::new("Assistants")
+        .description("Local AI tools, Claude Desktop, and privacy settings.")
+        .group(
+            SettingGroup::new()
+                .title("Preferred Assistant")
+                .description(
+                    "Which assistant to use by default when requesting advice or polishing \
+                     highlights in the editor or tailor screen.",
+                )
+                .item(SettingItem::new(
+                    "Default",
+                    SettingField::render(move |_o, _window, cx: &mut App| {
+                        let current = config::load()
+                            .assistant_preferred
+                            .unwrap_or_else(|| "auto".to_string());
+                        let options = [
+                            ("auto", "Auto (First available)"),
+                            ("claude-desktop", "Claude Desktop"),
+                            ("ollama", "Ollama"),
+                            ("codex", "Codex"),
+                            ("gemini", "Gemini"),
+                            ("claude-cli", "Claude CLI"),
+                            ("custom", "Custom Command"),
+                            ("browser", "Browser (Clipboard)"),
+                        ];
+                        let for_pref = shell_for_pref.clone();
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap_2()
+                            .children(options.into_iter().map(|(id, label)| {
+                                let active = current == id;
+                                let for_pref = for_pref.clone();
+                                Button::new(SharedString::from(format!("pref-asst-{id}")))
+                                    .chip(active, cx.theme())
+                                    .h(cx.theme().control_md())
+                                    .when(active, |el| el.border_1().border_color(cx.theme().accent))
+                                    .on_click(move |_: &ClickEvent, _window, cx| {
+                                        config::set_preferred_assistant(if id == "auto" {
+                                            None
+                                        } else {
+                                            Some(id.to_string())
+                                        });
+                                        let _ = for_pref.update(cx, |_, cx| cx.notify());
+                                    })
+                                    .child(label)
+                            }))
+                            .into_any_element()
+                    }),
+                ))
+                .item(SettingItem::new(
+                    "Active route",
+                    SettingField::render(move |_o, _window, cx: &mut App| {
+                        let pref = config::load()
+                            .assistant_preferred
+                            .unwrap_or_else(|| "auto".to_string());
+                        let resolved = match pref.as_str() {
+                            "auto" => {
+                                let all = assistant::detect_all_assistants();
+                                if let Some(first) = all.iter().find(|a| a.available) {
+                                    format!("{} ({})", first.name, first.detail)
+                                } else if config::load().assistant_custom_cmd.is_some() {
+                                    "Custom Command".to_string()
+                                } else {
+                                    "Browser / Clipboard (no local tools detected)".to_string()
+                                }
+                            }
+                            "claude-desktop" => {
+                                if assistant::claude_desktop() {
+                                    "Claude Desktop (Available via claude://)".to_string()
+                                } else {
+                                    "Claude Desktop (Not detected in /Applications)".to_string()
+                                }
+                            }
+                            "ollama" => {
+                                if let Some(p) = assistant::find_executable("ollama") {
+                                    format!("Ollama CLI ({})", p.display())
+                                } else {
+                                    "Ollama CLI (Not found in PATH)".to_string()
+                                }
+                            }
+                            "codex" => {
+                                if let Some(p) = assistant::find_executable("codex") {
+                                    format!("Codex CLI ({})", p.display())
+                                } else {
+                                    "Codex CLI (Not found in PATH)".to_string()
+                                }
+                            }
+                            "gemini" => {
+                                if let Some(p) = assistant::find_executable("gemini") {
+                                    format!("Gemini CLI ({})", p.display())
+                                } else {
+                                    "Gemini CLI (Not found in PATH)".to_string()
+                                }
+                            }
+                            "claude-cli" => {
+                                if let Some(p) = assistant::find_executable("claude") {
+                                    format!("Claude CLI ({})", p.display())
+                                } else {
+                                    "Claude CLI (Not found in PATH)".to_string()
+                                }
+                            }
+                            "custom" => config::load()
+                                .assistant_custom_cmd
+                                .unwrap_or_else(|| "Not configured yet".to_string()),
+                            "browser" => "Web Browser / System Clipboard".to_string(),
+                            other => other.to_string(),
+                        };
+                        readout(resolved, true, cx).into_any_element()
+                    }),
+                )),
+        )
+        .group(
+            SettingGroup::new()
+                .title("Auto-Detected Local Tools")
+                .description(
+                    "DockCV searches your system PATH and standard locations (/opt/homebrew/bin, \
+                     /usr/local/bin, ~/.cargo/bin) without network lookups or telemetry.",
+                )
+                .item(SettingItem::new(
+                    "Detected",
+                    SettingField::render(|_o, _window, cx: &mut App| {
+                        let theme = *cx.theme();
+                        let assistants = assistant::detect_all_assistants();
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .w_full()
+                            .children(assistants.into_iter().map(|item| {
+                                let is_avail = item.available;
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .p_2()
+                                    .rounded(theme.radius_sm())
+                                    .bg(theme.canvas)
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(2.0))
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_2()
+                                                    .child(
+                                                        div()
+                                                            .font_family(SANS)
+                                                            .font_weight(FontWeight::MEDIUM)
+                                                            .text_size(px(13.0))
+                                                            .text_color(theme.text)
+                                                            .child(item.name),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_style(TextStyle::meta())
+                                                            .text_color(theme.text_subtle)
+                                                            .child(format!("({})", item.kind)),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_style(TextStyle::code())
+                                                    .text_color(if is_avail {
+                                                        theme.text_muted
+                                                    } else {
+                                                        theme.text_subtle
+                                                    })
+                                                    .child(item.detail),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .px_2()
+                                            .py(px(2.0))
+                                            .rounded_full()
+                                            .text_style(TextStyle::meta())
+                                            .border_1()
+                                            .border_color(if is_avail {
+                                                theme.success
+                                            } else {
+                                                theme.border
+                                            })
+                                            .text_color(if is_avail {
+                                                theme.success
+                                            } else {
+                                                theme.text_subtle
+                                            })
+                                            .child(if is_avail {
+                                                "Installed"
+                                            } else {
+                                                "Not found"
+                                            }),
+                                    )
+                            }))
+                            .into_any_element()
+                    }),
+                )),
+        )
+        .group(
+            SettingGroup::new()
+                .title("Custom Local Command")
+                .description(
+                    "Execute your own local LLM runner (e.g. Ollama, llama.cpp, LocalAI, vLLM). \
+                     DockCV appends the prompt as the final argument and reads stdout.",
+                )
+                .item(SettingItem::new(
+                    "Command",
+                    SettingField::render(move |_o, _window, cx: &mut App| {
+                        let theme = *cx.theme();
+                        let current_cmd = config::load().assistant_custom_cmd.unwrap_or_default();
+                        let field_el = if let Some(field) = custom_cmd_for_field.as_ref() {
+                            div()
+                                .w_full()
+                                .max_w(px(380.0))
+                                .child(TextField::new(field).placeholder("e.g. ollama run llama3.2"))
+                        } else {
+                            div().child(readout(current_cmd.clone(), true, cx))
+                        };
+
+                        let save_field = custom_cmd_for_field.clone();
+                        let shell_for_custom = shell_for_custom.clone();
+                        let shell_for_presets = shell_for_presets.clone();
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .w_full()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .child(field_el)
+                                    .child(
+                                        Button::new("save-custom-cmd")
+                                            .toolbar()
+                                            .on_click(move |_: &ClickEvent, _window, cx: &mut App| {
+                                                if let Some(f) = save_field.as_ref() {
+                                                    let val = f.read(cx).value(cx).trim().to_string();
+                                                    config::set_custom_assistant_cmd(if val.is_empty() {
+                                                        None
+                                                    } else {
+                                                        Some(val)
+                                                    });
+                                                    let _ = shell_for_custom.update(cx, |_, cx| cx.notify());
+                                                }
+                                            })
+                                            .child("Save"),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_style(TextStyle::meta())
+                                            .text_color(theme.text_subtle)
+                                            .child("Quick presets:"),
+                                    )
+                                    .children([
+                                        "ollama run llama3.2",
+                                        "ollama run mistral",
+                                        "ollama run qwen2.5:7b",
+                                    ].map(|preset| {
+                                        let f = custom_cmd_for_field.clone();
+                                        let shell_for_presets = shell_for_presets.clone();
+                                        Button::new(SharedString::from(format!("preset-{preset}")))
+                                            .quiet()
+                                            .text_size(px(11.0))
+                                            .on_click(move |_: &ClickEvent, window, cx: &mut App| {
+                                                if let Some(f) = f.as_ref() {
+                                                    f.update(cx, |field, cx| {
+                                                        field.set_value(preset.to_string(), window, cx);
+                                                    });
+                                                }
+                                                config::set_custom_assistant_cmd(Some(preset.to_string()));
+                                                let _ = shell_for_presets.update(cx, |_, cx| cx.notify());
+                                            })
+                                            .child(preset)
+                                    })),
+                            )
+                            .into_any_element()
+                    }),
+                )),
+        )
+        .group(
+            SettingGroup::new()
+                .title("Privacy & Guarantees")
+                .description(
+                    "DockCV includes zero cloud API keys, zero network telemetry, and makes no background requests. \
+                     All assistants run strictly locally on your machine or copy prompts to your clipboard for your review. \
+                     No changes are ever written to your CV without your explicit review and confirmation.",
+                )
+                .item(SettingItem::new(
+                    "Network access",
+                    SettingField::render(|_o, _window, cx: &mut App| {
+                        readout("100% Offline / Local Execution Only".to_string(), false, cx).into_any_element()
                     }),
                 )),
         )

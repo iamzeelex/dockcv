@@ -21,7 +21,7 @@
 //! watches the file and asks before adopting those changes into an open draft.
 //! The import prompt remains a transcription and still forbids inferred facts.
 
-use gpui::Task;
+use gpui::{BackgroundExecutor, Task};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -232,6 +232,19 @@ pub(crate) const ASSISTANTS: &[Assistant] = &[
         }],
     },
     Assistant {
+        name: "Ollama",
+        mark: None,
+        routes: &[Route {
+            id: "ollama-cli",
+            label: "Terminal",
+            via: Via::Cli {
+                program: "ollama",
+                argv: &["run", "llama3.2"],
+            },
+            trust: Trust::Unverified,
+        }],
+    },
+    Assistant {
         name: "Perplexity",
         mark: Some(dockcv_ui_components::DockIcon::BrandPerplexity),
         routes: &[Route {
@@ -324,6 +337,59 @@ fn join_with_and(names: &[&str]) -> String {
     }
 }
 
+/// Standard directories searched for command-line assistants.
+///
+/// In addition to inherited PATH, we inspect standard Homebrew and Cargo
+/// directories on macOS/Linux. GUI apps launched from Finder/Dock frequently
+/// inherit a minimal PATH (`/usr/bin:/bin`) without shell profile exports;
+/// checking these standard roots ensures tools like `ollama` or `codex`
+/// installed via brew or cargo are discovered reliably and without crutches.
+fn search_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    for standard in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        let p = PathBuf::from(standard);
+        if !dirs.contains(&p) {
+            dirs.push(p);
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = Path::new(&home);
+        let cargo_bin = home.join(".cargo/bin");
+        if !dirs.contains(&cargo_bin) {
+            dirs.push(cargo_bin);
+        }
+        let local_bin = home.join(".local/bin");
+        if !dirs.contains(&local_bin) {
+            dirs.push(local_bin);
+        }
+    }
+    dirs
+}
+
+/// Find the absolute path to an executable binary if present.
+pub(crate) fn find_executable(program: &str) -> Option<PathBuf> {
+    let p = Path::new(program);
+    if p.is_file() {
+        return Some(p.to_path_buf());
+    }
+    search_dirs().into_iter().find_map(|dir| {
+        let candidate = dir.join(program);
+        if candidate.is_file() {
+            Some(candidate)
+        } else {
+            None
+        }
+    })
+}
+
+/// Whether a CLI tool is available on this system.
+pub(crate) fn is_installed(program: &str) -> bool {
+    find_executable(program).is_some()
+}
+
 /// Which of the command-line tools are actually installed.
 ///
 /// Looked up once. `PATH` does not change inside a run, and a directory scan
@@ -332,38 +398,199 @@ fn join_with_and(names: &[&str]) -> String {
 fn installed() -> &'static [&'static str] {
     static FOUND: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
     FOUND.get_or_init(|| {
-        let path = std::env::var_os("PATH").unwrap_or_default();
-        ["claude", "codex", "gemini"]
+        ["claude", "codex", "gemini", "ollama"]
             .into_iter()
-            .filter(|program| {
-                std::env::split_paths(&path).any(|dir| dir.join(program).is_file())
-            })
+            .filter(|program| is_installed(program))
             .collect()
     })
 }
 
 /// Whether Claude Desktop is here to answer a `claude://` link.
-///
-/// By its bundle, and only on macOS. The scheme is registered by the app on
-/// every platform it ships for, but "is it installed" is asked differently on
-/// each, and a wrong guess here is a button that opens nothing — which is the
-/// exact failure the unverified mark exists to avoid, so it is better not to
-/// offer the button at all than to offer one that lies.
-fn claude_desktop() -> bool {
+pub(crate) fn claude_desktop_path() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        static FOUND: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *FOUND.get_or_init(|| {
-            let user = std::env::var_os("HOME")
-                .map(|home| Path::new(&home).join("Applications/Claude.app"))
-                .is_some_and(|p| p.is_dir());
-            user || Path::new("/Applications/Claude.app").is_dir()
-        })
+        if let Some(home) = std::env::var_os("HOME") {
+            let user = Path::new(&home).join("Applications/Claude.app");
+            if user.is_dir() {
+                return Some(user);
+            }
+        }
+        let sys = PathBuf::from("/Applications/Claude.app");
+        if sys.is_dir() {
+            return Some(sys);
+        }
+        None
     }
     #[cfg(not(target_os = "macos"))]
     {
-        false
+        None
     }
+}
+
+pub(crate) fn claude_desktop() -> bool {
+    claude_desktop_path().is_some()
+}
+
+/// Status of an assistant on this machine, for Settings and discovery.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AssistantStatus {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub kind: &'static str,
+    pub available: bool,
+    pub detail: String,
+}
+
+/// Enumerate all known local assistants and their detection status.
+pub(crate) fn detect_all_assistants() -> Vec<AssistantStatus> {
+    let claude_app = claude_desktop_path();
+    let claude_cli = find_executable("claude");
+    let codex_cli = find_executable("codex");
+    let gemini_cli = find_executable("gemini");
+    let ollama_cli = find_executable("ollama");
+
+    vec![
+        AssistantStatus {
+            id: "claude-desktop",
+            name: "Claude Desktop",
+            kind: "Desktop app (macOS)",
+            available: claude_app.is_some(),
+            detail: claude_app
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Not found in /Applications".into()),
+        },
+        AssistantStatus {
+            id: "ollama",
+            name: "Ollama CLI",
+            kind: "Local LLM runner",
+            available: ollama_cli.is_some(),
+            detail: ollama_cli
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Not found in PATH".into()),
+        },
+        AssistantStatus {
+            id: "codex",
+            name: "Codex CLI",
+            kind: "CLI tool",
+            available: codex_cli.is_some(),
+            detail: codex_cli
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Not found in PATH".into()),
+        },
+        AssistantStatus {
+            id: "gemini",
+            name: "Gemini CLI",
+            kind: "CLI tool",
+            available: gemini_cli.is_some(),
+            detail: gemini_cli
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Not found in PATH".into()),
+        },
+        AssistantStatus {
+            id: "claude-cli",
+            name: "Claude CLI",
+            kind: "CLI tool",
+            available: claude_cli.is_some(),
+            detail: claude_cli
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Not found in PATH".into()),
+        },
+    ]
+}
+
+/// Tokenize a shell command line string into words, respecting single/double quotes.
+pub(crate) fn parse_command_words(cmd: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut quote_char = ' ';
+
+    for ch in cmd.chars() {
+        match ch {
+            '"' | '\'' if in_quotes && ch == quote_char => {
+                in_quotes = false;
+            }
+            '"' | '\'' if !in_quotes => {
+                in_quotes = true;
+                quote_char = ch;
+            }
+            ' ' | '\t' if !in_quotes => {
+                if !current.is_empty() {
+                    words.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
+}
+
+/// Execute a local command asynchronously with timeout and output capture.
+pub(crate) async fn execute_command(
+    program: &str,
+    argv: &[&str],
+    prompt: &str,
+    cwd: Option<&Path>,
+    executor: &BackgroundExecutor,
+) -> Result<String, String> {
+    let resolved = find_executable(program)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| program.to_string());
+
+    let cwd = cwd.map(PathBuf::from);
+    let prompt = prompt.to_string();
+    let argv: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
+    let prog_name = program.to_string();
+    let executor_clone = executor.clone();
+
+    executor
+        .spawn(async move {
+            let mut cmd = std::process::Command::new(&resolved);
+            cmd.args(&argv).arg(&prompt);
+            if let Some(ref cwd) = cwd {
+                cmd.current_dir(cwd);
+            }
+            let mut child = cmd
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("{prog_name} would not start: {e}"))?;
+
+            let deadline = std::time::Instant::now() + LOCAL_TIMEOUT;
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_)) => break,
+                    Ok(None) if std::time::Instant::now() < deadline => {
+                        executor_clone.timer(Duration::from_millis(250)).await;
+                    }
+                    Ok(None) => {
+                        let _ = child.kill();
+                        return Err(format!(
+                            "{prog_name} was still running after {} minutes and was stopped.",
+                            LOCAL_TIMEOUT.as_secs() / 60
+                        ));
+                    }
+                    Err(e) => return Err(format!("{prog_name} failed: {e}")),
+                }
+            }
+            let out = child
+                .wait_with_output()
+                .map_err(|e| format!("{prog_name} failed: {e}"))?;
+            if !out.status.success() {
+                let why = String::from_utf8_lossy(&out.stderr);
+                let why = why.trim();
+                return Err(if why.is_empty() {
+                    format!("{prog_name} exited without a result (status {})", out.status)
+                } else {
+                    why.chars().take(400).collect()
+                });
+            }
+            Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+        })
+        .await
 }
 
 /// Percent-encode for a query string.
@@ -522,5 +749,25 @@ mod tests {
             assert!(!url.contains("file="), "nothing to attach: {url}");
             assert!(!url.contains("folder="), "nothing to open: {url}");
         }
+    }
+
+    #[test]
+    fn parse_command_words_handles_quotes_and_spaces() {
+        assert_eq!(
+            super::parse_command_words("ollama run llama3:8b"),
+            vec!["ollama", "run", "llama3:8b"]
+        );
+        assert_eq!(
+            super::parse_command_words("custom-cli --model 'my custom model' -v"),
+            vec!["custom-cli", "--model", "my custom model", "-v"]
+        );
+    }
+
+    #[test]
+    fn detect_all_assistants_reports_known_assistants() {
+        let detected = super::detect_all_assistants();
+        assert!(detected.iter().any(|a| a.id == "claude-desktop"));
+        assert!(detected.iter().any(|a| a.id == "ollama"));
+        assert!(detected.iter().any(|a| a.id == "gemini"));
     }
 }

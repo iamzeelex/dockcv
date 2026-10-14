@@ -504,6 +504,7 @@ impl Root {
                         ListId::WorkHighlights(i),
                     )))
                     .child(div().flex_1().child(self.diary_picker_button(cx, i)))
+                    .child(div().flex_1().child(self.assistant_advice_button(cx, SectionKind::Work, i)))
                     .into_any_element(),
             ));
         }
@@ -536,11 +537,21 @@ impl Root {
             ) {
                 f.push(highlights);
             }
-            f.push(Self::wide(self.add_button(
-                cx,
-                "Add highlight",
-                ListId::EduHighlights(i),
-            )));
+            f.push(Self::wide(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .mt(px(2.0))
+                    .mb(px(4.0))
+                    .child(div().flex_1().child(self.add_button(
+                        cx,
+                        "Add highlight",
+                        ListId::EduHighlights(i),
+                    )))
+                    .child(div().flex_1().child(self.assistant_advice_button(cx, SectionKind::Education, i)))
+                    .into_any_element(),
+            ));
         }
         f.push(Self::wide(
             self.library_picker_button(cx, SectionKind::Education),
@@ -968,6 +979,37 @@ impl Root {
             }))
             .icon(DockIcon::Pen)
             .child(format!("From diary ({count})"))
+            .into_any_element()
+    }
+
+    /// An "Assistant advice" button on an entry that opens the bullet polish sheet.
+    pub(super) fn assistant_advice_button(
+        &self,
+        cx: &mut Context<Self>,
+        section: SectionKind,
+        index: usize,
+    ) -> AnyElement {
+        let theme = *cx.theme();
+        let target = match section {
+            SectionKind::Work => super::assistant_sheet::TargetEntry::Work(index),
+            SectionKind::Education => super::assistant_sheet::TargetEntry::Education(index),
+            SectionKind::Custom(id) => {
+                super::assistant_sheet::TargetEntry::Custom(id, index)
+            }
+            _ => return div().into_any_element(),
+        };
+
+        Button::new(SharedString::from(format!("asst-advice-{section:?}-{index}")))
+            .chip_dashed(&theme)
+            .w_full()
+            .mt_1()
+            .mb_2()
+            .icon(dockcv_ui_components::lucide("bot"))
+            .tooltip("Improve highlights with AI assistant (Google XYZ, action verbs)")
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.open_assistant_sheet(Some(target.clone()), window, cx);
+            }))
+            .child("Assistant")
             .into_any_element()
     }
 }

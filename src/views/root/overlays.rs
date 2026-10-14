@@ -128,6 +128,17 @@ impl Root {
                         this.open_capture_sheet(window, cx);
                     })),
             )
+            .child(
+                Button::new("assistant")
+                    .toolbar()
+                    .gap(px(6.0))
+                    .icon(lucide("bot"))
+                    .label("Assistant")
+                    .tooltip("Improve highlights, polish phrasing, or tailor for jobs")
+                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.open_assistant_sheet(None, window, cx);
+                    })),
+            )
             .child(toolbar_rule(theme.border))
             .child(
                 Button::new("undo")

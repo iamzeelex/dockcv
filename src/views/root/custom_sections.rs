@@ -11,7 +11,8 @@
 //! the lighter-weight ✕ this screen uses for removing a single entry or
 //! highlight.
 
-use gpui::{div, AnyElement, Context, IntoElement, SharedString};
+use gpui::prelude::*;
+use gpui::{div, px, AnyElement, Context, IntoElement, SharedString};
 
 use dockcv_ui_components::{Button, ButtonExt, DropdownMenu, IconName, PopupMenuItem};
 
@@ -72,11 +73,25 @@ impl Root {
                 ListId::CustomEntryHighlights(id, i),
                 &highlights,
             ));
-            f.push(Self::wide(self.add_button(
-                cx,
-                "Add highlight",
-                ListId::CustomEntryHighlights(id, i),
-            )));
+            f.push(Self::wide(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .mt(px(2.0))
+                    .mb(px(4.0))
+                    .child(div().flex_1().child(self.add_button(
+                        cx,
+                        "Add highlight",
+                        ListId::CustomEntryHighlights(id, i),
+                    )))
+                    .child(div().flex_1().child(self.assistant_advice_button(
+                        cx,
+                        SectionKind::Custom(id),
+                        i,
+                    )))
+                    .into_any_element(),
+            ));
         }
 
         self.card(cx, SectionKind::Custom(id), count, f)

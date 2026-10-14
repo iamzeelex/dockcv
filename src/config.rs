@@ -76,6 +76,13 @@ pub struct Config {
     /// updates is exactly the interruption this product exists not to be.
     #[serde(default)]
     pub update_asked: bool,
+    /// Preferred assistant route or strategy (e.g. "auto", "claude-cowork",
+    /// "claude-cli", "codex-cli", "gemini-cli", "ollama", "custom", "browser").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_preferred: Option<String>,
+    /// Custom CLI command template for local AI execution (e.g. "ollama run llama3:8b").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_custom_cmd: Option<String>,
 }
 
 impl Config {
@@ -219,5 +226,27 @@ pub fn skip_update(version: &str) {
 pub fn mark_update_asked() {
     let mut config = load();
     config.update_asked = true;
+    save(&config);
+}
+
+/// Convenience: set the preferred assistant ID ("auto", "claude-cowork", etc.).
+pub fn set_preferred_assistant(id: Option<String>) {
+    let mut config = load();
+    config.assistant_preferred = id;
+    save(&config);
+}
+
+/// Convenience: set the custom CLI assistant command.
+pub fn set_custom_assistant_cmd(cmd: Option<String>) {
+    let mut config = load();
+    let cleaned = cmd.and_then(|s| {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    config.assistant_custom_cmd = cleaned;
     save(&config);
 }

@@ -355,7 +355,9 @@ impl Root {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.capture_sheet.is_some() {
+        if self.assistant_sheet.is_some() {
+            self.close_assistant_sheet(cx);
+        } else if self.capture_sheet.is_some() {
             self.close_capture_sheet(cx);
         } else if self.diary_picker.is_some() {
             self.diary_picker = None;
