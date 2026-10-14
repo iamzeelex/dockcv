@@ -119,12 +119,12 @@ impl Root {
                             .flex()
                             .items_center()
                             .gap(px(8.0))
-                            .child(div().flex_1().min_w_0().child(self.date_pair(
-                                cx,
-                                start,
-                                None,
-                                false,
-                            )))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(self.date_pair(cx, start, None, false)),
+                            )
                             .child(
                                 div()
                                     .flex_none()
@@ -132,12 +132,12 @@ impl Root {
                                     .text_color(theme.text_subtle)
                                     .child("→"),
                             )
-                            .child(div().flex_1().min_w_0().child(self.date_pair(
-                                cx,
-                                end,
-                                floor,
-                                is_open,
-                            ))),
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(self.date_pair(cx, end, floor, is_open)),
+                            ),
                     )
                     .child(self.ongoing_toggle(cx, end, floor, is_open, ongoing)),
             )]
@@ -209,16 +209,12 @@ impl Root {
             "Ongoing" => "Ongoing (Present)",
             other => other,
         };
-        div()
-            .mt(px(3.0))
-            .font_family(SANS)
-            .child(
-                Checkbox::new(SharedString::from(format!("date-ongoing-{end:?}")))
-                    .small()
-                    .checked(is_open)
-                    .label(SharedString::from(label))
-                    .on_click(cx.listener(
-                        move |this, checked: &bool, window, cx| {
+        div().mt(px(3.0)).font_family(SANS).child(
+            Checkbox::new(SharedString::from(format!("date-ongoing-{end:?}")))
+                .small()
+                .checked(is_open)
+                .label(SharedString::from(label))
+                .on_click(cx.listener(move |this, checked: &bool, window, cx| {
                     if *checked {
                         if let Some(slot) = end.get_mut(&mut this.doc) {
                             slot.clear();
@@ -244,9 +240,8 @@ impl Root {
                         };
                         this.write_date(end, y, m, window, cx);
                     }
-                },
-            ))
-            )
+                })),
+        )
     }
 
     /// One date with no counterpart — a certificate is issued on a date, it

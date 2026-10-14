@@ -17,7 +17,9 @@
 //! `add_button` building blocks defined below.
 
 use gpui::prelude::*;
-use gpui::{div, px, AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, SharedString};
+use gpui::{
+    div, px, AnyElement, ClickEvent, Context, FontWeight, IntoElement, Pixels, SharedString,
+};
 
 use dockcv_ui_components::{
     Button, ButtonExt, DockIcon, Field, Form, Icon, IconName, ScrollableElement, SelectableRow,
@@ -233,8 +235,7 @@ impl Root {
                     }),
             )
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                this.selection =
-                    editor_state::EditorSelection::for_section(&this.doc, section);
+                this.selection = editor_state::EditorSelection::for_section(&this.doc, section);
                 this.focused_section = section;
                 this.expanded.insert(section);
                 cx.notify();
@@ -267,9 +268,8 @@ impl Root {
                                 this.expanded.remove(&section);
                             }
                         } else {
-                            this.selection = editor_state::EditorSelection::for_section(
-                                &this.doc, section,
-                            );
+                            this.selection =
+                                editor_state::EditorSelection::for_section(&this.doc, section);
                             this.focused_section = section;
                             this.expanded.insert(section);
                         }
@@ -287,12 +287,7 @@ impl Root {
                 .w_full()
                 .child(row),
         );
-        let mut group = div()
-            .flex()
-            .flex_col()
-            .gap(px(1.0))
-            .mb(px(10.0))
-            .child(row);
+        let mut group = div().flex().flex_col().gap(px(1.0)).mb(px(10.0)).child(row);
         if selected && expanded {
             if section == SectionKind::Profile {
                 group =
@@ -474,7 +469,12 @@ impl Root {
             // pushed `End` onto a row of its own.
             f.push(self.field(cx, FieldId::WorkPosition(i), "Position"));
             f.push(self.field(cx, FieldId::WorkName(i), "Company"));
-            f.extend(self.date_fields(cx, FieldId::WorkStart(i), FieldId::WorkEnd(i), "Current role"));
+            f.extend(self.date_fields(
+                cx,
+                FieldId::WorkStart(i),
+                FieldId::WorkEnd(i),
+                "Current role",
+            ));
             f.push(self.field(cx, FieldId::WorkLocation(i), "Location"));
             f.push(self.field(cx, FieldId::WorkUrl(i), "URL"));
             f.push(self.field(cx, FieldId::WorkSummary(i), "Summary"));
@@ -504,7 +504,11 @@ impl Root {
                         ListId::WorkHighlights(i),
                     )))
                     .child(div().flex_1().child(self.diary_picker_button(cx, i)))
-                    .child(div().flex_1().child(self.assistant_advice_button(cx, SectionKind::Work, i)))
+                    .child(div().flex_1().child(self.assistant_advice_button(
+                        cx,
+                        SectionKind::Work,
+                        i,
+                    )))
                     .into_any_element(),
             ));
         }
@@ -524,7 +528,12 @@ impl Root {
         {
             f.push(self.field(cx, FieldId::EduStudyType(i), "Degree"));
             f.push(self.field(cx, FieldId::EduInstitution(i), "Institution"));
-            f.extend(self.date_fields(cx, FieldId::EduStart(i), FieldId::EduEnd(i), "Still studying"));
+            f.extend(self.date_fields(
+                cx,
+                FieldId::EduStart(i),
+                FieldId::EduEnd(i),
+                "Still studying",
+            ));
             f.push(self.field(cx, FieldId::EduUrl(i), "URL"));
             let highlight_fields: Vec<FieldId> = (0..entry.highlights.len())
                 .map(|j| FieldId::EduHighlight(i, j))
@@ -549,7 +558,11 @@ impl Root {
                         "Add highlight",
                         ListId::EduHighlights(i),
                     )))
-                    .child(div().flex_1().child(self.assistant_advice_button(cx, SectionKind::Education, i)))
+                    .child(div().flex_1().child(self.assistant_advice_button(
+                        cx,
+                        SectionKind::Education,
+                        i,
+                    )))
                     .into_any_element(),
             ));
         }
@@ -612,7 +625,12 @@ impl Root {
         {
             f.push(self.field(cx, FieldId::VolPosition(i), "Role"));
             f.push(self.field(cx, FieldId::VolOrg(i), "Organization"));
-            f.extend(self.date_fields(cx, FieldId::VolStart(i), FieldId::VolEnd(i), "Still involved"));
+            f.extend(self.date_fields(
+                cx,
+                FieldId::VolStart(i),
+                FieldId::VolEnd(i),
+                "Still involved",
+            ));
             f.push(self.field(cx, FieldId::VolUrl(i), "URL"));
             let highlight_fields: Vec<FieldId> = (0..v.highlights.len())
                 .map(|j| FieldId::VolHighlight(i, j))
@@ -658,10 +676,8 @@ impl Root {
                 this.checkpoint();
                 let id = this.doc.add_custom_section("New Section");
                 this.expanded.insert(SectionKind::Custom(id));
-                this.selection = editor_state::EditorSelection::for_section(
-                    &this.doc,
-                    SectionKind::Custom(id),
-                );
+                this.selection =
+                    editor_state::EditorSelection::for_section(&this.doc, SectionKind::Custom(id));
                 this.focused_section = SectionKind::Custom(id);
                 this.fields_stale = true;
                 this.schedule_save(cx);
@@ -756,29 +772,34 @@ impl Root {
         let theme = *cx.theme();
         let empty = count == 0 && section != SectionKind::Profile;
         div()
-            .flex().flex_col().w_full()
+            .flex()
+            .flex_col()
+            .w_full()
             .children(self.render_ats_findings(cx, section))
-            .when_some(empty.then(|| Self::section_list(section)).flatten(), |el, list| {
-                el.child(
-                    div()
-                        .mb(px(16.0))
-                        .p(px(18.0))
-                        .flex()
-                        .flex_col()
-                        .gap(px(12.0))
-                        .rounded(theme.radius_md())
-                        .bg(theme.elevated)
-                        .child(
-                            div()
-                                .text_style(TextStyle::body())
-                                .text_color(theme.text_muted)
-                                .child("Nothing here yet."),
-                        )
-                        // The empty state carries the action rather than
-                        // naming where to find it.
-                        .child(self.add_button(cx, Self::add_label(section), list)),
-                )
-            })
+            .when_some(
+                empty.then(|| Self::section_list(section)).flatten(),
+                |el, list| {
+                    el.child(
+                        div()
+                            .mb(px(16.0))
+                            .p(px(18.0))
+                            .flex()
+                            .flex_col()
+                            .gap(px(12.0))
+                            .rounded(theme.radius_md())
+                            .bg(theme.elevated)
+                            .child(
+                                div()
+                                    .text_style(TextStyle::body())
+                                    .text_color(theme.text_muted)
+                                    .child("Nothing here yet."),
+                            )
+                            // The empty state carries the action rather than
+                            // naming where to find it.
+                            .child(self.add_button(cx, Self::add_label(section), list)),
+                    )
+                },
+            )
             .child(Form::vertical().columns(2).small().children(fields))
             .into_any_element()
     }
@@ -993,23 +1014,23 @@ impl Root {
         let target = match section {
             SectionKind::Work => super::assistant_sheet::TargetEntry::Work(index),
             SectionKind::Education => super::assistant_sheet::TargetEntry::Education(index),
-            SectionKind::Custom(id) => {
-                super::assistant_sheet::TargetEntry::Custom(id, index)
-            }
+            SectionKind::Custom(id) => super::assistant_sheet::TargetEntry::Custom(id, index),
             _ => return div().into_any_element(),
         };
 
-        Button::new(SharedString::from(format!("asst-advice-{section:?}-{index}")))
-            .chip_dashed(&theme)
-            .w_full()
-            .mt_1()
-            .mb_2()
-            .icon(dockcv_ui_components::lucide("bot"))
-            .tooltip("Improve highlights with AI assistant (Google XYZ, action verbs)")
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                this.open_assistant_sheet(Some(target.clone()), window, cx);
-            }))
-            .child("Assistant")
-            .into_any_element()
+        Button::new(SharedString::from(format!(
+            "asst-advice-{section:?}-{index}"
+        )))
+        .chip_dashed(&theme)
+        .w_full()
+        .mt_1()
+        .mb_2()
+        .icon(dockcv_ui_components::lucide("bot"))
+        .tooltip("Improve highlights with AI assistant (Google XYZ, action verbs)")
+        .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+            this.open_assistant_sheet(Some(target.clone()), window, cx);
+        }))
+        .child("Assistant")
+        .into_any_element()
     }
 }

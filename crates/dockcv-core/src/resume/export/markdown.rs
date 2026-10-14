@@ -6,10 +6,8 @@
 
 use std::fmt::Write as _;
 
+use super::walk::{format_date_range, is_section_empty, ordered_sections, resolve_section_title};
 use crate::resume::dates::DateStyle;
-use super::walk::{
-    format_date_range, is_section_empty, ordered_sections, resolve_section_title,
-};
 use crate::resume::links;
 use crate::resume::model::{
     Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,

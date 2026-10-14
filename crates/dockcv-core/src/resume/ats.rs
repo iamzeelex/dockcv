@@ -20,9 +20,9 @@
 
 use super::dates::{CivilDate, ResumeDate};
 use super::edit::FieldId;
+use super::model::{DocumentLanguage, Resume, ResumeDoc, SectionKind};
 use crate::resume::export::text::strip_typst_markup;
 use crate::resume::export::walk::{is_section_empty, ordered_sections, resolve_section_title};
-use super::model::{DocumentLanguage, Resume, ResumeDoc, SectionKind};
 
 /// One fact about the document, and where it lives.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -635,7 +635,10 @@ mod tests {
     }
 
     fn rules(resume: &Resume) -> Vec<Rule> {
-        lint(resume, DocumentLanguage::English).into_iter().map(|f| f.rule).collect()
+        lint(resume, DocumentLanguage::English)
+            .into_iter()
+            .map(|f| f.rule)
+            .collect()
     }
 
     #[test]
@@ -665,7 +668,11 @@ mod tests {
             resume
                 .section_titles
                 .push((SectionKind::Work, title.into()));
-            assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new(), "{title} should be recognised");
+            assert_eq!(
+                lint(&resume, DocumentLanguage::English),
+                Vec::new(),
+                "{title} should be recognised"
+            );
         }
     }
 
@@ -767,7 +774,11 @@ mod tests {
         ] {
             let mut resume = clean();
             resume.work[0].highlights[0] = prose.into();
-            assert_eq!(lint(&resume, DocumentLanguage::English), Vec::new(), "{prose:?} should be left alone");
+            assert_eq!(
+                lint(&resume, DocumentLanguage::English),
+                Vec::new(),
+                "{prose:?} should be left alone"
+            );
         }
     }
 

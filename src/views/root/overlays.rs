@@ -8,15 +8,17 @@ use gpui::{
 
 use super::preview_chrome::{MAX_ZOOM_PCT, MIN_ZOOM_PCT};
 use dockcv_ui_components::{
-    lucide, Button, ButtonExt, Disableable, IconName, ListItem, ListItemExt,
-    ScrollableElement, Selectable, TextField, CHROME_HEIGHT, SANS,
+    lucide, Button, ButtonExt, Disableable, IconName, ListItem, ListItemExt, ScrollableElement,
+    Selectable, TextField, CHROME_HEIGHT, SANS,
 };
 
 use crate::resume::model::SectionKind;
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
-use super::{EditorEvent, ExportPdf, OpenCapture, RedoDocument, Root, UndoDocument, EDITOR_CONTEXT};
+use super::{
+    EditorEvent, ExportPdf, OpenCapture, RedoDocument, Root, UndoDocument, EDITOR_CONTEXT,
+};
 
 impl Root {
     /// The merged toolbar: breadcrumb identity, the preset menu (P-01), and
@@ -206,13 +208,7 @@ impl Root {
             .items_center()
             .gap(px(6.0))
             .mr(px(4.0))
-            .child(
-                div()
-                    .size(px(6.0))
-                    .rounded_full()
-                    .flex_none()
-                    .bg(dot),
-            )
+            .child(div().size(px(6.0)).rounded_full().flex_none().bg(dot))
             .child(
                 div()
                     .text_style(TextStyle::meta())

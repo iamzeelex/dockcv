@@ -11,7 +11,9 @@
 //! twice.
 
 use gpui::prelude::*;
-use gpui::{div, px, AnyElement, ClickEvent, Context, Div, FontWeight, Hsla, SharedString, Stateful};
+use gpui::{
+    div, px, AnyElement, ClickEvent, Context, Div, FontWeight, Hsla, SharedString, Stateful,
+};
 
 use dockcv_ui_components::{
     Button, ButtonExt, DropdownMenu, Icon, IconName, PopupMenuItem, Sizable, TextField, MONO, SANS,
@@ -326,7 +328,8 @@ impl Shell {
                         .child("›"),
                 );
         }
-        line.child(self.render_version_name(cx, row)).into_any_element()
+        line.child(self.render_version_name(cx, row))
+            .into_any_element()
     }
 
     /// The version's own name, or the box replacing it.
@@ -361,11 +364,9 @@ impl Shell {
             // same pixel as a real one instead of six to its right.
             .ml(px(-6.0))
             .tooltip("Give this version a name")
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.start_version_rename(&path, index, window, cx);
-                }),
-            )
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.start_version_rename(&path, index, window, cx);
+            }))
             .child(
                 div()
                     .font_family(SANS)
@@ -405,18 +406,14 @@ impl Shell {
                 let importing = shell.clone();
                 let blank = shell.clone();
                 menu.item(
-                    PopupMenuItem::new("Import a file…").on_click(
-                        move |_ev, _window, cx| {
-                            let _ = importing.update(cx, |this, cx| this.open_import(cx));
-                        },
-                    ),
+                    PopupMenuItem::new("Import a file…").on_click(move |_ev, _window, cx| {
+                        let _ = importing.update(cx, |this, cx| this.open_import(cx));
+                    }),
                 )
                 .item(
-                    PopupMenuItem::new("Start from scratch").on_click(
-                        move |_ev, _window, cx| {
-                            let _ = blank.update(cx, |this, cx| this.start_blank_cv(cx));
-                        },
-                    ),
+                    PopupMenuItem::new("Start from scratch").on_click(move |_ev, _window, cx| {
+                        let _ = blank.update(cx, |this, cx| this.start_blank_cv(cx));
+                    }),
                 )
             })
             .into_any_element()

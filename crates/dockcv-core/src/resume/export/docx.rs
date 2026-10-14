@@ -10,11 +10,9 @@ use docx_rs::{
     LevelText, NumberFormat, Numbering, NumberingId, Paragraph, Run, Start, Style, StyleType,
 };
 
-use crate::resume::dates::DateStyle;
 use super::text::strip_typst_markup;
-use super::walk::{
-    format_date_range, is_section_empty, ordered_sections, resolve_section_title,
-};
+use super::walk::{format_date_range, is_section_empty, ordered_sections, resolve_section_title};
+use crate::resume::dates::DateStyle;
 use crate::resume::links;
 use crate::resume::model::{
     Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
@@ -52,10 +50,7 @@ pub fn export_docx(resume: &Resume) -> Result<Vec<u8>, DocxError> {
 }
 
 /// Export a composed [`Resume`] to DOCX binary bytes with an explicit date format.
-pub fn export_docx_in(
-    resume: &Resume,
-    dates: DateStyle,
-) -> Result<Vec<u8>, DocxError> {
+pub fn export_docx_in(resume: &Resume, dates: DateStyle) -> Result<Vec<u8>, DocxError> {
     let mut docx = Docx::new()
         .add_abstract_numbering(
             AbstractNumbering::new(BULLET_NUMBERING).add_level(

@@ -166,7 +166,10 @@ impl<T: Clone> Versioned<T> {
 
     /// Each variant's description, positionally beside [`Self::names`].
     pub fn descriptions(&self) -> Vec<Option<String>> {
-        self.variants.iter().map(|v| v.description.clone()).collect()
+        self.variants
+            .iter()
+            .map(|v| v.description.clone())
+            .collect()
     }
 
     pub fn set_active(&mut self, index: usize) {

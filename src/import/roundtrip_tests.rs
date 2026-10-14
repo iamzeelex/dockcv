@@ -1092,4 +1092,3 @@ fn a_tagged_sidebar_gives_up_its_skills() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
-

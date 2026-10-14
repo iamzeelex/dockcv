@@ -54,7 +54,10 @@ enum Mark {
 /// what it means is that you see what came out before anything is saved.
 const STEPS: [(&str, &str); 3] = [
     ("Pick the file", "Nothing is saved yet."),
-    ("See what came out", "Section by section, before it becomes a CV."),
+    (
+        "See what came out",
+        "Section by section, before it becomes a CV.",
+    ),
     ("Keep it", "Only then is anything written to your vault."),
 ];
 
@@ -433,9 +436,7 @@ impl Shell {
                     .font_family(MONO)
                     .text_size(px(10.0))
                     .map(|circle| match mark {
-                        Mark::Done => circle
-                            .border_color(theme.success)
-                            .text_color(theme.success),
+                        Mark::Done => circle.border_color(theme.success).text_color(theme.success),
                         Mark::Here => circle
                             .border_color(theme.accent)
                             .bg(theme.accent.opacity(0.16))
@@ -545,7 +546,11 @@ impl Shell {
                                     .font_family(SANS)
                                     .text_size(px(11.5))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(if is_open { theme.text } else { theme.text_muted })
+                                    .text_color(if is_open {
+                                        theme.text
+                                    } else {
+                                        theme.text_muted
+                                    })
                                     .child(*question),
                             ),
                     )

@@ -156,7 +156,10 @@ mod tests {
         let applications = Applications {
             entries: vec![pinned("resume", "Base")],
         };
-        assert_eq!(applications.record_for("resume", "Base"), PresetRecord::default());
+        assert_eq!(
+            applications.record_for("resume", "Base"),
+            PresetRecord::default()
+        );
         assert!(applications.record_for("resume", "Base").is_empty());
 
         let mut dropped = pinned("resume", "Base");

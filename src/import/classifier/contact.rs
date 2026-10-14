@@ -12,8 +12,8 @@ use regex::Regex;
 use crate::import::lines;
 use crate::resume::model::{NetworkProfile, Resume};
 
-use super::SectionKind;
 use super::headings::classify_header;
+use super::SectionKind;
 
 static EMAIL_REGEX: OnceLock<Regex> = OnceLock::new();
 

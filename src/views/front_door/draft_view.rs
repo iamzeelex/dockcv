@@ -22,12 +22,12 @@ use dockcv_ui_components::{
 };
 
 use crate::resume::posting::{Unused, UnusedSource};
-use crate::views::assistant::{route_url, Handoff, ASSISTANTS};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
+use crate::views::assistant::{route_url, Handoff, ASSISTANTS};
 
-use crate::views::shell::Shell;
 use super::changes::{Change, ChangeKind};
 use super::draft::{section_label, selected};
+use crate::views::shell::Shell;
 
 impl Shell {
     /// The whole screen.
@@ -330,15 +330,19 @@ impl Shell {
                     )
                     .children(pages.map(|n| div().child(format!("Page 1 of {n}"))))
                     .child(div().flex_1())
-            .children(pages.map(|n| {
+                    .children(pages.map(|n| {
                         div()
-                            .text_color(if fits { theme.success } else { theme.text_subtle })
+                            .text_color(if fits {
+                                theme.success
+                            } else {
+                                theme.text_subtle
+                            })
                             .child(if fits {
                                 "Fits on one page".to_string()
                             } else {
                                 format!("{n} pages")
-                    })
-                })),
+                            })
+                    })),
             )
             .children(draft.preview_error.as_ref().map(|error| {
                 div()
@@ -405,7 +409,10 @@ impl Shell {
         let advice_running = draft.advice_running;
 
         let routes = ASSISTANTS.iter().filter_map(|assistant| {
-            let route = assistant.ordered().into_iter().find(|r| r.via.available())?;
+            let route = assistant
+                .ordered()
+                .into_iter()
+                .find(|r| r.via.available())?;
             let name = assistant.name;
             let via = route.via;
             let label = match via {
@@ -422,8 +429,8 @@ impl Shell {
                     .icon(via.icon())
                     .tooltip(format!("{name} · {}", route.label))
                     .disabled(advice_running)
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        match via {
+                    .on_click(
+                        cx.listener(move |this, _: &ClickEvent, _window, cx| match via {
                             crate::views::assistant::Via::Cli { program, argv } => {
                                 this.run_local_draft_assistant(program, argv, cx);
                             }
@@ -433,7 +440,10 @@ impl Shell {
                                     this.draft_file_advice_prompt(),
                                     this.drafting.as_ref().map(|draft| draft.path.clone()),
                                 ) {
-                                    let job = Handoff { prompt, file: Some(file) };
+                                    let job = Handoff {
+                                        prompt,
+                                        file: Some(file),
+                                    };
                                     if let Some(url) = route_url(via, &job) {
                                         cx.open_url(&url);
                                     }
@@ -448,8 +458,8 @@ impl Shell {
                                     }
                                 }
                             }
-                        }
-                    }))
+                        }),
+                    )
                     .child(label),
             )
         });
@@ -656,10 +666,17 @@ impl Shell {
     /// A posting match rendered from the exact source identity used by the
     /// assistant prompt. Library items can be copied into a job-specific
     /// variant; diary notes are read-only context and never sent to an assistant.
-    fn render_draft_unused_item(&self, item: &Unused, can_add: bool, cx: &mut Context<Self>) -> Div {
+    fn render_draft_unused_item(
+        &self,
+        item: &Unused,
+        can_add: bool,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let theme = *cx.theme();
         let (where_from, body) = match &item.source {
-            UnusedSource::Diary { date, confidential, .. } => (
+            UnusedSource::Diary {
+                date, confidential, ..
+            } => (
                 format!("Diary · {date}"),
                 if *confidential {
                     "Marked confidential — open the Diary to read it.".to_string()
@@ -676,26 +693,25 @@ impl Shell {
             draft
                 .advice_components
                 .iter()
-                .find(|(source, snapshot, _)| {
-                    source == &item.source && snapshot == &body
-                })
+                .find(|(source, snapshot, _)| source == &item.source && snapshot == &body)
                 .map(|(_, _, why)| why.clone())
         });
         let source = item.source.clone();
-        let added = self
-            .drafting
-            .as_ref()
-            .is_some_and(|draft| {
-                draft
-                    .added_components
-                    .contains(&(source.clone(), body.clone()))
-            });
+        let added = self.drafting.as_ref().is_some_and(|draft| {
+            draft
+                .added_components
+                .contains(&(source.clone(), body.clone()))
+        });
 
         div()
             .p(px(8.0))
             .rounded(theme.radius_sm())
             .border_1()
-            .border_color(if suggested.is_some() { theme.accent.opacity(0.45) } else { theme.border })
+            .border_color(if suggested.is_some() {
+                theme.accent.opacity(0.45)
+            } else {
+                theme.border
+            })
             .bg(theme.elevated)
             .flex()
             .flex_col()
@@ -758,12 +774,7 @@ impl Shell {
     }
 
     /// Why this start, and what it becomes.
-    fn render_draft_side(
-        &self,
-        cx: &mut Context<Self>,
-        changes: &[Change],
-        count: usize,
-    ) -> Div {
+    fn render_draft_side(&self, cx: &mut Context<Self>, changes: &[Change], count: usize) -> Div {
         let theme = *cx.theme();
         let Some(draft) = self.drafting.as_ref() else {
             return div();

@@ -49,17 +49,16 @@ use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, IntoElement, Window};
 
 use dockcv_ui_components::{
-    Button, ButtonExt, ButtonVariants, DropdownMenu, PopupMenuItem, ScrollableElement,
-    Selectable, SelectableRow, Sizable, SliderEvent, SliderState, TextField, TextFieldEvent,
-    TextFieldState,
+    Button, ButtonExt, ButtonVariants, DropdownMenu, PopupMenuItem, ScrollableElement, Selectable,
+    SelectableRow, Sizable, SliderEvent, SliderState, TextField, TextFieldEvent, TextFieldState,
 };
 
 use crate::resume::model::{LayoutSettings, ATS_SAFE_PROFILE};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
 
-use super::{ProfileDetachment, ProfileFork, Root};
 use super::editor_state::{EditorMode, LayoutCategory};
+use super::{ProfileDetachment, ProfileFork, Root};
 use crate::views::save_status;
 
 impl Root {

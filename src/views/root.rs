@@ -479,4 +479,3 @@ pub(super) struct ProfileFork {
     pub(super) field: Entity<TextFieldState>,
     pub(super) _subscription: Subscription,
 }
-

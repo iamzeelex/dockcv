@@ -197,24 +197,19 @@ impl FieldId {
         use FieldId::*;
         match *self {
             ProfileNetwork(_) | ProfileUsername(_) | ProfileUrl(_) => Some(ListId::Profiles),
-            WorkName(_)
-            | WorkPosition(_)
-            | WorkLocation(_)
-            | WorkStart(_)
-            | WorkEnd(_)
-            | WorkUrl(_)
-            | WorkSummary(_) => Some(ListId::Work),
+            WorkName(_) | WorkPosition(_) | WorkLocation(_) | WorkStart(_) | WorkEnd(_)
+            | WorkUrl(_) | WorkSummary(_) => Some(ListId::Work),
             WorkHighlight(i, _) => Some(ListId::WorkHighlights(i)),
-            EduInstitution(_)
-            | EduStudyType(_)
-            | EduStart(_)
-            | EduEnd(_)
-            | EduUrl(_) => Some(ListId::Education),
+            EduInstitution(_) | EduStudyType(_) | EduStart(_) | EduEnd(_) | EduUrl(_) => {
+                Some(ListId::Education)
+            }
             EduHighlight(i, _) => Some(ListId::EduHighlights(i)),
             SkillName(_) => Some(ListId::Skills),
             SkillKeyword(i, _) => Some(ListId::SkillKeywords(i)),
             CertName(_) | CertIssuer(_) | CertDate(_) | CertUrl(_) => Some(ListId::Certificates),
-            VolOrg(_) | VolPosition(_) | VolStart(_) | VolEnd(_) | VolUrl(_) => Some(ListId::Volunteer),
+            VolOrg(_) | VolPosition(_) | VolStart(_) | VolEnd(_) | VolUrl(_) => {
+                Some(ListId::Volunteer)
+            }
             VolHighlight(i, _) => Some(ListId::VolHighlights(i)),
             CustomEntryTitle(id, _)
             | CustomEntrySubtitle(id, _)

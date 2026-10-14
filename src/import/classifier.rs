@@ -8,23 +8,19 @@ use crate::import::lines;
 use crate::import::model::{ImportedDoc, Unplaced};
 use crate::import::notes::{Note, Part};
 use crate::resume::model::{
-    CustomEntry, Education, Resume, ResumeDoc, SkillGroup, Volunteer,
-    Work,
+    CustomEntry, Education, Resume, ResumeDoc, SkillGroup, Volunteer, Work,
 };
 
-use self::entries::{
-    attach_entry_url, clean_bullet, ends_with_parenthesised_date, get_date_range_regex,
-    get_single_date_regex, is_only_dates, looks_like_degree,
-    looks_like_institution, parse_certificate, split_keywords, split_skill_group,
-    strip_running_header,
-};
-use self::headings::{
-    classify_header, is_section_header, title_case,
-};
 use self::contact::{
     absorb_contact, contact_region, get_email_regex, get_phone_regex, get_url_regex,
     looks_like_contact_line, network_of, trim_url_tail,
 };
+use self::entries::{
+    attach_entry_url, clean_bullet, ends_with_parenthesised_date, get_date_range_regex,
+    get_single_date_regex, is_only_dates, looks_like_degree, looks_like_institution,
+    parse_certificate, split_keywords, split_skill_group, strip_running_header,
+};
+use self::headings::{classify_header, is_section_header, title_case};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SectionKind {

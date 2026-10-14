@@ -13,7 +13,6 @@ use dockcv_ui_components::{
     Button, ButtonExt, EmptyState, Icon, IconName, ScrollableElement, Sizable, TextField,
 };
 
-
 use super::shell::Shell;
 
 impl Shell {

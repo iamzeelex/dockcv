@@ -177,7 +177,10 @@ mod tests {
             other.description.as_deref(),
             Some("Shorten setup; keep the reliability result first.")
         );
-        assert!(!other.applied, "the working copy still reads the source's cut");
+        assert!(
+            !other.applied,
+            "the working copy still reads the source's cut"
+        );
 
         assert!(work.iter().any(|c| c.kind == ChangeKind::Hide));
         assert_eq!(applied_count(&changes), 0);
@@ -230,9 +233,7 @@ mod tests {
         let changes = available(&doc, 0);
 
         assert!(
-            !changes
-                .iter()
-                .any(|c| c.section == SectionKind::Profile),
+            !changes.iter().any(|c| c.section == SectionKind::Profile),
             "Profile has one cut and cannot be hidden, so it offers nothing"
         );
         let education: Vec<&Change> = changes
@@ -290,7 +291,11 @@ mod tests {
             .expect("the other cut is still offered");
         toggle(&mut doc, &source, &other);
         assert!(!doc.is_hidden(SectionKind::Work));
-        assert_eq!(applied_count(&available(&doc, 0)), 1, "hiding is no longer one of them");
+        assert_eq!(
+            applied_count(&available(&doc, 0)),
+            1,
+            "hiding is no longer one of them"
+        );
     }
 
     #[test]

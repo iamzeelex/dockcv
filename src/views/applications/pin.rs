@@ -104,8 +104,7 @@ impl Shell {
                     .filter(|p| p.to_lowercase().contains(&query))
                     .cloned()
                     .collect();
-                (!presets.is_empty())
-                    .then_some(super::snapshot::PinGroup { presets, ..group })
+                (!presets.is_empty()).then_some(super::snapshot::PinGroup { presets, ..group })
             })
             .collect();
 

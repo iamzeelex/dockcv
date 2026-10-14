@@ -15,7 +15,7 @@
 //! would see, because the classifier's job is to find a name and a date in a
 //! line, and `**Kollekt**` is not a different employer from `Kollekt`.
 
-use crate::import::classifier::{classify_lines};
+use crate::import::classifier::classify_lines;
 use crate::import::classifier::entries::is_only_dates;
 use crate::import::lines::{LineKind, LogicalLine};
 use crate::import::model::ImportedDoc;

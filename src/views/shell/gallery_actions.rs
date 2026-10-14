@@ -25,7 +25,9 @@ pub(crate) fn pick_dir() -> PathPromptOptions {
 }
 
 /// Extract the first chosen path from a picker result.
-pub(crate) fn first_path<E>(result: Result<gpui::Result<Option<Vec<PathBuf>>>, E>) -> Option<PathBuf> {
+pub(crate) fn first_path<E>(
+    result: Result<gpui::Result<Option<Vec<PathBuf>>>, E>,
+) -> Option<PathBuf> {
     match result {
         Ok(Ok(Some(mut paths))) if !paths.is_empty() => Some(paths.remove(0)),
         _ => None,

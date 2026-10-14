@@ -4,8 +4,8 @@
 //! suites that used to sit beside it.
 
 use crate::resume::model::{Margins, PageSize, TypeSizes};
-use crate::resume::template::*;
 use crate::resume::template::page::*;
+use crate::resume::template::*;
 
 #[test]
 fn default_layout_renders_the_old_hard_coded_values() {
@@ -207,8 +207,7 @@ fn an_unnamed_skill_group_prints_no_label_and_no_colon() {
             },
             ..LayoutSettings::default()
         };
-        let engine =
-            crate::typst_engine::TypstEngine::new(generate_with_layout(&unnamed, &layout));
+        let engine = crate::typst_engine::TypstEngine::new(generate_with_layout(&unnamed, &layout));
         engine.compile_to_pixels(1.0).expect("compiles").0.rgba
     };
     assert_eq!(
@@ -227,8 +226,7 @@ fn an_unnamed_skill_group_prints_no_label_and_no_colon() {
             },
             ..LayoutSettings::default()
         };
-        let engine =
-            crate::typst_engine::TypstEngine::new(generate_with_layout(&named, &layout));
+        let engine = crate::typst_engine::TypstEngine::new(generate_with_layout(&named, &layout));
         engine.compile_to_pixels(1.0).expect("compiles").0.rgba
     };
     assert_ne!(

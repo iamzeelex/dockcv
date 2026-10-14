@@ -356,7 +356,11 @@ fn the_file_reads_the_same_way_whoever_reads_it() {
 #[test]
 fn every_section_the_page_prints_is_a_heading_in_the_structure_tree() {
     let resume = fixture();
-    let pdf = compile(&resume, &LayoutSettings::default(), DocumentLanguage::English);
+    let pdf = compile(
+        &resume,
+        &LayoutSettings::default(),
+        DocumentLanguage::English,
+    );
     let tree = readers::structure(&pdf).expect("the PDF we just wrote has a structure tree");
 
     let tagged_headings: Vec<String> = tree

@@ -166,11 +166,7 @@ impl Shell {
     /// Each was a row of its own saying its own name and the word `Browser`,
     /// which is a list four items long carrying one fact. The fact is the
     /// names; it fits on a line.
-    fn render_browser_only(
-        &self,
-        cx: &mut Context<Self>,
-        path: &std::path::Path,
-    ) -> Option<Div> {
+    fn render_browser_only(&self, cx: &mut Context<Self>, path: &std::path::Path) -> Option<Div> {
         let theme = *cx.theme();
         let rest: Vec<&'static Assistant> = ASSISTANTS
             .iter()
@@ -235,60 +231,53 @@ impl Shell {
         let file = path.to_path_buf();
         let via = route.via;
 
-        div()
-            .flex()
-            .items_center()
-            .gap(px(3.0))
-            .child(
-                Button::new(SharedString::from(route.id))
-                    // The one that asks least of the person is outlined and
-                    // carries the glyph; the rest are plain text. Four buttons
-                    // of equal weight said the four ways in were equally good,
-                    // and a glyph on each turned a row into a row of boxes.
-                    .map(|button| {
-                        if lead {
-                            button.action_secondary().icon(route.via.icon())
-                        } else {
-                            button.quiet().text_color(theme.text_muted)
+        div().flex().items_center().gap(px(3.0)).child(
+            Button::new(SharedString::from(route.id))
+                // The one that asks least of the person is outlined and
+                // carries the glyph; the rest are plain text. Four buttons
+                // of equal weight said the four ways in were equally good,
+                // and a glyph on each turned a row into a row of boxes.
+                .map(|button| {
+                    if lead {
+                        button.action_secondary().icon(route.via.icon())
+                    } else {
+                        button.quiet().text_color(theme.text_muted)
+                    }
+                })
+                .tooltip(match route.via {
+                    Via::Cli { .. } => "Runs here and reads the answer itself",
+                    Via::Cowork => "Opens Cowork with the PDF attached",
+                    Via::Code => "Opens on the folder the PDF is in",
+                    Via::Web { .. } => "Opens your browser — you attach the file",
+                })
+                .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                    match via {
+                        Via::Cli { program, argv } => {
+                            this.run_local_assistant(program, argv, file.clone(), cx)
                         }
-                    })
-                    .tooltip(match route.via {
-                        Via::Cli { .. } => "Runs here and reads the answer itself",
-                        Via::Cowork => "Opens Cowork with the PDF attached",
-                        Via::Code => "Opens on the folder the PDF is in",
-                        Via::Web { .. } => "Opens your browser — you attach the file",
-                    })
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
-                        match via {
-                            Via::Cli { program, argv } => {
-                                this.run_local_assistant(program, argv, file.clone(), cx)
-                            }
-                            other => {
-                                // The clipboard every time, not only when the
-                                // link cannot carry the prompt. Cowork
-                                // attached the file and left the composer
-                                // empty, and a person looking at an empty
-                                // composer should already have the answer in
-                                // their hand rather than a reason to come back.
-                                this.stage_transcription(Some(file.clone()), cx);
-                                let job = Handoff {
-                                    prompt: match other {
-                                        Via::Code => {
-                                            super::assistant::local_prompt(&file)
-                                        }
-                                        _ => super::assistant::transcription_prompt(),
-                                    },
-                                    file: Some(file.clone()),
-                                };
-                                if let Some(url) = route_url(other, &job) {
-                                    cx.open_url(&url);
-                                }
+                        other => {
+                            // The clipboard every time, not only when the
+                            // link cannot carry the prompt. Cowork
+                            // attached the file and left the composer
+                            // empty, and a person looking at an empty
+                            // composer should already have the answer in
+                            // their hand rather than a reason to come back.
+                            this.stage_transcription(Some(file.clone()), cx);
+                            let job = Handoff {
+                                prompt: match other {
+                                    Via::Code => super::assistant::local_prompt(&file),
+                                    _ => super::assistant::transcription_prompt(),
+                                },
+                                file: Some(file.clone()),
+                            };
+                            if let Some(url) = route_url(other, &job) {
+                                cx.open_url(&url);
                             }
                         }
-                    }))
-                    .child(label),
-            )
-
+                    }
+                }))
+                .child(label),
+        )
     }
 
     /// For the assistant that is not on the list, which is most of them.

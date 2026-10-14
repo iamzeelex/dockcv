@@ -215,7 +215,11 @@ impl Shell {
     }
 
     /// Put the prompt on the clipboard and show the file, so both are to hand.
-    pub(crate) fn stage_transcription(&mut self, path: Option<std::path::PathBuf>, cx: &mut Context<Self>) {
+    pub(crate) fn stage_transcription(
+        &mut self,
+        path: Option<std::path::PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(transcription_prompt()));
         if let Some(path) = path {
             cx.open_with_system(&path);
@@ -305,7 +309,10 @@ mod tests {
         let encoded = encode(&transcription_prompt());
         assert!(!encoded.contains(' '));
         assert!(!encoded.contains('\n'));
-        assert!(!encoded.contains('&'), "would start a second query parameter");
+        assert!(
+            !encoded.contains('&'),
+            "would start a second query parameter"
+        );
         // Round-trips: every escape is a byte, and the bytes are the prompt.
         let mut bytes = Vec::new();
         let raw = encoded.as_bytes();
@@ -320,7 +327,10 @@ mod tests {
                 i += 1;
             }
         }
-        assert_eq!(String::from_utf8(bytes).expect("utf8"), transcription_prompt());
+        assert_eq!(
+            String::from_utf8(bytes).expect("utf8"),
+            transcription_prompt()
+        );
     }
 
     /// The instruction that keeps a transcription a transcription. If this
@@ -335,7 +345,11 @@ mod tests {
     fn the_deeplink_fits_in_a_url() {
         let encoded = encode(&transcription_prompt());
         let longest = "https://claude.ai/new?q=".len() + encoded.len();
-        println!("PROBE prompt {} chars, encoded {}, URL {longest}", transcription_prompt().len(), encoded.len());
+        println!(
+            "PROBE prompt {} chars, encoded {}, URL {longest}",
+            transcription_prompt().len(),
+            encoded.len()
+        );
         // 2000 is the floor every mainstream browser and CDN is safe under;
         // IE's old 2083 is the origin of the number and nothing sane is lower.
         assert!(longest < 2000, "the deeplink is {longest} characters");
@@ -385,13 +399,23 @@ mod tests {
 
         let path = Path::new("/Users/me/Down loads/scan & copy.pdf");
 
-        let cowork = route_url(Via::Cowork, &Handoff { prompt: transcription_prompt(), file: Some(path.to_path_buf()) }).expect("a link");
+        let cowork = route_url(
+            Via::Cowork,
+            &Handoff {
+                prompt: transcription_prompt(),
+                file: Some(path.to_path_buf()),
+            },
+        )
+        .expect("a link");
         assert!(cowork.starts_with("claude://cowork/new?"));
         assert!(
             cowork.contains("file=%2FUsers%2Fme%2FDown%20loads%2Fscan%20%26%20copy.pdf"),
             "the space and the ampersand have to survive: {cowork}"
         );
-        assert!(cowork.contains("q="), "the composer is prefilled too: {cowork}");
+        assert!(
+            cowork.contains("q="),
+            "the composer is prefilled too: {cowork}"
+        );
         // `file` first. The order is a guess at somebody else's parameter
         // handling — see `route_url` — but a guess worth keeping stable, since
         // changing it back would silently undo whatever it bought.
@@ -400,13 +424,23 @@ mod tests {
             "the attachment is applied before the prompt: {cowork}"
         );
 
-        let code = route_url(Via::Code, &Handoff { prompt: local_prompt(path), file: Some(path.to_path_buf()) }).expect("a link");
+        let code = route_url(
+            Via::Code,
+            &Handoff {
+                prompt: local_prompt(path),
+                file: Some(path.to_path_buf()),
+            },
+        )
+        .expect("a link");
         assert!(code.starts_with("claude://code/new?q="));
         assert!(
             code.contains("&folder=%2FUsers%2Fme%2FDown%20loads"),
             "Code takes the folder, never the file: {code}"
         );
-        assert!(!code.contains("&file="), "Code's file parameter does nothing yet");
+        assert!(
+            !code.contains("&file="),
+            "Code's file parameter does nothing yet"
+        );
         // Code is not handed the file, so the prompt has to name it.
         assert!(local_prompt(path).contains("/Users/me/Down loads/scan & copy.pdf"));
         // Well under the ~14,000 characters Claude Desktop truncates `q` at.

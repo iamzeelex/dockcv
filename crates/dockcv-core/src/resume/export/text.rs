@@ -11,11 +11,9 @@
 
 use std::fmt::Write as _;
 
-use crate::resume::dates::DateStyle;
-use super::walk::{
-    format_date_range, is_section_empty, ordered_sections, resolve_section_title,
-};
+use super::walk::{format_date_range, is_section_empty, ordered_sections, resolve_section_title};
 use super::wrap;
+use crate::resume::dates::DateStyle;
 use crate::resume::model::{
     Basics, Certificate, ComposedCustomSection, CustomEntry, Education, Resume, SectionKind,
     SkillGroup, Volunteer, Work,

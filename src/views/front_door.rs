@@ -71,7 +71,10 @@ impl Reading {
     /// The one line under the name: what this version is for, and what it came
     /// from. Composed rather than stacked, so the row keeps its height.
     pub(super) fn subtitle(&self) -> Option<String> {
-        let lineage = self.based_on.as_ref().map(|from| format!("based on {from}"));
+        let lineage = self
+            .based_on
+            .as_ref()
+            .map(|from| format!("based on {from}"));
         match (self.description.clone(), lineage) {
             (Some(what), Some(from)) => Some(format!("{what} · {from}")),
             (Some(what), None) => Some(what),
@@ -222,7 +225,10 @@ pub(super) fn history_line(record: PresetRecord, modified_secs: Option<u64>, now
         (n, m) => format!("Sent {n} times, {m} interviews"),
     };
     match modified_secs {
-        Some(secs) => format!("{sent} · updated {}", crate::vault::relative_time(secs, now)),
+        Some(secs) => format!(
+            "{sent} · updated {}",
+            crate::vault::relative_time(secs, now)
+        ),
         None => sent,
     }
 }
@@ -274,10 +280,23 @@ mod tests {
     /// Length is a fact the row states, not a verdict it passes.
     #[test]
     fn the_page_count_is_stated_and_nothing_is_inferred_from_it() {
-        assert_eq!(page_count_label(None), "", "nothing before the compiler ran");
-        assert_eq!(page_count_label(Some(&geometry(1, 0.0, Some(14.0)))), "1 page");
-        assert_eq!(page_count_label(Some(&geometry(2, 350.0, Some(14.0)))), "2 pages");
-        assert_eq!(page_count_label(Some(&geometry(3, 900.0, Some(14.0)))), "3 pages");
+        assert_eq!(
+            page_count_label(None),
+            "",
+            "nothing before the compiler ran"
+        );
+        assert_eq!(
+            page_count_label(Some(&geometry(1, 0.0, Some(14.0)))),
+            "1 page"
+        );
+        assert_eq!(
+            page_count_label(Some(&geometry(2, 350.0, Some(14.0)))),
+            "2 pages"
+        );
+        assert_eq!(
+            page_count_label(Some(&geometry(3, 900.0, Some(14.0)))),
+            "3 pages"
+        );
     }
 
     /// The names DockCV hands out are placeholders, and the screen has to be

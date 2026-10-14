@@ -48,7 +48,9 @@ pub(crate) enum Via {
     Cowork,
     Code,
     /// A browser. The person attaches the file and brings the answer back.
-    Web { base: &'static str },
+    Web {
+        base: &'static str,
+    },
 }
 
 impl Via {
@@ -583,7 +585,10 @@ pub(crate) async fn execute_command(
                 let why = String::from_utf8_lossy(&out.stderr);
                 let why = why.trim();
                 return Err(if why.is_empty() {
-                    format!("{prog_name} exited without a result (status {})", out.status)
+                    format!(
+                        "{prog_name} exited without a result (status {})",
+                        out.status
+                    )
                 } else {
                     why.chars().take(400).collect()
                 });
@@ -665,7 +670,6 @@ pub(crate) fn route_url(via: Via, job: &Handoff) -> Option<String> {
     })
 }
 
-
 /// A local tool that is running right now.
 pub(crate) struct LocalRun {
     pub tool: &'static str,
@@ -704,7 +708,10 @@ mod tests {
                     } else {
                         route.label
                     };
-                    assert!(note.contains(named), "{named:?} is verified but not in: {note}");
+                    assert!(
+                        note.contains(named),
+                        "{named:?} is verified but not in: {note}"
+                    );
                 }
             }
         }
@@ -743,7 +750,13 @@ mod tests {
             prompt: "pick from this menu".into(),
             file: None,
         };
-        for via in [Via::Cowork, Via::Code, Via::Web { base: "https://x/?q=" }] {
+        for via in [
+            Via::Cowork,
+            Via::Code,
+            Via::Web {
+                base: "https://x/?q=",
+            },
+        ] {
             let url = route_url(via, &job).expect("a link");
             assert!(url.contains("pick"), "{url}");
             assert!(!url.contains("file="), "nothing to attach: {url}");

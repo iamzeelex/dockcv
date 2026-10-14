@@ -13,8 +13,8 @@ use crate::resume::diagnostics::CompileMessage;
 use crate::typst_engine::Severity;
 use crate::vault;
 
-use super::{CompileState, Root};
 use super::export_sheet::{ExportFormat, CURRENT_VIEW};
+use super::{CompileState, Root};
 use crate::views::save_status;
 
 impl Root {
@@ -77,7 +77,7 @@ impl Root {
                         }
                         ExportFormat::Docx => {
                             let bytes = crate::resume::export_docx_in(&composed, dates)
-                            .map_err(|e| format!("DOCX generation failed: {e}"))?;
+                                .map_err(|e| format!("DOCX generation failed: {e}"))?;
                             std::fs::write(&write_path, bytes)
                                 .map_err(|e| format!("write failed: {e}"))
                         }

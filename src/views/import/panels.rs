@@ -770,11 +770,14 @@ pub fn render_could_not_read<V: 'static>(
                         // The alternatives, as one sentence rather than a
                         // bulleted list. They are things to do somewhere else,
                         // and a list gives them the weight of a plan.
-                        .child(format!("{}.", elsewhere
-                            .iter()
-                            .map(|r| r.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", or "))),
+                        .child(format!(
+                            "{}.",
+                            elsewhere
+                                .iter()
+                                .map(|r| r.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", or ")
+                        )),
                 )
                 .child(
                     Button::new("could-not-read-retry")

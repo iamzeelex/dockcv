@@ -528,4 +528,3 @@ impl Applications {
             .count()
     }
 }
-

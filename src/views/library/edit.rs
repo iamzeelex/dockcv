@@ -460,12 +460,8 @@ impl Shell {
         let radius = index.and_then(|index| {
             let identity = library_link_identity(&library, section, index)?;
             let before = block_fingerprint(&library, section, index)?;
-            let targets = super::link::targets_for(
-                &library,
-                self.cache.readable_documents(),
-                section,
-                index,
-            );
+            let targets =
+                super::link::targets_for(&library, self.cache.readable_documents(), section, index);
             (!targets.is_empty()).then_some((index, identity, before, targets))
         });
 

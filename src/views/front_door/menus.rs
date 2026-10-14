@@ -20,7 +20,9 @@ use gpui::prelude::*;
 use gpui::{div, px, AnyElement, ClickEvent, Context, FontWeight, SharedString};
 use std::path::Path;
 
-use dockcv_ui_components::{Button, ButtonExt, DropdownMenu, IconName, PopupMenuItem, TextField, SANS};
+use dockcv_ui_components::{
+    Button, ButtonExt, DropdownMenu, IconName, PopupMenuItem, TextField, SANS,
+};
 
 use crate::theme::ActiveTheme;
 
@@ -57,11 +59,11 @@ impl Shell {
                 .items_center()
                 .gap(px(6.0))
                 .child(
-                    div()
-                        .w(px(220.0))
-                        .children(self.rename_field.as_ref().map(|state| {
-                            TextField::new(state).placeholder("CV name")
-                        })),
+                    div().w(px(220.0)).children(
+                        self.rename_field
+                            .as_ref()
+                            .map(|state| TextField::new(state).placeholder("CV name")),
+                    ),
                 )
                 // A way out that is not "press Escape and hope": the box
                 // replaces the name, so without this the only exits are
@@ -227,13 +229,13 @@ impl Shell {
             let delete = shell.clone();
             let delete_path = owned.clone();
             menu.separator()
-                .item(PopupMenuItem::new("Delete version").on_click(
-                    move |_ev, _window, cx| {
+                .item(
+                    PopupMenuItem::new("Delete version").on_click(move |_ev, _window, cx| {
                         let _ = delete.update(cx, |this, cx| {
                             this.delete_version(&delete_path, index, cx);
                         });
-                    },
-                ))
+                    }),
+                )
         })
         .into_any_element()
     }

@@ -8,7 +8,9 @@
 //! SVG source could later come from `tinymist` over a socket without touching
 //! the renderer.
 
-use typst::diag::{SourceDiagnostic, Warned};
+#[cfg(feature = "raster")]
+use typst::diag::SourceDiagnostic;
+use typst::diag::Warned;
 #[cfg(feature = "raster")]
 use typst::layout::Abs;
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
@@ -32,14 +34,19 @@ pub mod world;
 #[cfg(test)]
 mod tests;
 
-pub use diagnostics::{CompileAttempt, Diagnostic, Severity};
+#[cfg(feature = "raster")]
+pub use diagnostics::CompileAttempt;
+pub use diagnostics::{Diagnostic, Severity};
 pub use fonts::characters_no_bundled_face_can_set;
 pub use geometry::PageGeometry;
 #[cfg(feature = "raster")]
 pub use raster::Pixels;
 
-use self::diagnostics::{humanize, join_diagnostics};
+#[cfg(feature = "raster")]
+use self::diagnostics::humanize;
+use self::diagnostics::join_diagnostics;
 use self::fonts::global_fonts;
+#[cfg(feature = "raster")]
 use self::geometry::{MIN_RENDER_SCALE, PAGE_GAP_PT};
 use self::world::{global_library, COMEMO_MAX_AGE};
 

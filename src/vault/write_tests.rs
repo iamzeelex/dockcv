@@ -5,7 +5,6 @@
 
 use crate::resume::{altacv, model::ResumeDoc};
 
-
 /// The lost update, which happened to a real vault.
 ///
 /// DockCV held a document open, the file was edited in another editor, and

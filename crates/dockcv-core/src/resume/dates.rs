@@ -312,7 +312,10 @@ fn parse_date(text: &str) -> Option<CivilDate> {
 
     if let Some(sep) = sep {
         let parts: Vec<&str> = trimmed.split(sep).map(str::trim).collect();
-        if parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())) {
+        if parts
+            .iter()
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+        {
             match parts.len() {
                 1 if parts[0].len() == 4 => {
                     let year = parts[0].parse::<i32>().ok()?;

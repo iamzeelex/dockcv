@@ -18,8 +18,8 @@
 //! clicks them.
 
 use super::changes::Change;
-use crate::resume::posting::UnusedSource;
 use crate::resume::posting::Unused;
+use crate::resume::posting::UnusedSource;
 
 /// What the assistant is asked, with the menu spelled out.
 ///
@@ -200,17 +200,25 @@ pub(crate) fn parse_advice_checked(
     changes: usize,
     notes: usize,
 ) -> Result<(Advice, usize), String> {
-    let value = serde_json::from_str::<serde_json::Value>(extract_json(answer))
-        .map_err(|_| "I couldn't read that as JSON. Copy the prompt and ask for the JSON format.".to_string())?;
+    let value = serde_json::from_str::<serde_json::Value>(extract_json(answer)).map_err(|_| {
+        "I couldn't read that as JSON. Copy the prompt and ask for the JSON format.".to_string()
+    })?;
     let object = value.as_object().ok_or_else(|| {
         "The answer needs to be one JSON object with changes and components lists.".to_string()
     })?;
     let has_components = object.contains_key("components") || object.contains_key("notes");
     let has_changes = object.contains_key("changes");
     if !has_changes && !has_components {
-        return Err("The answer is missing the changes or components list. Copy the prompt and try again.".into());
+        return Err(
+            "The answer is missing the changes or components list. Copy the prompt and try again."
+                .into(),
+        );
     }
-    let chosen_components = if object.contains_key("components") { "components" } else { "notes" };
+    let chosen_components = if object.contains_key("components") {
+        "components"
+    } else {
+        "notes"
+    };
     let raw_changes = if has_changes {
         object
             .get("changes")
@@ -240,8 +248,12 @@ pub(crate) fn parse_advice_checked(
         Vec::new()
     };
     let ignored = (raw_changes - picked_changes.len()) + (raw_components - picked_components.len());
-    if raw_changes + raw_components > 0 && picked_changes.is_empty() && picked_components.is_empty() {
-        return Err("The answer did not use any IDs from this draft. Copy a fresh prompt and try again.".into());
+    if raw_changes + raw_components > 0 && picked_changes.is_empty() && picked_components.is_empty()
+    {
+        return Err(
+            "The answer did not use any IDs from this draft. Copy a fresh prompt and try again."
+                .into(),
+        );
     }
     Ok((
         Advice {

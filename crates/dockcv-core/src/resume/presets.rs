@@ -105,7 +105,10 @@ mod tests {
         // `add_variant` duplicated Base and switched to the copy, so the copy
         // is what both presets pinned. Point one of them back at the original.
         let original = doc.variant_ids(SectionKind::Work)[0];
-        assert_ne!(doc.presets[1].variant_for(SectionKind::Work), Some(original));
+        assert_ne!(
+            doc.presets[1].variant_for(SectionKind::Work),
+            Some(original)
+        );
         doc.presets[1].set(SectionKind::Work, original);
         assert_ne!(doc.presets[1].selection, doc.presets[0].selection);
     }

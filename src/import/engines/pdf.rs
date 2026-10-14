@@ -292,8 +292,8 @@ impl pdf_extract::OutputDev for Lines {
 /// turns two lines into a job — and a tree that overruled it cost a real export
 /// every employer it had.
 fn read_the_sidebar(imported: &mut ImportedDoc, bytes: &[u8]) {
-    use crate::import::classifier::SectionKind;
     use crate::import::classifier::headings::classify_header;
+    use crate::import::classifier::SectionKind;
 
     for section in crate::import::pdf_tags::sections(bytes) {
         if section.items.is_empty() {

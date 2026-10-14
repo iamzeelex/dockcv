@@ -124,7 +124,11 @@ pub(super) fn section_layout_key(kind: SectionKind) -> Option<String> {
     }
 }
 
-pub(super) fn page_setup_into(out: &mut String, layout: &LayoutSettings, language: DocumentLanguage) {
+pub(super) fn page_setup_into(
+    out: &mut String,
+    layout: &LayoutSettings,
+    language: DocumentLanguage,
+) {
     use std::fmt::Write;
     let paper = layout.page_size.typst_paper_name();
     let size_pt = layout.base_size_pt();

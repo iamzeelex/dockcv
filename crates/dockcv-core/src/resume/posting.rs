@@ -368,7 +368,9 @@ fn is_term(word: &str) -> bool {
     // An acronym carries a whole technology in two or three characters, and the
     // length floor would drop every one of them.
     let acronym = word.len() >= 2
-        && word.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        && word
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
         && word.chars().any(|c| c.is_ascii_uppercase());
     if acronym {
         return !is_stopword(word);

@@ -68,11 +68,7 @@ impl Root {
                             .text_style(TextStyle::prose())
                             .child(self.field_box(field)),
                     )
-                    .child(
-                        div()
-                            .pt(px(3.0))
-                            .child(self.remove_button(cx, list, index)),
-                    ),
+                    .child(div().pt(px(3.0)).child(self.remove_button(cx, list, index))),
             );
         }
 

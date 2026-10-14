@@ -171,11 +171,11 @@ impl Root {
                 }
             })
             // Not "No preset" under an eyebrow reading PRESET — that says the same
-        // word twice and states the condition as an absence. The document
-        // always has a set of selections; when none of them is a saved preset,
-        // what you are looking at is the working copy, which is what the Preset
-        // Matrix has called it since C7.
-        .unwrap_or_else(|| "Working copy".to_string());
+            // word twice and states the condition as an absence. The document
+            // always has a set of selections; when none of them is a saved preset,
+            // what you are looking at is the working copy, which is what the Preset
+            // Matrix has called it since C7.
+            .unwrap_or_else(|| "Working copy".to_string());
         let presets: Vec<String> = self.doc.presets.iter().map(|p| p.name.clone()).collect();
         let preset_languages: Vec<DocumentLanguage> = (0..self.doc.presets.len())
             .filter_map(|index| self.doc.language_for_preset(index))

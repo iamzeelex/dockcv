@@ -28,8 +28,8 @@ use crate::resume::edit::FieldId;
 use crate::resume::model::SectionKind;
 use crate::theme::ActiveTheme;
 
-use crate::views::confirm;
 use super::Root;
+use crate::views::confirm;
 
 /// Live state while `section`'s active variant is mid-rename. One at a time
 /// across every section (`Root::renaming_variant` holds at most one) — same

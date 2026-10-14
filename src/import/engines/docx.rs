@@ -23,8 +23,8 @@ use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
-use crate::import::classifier::{classify_lines, join_split_entry_headers};
 use crate::import::classifier::headings::names_a_section;
+use crate::import::classifier::{classify_lines, join_split_entry_headers};
 use crate::import::lines::{without_bullet, LineKind, LogicalLine};
 use crate::import::model::ImportedDoc;
 

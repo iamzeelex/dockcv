@@ -259,9 +259,7 @@ fn fitted_pct(fit: PreviewFit, pane: (f32, f32), natural: f32, sheet_ratio: f32)
     let pct = match fit {
         PreviewFit::Manual => return 100.0,
         PreviewFit::Width => by_width,
-        PreviewFit::Page => {
-            by_width.min((pane.1 - PREVIEW_GUTTER * 2.0) / (natural * sheet_ratio))
-        }
+        PreviewFit::Page => by_width.min((pane.1 - PREVIEW_GUTTER * 2.0) / (natural * sheet_ratio)),
     } * 100.0;
     // A fit must not land somewhere `+`/`−` cannot bring it back from.
     pct.clamp(MIN_ZOOM_PCT, MAX_ZOOM_PCT)
@@ -351,7 +349,10 @@ mod fit_tests {
         let pane = (2000.0, 400.0);
         let by_page = fitted_pct(PreviewFit::Page, pane, A4_PX, A4_RATIO);
         let by_width = fitted_pct(PreviewFit::Width, pane, A4_PX, A4_RATIO);
-        assert!(by_page < by_width, "height should bind: {by_page} vs {by_width}");
+        assert!(
+            by_page < by_width,
+            "height should bind: {by_page} vs {by_width}"
+        );
     }
 
     /// Neither mode may park the page where `+`/`−` cannot reach it.

@@ -25,14 +25,16 @@ use std::time::{Duration, Instant};
 use gpui::{Context, Task};
 
 use crate::render::Rendered;
-use crate::resume::posting::{coverage, deciding_terms, gaps, unused, Coverage, Unused, UnusedSource};
 use crate::resume::model::{Application, ResumeDoc, SectionKind, SentCv, VariantId};
+use crate::resume::posting::{
+    coverage, deciding_terms, gaps, unused, Coverage, Unused, UnusedSource,
+};
 use crate::typst_engine::PageGeometry;
 use crate::vault;
 
+use super::changes::{self, Change, ChangeKind};
 use crate::views::save_status;
 use crate::views::shell::Shell;
-use super::changes::{self, Change, ChangeKind};
 
 /// A version being built, and nothing on disk yet.
 pub(crate) struct VersionDraft {
@@ -150,13 +152,13 @@ impl Shell {
         let (mut doc, on_disk) = match vault::load_seen(&path) {
             Ok(loaded) => loaded,
             Err(_) => {
-            save_status::record(
-                cx,
-                "this CV",
-                Err(format!("{} could not be read", path.display())),
-            );
-            cx.notify();
-            return false;
+                save_status::record(
+                    cx,
+                    "this CV",
+                    Err(format!("{} could not be read", path.display())),
+                );
+                cx.notify();
+                return false;
             }
         };
         let (source, document_source) = match source {
@@ -227,19 +229,33 @@ impl Shell {
         }
         let library = self.cache.library();
         for block in &library.work {
-            corpus.push_str(&format!(" {} {}", block.position, block.highlights.join(" ")));
+            corpus.push_str(&format!(
+                " {} {}",
+                block.position,
+                block.highlights.join(" ")
+            ));
         }
         for block in &library.skills {
             corpus.push_str(&format!(" {} {}", block.name, block.keywords.join(" ")));
         }
         for block in &library.education {
-            corpus.push_str(&format!(" {} {} {}", block.institution, block.study_type, block.highlights.join(" ")));
+            corpus.push_str(&format!(
+                " {} {} {}",
+                block.institution,
+                block.study_type,
+                block.highlights.join(" ")
+            ));
         }
         for block in &library.certificates {
             corpus.push_str(&format!(" {} {}", block.name, block.issuer));
         }
         for block in &library.volunteer {
-            corpus.push_str(&format!(" {} {} {}", block.position, block.organization, block.highlights.join(" ")));
+            corpus.push_str(&format!(
+                " {} {} {}",
+                block.position,
+                block.organization,
+                block.highlights.join(" ")
+            ));
         }
         corpus
     }
@@ -308,7 +324,9 @@ impl Shell {
                 if !candidate.set_active_variant_by_id(change.section, id) {
                     return None;
                 }
-                candidate.hidden_sections.retain(|hidden| *hidden != change.section);
+                candidate
+                    .hidden_sections
+                    .retain(|hidden| *hidden != change.section);
                 Some((index, assistant_section_text(&candidate, change.section)))
             })
             .collect::<Vec<_>>();
@@ -371,7 +389,8 @@ impl Shell {
             draft.advice_feedback = Some(if expects_picks {
                 "Prompt copied. Paste the assistant's JSON answer here to review its picks.".into()
             } else {
-                "Instructions copied. DockCV will flag a change to this CV file when you return.".into()
+                "Instructions copied. DockCV will flag a change to this CV file when you return."
+                    .into()
             });
             if expects_picks {
                 let changes = draft.changes();
@@ -439,7 +458,10 @@ impl Shell {
             (Some(prompt), Some(path)) => (prompt, path),
             _ => return,
         };
-        let command = format!("{program} {} <job-specific CV instructions>", argv.join(" "));
+        let command = format!(
+            "{program} {} <job-specific CV instructions>",
+            argv.join(" ")
+        );
         let cwd = path.parent().map(PathBuf::from);
         let executor = cx.background_executor().clone();
         self.stage_draft_prompt(prompt.clone(), false, cx);
@@ -562,7 +584,9 @@ impl Shell {
                                 .and_then(|read| {
                                     read.unused.iter().find(|item| item.source == *source)
                                 })
-                                .is_some_and(|item| item.text.as_deref() == Some(snapshot.as_str()));
+                                .is_some_and(|item| {
+                                    item.text.as_deref() == Some(snapshot.as_str())
+                                });
                             if !still_current {
                                 stale_components += 1;
                                 return None;
@@ -581,7 +605,11 @@ impl Shell {
                     } else if ignored > 0 {
                         format!("{} suggestion{} matched this draft; {ignored} unknown item{} ignored. Review each suggestion before adding it.", count, if count == 1 { "" } else { "s" }, if ignored == 1 { " was" } else { "s were" })
                     } else {
-                        format!("{} suggestion{} marked below. Review each one before adding it.", count, if count == 1 { " is" } else { "s are" })
+                        format!(
+                            "{} suggestion{} marked below. Review each one before adding it.",
+                            count,
+                            if count == 1 { " is" } else { "s are" }
+                        )
                     });
                     draft.pending_advice_changes.clear();
                     draft.pending_advice_components.clear();
@@ -654,13 +682,36 @@ impl Shell {
             // the source version can never be mutated by a second add.
             draft.doc.set_active_variant_by_id(section, id);
         }
-        draft.doc.hidden_sections.retain(|hidden| *hidden != section);
+        draft
+            .doc
+            .hidden_sections
+            .retain(|hidden| *hidden != section);
         match section {
-            SectionKind::Work => draft.doc.work.active_mut().push(library.work[index].clone()),
-            SectionKind::Education => draft.doc.education.active_mut().push(library.education[index].clone()),
-            SectionKind::Skills => draft.doc.skills.active_mut().push(library.skills[index].clone()),
-            SectionKind::Certificates => draft.doc.certificates.active_mut().push(library.certificates[index].clone()),
-            SectionKind::Organizations => draft.doc.volunteer.active_mut().push(library.volunteer[index].clone()),
+            SectionKind::Work => draft
+                .doc
+                .work
+                .active_mut()
+                .push(library.work[index].clone()),
+            SectionKind::Education => draft
+                .doc
+                .education
+                .active_mut()
+                .push(library.education[index].clone()),
+            SectionKind::Skills => draft
+                .doc
+                .skills
+                .active_mut()
+                .push(library.skills[index].clone()),
+            SectionKind::Certificates => draft
+                .doc
+                .certificates
+                .active_mut()
+                .push(library.certificates[index].clone()),
+            SectionKind::Organizations => draft
+                .doc
+                .volunteer
+                .active_mut()
+                .push(library.volunteer[index].clone()),
             SectionKind::Profile | SectionKind::Custom(_) => return,
         }
         draft.added_components.push((source, block_text));
@@ -686,20 +737,23 @@ impl Shell {
             Ok(loaded) => loaded,
             Err(message) => {
                 if let Some(draft) = self.drafting.as_mut() {
-                    draft.advice_feedback = Some(format!("The file is still being edited or is not valid TOML: {message}"));
+                    draft.advice_feedback = Some(format!(
+                        "The file is still being edited or is not valid TOML: {message}"
+                    ));
                 }
                 cx.notify();
                 return;
             }
         };
-        let (source, document_source) = if let Some(index) = doc.presets.iter().position(|p| p.name == old_source_name) {
-            doc.apply_preset(index);
-            (index, None)
-        } else {
-            let name = crate::views::tailor::unique_preset_name(&doc, "Current CV");
-            doc.add_preset(name);
-            (doc.presets.len() - 1, Some(doc.presets.len() - 1))
-        };
+        let (source, document_source) =
+            if let Some(index) = doc.presets.iter().position(|p| p.name == old_source_name) {
+                doc.apply_preset(index);
+                (index, None)
+            } else {
+                let name = crate::views::tailor::unique_preset_name(&doc, "Current CV");
+                doc.add_preset(name);
+                (doc.presets.len() - 1, Some(doc.presets.len() - 1))
+            };
         self.drafting = Some(Box::new(VersionDraft {
             path,
             on_disk,
@@ -720,7 +774,10 @@ impl Shell {
             advice_components: Vec::new(),
             pending_advice_changes: Vec::new(),
             pending_advice_components: Vec::new(),
-            advice_feedback: Some("Reloaded from disk. Choose the new version or saved blocks you want to use.".into()),
+            advice_feedback: Some(
+                "Reloaded from disk. Choose the new version or saved blocks you want to use."
+                    .into(),
+            ),
             advice_running: false,
             added_components: Vec::new(),
             component_variants: HashMap::new(),
@@ -897,10 +954,8 @@ impl Shell {
         let Some(draft) = self.drafting.as_mut() else {
             return;
         };
-        let source = crate::resume::template::generate_for_with_profiles(
-            &draft.doc,
-            self.cache.profiles(),
-        );
+        let source =
+            crate::resume::template::generate_for_with_profiles(&draft.doc, self.cache.profiles());
         draft.compiling = true;
         draft.preview_current = false;
         draft.preview_error = None;
@@ -1028,13 +1083,28 @@ fn assistant_section_text(doc: &ResumeDoc, section: SectionKind) -> String {
         SectionKind::Work => resume
             .work
             .iter()
-            .map(|item| format!("{} · {} · {} · {}", item.name, item.position, item.summary, item.highlights.join("; ")))
+            .map(|item| {
+                format!(
+                    "{} · {} · {} · {}",
+                    item.name,
+                    item.position,
+                    item.summary,
+                    item.highlights.join("; ")
+                )
+            })
             .collect::<Vec<_>>()
             .join("; "),
         SectionKind::Education => resume
             .education
             .iter()
-            .map(|item| format!("{} · {} · {}", item.institution, item.study_type, item.highlights.join("; ")))
+            .map(|item| {
+                format!(
+                    "{} · {} · {}",
+                    item.institution,
+                    item.study_type,
+                    item.highlights.join("; ")
+                )
+            })
             .collect::<Vec<_>>()
             .join("; "),
         SectionKind::Skills => resume
@@ -1052,7 +1122,14 @@ fn assistant_section_text(doc: &ResumeDoc, section: SectionKind) -> String {
         SectionKind::Organizations => resume
             .volunteer
             .iter()
-            .map(|item| format!("{} · {} · {}", item.organization, item.position, item.highlights.join("; ")))
+            .map(|item| {
+                format!(
+                    "{} · {} · {}",
+                    item.organization,
+                    item.position,
+                    item.highlights.join("; ")
+                )
+            })
             .collect::<Vec<_>>()
             .join("; "),
         SectionKind::Custom(id) => resume
@@ -1063,7 +1140,14 @@ fn assistant_section_text(doc: &ResumeDoc, section: SectionKind) -> String {
                 section
                     .entries
                     .iter()
-                    .map(|item| format!("{} · {} · {}", item.title, item.subtitle, item.highlights.join("; ")))
+                    .map(|item| {
+                        format!(
+                            "{} · {} · {}",
+                            item.title,
+                            item.subtitle,
+                            item.highlights.join("; ")
+                        )
+                    })
                     .collect::<Vec<_>>()
                     .join("; ")
             })

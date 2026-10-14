@@ -707,10 +707,7 @@ impl Shell {
                         preset: None,
                         description: None,
                         based_on: None,
-                        modified_secs: group
-                            .readings
-                            .first()
-                            .and_then(|row| row.modified_secs),
+                        modified_secs: group.readings.first().and_then(|row| row.modified_secs),
                         unreadable: false,
                     },
                 );
@@ -839,8 +836,8 @@ impl Shell {
             } else {
                 self.render_tailor_no_sources(cx).into_any_element()
             })
-            .children((sheet.base.is_some() && read.is_some_and(|r| r.terms.is_empty())).then(
-                || {
+            .children(
+                (sheet.base.is_some() && read.is_some_and(|r| r.terms.is_empty())).then(|| {
                     div()
                         .px(px(12.0))
                         .py(px(10.0))
@@ -852,8 +849,8 @@ impl Shell {
                             "No clear requirements stood out in this posting. You can still \
                              choose a starting CV and tailor it by hand.",
                         )
-                },
-            ))
+                }),
+            )
             .children(read.and_then(|r| self.render_tailor_score_note(cx, r)))
             .children(self.tailor_unused(cx))
     }
@@ -998,7 +995,9 @@ impl Shell {
         }
         let rows = read.unused.iter().take(5).map(|item| {
             let (where_from, body) = match &item.source {
-                UnusedSource::Diary { date, confidential, .. } => (
+                UnusedSource::Diary {
+                    date, confidential, ..
+                } => (
                     format!("Diary · {date}"),
                     match (&item.text, confidential) {
                         // US-36: a confidential entry is never quoted outward.

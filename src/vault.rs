@@ -545,24 +545,6 @@ fn free_trash_path(trash: &Path, name: &std::ffi::OsStr) -> PathBuf {
     trash.join(format!("{stem}-{}.{ext}", today_iso()))
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 pub(crate) fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;

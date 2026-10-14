@@ -379,7 +379,10 @@ mod tests {
 
         cache.refresh(Some(&dir), 1);
         assert_ne!(cache.diary_on_disk(), OnDisk::ABSENT);
-        assert_eq!(cache.diary_on_disk(), OnDisk::read(&vault::diary_path(&dir)));
+        assert_eq!(
+            cache.diary_on_disk(),
+            OnDisk::read(&vault::diary_path(&dir))
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

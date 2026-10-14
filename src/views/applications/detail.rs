@@ -24,10 +24,10 @@ use dockcv_ui_components::{
     Sizable, TextField, TextFieldEvent, TextFieldState,
 };
 
-use crate::views::save_status;
 use crate::resume::model::{Application, ApplicationStatus, Closure, InterviewRound, NextStep};
 use crate::theme::{ActiveTheme, StyledText, TextStyle};
 use crate::vault;
+use crate::views::save_status;
 
 use super::card::column_tint;
 use super::data::{short_date, status_title};

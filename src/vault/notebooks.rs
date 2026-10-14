@@ -24,8 +24,8 @@ fn save_notebook<T: serde::Serialize>(
     data: &T,
     seen: Option<OnDisk>,
 ) -> Result<OnDisk, SaveError> {
-    let text = toml::to_string_pretty(data)
-        .map_err(|e| SaveError::Failed(format!("serialize: {e}")))?;
+    let text =
+        toml::to_string_pretty(data).map_err(|e| SaveError::Failed(format!("serialize: {e}")))?;
     let current = OnDisk::read(path);
     if let Some(seen) = seen {
         if current != seen {
@@ -108,11 +108,7 @@ pub fn save_diary(vault_dir: &Path, diary: &Diary) -> Result<(), String> {
 
 /// Atomically save the diary, failing with [`SaveError::Conflict`] if the
 /// file on disk changed since `seen`.
-pub fn save_diary_seen(
-    vault_dir: &Path,
-    diary: &Diary,
-    seen: OnDisk,
-) -> Result<OnDisk, SaveError> {
+pub fn save_diary_seen(vault_dir: &Path, diary: &Diary, seen: OnDisk) -> Result<OnDisk, SaveError> {
     save_notebook(&diary_path(vault_dir), diary, Some(seen))
 }
 
@@ -283,5 +279,3 @@ pub fn save_snapshot(
     fs::write(&path, bytes).map_err(|e| format!("write {}: {e}", path.display()))?;
     Ok(file_name)
 }
-
-

@@ -213,7 +213,8 @@ mod tests {
         let start = ResumeDate::new("2021-03-04");
         let open = ResumeDate::new("");
 
-        let english = format_date_range(&start, &open, DateStyle::plain(DateFormat::DayMonShortYear));
+        let english =
+            format_date_range(&start, &open, DateStyle::plain(DateFormat::DayMonShortYear));
         assert!(english.contains("Mar"), "{english}");
         assert!(english.ends_with("Present"), "{english}");
 
@@ -408,7 +409,8 @@ mod tests {
         // 3. DOCX: contains text and links
         #[cfg(feature = "docx")]
         {
-            let docx_bytes = crate::resume::export::docx::export_docx(&resume).expect("docx export");
+            let docx_bytes =
+                crate::resume::export::docx::export_docx(&resume).expect("docx export");
             let read = docx_rs::read_docx(&docx_bytes).expect("docx read");
             let mut hyperlink_texts: Vec<String> = Vec::new();
             for child in read.document.children {

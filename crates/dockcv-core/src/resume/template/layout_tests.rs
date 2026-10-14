@@ -12,9 +12,7 @@ use crate::resume::template::*;
 /// exactly as it was.
 #[test]
 fn every_header_control_changes_the_page_and_the_default_changes_nothing() {
-    use crate::resume::model::{
-        Basics, ContactLayout, HeaderAlign, HeaderLayout, SkillSeparator,
-    };
+    use crate::resume::model::{Basics, ContactLayout, HeaderAlign, HeaderLayout, SkillSeparator};
     use crate::typst_engine::TypstEngine;
 
     let resume = Resume {
@@ -240,9 +238,7 @@ fn every_size_follows_the_base_rather_than_standing_still() {
 /// on the page while every source-level test stayed green.
 #[test]
 fn every_entry_control_changes_the_page_and_the_default_changes_nothing() {
-    use crate::resume::model::{
-        BulletGlyph, Emphasis, EntryLayout, MetaOrder, MetaPosition, Work,
-    };
+    use crate::resume::model::{BulletGlyph, Emphasis, EntryLayout, MetaOrder, MetaPosition, Work};
     use crate::typst_engine::TypstEngine;
 
     let resume = Resume {

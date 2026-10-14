@@ -14,8 +14,7 @@ use crate::resume::{altacv, model::ResumeDoc};
 fn hiding_a_section_survives_a_round_trip_and_reaches_the_render() {
     use crate::resume::model::SectionKind;
 
-    let mut doc =
-        ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+    let mut doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
     assert!(
         !doc.compose().certificates.is_empty(),
         "fixture must have certificates"
@@ -53,8 +52,7 @@ fn hiding_a_section_survives_a_round_trip_and_reaches_the_render() {
 fn a_sections_own_layout_survives_a_round_trip_and_is_absent_until_used() {
     use crate::resume::model::SectionKind;
 
-    let mut doc =
-        ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+    let mut doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
     let text = super::to_toml(&doc).expect("serializes");
     assert!(
         !text.contains("section_overrides"),
@@ -124,8 +122,7 @@ fn a_sections_own_layout_survives_a_round_trip_and_is_absent_until_used() {
 /// before these existed looks exactly like the one this test writes first.
 #[test]
 fn a_versions_lineage_and_both_descriptions_survive_a_round_trip() {
-    let mut doc =
-        ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+    let mut doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
     doc.add_preset("Infra-heavy");
 
     let text = super::to_toml(&doc).expect("serializes");
@@ -146,7 +143,9 @@ fn a_versions_lineage_and_both_descriptions_survive_a_round_trip() {
     assert_eq!(doc.work.variants[0].description, None);
 
     doc.work.variants[0].description = Some("Lead with the reliability result.".into());
-    let copy = doc.add_preset_from(0, "Northwind").expect("the base exists");
+    let copy = doc
+        .add_preset_from(0, "Northwind")
+        .expect("the base exists");
     doc.presets[copy].description = Some("platform, reliability, distributed".into());
 
     let text = super::to_toml(&doc).expect("serializes");
@@ -283,8 +282,7 @@ fn doc_meta_carries_what_distinguishes_two_cvs() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("temp vault");
 
-    let mut doc =
-        ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
+    let mut doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
     doc.add_variant(SectionKind::Work);
     doc.add_variant(SectionKind::Skills);
     doc.add_preset("FAANG · concise");
@@ -294,7 +292,10 @@ fn doc_meta_carries_what_distinguishes_two_cvs() {
     let meta = super::meta_from(&path, super::load(&path).ok().as_ref());
     assert_eq!(meta.stem, "sean-senior-swe");
     assert_eq!(
-        meta.presets.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
+        meta.presets
+            .iter()
+            .map(|p| p.name.clone())
+            .collect::<Vec<_>>(),
         vec!["FAANG · concise".to_string(), "Infra-heavy".to_string()],
         "the front door names the presets rather than counting them (P-01)"
     );

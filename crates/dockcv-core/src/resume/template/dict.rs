@@ -6,13 +6,17 @@
 //! here, which is [`neutralize_into`]: what of an author's markup reaches the
 //! page as markup and what is escaped.
 
-
 use crate::resume::links;
 use crate::resume::model::{DateFormat, DocumentLanguage, Resume, ResumeDoc, SectionKind};
 
 use super::page::{renderer_key, section_key};
 
-pub(super) fn resume_to_dict_into(s: &mut String, r: &Resume, dates: DateFormat, language: DocumentLanguage) {
+pub(super) fn resume_to_dict_into(
+    s: &mut String,
+    r: &Resume,
+    dates: DateFormat,
+    language: DocumentLanguage,
+) {
     s.push_str("(\n");
 
     // --- basics ---

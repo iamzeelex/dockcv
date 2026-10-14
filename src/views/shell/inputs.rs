@@ -228,8 +228,7 @@ impl Shell {
                         let profiles = profiles.clone();
                         async move {
                             let doc = vault::load(&path).ok()?;
-                            let mut engine =
-                                engine.lock().unwrap_or_else(|e| e.into_inner());
+                            let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
                             let mut out: Vec<(Option<String>, PageGeometry)> = Vec::new();
                             // Through the catalog, not `generate_for`: a
                             // reading on a vault profile lays out differently,

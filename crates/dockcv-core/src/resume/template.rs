@@ -19,14 +19,10 @@
 mod dict;
 mod page;
 
-use crate::resume::model::{
-    DocumentLanguage, LayoutSettings, ProfileCatalog, Resume, ResumeDoc,
-};
+use crate::resume::model::{DocumentLanguage, LayoutSettings, ProfileCatalog, Resume, ResumeDoc};
 
 use self::dict::resume_to_dict_into;
-use self::page::{
-    document_metadata_into, no_heading_into, page_setup_into, section_layout_into,
-};
+use self::page::{document_metadata_into, no_heading_into, page_setup_into, section_layout_into};
 
 /// The renderer body, written in Typst: helper functions plus `render-cv`.
 ///
@@ -378,10 +374,10 @@ mod empty_document_tests {
 #[cfg(test)]
 mod date_format_tests {
     use super::*;
-    use crate::resume::template::dict::neutralize;
     use crate::resume::model::{
         DateFormat, DocumentLanguage, LayoutSettings, Resume, SectionKind, Work,
     };
+    use crate::resume::template::dict::neutralize;
 
     /// The document's date format has to reach the *generated source*, not
     /// just sit in the model — the same boundary that swallowed section order

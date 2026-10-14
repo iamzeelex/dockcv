@@ -154,11 +154,7 @@ impl Shell {
         let Screen::PresetMatrix(ref mut pm) = self.screen else {
             return;
         };
-        let Some(stem) = pm
-            .path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-        else {
+        let Some(stem) = pm.path.file_stem().map(|s| s.to_string_lossy().to_string()) else {
             return;
         };
         let applications = vault::load_applications(&vault);
@@ -202,7 +198,6 @@ impl Shell {
         pm.on_disk = save_status::record_document(cx, &path, seen, result);
         cx.notify();
     }
-
 
     /// Show every section, or only the ones some preset disagrees about.
     ///

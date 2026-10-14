@@ -24,9 +24,9 @@ use super::diary::capture::DiaryPaste;
 use super::diary::use_in_cv::DiaryUse;
 use super::gallery_sort::GallerySort;
 use super::import::panels::ImportStep;
-use super::library::LibrarySort;
 use super::library::edit::LibraryEdit;
 use super::library::link::PushReview;
+use super::library::LibrarySort;
 use super::update_notice::UpdateState;
 use super::vault_cache::VaultCache;
 

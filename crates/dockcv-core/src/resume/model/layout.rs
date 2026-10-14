@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::resume::dates::DateFormat;
 use super::layout_sections::{EntryLayout, HeaderLayout, HeadingLayout, SkillsLayout};
+use crate::resume::dates::DateFormat;
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -417,4 +417,3 @@ impl LayoutSettings {
 fn default_show_link_marks() -> bool {
     true
 }
-

@@ -109,8 +109,8 @@ fn save_snapshot_writes_bytes_and_sanitizes_the_file_name() {
     let dir = std::env::temp_dir().join(format!("dockcv-snapshot-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
 
-    let file_name = super::save_snapshot(&dir, b"%PDF-fake", "Bramble Tech / EU", 1)
-        .expect("save snapshot");
+    let file_name =
+        super::save_snapshot(&dir, b"%PDF-fake", "Bramble Tech / EU", 1).expect("save snapshot");
     assert_eq!(file_name, "bramble-tech-eu-v1.pdf");
     let bytes = std::fs::read(super::snapshots_dir(&dir).join(&file_name)).unwrap();
     assert_eq!(bytes, b"%PDF-fake");
@@ -178,8 +178,7 @@ fn layout_defaults_and_old_docs_still_load() {
     let old_shape = &text[..cut];
     assert!(!old_shape.contains("[layout"));
 
-    let back: ResumeDoc =
-        toml::from_str(old_shape).expect("a pre-layout document must still load");
+    let back: ResumeDoc = toml::from_str(old_shape).expect("a pre-layout document must still load");
     assert_eq!(back.layout, LayoutSettings::default());
     assert_eq!(back.layout.page_size, PageSize::A4);
     assert_eq!(back.layout.margins.x_mm, 16.0);

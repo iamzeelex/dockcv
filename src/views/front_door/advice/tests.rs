@@ -83,7 +83,11 @@ fn a_confidential_note_is_not_sent() {
 fn a_long_posting_is_cut_and_says_it_was() {
     let prompt = advice_prompt(&"word ".repeat(4000), "Current CV", &[], &[], &[]);
     assert!(prompt.contains("[…truncated]"));
-    assert!(prompt.chars().count() < 14_000, "{}", prompt.chars().count());
+    assert!(
+        prompt.chars().count() < 14_000,
+        "{}",
+        prompt.chars().count()
+    );
 }
 
 #[test]
@@ -96,21 +100,35 @@ fn an_answer_is_a_set_of_ids_and_reasons() {
         3,
         2,
     );
-    assert_eq!(advice.changes, vec![(1, "the role is platform-shaped".into())]);
-    assert_eq!(advice.notes, vec![(0, "it answers their incident question".into())]);
+    assert_eq!(
+        advice.changes,
+        vec![(1, "the role is platform-shaped".into())]
+    );
+    assert_eq!(
+        advice.notes,
+        vec![(0, "it answers their incident question".into())]
+    );
 }
 
 /// An id the menu does not have is dropped rather than reported. The row
 /// simply is not there, which is what the person can already see.
 #[test]
 fn an_invented_id_is_dropped() {
-    let advice = parse_advice(r#"{"changes":[{"id":"C9"},{"id":"nonsense"},{"id":"C0"}]}"#, 2, 0);
+    let advice = parse_advice(
+        r#"{"changes":[{"id":"C9"},{"id":"nonsense"},{"id":"C0"}]}"#,
+        2,
+        0,
+    );
     assert_eq!(advice.changes, vec![(0, String::new())]);
 }
 
 #[test]
 fn a_repeated_id_is_counted_once() {
-    let advice = parse_advice(r#"{"changes":[{"id":"C0","why":"a"},{"id":"C0","why":"b"}]}"#, 1, 0);
+    let advice = parse_advice(
+        r#"{"changes":[{"id":"C0","why":"a"},{"id":"C0","why":"b"}]}"#,
+        1,
+        0,
+    );
     assert_eq!(advice.changes, vec![(0, "a".into())]);
 }
 

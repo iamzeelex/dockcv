@@ -1,4 +1,3 @@
-#[cfg(feature = "raster")]
 use typst::layout::{Abs, Frame, FrameItem, Transform};
 use typst_layout::PagedDocument;
 
@@ -96,7 +95,6 @@ impl PageGeometry {
     /// page's `frame` are exactly what `typst-render` and `typst-pdf` paint
     /// from, so this reads the same layout the user sees, not a re-derived
     /// approximation of it.
-    #[cfg(feature = "raster")]
     pub(crate) fn measure(document: &PagedDocument) -> Self {
         let pages = document.pages();
         let page_count = pages.len();
@@ -154,7 +152,6 @@ impl PageGeometry {
 /// every layout our template produces, since nothing in it rotates, scales or
 /// skews content. A transformed group instead falls back to its own declared
 /// frame height, which in practice still bounds its content.
-#[cfg(feature = "raster")]
 fn frame_content_bottom(frame: &Frame) -> Abs {
     let mut bottom = Abs::zero();
     for (pos, item) in frame.items() {
@@ -190,7 +187,6 @@ fn frame_content_bottom(frame: &Frame) -> Abs {
 /// The highest y-coordinate any item in `frame` starts at, measured from the
 /// frame's top edge — i.e. where content begins under the top margin. Mirrors
 /// [`frame_content_bottom`], including its identity/translation assumption.
-#[cfg(feature = "raster")]
 fn frame_content_top(frame: &Frame) -> Abs {
     let mut top: Option<Abs> = None;
     for (pos, item) in frame.items() {
@@ -226,7 +222,6 @@ fn frame_content_top(frame: &Frame) -> Abs {
 /// `None` when there are fewer than three baselines: below that there is no
 /// typical anything, and the caller must say what it can measure instead of
 /// reporting a line count from one sample.
-#[cfg(feature = "raster")]
 fn measure_line_advance(frame: &Frame) -> Option<f64> {
     let mut baselines: Vec<f64> = Vec::new();
     collect_baselines(frame, Abs::zero(), &mut baselines);
@@ -251,7 +246,6 @@ fn measure_line_advance(frame: &Frame) -> Option<f64> {
 
 /// Absolute y of every text baseline in `frame`, following the same
 /// identity/translation assumption `frame_content_bottom` documents.
-#[cfg(feature = "raster")]
 fn collect_baselines(frame: &Frame, offset: Abs, out: &mut Vec<f64>) {
     for (pos, item) in frame.items() {
         match item {

@@ -52,7 +52,11 @@ impl Shell {
     /// means it is gone, was never set, or could not be read — all of which
     /// lead to Welcome, because from here they are the same situation for the
     /// user even though the log tells them apart.
-    pub(crate) fn finish_opening(&mut self, resolved: Option<(PathBuf, usize)>, cx: &mut Context<Self>) {
+    pub(crate) fn finish_opening(
+        &mut self,
+        resolved: Option<(PathBuf, usize)>,
+        cx: &mut Context<Self>,
+    ) {
         match resolved {
             Some((dir, documents)) => {
                 // The line that says which vault a report is about.

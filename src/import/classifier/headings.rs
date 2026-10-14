@@ -10,8 +10,8 @@
 use serde::Deserialize;
 use std::sync::OnceLock;
 
-use super::SectionKind;
 use super::entries::{get_single_date_regex, sanitize_header_line};
+use super::SectionKind;
 
 /// The shipped table: language → its words for each section.
 pub(crate) type Taxonomy = std::collections::BTreeMap<String, LanguageCorpus>;

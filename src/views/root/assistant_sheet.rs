@@ -13,8 +13,7 @@
 
 use gpui::prelude::*;
 use gpui::{
-    div, px, AnyElement, ClickEvent, Context, Entity, FontWeight, IntoElement, SharedString,
-    Window,
+    div, px, AnyElement, ClickEvent, Context, Entity, FontWeight, IntoElement, SharedString, Window,
 };
 
 use dockcv_ui_components::{
@@ -56,15 +55,11 @@ impl AdvicePreset {
 
     pub(crate) fn description(self) -> &'static str {
         match self {
-            Self::GoogleXyz => {
-                "Accomplished [X], measured by [Y], by doing [Z]."
-            }
+            Self::GoogleXyz => "Accomplished [X], measured by [Y], by doing [Z].",
             Self::ActionVerbs => {
                 "Lead with strong active verbs; eliminate passive duty statements."
             }
-            Self::AtsClarity => {
-                "Standard keywords, scannable phrasing, and clear metrics."
-            }
+            Self::AtsClarity => "Standard keywords, scannable phrasing, and clear metrics.",
         }
     }
 }
@@ -126,7 +121,12 @@ pub(crate) fn truncate_text(s: &str, max_len: usize) -> String {
     if chars.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}…", chars[..max_len.saturating_sub(1)].iter().collect::<String>())
+        format!(
+            "{}…",
+            chars[..max_len.saturating_sub(1)]
+                .iter()
+                .collect::<String>()
+        )
     }
 }
 
@@ -166,13 +166,19 @@ pub(crate) fn build_bullet_prompt(
     let mut header_context = Vec::new();
     if !ctx.candidate_name.is_empty() {
         if !ctx.candidate_role.is_empty() {
-            header_context.push(format!("Candidate: {} ({})", ctx.candidate_name, ctx.candidate_role));
+            header_context.push(format!(
+                "Candidate: {} ({})",
+                ctx.candidate_name, ctx.candidate_role
+            ));
         } else {
             header_context.push(format!("Candidate: {}", ctx.candidate_name));
         }
     }
     if !ctx.position_or_degree.is_empty() || !ctx.employer_or_org.is_empty() {
-        let mut entry_line = format!("Target Role: {} at {}", ctx.position_or_degree, ctx.employer_or_org);
+        let mut entry_line = format!(
+            "Target Role: {} at {}",
+            ctx.position_or_degree, ctx.employer_or_org
+        );
         if !ctx.dates.is_empty() {
             entry_line.push_str(&format!(" ({})", ctx.dates));
         }
@@ -185,10 +191,16 @@ pub(crate) fn build_bullet_prompt(
         header_context.push(format!("Role Overview: {}", ctx.role_summary));
     }
     if !ctx.key_skills.is_empty() {
-        header_context.push(format!("Candidate Core Stack & Skills: {}", ctx.key_skills.join(", ")));
+        header_context.push(format!(
+            "Candidate Core Stack & Skills: {}",
+            ctx.key_skills.join(", ")
+        ));
     }
     if !target_keywords.trim().is_empty() {
-        header_context.push(format!("Target Job Posting / Focus Keywords: {}", target_keywords.trim()));
+        header_context.push(format!(
+            "Target Job Posting / Focus Keywords: {}",
+            target_keywords.trim()
+        ));
     }
 
     let context_block = if header_context.is_empty() {
@@ -631,10 +643,7 @@ impl Root {
             }
             "claude-desktop" => {
                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(prompt.clone()));
-                let url = format!(
-                    "claude://cowork/new?q={}",
-                    assistant::encode(&prompt)
-                );
+                let url = format!("claude://cowork/new?q={}", assistant::encode(&prompt));
                 cx.open_url(&url);
                 if let Some(sheet) = self.assistant_sheet.as_mut() {
                     sheet.copied_feedback = true;
@@ -671,10 +680,7 @@ impl Root {
         } else if assistant::claude_desktop() {
             // Fallback to desktop app
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(prompt.clone()));
-            let url = format!(
-                "claude://cowork/new?q={}",
-                assistant::encode(&prompt)
-            );
+            let url = format!("claude://cowork/new?q={}", assistant::encode(&prompt));
             cx.open_url(&url);
             sheet.copied_feedback = true;
             cx.notify();
@@ -867,22 +873,40 @@ impl Root {
             .assistant_preferred
             .unwrap_or_else(|| "auto".to_string());
         let (route_display, button_label) = match pref.as_str() {
-            "browser" => ("Web Browser".to_string(), "Copy Prompt for Browser".to_string()),
-            "claude-desktop" => ("Claude Desktop".to_string(), "Open in Claude Desktop".to_string()),
+            "browser" => (
+                "Web Browser".to_string(),
+                "Copy Prompt for Browser".to_string(),
+            ),
+            "claude-desktop" => (
+                "Claude Desktop".to_string(),
+                "Open in Claude Desktop".to_string(),
+            ),
             "ollama" => ("Ollama (Local)".to_string(), "Run with Ollama".to_string()),
             "codex" => ("Codex CLI".to_string(), "Run with Codex".to_string()),
             "gemini" => ("Gemini CLI".to_string(), "Run with Gemini".to_string()),
             "claude-cli" => ("Claude CLI".to_string(), "Run with Claude CLI".to_string()),
-            "custom" => ("Custom Command".to_string(), "Run Custom Command".to_string()),
+            "custom" => (
+                "Custom Command".to_string(),
+                "Run Custom Command".to_string(),
+            ),
             _ => {
                 if assistant::is_installed("ollama") {
-                    ("Ollama (Auto)".to_string(), "Run with Ollama (Local)".to_string())
+                    (
+                        "Ollama (Auto)".to_string(),
+                        "Run with Ollama (Local)".to_string(),
+                    )
                 } else if assistant::claude_desktop() {
-                    ("Claude Desktop (Auto)".to_string(), "Open in Claude Desktop".to_string())
+                    (
+                        "Claude Desktop (Auto)".to_string(),
+                        "Open in Claude Desktop".to_string(),
+                    )
                 } else if assistant::is_installed("codex") {
                     ("Codex (Auto)".to_string(), "Run with Codex".to_string())
                 } else {
-                    ("Clipboard".to_string(), "Copy Prompt to Clipboard".to_string())
+                    (
+                        "Clipboard".to_string(),
+                        "Copy Prompt to Clipboard".to_string(),
+                    )
                 }
             }
         };
@@ -904,8 +928,7 @@ impl Root {
                 .rounded(theme.radius_md())
                 .border_1()
                 .when(active, |el| {
-                    el.bg(theme.selected)
-                        .border_color(theme.accent)
+                    el.bg(theme.selected).border_color(theme.accent)
                 })
                 .when(!active, |el| {
                     el.bg(theme.surface)
@@ -931,7 +954,11 @@ impl Root {
                         .child(
                             div()
                                 .text_style(TextStyle::eyebrow())
-                                .text_color(if active { theme.accent } else { theme.text_subtle })
+                                .text_color(if active {
+                                    theme.accent
+                                } else {
+                                    theme.text_subtle
+                                })
                                 .child(p.tag()),
                         )
                         .when(active, |el| {
@@ -988,57 +1015,62 @@ impl Root {
                             .child("VACANCY"),
                     )
                     .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .max_w(px(460.0))
-                            .child(
-                                Button::new("assistant-entry-selector")
-                                    .selector()
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap_1p5()
-                                            .min_w_0()
-                                            .child(
-                                                div()
-                                                    .font_family(SANS)
-                                                    .text_size(px(13.0))
-                                                    .font_weight(FontWeight::MEDIUM)
-                                                    .text_color(theme.text)
-                                                    .truncate()
-                                                    .child(truncate_text(&current_label, 42)),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex_none()
-                                                    .text_style(TextStyle::meta())
-                                                    .text_color(theme.text_subtle)
-                                                    .child(format!("({current_section})")),
-                                            ),
-                                    )
-                                    .dropdown_menu(move |menu, _window, _cx| {
-                                        let mut menu = menu;
-                                        for (idx, entry) in nav_entries_clone.iter().enumerate() {
-                                            let target = entry.target.clone();
-                                            let root = root.clone();
-                                            let is_curr = target == current_target_clone;
-                                            let short_title = truncate_text(&entry.title, 36);
-                                            let item_label = format!("{}. {} ({})", idx + 1, short_title, entry.section);
-                                            menu = menu.item(
-                                                PopupMenuItem::new(item_label)
-                                                    .checked(is_curr)
-                                                    .on_click(move |_ev, window, cx| {
-                                                        let _ = root.update(cx, |this, cx| {
-                                                            this.switch_assistant_target(target.clone(), window, cx);
-                                                        });
-                                                    }),
-                                            );
-                                        }
-                                        menu
-                                    }),
-                            ),
+                        div().flex_1().min_w_0().max_w(px(460.0)).child(
+                            Button::new("assistant-entry-selector")
+                                .selector()
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_1p5()
+                                        .min_w_0()
+                                        .child(
+                                            div()
+                                                .font_family(SANS)
+                                                .text_size(px(13.0))
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(theme.text)
+                                                .truncate()
+                                                .child(truncate_text(&current_label, 42)),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex_none()
+                                                .text_style(TextStyle::meta())
+                                                .text_color(theme.text_subtle)
+                                                .child(format!("({current_section})")),
+                                        ),
+                                )
+                                .dropdown_menu(move |menu, _window, _cx| {
+                                    let mut menu = menu;
+                                    for (idx, entry) in nav_entries_clone.iter().enumerate() {
+                                        let target = entry.target.clone();
+                                        let root = root.clone();
+                                        let is_curr = target == current_target_clone;
+                                        let short_title = truncate_text(&entry.title, 36);
+                                        let item_label = format!(
+                                            "{}. {} ({})",
+                                            idx + 1,
+                                            short_title,
+                                            entry.section
+                                        );
+                                        menu = menu.item(
+                                            PopupMenuItem::new(item_label)
+                                                .checked(is_curr)
+                                                .on_click(move |_ev, window, cx| {
+                                                    let _ = root.update(cx, |this, cx| {
+                                                        this.switch_assistant_target(
+                                                            target.clone(),
+                                                            window,
+                                                            cx,
+                                                        );
+                                                    });
+                                                }),
+                                        );
+                                    }
+                                    menu
+                                }),
+                        ),
                     ),
             )
             .child(
@@ -1621,11 +1653,9 @@ impl Root {
             .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
                 this.close_assistant_sheet(cx);
             }))
-            .child(
-                panel.on_click(|_: &ClickEvent, _window, cx| {
-                    cx.stop_propagation();
-                }),
-            )
+            .child(panel.on_click(|_: &ClickEvent, _window, cx| {
+                cx.stop_propagation();
+            }))
             .into_any_element()
     }
 }
@@ -1676,7 +1706,8 @@ mod tests {
     fn action_verbs_preset_instructions() {
         let bullets = vec!["Helped with testing".into()];
         let ctx = EntryContext::default();
-        let prompt = build_bullet_prompt("Acme Corp", AdvicePreset::ActionVerbs, &bullets, &ctx, "");
+        let prompt =
+            build_bullet_prompt("Acme Corp", AdvicePreset::ActionVerbs, &bullets, &ctx, "");
         assert!(prompt.contains("powerful active verb"));
         assert!(prompt.contains("Remove passive constructions"));
     }

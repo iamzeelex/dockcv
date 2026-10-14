@@ -48,7 +48,14 @@ fn the_frame_a_posting_shares_with_every_posting_cannot_reach_the_list() {
     // it is the reader's own word and their two versions disagree about it.
     // What cannot get through is the frame — and the frequency read this
     // replaces returned nothing but the frame.
-    for frame in ["work", "team", "production", "experience", "required", "year"] {
+    for frame in [
+        "work",
+        "team",
+        "production",
+        "experience",
+        "required",
+        "year",
+    ] {
         assert!(
             !words.iter().any(|w| w.eq_ignore_ascii_case(frame)),
             "{frame} is the sentence, not the job: {words:?}"
@@ -66,7 +73,10 @@ fn a_single_version_is_measured_against_itself() {
         .map(|t| t.word)
         .collect();
     assert!(words.iter().any(|w| w == "Kubernetes"), "got {words:?}");
-    assert!(!words.iter().any(|w| w == "SQL"), "not on the page: {words:?}");
+    assert!(
+        !words.iter().any(|w| w == "SQL"),
+        "not on the page: {words:?}"
+    );
 }
 
 /// A gap is a word the vault knows and this page does not — which is what makes
@@ -118,7 +128,10 @@ fn the_vault_is_searched_for_what_the_reading_is_missing() {
     let missing = gaps(POSTING, cv, &vault);
 
     let entries = vec![
-        diary("Ran the incident review practice: 41 reviews, no blame section.", false),
+        diary(
+            "Ran the incident review practice: 41 reviews, no blame section.",
+            false,
+        ),
         diary("Baked a cake for the team.", false),
     ];
     let library = Library {
@@ -131,8 +144,10 @@ fn the_vault_is_searched_for_what_the_reading_is_missing() {
 
     let found = unused(&missing, &entries, &library, cv);
     assert!(
-        found.iter().any(|u| matches!(&u.source, UnusedSource::Diary { .. })
-            && u.terms.iter().any(|t| t.eq_ignore_ascii_case("incident"))),
+        found
+            .iter()
+            .any(|u| matches!(&u.source, UnusedSource::Diary { .. })
+                && u.terms.iter().any(|t| t.eq_ignore_ascii_case("incident"))),
         "the incident win answers a gap: {found:?}"
     );
     assert!(
@@ -146,7 +161,9 @@ fn the_vault_is_searched_for_what_the_reading_is_missing() {
         "the skills block answers SQL: {found:?}"
     );
     assert!(
-        !found.iter().any(|u| u.text.as_deref() == Some("Baked a cake for the team.")),
+        !found
+            .iter()
+            .any(|u| u.text.as_deref() == Some("Baked a cake for the team.")),
         "a win that answers nothing is not a prompt"
     );
 }
@@ -192,7 +209,12 @@ fn something_already_on_the_page_is_not_offered_again() {
 fn an_empty_posting_asks_nothing_of_anything() {
     assert!(deciding_terms("", &["anything".to_string()]).is_empty());
     assert!(gaps("   \n  ", "", "anything at all").is_empty());
-    let found = unused(&[], &[diary("Anything at all.", false)], &Library::default(), "");
+    let found = unused(
+        &[],
+        &[diary("Anything at all.", false)],
+        &Library::default(),
+        "",
+    );
     assert!(found.is_empty());
 }
 
@@ -216,7 +238,7 @@ fn a_library_block_is_a_prompt_too() {
     let found = unused(&missing, &[], &library, "");
     assert!(matches!(
         found[0].source,
-            UnusedSource::Library {
+        UnusedSource::Library {
             section: SectionKind::Work,
             ..
         }
@@ -229,11 +251,13 @@ fn a_library_block_is_a_prompt_too() {
 #[test]
 fn one_word_in_three_shapes_is_one_term() {
     let a = "we run a process".to_string();
-    let words: Vec<String> =
-        deciding_terms("Our process, our processes, and the processing of them.", &[a, String::new()])
-            .into_iter()
-            .map(|t| t.word)
-            .collect();
+    let words: Vec<String> = deciding_terms(
+        "Our process, our processes, and the processing of them.",
+        &[a, String::new()],
+    )
+    .into_iter()
+    .map(|t| t.word)
+    .collect();
     assert_eq!(words.len(), 1, "got {words:?}");
 }
 

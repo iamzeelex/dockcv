@@ -60,8 +60,8 @@ impl DateLocales {
     }
 
     fn init() -> Self {
-        let file: DateLocalesFile = toml::from_str(DATES_TOML)
-            .expect("embedded assets/dates.toml must be valid TOML");
+        let file: DateLocalesFile =
+            toml::from_str(DATES_TOML).expect("embedded assets/dates.toml must be valid TOML");
 
         let mut month_lookup = HashMap::new();
         let mut present_markers = HashSet::new();
@@ -126,12 +126,18 @@ impl DateLocales {
 
         let mut all_month_words_desc: Vec<String> = all_months.into_iter().collect();
         all_month_words_desc.sort_by(|a, b| {
-            b.chars().count().cmp(&a.chars().count()).then_with(|| a.cmp(b))
+            b.chars()
+                .count()
+                .cmp(&a.chars().count())
+                .then_with(|| a.cmp(b))
         });
 
         let mut all_present_markers_desc: Vec<String> = present_markers.iter().cloned().collect();
         all_present_markers_desc.sort_by(|a, b| {
-            b.chars().count().cmp(&a.chars().count()).then_with(|| a.cmp(b))
+            b.chars()
+                .count()
+                .cmp(&a.chars().count())
+                .then_with(|| a.cmp(b))
         });
 
         Self {
@@ -168,8 +174,7 @@ impl DateLocales {
     pub fn is_present(&self, text: &str) -> bool {
         let clean = text.trim().to_lowercase();
         let stripped = clean.trim_end_matches('.');
-        self.present_markers.contains(&clean)
-            || self.present_markers.contains(stripped)
+        self.present_markers.contains(&clean) || self.present_markers.contains(stripped)
     }
 
     /// Get the default "present" word for a given language code.
@@ -218,12 +223,22 @@ mod tests {
         assert_eq!(locales.present_word("en"), Some("Present"));
         assert_eq!(locales.present_word("de"), Some("Heute"));
 
-        assert!(locales.all_month_words_desc().contains(&"january".to_string()));
+        assert!(locales
+            .all_month_words_desc()
+            .contains(&"january".to_string()));
         assert!(locales.all_month_words_desc().contains(&"jan".to_string()));
         assert!(locales.all_month_words_desc().contains(&"märz".to_string()));
-        assert!(locales.all_month_words_desc().contains(&"лютого".to_string()));
-        assert!(locales.all_present_markers_desc().contains(&"present".to_string()));
-        assert!(locales.all_present_markers_desc().contains(&"heute".to_string()));
-        assert!(locales.all_present_markers_desc().contains(&"по н.в.".to_string()));
+        assert!(locales
+            .all_month_words_desc()
+            .contains(&"лютого".to_string()));
+        assert!(locales
+            .all_present_markers_desc()
+            .contains(&"present".to_string()));
+        assert!(locales
+            .all_present_markers_desc()
+            .contains(&"heute".to_string()));
+        assert!(locales
+            .all_present_markers_desc()
+            .contains(&"по н.в.".to_string()));
     }
 }

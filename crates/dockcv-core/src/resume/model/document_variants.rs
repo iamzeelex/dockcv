@@ -808,4 +808,3 @@ fn take_if<T: Clone + Default>(keep: bool, value: &T) -> T {
         T::default()
     }
 }
-
