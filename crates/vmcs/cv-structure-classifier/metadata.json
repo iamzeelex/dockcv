@@ -1,0 +1,6 @@
+{
+  "module_name": "cv-structure-classifier",
+  "version": "0.1.0",
+  "description": "Deterministic text stream classification into structured resume sections and entity extraction; no clock, no network",
+  "recommended_fuel_limit": 50000000
+}
