@@ -5,7 +5,88 @@ All notable changes to **DockCV** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-10-13
+
+### Added
+- **Job posting tailoring and gap analysis.** Matches job descriptions against
+  CV variants using a 6-letter stemmer, filters boilerplate requirements, and
+  surfaces relevant diary achievements and library blocks without hallucinating
+  facts. Confidential diary entries are masked by type to protect sensitive
+  data.
+- **Local assistant advice in editor and tailor.** Generates actionable bullet
+  rewrites using Google XYZ, Action Verbs, and ATS Clarity formulas directly
+  in the editor and tailoring view. Automatically detects Claude Desktop
+  (`claude://`), Ollama, Codex, and Gemini, or copies formatted prompts to
+  clipboard. Includes a multi-entry stepping wizard to polish all vacancies
+  in one session.
+- **In-memory version draft constructor.** Tailoring builds an interactive draft
+  (`DraftView`) with instant live preview compilation; changes persist to the
+  vault only upon explicit author confirmation.
+- **ATS linting and navigation.** Checks for unknown headings, unparseable or
+  inverted dates, missing contacts, raw Typst markup, and duplicate bullets.
+  Direct field navigation replaces percentage scores.
+- **ATS test harness & PDF/UA-1 export.** Validates PDF output against eight
+  extraction engines (Poppler, pdfminer, PDFBox, custom parsers). Emits
+  PDF/UA-1 tag trees (`/H1`, `/H2`, lists).
+- **Structured Word (.docx) export.** Emits native heading styles (`Heading1`,
+  `Heading2`, `Title`) and `ListParagraph` bullet formatting. Open-ended roles
+  explicitly print `Present` (or localized equivalents) for ATS readability.
+- **Front Door multi-variant hub.** Gallery organizes CVs by document and named
+  variants with send histories, pipeline outcomes, and page count readouts.
+- **Preset Matrix control surface.** Multi-column grid anchored by the live
+  working copy (`Now`) with variant dropdowns, a `Differences only` toggle,
+  and headless page measurements via `TypstEngine::measure`.
+- **Vault-wide layout profiles.** Define reusable geometry and typography
+  profiles in `profiles.toml` and pin them across documents and presets.
+- **Stable variant IDs.** Variant pins use stable IDs instead of names,
+  preventing broken links when variants are renamed.
+- **Full-screen interactive importer.** Dedicated import screen with guidance
+  rail, automatic routing of image-only/scanned PDFs to external assistants, RTL
+  text support (Hebrew/Arabic), and robust extraction of multi-column sidebars,
+  tables, and LinkedIn archives.
+- **Single-entry editor and Layout mode.** Navigator with `SelectableRow` and
+  focused single-entry inspector. Layout mode replaces the panel directly
+  instead of floating a narrow rail over the preview canvas.
+- **Calibrated preview zoom.** 100% zoom matches physical page dimensions, with
+  responsive Fit Width and Fit Page modes.
+- **Unified date range control.** Paired date pickers (`Start → End`) with
+  explicit `Current role (Present)` toggles.
+
+### Changed
+- **Data-driven localization.** Section taxonomy, date/month formats, and
+  stopwords externalized to TOML files (`assets/taxonomy.toml`,
+  `assets/dates.toml`, `assets/stopwords.toml`).
+- **Design system & typography.** Geist Sans for UI, JetBrains Mono for
+  chips and counters. Top-line baseline alignment for lists and controls.
+- **Gallery zero-state.** Direct "Import a CV" and "Start from scratch" actions.
+
+### Fixed
+- **Atomic notebook saving and conflict detection.** Saves write to temporary
+  files before atomic replacement (`.toml.tmp`). Hash and timestamp tracking
+  (`OnDisk`) prevents silent overwrites with `SaveError::Conflict`.
+- **Zero-IO render loop.** Redraw frames read entirely from in-memory
+  `VaultCache`, eliminating disk access during UI rendering.
+- **Non-destructive field reconciliation.** Field syncing preserves focus, caret
+  position, text selection, and undo stack across model changes.
+- **Date parsing without false ATS findings.** Correctly parses numeric
+  (`08/2024`, `08.2024`), punctuated (`Aug, 2025`), and multilingual month
+  strings.
+- **Multilingual export consistency.** Date formats resolve through `DateStyle`
+  across PDF, DOCX, Markdown, and plain text.
+- **Hyphenation extraction defect.** Soft-hyphenation disabled in justified
+  Typst text to prevent extractors from breaking words across lines.
+- **Importer encoding & XML resilience.** Prevents panics on malformed DOCX
+  files; correctly handles UTF-8 BOM and UTF-16 encodings.
+
+### Architecture & Refactoring
+- **God Object decomposition.** Modularized `typst_engine.rs`, `root.rs`, and
+  `shell.rs` into focused submodules.
+- **Domain-driven model split.** Modularized `model.rs` (4200+ lines) into
+  `applications.rs`, `document_variants.rs`, `export_settings.rs`, `layout.rs`,
+  `layout_sections.rs`, and `versioning.rs`.
+- **Directory reorganization.** View modules organized into dedicated
+  subdirectories (`views/root/`, `views/front_door/`, `views/import/`,
+  `views/shell/`, `views/applications/`, `views/library/`).
 
 ## [0.3.0] - 2026-09-07
 
