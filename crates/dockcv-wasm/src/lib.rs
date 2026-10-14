@@ -18,11 +18,10 @@
 
 use wasm_bindgen::prelude::*;
 
-use dockcv_core::resume::model::{Resume, ResumeDoc};
-use dockcv_core::resume::{altacv, parse_document_toml, template};
-use dockcv_core::typst_engine::TypstEngine;
-
+use dockcv_core::resume::model::ResumeDoc;
 use dockcv_core::resume::parse_any;
+use dockcv_core::resume::template;
+use dockcv_core::typst_engine::TypstEngine;
 
 fn parse(input: &str) -> Result<ResumeDoc, String> {
     parse_any(input)
