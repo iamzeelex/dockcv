@@ -1,0 +1,6 @@
+{
+  "module_name": "cv-application-tracker",
+  "version": "0.1.0",
+  "description": "Deterministic job application lifecycle state machine and funnel metrics; no clock, no network",
+  "recommended_fuel_limit": 50000000
+}
