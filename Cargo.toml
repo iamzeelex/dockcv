@@ -66,7 +66,7 @@ docx-rs = "0.4"
 # the same way. Flags mirror `pdf-extract`'s own request exactly
 # (`default-features = false`, `wasm_js`) so the two unify: lopdf's default
 # features would drag in chrono, jiff, rayon and time.
-lopdf = { version = "0.44", default-features = false, features = ["wasm_js"] }
+lopdf = { version = "0.45", default-features = false, features = ["wasm_js"] }
 regex = "1.10"
 serde_json = "1"
 zip = "8"
