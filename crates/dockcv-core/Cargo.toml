@@ -94,7 +94,7 @@ serde_json = "1.0"
 # The document format is part of the engine boundary, not only desktop I/O:
 # `dockcv-wasm` accepts the same human-readable files as the app. Keeping the
 # compatibility parser here ensures every host applies the same migrations.
-toml = "0.8"
+toml = "1.1"
 
 [dev-dependencies]
 zip = { version = "8", default-features = false }

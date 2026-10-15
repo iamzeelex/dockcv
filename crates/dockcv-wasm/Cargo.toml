@@ -32,7 +32,7 @@ crate-type = ["cdylib", "rlib"]
 dockcv-core = { path = "../dockcv-core", default-features = false, features = ["svg", "pdf", "libertinus", "fixtures"] }
 wasm-bindgen = "0.2"
 serde_json = "1"
-toml = "0.8"
+toml = "1.1"
 
 # The build profile lives in the *workspace root* as `wasm-release`: cargo
 # ignores `[profile.*]` in a member manifest, silently enough that this crate
