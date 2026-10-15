@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "name": "cv-application-tracker",
+  "version": "0.1.0",
+  "title": "Application Lifecycle Tracker and Funnel Metrics",
+  "locale": "en",
+  "summary": "Deterministic state machine managing candidate applications, pipeline stages, and conversion funnels.",
+  "catalog_kind": "capability",
+  "publisher_stage": "experimental",
+  "known_limitations": [
+    "State transitions must adhere to valid pipeline stages: Wishlist -> Applied -> Interviewing -> Offer -> Closed."
+  ],
+  "exports": {
+    "cv:application-tracker/tracker@0.1.0#parse-board": {
+      "summary": "Parses board TOML and computes conversion funnel metrics.",
+      "effects": ["none"],
+      "idempotency": "yes"
+    },
+    "cv:application-tracker/tracker@0.1.0#add-application": {
+      "summary": "Adds a new application entry to the board.",
+      "effects": ["none"],
+      "idempotency": "yes"
+    },
+    "cv:application-tracker/tracker@0.1.0#advance-application": {
+      "summary": "Transitions an application to a new lifecycle stage.",
+      "effects": ["none"],
+      "idempotency": "yes"
+    },
+    "cv:application-tracker/tracker@0.1.0#log-interview": {
+      "summary": "Logs an interview round or interaction event.",
+      "effects": ["none"],
+      "idempotency": "yes"
+    },
+    "cv:application-tracker/tracker@0.1.0#schedule-step": {
+      "summary": "Appends a scheduled follow-up step.",
+      "effects": ["none"],
+      "idempotency": "yes"
+    }
+  },
+  "execution": {
+    "recommended_fuel_limit": 50000000,
+    "function_limits": {
+      "cv:application-tracker/tracker@0.1.0#parse-board": 50000000,
+      "cv:application-tracker/tracker@0.1.0#add-application": 50000000,
+      "cv:application-tracker/tracker@0.1.0#advance-application": 50000000,
+      "cv:application-tracker/tracker@0.1.0#log-interview": 50000000,
+      "cv:application-tracker/tracker@0.1.0#schedule-step": 50000000
+    }
+  }
+}

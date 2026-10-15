@@ -1,11 +1,11 @@
 {
-  "name": "cv-layout-measurer",
+  "module_name": "cv-layout-measurer",
   "version": "0.1.0",
-  "author": "DockCV / Kraton Core Contributors",
-  "description": "Deterministic page geometry, line overflow calculation and Typst PDF/SVG rendering for resumes.",
-  "category": "DocumentProcessing",
-  "monad_class": "atom",
-  "capabilities": ["compute"],
-  "interface_type": "component-model",
-  "tags": ["cv", "resume", "typst", "layout", "geometry", "overflow", "pdf"]
+  "description": "Deterministic page geometry, line overflow calculation and Typst PDF/SVG rendering for resumes; no network",
+  "recommended_fuel_limit": 500000000,
+  "function_limits": {
+    "cv:layout-measurer/measurer@0.1.0#measure-layout": 100000000,
+    "cv:layout-measurer/measurer@0.1.0#render-pdf": 500000000,
+    "cv:layout-measurer/measurer@0.1.0#render-svg": 500000000
+  }
 }
