@@ -20,6 +20,7 @@ mod ats;
 mod config;
 mod import;
 mod logging;
+mod presence;
 mod render;
 mod theme;
 mod update;

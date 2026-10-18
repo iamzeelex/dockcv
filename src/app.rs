@@ -247,6 +247,9 @@ fn init(cx: &mut App) {
         // here exited cleanly, and one that stops mid-file did not.
         log::info!("quitting — flushing any pending write");
         flush_open_document(cx);
+        // After the flush: if another DockCV is watching, it should still find
+        // this one's marker when it explains that last write.
+        crate::presence::withdraw(cx);
         async {}
     })
     .detach();

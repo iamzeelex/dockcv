@@ -1,8 +1,11 @@
+use std::path::Path;
 use std::time::Duration;
 
 use gpui::{Context, Window};
 
+use crate::presence;
 use crate::vault;
+use crate::views::save_status;
 use crate::views::vault_cache::Fingerprint;
 
 use super::navigation::Screen;
@@ -26,6 +29,17 @@ use super::Shell;
 const VAULT_WATCH_INTERVAL: Duration = Duration::from_millis(500);
 
 impl Shell {
+    /// Mark `dir` as open in this DockCV, and say so if another one has it
+    /// open too.
+    ///
+    /// Every route to a vault comes through here — the one restored at launch
+    /// and the one picked or created — because a vault opened by any of them
+    /// is one whose files the other DockCV may be writing. See `presence`.
+    pub(crate) fn announce_presence(&mut self, dir: &Path, cx: &mut Context<Self>) {
+        let others = presence::announce(cx, dir);
+        save_status::report_shared_vault(cx, &others);
+    }
+
     /// Notice edits made to the vault by anything that is not DockCV.
     ///
     /// The README's promise is that the vault is plain text you can edit in any
@@ -92,6 +106,11 @@ impl Shell {
         self.vault_watch_activation =
             Some(cx.observe_window_activation(window, |this, window, cx| {
                 if window.is_window_active() {
+                    // A DockCV started while this one was in the background
+                    // is said once, here, rather than left for the first
+                    // clash to reveal.
+                    let newcomers = presence::newcomers(cx);
+                    save_status::report_shared_vault(cx, &newcomers);
                     // Whatever happened while we were away, happened. Read it
                     // now rather than up to one interval later: this is the
                     // moment somebody looks.

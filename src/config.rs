@@ -136,7 +136,7 @@ impl Config {
     }
 }
 
-fn config_dir() -> PathBuf {
+pub(crate) fn config_dir() -> PathBuf {
     crate::vault::user_home_dir().join(".config").join("dockcv")
 }
 

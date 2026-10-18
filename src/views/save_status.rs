@@ -28,6 +28,7 @@ use gpui::{div, px, AnyElement, App, ClickEvent, Global, SharedString, Window};
 
 use dockcv_ui_components::{Button, ButtonExt, StyledText, TextStyle};
 
+use crate::presence;
 use crate::theme::ActiveTheme;
 use crate::vault;
 
@@ -202,6 +203,13 @@ pub fn record_notebook(
     }
 }
 
+/// The conflict hint when another DockCV has the vault open — the same facts,
+/// plus the one thing that stops it happening again.
+const SHARED_CONFLICT_HINT: &str = "Nothing was written — the file on disk is exactly as \
+     the other DockCV left it, and the version on screen is still here. Leave this document \
+     to keep the file's version, or copy what you need off the screen first. Quit one DockCV \
+     to work in one.";
+
 /// Say that a file changed under a document we are holding, and that both
 /// versions are still here.
 ///
@@ -209,29 +217,60 @@ pub fn record_notebook(
 /// the change while the editor has unsaved edits of its own. Same situation,
 /// same words.
 pub fn report_conflict(cx: &mut App, path: &Path) {
-    let name = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("this document")
-        .to_string();
+    let others = presence::others(cx);
     log::warn!(
-        "{} changed on disk under an edited document",
-        path.display()
+        "{} changed on disk under an edited document{}",
+        path.display(),
+        if others.is_empty() {
+            ""
+        } else {
+            " — another DockCV has this vault open"
+        }
     );
-    cx.default_global::<SaveStatus>().notice = Some(Notice {
-        tone: Tone::Alarm,
-        key: "document",
-        title: format!("{name} was changed outside DockCV"),
-        detail: "Something else — another editor, a sync client, a `git checkout` — wrote to \
-             this file after DockCV opened it."
-            .to_string(),
-        hint: CONFLICT_HINT,
-    });
+    cx.default_global::<SaveStatus>().notice = Some(conflict_notice(
+        stem(path, "this document"),
+        &others,
+    ));
+}
+
+/// The words for a conflict, split out so they are testable without an `App`.
+///
+/// Another DockCV on the vault is by far the likeliest writer when there is
+/// one, and the general list — an editor, a sync client, git — is a list of
+/// things the user goes looking for that are not there. Still not stated as
+/// certain: the detail says the other one is open, not that it wrote.
+fn conflict_notice(name: &str, others: &[presence::Instance]) -> Notice {
+    match others {
+        [] => Notice {
+            tone: Tone::Alarm,
+            key: "document",
+            title: format!("{name} was changed outside DockCV"),
+            detail: "Something else — another editor, a sync client, a `git checkout` — wrote \
+                 to this file after DockCV opened it."
+                .to_string(),
+            hint: CONFLICT_HINT,
+        },
+        _ => Notice {
+            tone: Tone::Alarm,
+            key: "document",
+            title: format!("{name} was changed by {}", the_other(others)),
+            detail: format!(
+                "{} {} this vault open too, and saves to the same files as this window.",
+                describe(others),
+                if others.len() == 1 { "has" } else { "have" }
+            ),
+            hint: SHARED_CONFLICT_HINT,
+        },
+    }
 }
 
 /// Shown after a document was re-read because its file changed underneath it.
 const RELOADED_HINT: &str = "DockCV had no unsaved changes of its own, so it took the \
      file's version. Undo puts back what was on screen before.";
+
+/// [`RELOADED_HINT`] when "DockCV" alone would not say which of the two.
+const SHARED_RELOADED_HINT: &str = "This window had no unsaved changes of its own, so it \
+     took the file's version. Undo puts back what was on screen before.";
 
 /// Say that a document on screen has been replaced by the file's version.
 ///
@@ -241,19 +280,104 @@ const RELOADED_HINT: &str = "DockCV had no unsaved changes of its own, so it too
 /// while you are looking at it, with no explanation, is indistinguishable from
 /// one that changed by itself.
 pub fn report_reloaded(cx: &mut App, path: &Path) {
-    let name = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("This document")
-        .to_string();
-    log::info!("reloaded {} after an edit outside DockCV", path.display());
-    cx.default_global::<SaveStatus>().notice = Some(Notice {
+    let others = presence::others(cx);
+    log::info!(
+        "reloaded {} after an edit {}",
+        path.display(),
+        if others.is_empty() {
+            "outside DockCV"
+        } else {
+            "with another DockCV on this vault"
+        }
+    );
+    cx.default_global::<SaveStatus>().notice =
+        Some(reloaded_notice(stem(path, "This document"), &others));
+}
+
+fn reloaded_notice(name: &str, others: &[presence::Instance]) -> Notice {
+    match others {
+        [] => Notice {
+            tone: Tone::Note,
+            key: "document",
+            title: format!("{name} was edited outside DockCV"),
+            detail: "The version on disk is now the one on screen.".to_string(),
+            hint: RELOADED_HINT,
+        },
+        _ => Notice {
+            tone: Tone::Note,
+            key: "document",
+            title: format!("{name} was edited in {}", the_other(others)),
+            detail: format!(
+                "{} {} this vault open too. The version on disk is now the one on screen.",
+                describe(others),
+                if others.len() == 1 { "has" } else { "have" }
+            ),
+            hint: SHARED_RELOADED_HINT,
+        },
+    }
+}
+
+/// Shown when another DockCV is found on the vault this one just opened.
+const SHARED_HINT: &str = "Saves from either one are a change the other has to pick up. \
+     Quit one to work in one.";
+
+/// Key for the "also open in another DockCV" note, so nothing else clears it.
+const SHARED: &str = "shared vault";
+
+/// Say that another DockCV has this vault open — on opening it, and when one
+/// turns up while this window was in the background.
+///
+/// A note, not an alarm: nothing has gone wrong yet, and both can be used.
+/// It also does not push an alarm off the banner — a failed save is still the
+/// thing to read first.
+pub fn report_shared_vault(cx: &mut App, others: &[presence::Instance]) {
+    let Some(notice) = shared_notice(others) else {
+        return;
+    };
+    log::warn!("this vault is also open in {}", describe(others));
+    let status = cx.default_global::<SaveStatus>();
+    if status.notice.as_ref().is_some_and(|n| n.tone == Tone::Alarm) {
+        return;
+    }
+    status.notice = Some(notice);
+}
+
+fn shared_notice(others: &[presence::Instance]) -> Option<Notice> {
+    let title = match others {
+        [] => return None,
+        [one] => format!("DockCV {} also has this vault open", one.version),
+        several => format!("{} other DockCVs also have this vault open", several.len()),
+    };
+    Some(Notice {
         tone: Tone::Note,
-        key: "document",
-        title: format!("{name} was edited outside DockCV"),
-        detail: "The version on disk is now the one on screen.".to_string(),
-        hint: RELOADED_HINT,
-    });
+        key: SHARED,
+        title,
+        detail: describe(others),
+        hint: SHARED_HINT,
+    })
+}
+
+/// "the other DockCV", or "another DockCV" when there is more than one and the
+/// definite article would be a guess.
+fn the_other(others: &[presence::Instance]) -> &'static str {
+    if others.len() == 1 {
+        "the other DockCV"
+    } else {
+        "another DockCV"
+    }
+}
+
+fn describe(others: &[presence::Instance]) -> String {
+    others
+        .iter()
+        .map(presence::Instance::describe)
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// A file's name as the gallery shows it.
+fn stem<'a>(path: &'a Path, fallback: &'a str) -> &'a str {
+    path.file_stem().and_then(|s| s.to_str()).unwrap_or(fallback)
 }
 
 /// How many successful vault writes this process has made.
@@ -440,5 +564,69 @@ mod tests {
         status.apply("document", Ok(()));
         assert!(status.notice.is_some(), "a save says nothing about a read");
         assert_eq!(status.notice.as_ref().map(|n| n.hint), Some(READ_HINT));
+    }
+
+    fn installed() -> presence::Instance {
+        presence::Instance {
+            pid: 4121,
+            version: "0.4.0".into(),
+            executable: "/Applications/DockCV.app/Contents/MacOS/dockcv".into(),
+            vault: "/vault".into(),
+        }
+    }
+
+    /// The bug this wording exists for: with a second DockCV on the vault, the
+    /// banner sent people looking for an editor, a sync client and a git
+    /// checkout that were not there.
+    #[test]
+    fn a_conflict_with_another_dockcv_open_names_it() {
+        let notice = conflict_notice("lilia", &[installed()]);
+        assert_eq!(notice.title, "lilia was changed by the other DockCV");
+        assert!(notice
+            .detail
+            .contains("DockCV 0.4.0 at /Applications/DockCV.app (pid 4121)"));
+        assert!(!notice.detail.contains("sync client"));
+        assert_eq!(notice.hint, SHARED_CONFLICT_HINT);
+    }
+
+    /// Alone on the vault, the words are what they always were.
+    #[test]
+    fn a_conflict_with_no_other_dockcv_keeps_the_general_wording() {
+        let notice = conflict_notice("lilia", &[]);
+        assert_eq!(notice.title, "lilia was changed outside DockCV");
+        assert_eq!(notice.hint, CONFLICT_HINT);
+
+        let reloaded = reloaded_notice("lilia", &[]);
+        assert_eq!(reloaded.title, "lilia was edited outside DockCV");
+        assert_eq!(reloaded.hint, RELOADED_HINT);
+    }
+
+    #[test]
+    fn a_reload_from_another_dockcv_names_it() {
+        let notice = reloaded_notice("lilia", &[installed()]);
+        assert_eq!(notice.title, "lilia was edited in the other DockCV");
+        assert!(notice.tone == Tone::Note);
+        assert_eq!(notice.hint, SHARED_RELOADED_HINT);
+    }
+
+    #[test]
+    fn the_open_note_names_one_or_counts_several() {
+        assert!(shared_notice(&[]).is_none());
+
+        let one = shared_notice(&[installed()]).expect("one other");
+        assert_eq!(one.title, "DockCV 0.4.0 also has this vault open");
+        assert_eq!(
+            one.detail,
+            "DockCV 0.4.0 at /Applications/DockCV.app (pid 4121)"
+        );
+
+        let mut dev = installed();
+        dev.pid = 5000;
+        let two = shared_notice(&[installed(), dev]).expect("two others");
+        assert_eq!(two.title, "2 other DockCVs also have this vault open");
+        assert_eq!(
+            conflict_notice("lilia", &[installed(), installed()]).title,
+            "lilia was changed by another DockCV"
+        );
     }
 }

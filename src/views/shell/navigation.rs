@@ -61,6 +61,7 @@ impl Shell {
             Some((dir, documents)) => {
                 // The line that says which vault a report is about.
                 log::info!("vault restored: {} ({documents} documents)", dir.display());
+                self.announce_presence(&dir, cx);
                 self.vault = Some(dir);
                 self.cache_stale = true;
                 self.screen = Screen::Gallery;
@@ -96,6 +97,7 @@ impl Shell {
             vault_dir.display(),
             vault::list_documents(&vault_dir).len()
         );
+        self.announce_presence(&vault_dir, cx);
         self.vault = Some(vault_dir);
         self.gallery_creating = is_empty;
         self.screen = Screen::Gallery;
