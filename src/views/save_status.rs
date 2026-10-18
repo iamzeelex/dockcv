@@ -115,10 +115,11 @@ const WRITE_HINT: &str = "Your edits are still here on screen. Check the vault f
 
 /// Shown when the file changed under a document DockCV was holding. Says which
 /// of the two versions is where, because both still exist and the user is the
-/// only one who can say which is wanted.
-const CONFLICT_HINT: &str = "Nothing was written — the file on disk is exactly as the other \
-     editor left it, and the version on screen is still here. Leave this document to keep \
-     the file's version, or copy what you need off the screen first.";
+/// only one who can say which is wanted — and what each of the banner's two
+/// buttons costs, because one of them cannot be taken back.
+const CONFLICT_HINT: &str = "Nothing was written yet — the file is exactly as the other \
+     editor left it, and your version is still on screen. Keeping yours replaces their \
+     changes; using the file's sets yours aside, and Undo brings it back.";
 
 /// Shown under a failed open. Says the file was left alone, because the
 /// previous behaviour was to overwrite it.
