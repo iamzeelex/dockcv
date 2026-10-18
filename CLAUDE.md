@@ -65,6 +65,7 @@ src/
   app.rs            GPUI bootstrap: run loop, fonts, actions, menus, window
   config.rs         app-level prefs outside the vault (last vault path, …)
   logging.rs        where DockCV says what went wrong, in a file a user can send
+  presence.rs       whether another DockCV has this vault open (lock files beside config)
   update.rs         whether a newer DockCV exists — and nothing beyond finding out
   render.rs         Pixels → gpui::RenderImage (BGRA swap)
   theme.rs          thin re-export of dockcv-ui-components::theme
