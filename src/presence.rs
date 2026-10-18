@@ -340,10 +340,8 @@ mod tests {
     /// A running dir and a vault of its own per test, so tests in parallel
     /// never see each other's markers.
     fn scratch(name: &str) -> (PathBuf, PathBuf) {
-        let root = std::env::temp_dir().join(format!(
-            "dockcv-presence-{name}-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("dockcv-presence-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let vault = root.join("vault");
         fs::create_dir_all(&vault).expect("vault dir");

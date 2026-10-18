@@ -227,10 +227,8 @@ pub fn report_conflict(cx: &mut App, path: &Path) {
             " — another DockCV has this vault open"
         }
     );
-    cx.default_global::<SaveStatus>().notice = Some(conflict_notice(
-        stem(path, "this document"),
-        &others,
-    ));
+    cx.default_global::<SaveStatus>().notice =
+        Some(conflict_notice(stem(path, "this document"), &others));
 }
 
 /// The words for a conflict, split out so they are testable without an `App`.
@@ -336,7 +334,11 @@ pub fn report_shared_vault(cx: &mut App, others: &[presence::Instance]) {
     };
     log::warn!("this vault is also open in {}", describe(others));
     let status = cx.default_global::<SaveStatus>();
-    if status.notice.as_ref().is_some_and(|n| n.tone == Tone::Alarm) {
+    if status
+        .notice
+        .as_ref()
+        .is_some_and(|n| n.tone == Tone::Alarm)
+    {
         return;
     }
     status.notice = Some(notice);
@@ -377,7 +379,9 @@ fn describe(others: &[presence::Instance]) -> String {
 
 /// A file's name as the gallery shows it.
 fn stem<'a>(path: &'a Path, fallback: &'a str) -> &'a str {
-    path.file_stem().and_then(|s| s.to_str()).unwrap_or(fallback)
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(fallback)
 }
 
 /// How many successful vault writes this process has made.
