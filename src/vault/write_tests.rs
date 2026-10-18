@@ -511,6 +511,69 @@ fn a_holder_that_records_every_write_never_refuses_itself() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// "Keep my version" on the conflict banner — `Root::keep_my_version`, which
+/// re-reads the file's hash and then writes as it always does.
+///
+/// Before it existed a real conflict wedged the editor: every write was
+/// refused against the file state from before the other editor's, for as long
+/// as the document stayed open. The person's choice is what unblocks the
+/// write, and nothing else may: the re-read is the only new step, so a version
+/// that lands after it is refused like any other.
+#[test]
+fn keeping_my_version_writes_only_over_the_file_it_read_again() {
+    use crate::vault::{load_seen, save, OnDisk, SaveError};
+
+    let dir = std::env::temp_dir().join(format!("dockcv-keep-mine-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("cv.toml");
+
+    let mut doc = ResumeDoc::default();
+    doc.profile.active_mut().name = "Albert Einstein".into();
+    save(&doc, &path, OnDisk::ABSENT).expect("write");
+    let (mut mine, seen) = load_seen(&path).expect("load");
+    mine.profile.active_mut().label = "Principal Systems Architect".into();
+
+    let theirs = std::fs::read_to_string(&path)
+        .expect("read")
+        .replace("Albert Einstein", "Marie Curie");
+    std::fs::write(&path, &theirs).expect("the other editor writes");
+
+    // The wedge: the debounce, and every one after it, refuses.
+    for _ in 0..2 {
+        assert!(matches!(save(&mine, &path, seen), Err(SaveError::Conflict)));
+    }
+    assert_eq!(std::fs::read_to_string(&path).expect("read"), theirs);
+
+    // Re-read, then write: mine replaces theirs, and the holder agrees with
+    // the result, so the next write is an ordinary one.
+    let now = save(&mine, &path, OnDisk::read(&path)).expect("the chosen version is written");
+    let written = std::fs::read_to_string(&path).expect("read");
+    assert!(written.contains("Principal Systems Architect"));
+    assert!(!written.contains("Marie Curie"));
+    assert_eq!(now, OnDisk::read(&path));
+    mine.profile.active_mut().label = "Physicist".into();
+    save(&mine, &path, now).expect("no conflict left behind");
+
+    // Their version need not parse to be replaced: the choice was made about
+    // it, not about whether DockCV can read it.
+    std::fs::write(&path, "[profile\nname = ").expect("left half-written");
+    assert!(load_seen(&path).is_err(), "the fixture does not parse");
+    save(&mine, &path, OnDisk::read(&path)).expect("written over the broken file");
+    assert!(load_seen(&path).is_ok());
+
+    // A version that lands after the re-read was not part of the choice.
+    let reread = OnDisk::read(&path);
+    std::fs::write(&path, &theirs).expect("the other editor writes again");
+    assert!(matches!(
+        save(&mine, &path, reread),
+        Err(SaveError::Conflict)
+    ));
+    assert_eq!(std::fs::read_to_string(&path).expect("read"), theirs);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Who may change a file is the file's business. A rename only asks the
 /// folder, so a CV made read-only used to be replaced by a writable copy, and
 /// a CV kept private came back readable by everyone.

@@ -21,7 +21,8 @@
 //! included. A field would have to be threaded through all three and kept in
 //! sync.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use gpui::prelude::*;
 use gpui::{div, px, AnyElement, App, ClickEvent, Global, SharedString, Window};
@@ -77,9 +78,35 @@ struct Notice {
     /// What to do about it. Static because there are only two situations and
     /// the words for each are fixed.
     hint: &'static str,
+    /// The file this notice is a conflict over, when it is one. The banner
+    /// offers a way out only to the holder of that file — see
+    /// [`ConflictChoices`].
+    conflict: Option<PathBuf>,
 }
 
 impl Global for SaveStatus {}
+
+/// The two ways out of a conflict, for the banner to offer as buttons.
+///
+/// Built by the one holder that can act on them — the editor, for the document
+/// it has open (`Root::conflict_choices`) — and passed in by `Shell` when it
+/// draws the banner. A conflict over anything else (a notebook, a document the
+/// Preset Matrix was writing) gets no buttons: the screen holding the other
+/// version is not on screen to take either side, and a button that cannot do
+/// what it says is worse than none.
+///
+/// Closures rather than a reference to the editor so this module stays what it
+/// is — the one banner every screen shares — without knowing what any of them
+/// hold.
+pub struct ConflictChoices {
+    /// Write the version on screen over the file.
+    pub keep_mine: Choice,
+    /// Put the file's version on screen, with the one it replaces kept for Undo.
+    pub use_file: Choice,
+}
+
+/// One of the [`ConflictChoices`], run when its button is clicked.
+pub type Choice = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// Shown under a failed write. Says the edits are not gone, because the user's
 /// first question is whether they have to retype the last minute of work.
@@ -116,6 +143,7 @@ impl SaveStatus {
                     title: format!("Couldn't save your {what}"),
                     detail: message,
                     hint: WRITE_HINT,
+                    conflict: None,
                 })
             }
         }
@@ -227,8 +255,8 @@ pub fn report_conflict(cx: &mut App, path: &Path) {
             " — another DockCV has this vault open"
         }
     );
-    cx.default_global::<SaveStatus>().notice =
-        Some(conflict_notice(stem(path, "this document"), &others));
+    let notice = conflict_notice(stem(path, "this document"), &others);
+    show_conflict(cx, path, notice);
 }
 
 /// The words for a conflict, split out so they are testable without an `App`.
@@ -247,6 +275,7 @@ fn conflict_notice(name: &str, others: &[presence::Instance]) -> Notice {
                  to this file after DockCV opened it."
                 .to_string(),
             hint: CONFLICT_HINT,
+            conflict: None,
         },
         _ => Notice {
             tone: Tone::Alarm,
@@ -258,8 +287,51 @@ fn conflict_notice(name: &str, others: &[presence::Instance]) -> Notice {
                 if others.len() == 1 { "has" } else { "have" }
             ),
             hint: SHARED_CONFLICT_HINT,
+            conflict: None,
         },
     }
+}
+
+/// Say that the file's version was asked for and cannot be had, because it
+/// will not parse — the other editor may still be writing it, or left it
+/// broken.
+///
+/// Still a conflict notice, with its buttons, rather than [`report_unreadable`]:
+/// nothing has been settled, both versions still exist, and keeping the one on
+/// screen is as possible as it was a moment ago.
+pub fn report_conflict_unreadable(cx: &mut App, path: &Path, message: String) {
+    log::warn!(
+        "{} would not open to replace an edited document: {message}",
+        path.display()
+    );
+    let others = presence::others(cx);
+    let notice = Notice {
+        detail: format!("The file's version will not open: {message}"),
+        ..conflict_notice(stem(path, "this document"), &others)
+    };
+    show_conflict(cx, path, notice);
+}
+
+/// Put a conflict notice up, marked with the file it is about so the editor
+/// holding that file can offer its two ways out.
+fn show_conflict(cx: &mut App, path: &Path, notice: Notice) {
+    cx.default_global::<SaveStatus>().notice = Some(Notice {
+        conflict: Some(path.to_path_buf()),
+        ..notice
+    });
+}
+
+/// The file a conflict notice on screen is about, if one is.
+///
+/// What the editor checks before offering [`ConflictChoices`]: the notice is
+/// app-wide and outlives the screen that raised it, so it may be about a file
+/// the editor does not hold.
+pub fn conflict_path(cx: &App) -> Option<PathBuf> {
+    cx.try_global::<SaveStatus>()?
+        .notice
+        .as_ref()?
+        .conflict
+        .clone()
 }
 
 /// Shown after a document was re-read because its file changed underneath it.
@@ -300,6 +372,7 @@ fn reloaded_notice(name: &str, others: &[presence::Instance]) -> Notice {
             title: format!("{name} was edited outside DockCV"),
             detail: "The version on disk is now the one on screen.".to_string(),
             hint: RELOADED_HINT,
+            conflict: None,
         },
         _ => Notice {
             tone: Tone::Note,
@@ -311,6 +384,7 @@ fn reloaded_notice(name: &str, others: &[presence::Instance]) -> Notice {
                 if others.len() == 1 { "has" } else { "have" }
             ),
             hint: SHARED_RELOADED_HINT,
+            conflict: None,
         },
     }
 }
@@ -356,6 +430,7 @@ fn shared_notice(others: &[presence::Instance]) -> Option<Notice> {
         title,
         detail: describe(others),
         hint: SHARED_HINT,
+        conflict: None,
     })
 }
 
@@ -382,6 +457,31 @@ fn stem<'a>(path: &'a Path, fallback: &'a str) -> &'a str {
     path.file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or(fallback)
+}
+
+/// Shown after the person chose the file's version over their own.
+const FILE_CHOSEN_HINT: &str = "Your version was set aside, not deleted — Undo puts it back \
+     on screen.";
+
+/// Say that the file's version replaced the one on screen because the person
+/// asked for it.
+///
+/// Not [`report_reloaded`]: that one's whole reassurance is that nothing
+/// unsaved was in the way, which is exactly what was not true here. What is
+/// worth saying instead is where their version went.
+pub fn report_file_chosen(cx: &mut App, path: &Path) {
+    log::info!(
+        "took the file's version of {} over unsaved edits",
+        path.display()
+    );
+    cx.default_global::<SaveStatus>().notice = Some(Notice {
+        tone: Tone::Note,
+        key: "document",
+        title: format!("{} now has the file's version", stem(path, "This document")),
+        detail: "The version on disk is now the one on screen.".to_string(),
+        hint: FILE_CHOSEN_HINT,
+        conflict: None,
+    });
 }
 
 /// How many successful vault writes this process has made.
@@ -411,6 +511,7 @@ pub fn report_unreadable(cx: &mut App, path: &Path, message: String) {
         title: format!("Couldn't open “{name}”"),
         detail: message,
         hint: READ_HINT,
+        conflict: None,
     });
 }
 
@@ -429,12 +530,16 @@ pub fn clear_open_failure(cx: &mut App) {
 /// disappearing never reflows the screen underneath — the user is mid-sentence
 /// when this shows up, and content jumping under the caret would be its own
 /// small betrayal.
-pub fn banner(cx: &mut App) -> Option<AnyElement> {
+///
+/// `choices` are drawn only under a conflict notice; see [`ConflictChoices`]
+/// for who may pass them.
+pub fn banner(cx: &mut App, choices: Option<ConflictChoices>) -> Option<AnyElement> {
     let notice = cx.try_global::<SaveStatus>()?.notice.as_ref()?;
     let theme = *cx.theme();
     let title: SharedString = notice.title.clone().into();
     let detail: SharedString = notice.detail.clone().into();
     let hint = notice.hint;
+    let choices = choices.filter(|_| notice.conflict.is_some());
     // A fact is not an alarm. Tokens either way — see `CLAUDE.md`'s theme rule.
     let accent = match notice.tone {
         Tone::Alarm => theme.danger,
@@ -489,7 +594,8 @@ pub fn banner(cx: &mut App) -> Option<AnyElement> {
                                     .text_style(TextStyle::meta())
                                     .text_color(theme.text_subtle)
                                     .child(hint),
-                            ),
+                            )
+                            .children(choices.map(conflict_buttons)),
                     )
                     .child(
                         Button::new("vault-notice-dismiss")
@@ -509,6 +615,37 @@ pub fn banner(cx: &mut App) -> Option<AnyElement> {
             )
             .into_any_element(),
     )
+}
+
+/// The two ways out, side by side and drawn alike: neither is the default,
+/// because which version is wanted is the one thing this app cannot know.
+fn conflict_buttons(choices: ConflictChoices) -> impl IntoElement {
+    let ConflictChoices {
+        keep_mine,
+        use_file,
+    } = choices;
+    div()
+        .flex()
+        .gap_2()
+        .pt_1()
+        .child(
+            Button::new("vault-conflict-keep-mine")
+                .toolbar()
+                .label("Keep my version")
+                .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    keep_mine(window, cx);
+                    window.refresh();
+                }),
+        )
+        .child(
+            Button::new("vault-conflict-use-file")
+                .toolbar()
+                .label("Use the file's version")
+                .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    use_file(window, cx);
+                    window.refresh();
+                }),
+        )
 }
 
 #[cfg(test)]
@@ -562,6 +699,7 @@ mod tests {
                 title: "Couldn't open “broken”".into(),
                 detail: "parse error".into(),
                 hint: READ_HINT,
+                conflict: None,
             }),
         };
 

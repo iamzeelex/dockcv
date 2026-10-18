@@ -1,9 +1,11 @@
+use std::rc::Rc;
 use std::time::Duration;
 
-use gpui::{Context, Window};
+use gpui::{App, Context, Entity, Window};
 
+use crate::resume::model::ResumeDoc;
 use crate::vault;
-use crate::views::save_status;
+use crate::views::{confirm, save_status};
 
 use super::Root;
 
@@ -126,15 +128,132 @@ impl Root {
             }
         };
 
+        self.take_files_version(doc, seen, window, cx);
+        save_status::report_reloaded(cx, &self.doc_path);
+    }
+
+    /// The banner's two ways out of a conflict, when the conflict is over the
+    /// document this editor holds.
+    ///
+    /// A conflict is reported rather than resolved because only a person knows
+    /// which version they want — and until now the person had no way to say.
+    /// Every later write was refused against the old file state, and leaving
+    /// the document dropped the version on screen — so the only way out was
+    /// the file's version, whichever one the person wanted.
+    ///
+    /// Weak handles: the banner is drawn by `Shell`, and a click arriving after
+    /// the editor has gone has nothing to act on.
+    pub fn conflict_choices(this: &Entity<Self>, cx: &App) -> Option<save_status::ConflictChoices> {
+        let path = save_status::conflict_path(cx)?;
+        if path != this.read(cx).doc_path {
+            return None;
+        }
+        let keep = this.downgrade();
+        let take = this.downgrade();
+        Some(save_status::ConflictChoices {
+            keep_mine: Rc::new(move |window, cx| {
+                let _ = keep.update(cx, |root, cx| root.keep_my_version(window, cx));
+            }),
+            use_file: Rc::new(move |window, cx| {
+                let _ = take.update(cx, |root, cx| root.use_files_version(window, cx));
+            }),
+        })
+    }
+
+    /// Write the version on screen over the file, because the person chose it.
+    ///
+    /// `vault::save` refuses a file that is not the one this editor read, so
+    /// that nothing is replaced without somebody deciding to replace it. This
+    /// is the decision, so it does the one thing the refusal asks for: agree
+    /// with what the file holds, then make the ordinary write.
+    ///
+    /// The file is read again here, after the confirmation, rather than
+    /// remembered from when the conflict was reported: the choice is "mine over
+    /// the file's", and the file's is whatever is there now. Only its hash —
+    /// the other version may be half-written or not TOML at all, and neither
+    /// is a reason to refuse to replace it.
+    ///
+    /// Behind a confirmation, as `confirm` puts everything that cannot be
+    /// undone: the file's version was never on screen, so Undo has nothing to
+    /// bring back.
+    pub(super) fn keep_my_version(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let name = document_name(&self.doc_path);
+        confirm::destructive(
+            format!("Replace the file's version of “{name}”?"),
+            format!(
+                "The changes made to it outside DockCV will be gone. {} The version on \
+                 screen is the one that will be saved.",
+                confirm::CANNOT_UNDO,
+            ),
+            "Replace",
+            window,
+            cx,
+            |this, _window, cx| {
+                this.on_disk = vault::OnDisk::read(&this.doc_path);
+                this.save_now(cx);
+                // The banner is on `Shell`'s frame, not this one.
+                cx.refresh_windows();
+                cx.notify();
+            },
+        );
+    }
+
+    /// Put the file's version on screen in place of this one, because the
+    /// person chose it.
+    ///
+    /// The same step the editor takes on its own when it has nothing unsaved,
+    /// checkpoint included: here there *is* something unsaved, and Undo is what
+    /// keeps choosing the file from costing it.
+    pub(super) fn use_files_version(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match vault::load_seen(&self.doc_path) {
+            Ok((doc, seen)) => {
+                self.take_files_version(doc, seen, window, cx);
+                save_status::report_file_chosen(cx, &self.doc_path);
+            }
+            // Nothing changes on screen, and the conflict stands — with its
+            // buttons, since keeping the screen's version is still possible.
+            Err(message) => {
+                save_status::report_conflict_unreadable(cx, &self.doc_path, message);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Replace the document on screen with the file's, the one way this editor
+    /// takes a version it did not write.
+    fn take_files_version(
+        &mut self,
+        doc: ResumeDoc,
+        seen: vault::OnDisk,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // A checkpoint first, so ⌘Z puts back what was on screen. The document
         // changing under you is exactly the moment you might want that.
         self.checkpoint();
         self.agreed = vault::OnDisk::of_document(&doc);
         self.doc = doc;
         self.on_disk = seen;
+        // The screen is the file now. A debounced write still waiting would
+        // find a file DockCV did not write and rewrite it in DockCV's own
+        // spelling — a change to it nobody made.
+        self.save_task = None;
+        self.unsaved = false;
+        // Everything else a swapped document has to bring into line, as an
+        // Undo does: the sliders and the profile prompts describe the old one.
+        self.profile_detachment = None;
+        self.profile_fork = None;
+        self.reset_layout_sliders();
         self.fields_stale = true;
         self.schedule_recompile(window, cx);
-        save_status::report_reloaded(cx, &self.doc_path);
         cx.notify();
     }
+}
+
+/// A document as the gallery names it: its file stem.
+fn document_name(path: &std::path::Path) -> String {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("this document")
+        .to_string()
 }
