@@ -155,7 +155,9 @@ impl Root {
                 let _ = keep.update(cx, |root, cx| root.keep_my_version(window, cx));
             }),
             use_file: Rc::new(move |window, cx| {
-                let _ = take.update(cx, |root, cx| root.use_files_version(window, cx));
+                let _ = take.update(cx, |root, cx| {
+                    root.use_files_version(window, cx);
+                });
             }),
         })
     }
@@ -189,13 +191,32 @@ impl Root {
             window,
             cx,
             |this, _window, cx| {
-                this.on_disk = vault::OnDisk::read(&this.doc_path);
-                this.save_now(cx);
+                this.write_over_file(cx);
                 // The banner is on `Shell`'s frame, not this one.
                 cx.refresh_windows();
                 cx.notify();
             },
         );
+    }
+
+    /// The write behind "Keep my version", without the question in front of
+    /// it — for a caller that has already asked (`Shell::leave_editor`).
+    ///
+    /// Whether the version on screen is now the file's. A write that fails, or
+    /// a newer version landing after the re-read, leaves it `false` and the
+    /// banner saying which.
+    pub(crate) fn write_over_file(&mut self, cx: &mut Context<Self>) -> bool {
+        self.on_disk = vault::OnDisk::read(&self.doc_path);
+        self.save_now(cx);
+        !self.unsaved
+    }
+
+    /// Whether the file and the screen hold two different versions, both
+    /// changed since they last agreed. Asked after a flush, when it means that
+    /// leaving would drop the version on screen — the only copy of it.
+    pub(crate) fn in_conflict(&self) -> bool {
+        vault::external_change(&self.doc, &self.doc_path, self.on_disk, self.agreed)
+            == vault::ExternalChange::Conflict
     }
 
     /// Put the file's version on screen in place of this one, because the
@@ -204,19 +225,29 @@ impl Root {
     /// The same step the editor takes on its own when it has nothing unsaved,
     /// checkpoint included: here there *is* something unsaved, and Undo is what
     /// keeps choosing the file from costing it.
-    pub(super) fn use_files_version(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match vault::load_seen(&self.doc_path) {
+    ///
+    /// Whether the file's version is now on screen; `false` when it would not
+    /// open, and the screen is as it was.
+    pub(crate) fn use_files_version(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let taken = match vault::load_seen(&self.doc_path) {
             Ok((doc, seen)) => {
                 self.take_files_version(doc, seen, window, cx);
                 save_status::report_file_chosen(cx, &self.doc_path);
+                true
             }
             // Nothing changes on screen, and the conflict stands — with its
             // buttons, since keeping the screen's version is still possible.
             Err(message) => {
                 save_status::report_conflict_unreadable(cx, &self.doc_path, message);
+                false
             }
-        }
+        };
         cx.notify();
+        taken
     }
 
     /// Replace the document on screen with the file's, the one way this editor

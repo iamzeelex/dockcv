@@ -574,6 +574,61 @@ fn keeping_my_version_writes_only_over_the_file_it_read_again() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// What every exit from the editor asks before letting it go
+/// (`Shell::leave_editor`, through `Root::in_conflict`): after the flush on
+/// the way out, would leaving drop a version that exists nowhere else?
+///
+/// A refused flush is not enough to say so. Asking when nothing is at stake
+/// teaches people to click through the alert; not asking when something is
+/// was the bug — the version on screen left with the editor.
+#[test]
+fn leaving_asks_only_when_a_refused_flush_would_lose_the_screens_version() {
+    use crate::vault::{external_change, load_seen, save, to_toml, ExternalChange, OnDisk};
+
+    let dir = std::env::temp_dir().join(format!("dockcv-leave-ask-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("cv.toml");
+
+    let mut doc = ResumeDoc::default();
+    doc.profile.active_mut().name = "Albert Einstein".into();
+    save(&doc, &path, OnDisk::ABSENT).expect("write");
+    let (held, seen) = load_seen(&path).expect("load");
+    let agreed = OnDisk::of_document(&held);
+    let theirs = std::fs::read_to_string(&path)
+        .expect("read")
+        .replace("Albert Einstein", "Marie Curie");
+    let in_conflict = |doc: &ResumeDoc, seen| {
+        external_change(doc, &path, seen, agreed) == ExternalChange::Conflict
+    };
+
+    // Typed here, written there: the flush is refused and the screen's
+    // version is the only copy of it.
+    let mut mine = held.clone();
+    mine.profile.active_mut().label = "Principal Systems Architect".into();
+    std::fs::write(&path, &theirs).expect("the other editor writes");
+    assert!(save(&mine, &path, seen).is_err());
+    assert!(in_conflict(&mine, seen), "this one must ask");
+
+    // Nothing typed here: the flush is refused just the same, but there is
+    // nothing of ours to lose.
+    assert!(save(&held, &path, seen).is_err());
+    assert!(!in_conflict(&held, seen), "nothing unsaved, nothing to ask");
+
+    // The other writer wrote exactly what we hold — a second DockCV saving
+    // the same keystrokes. Refused, and still nothing to lose.
+    std::fs::write(&path, to_toml(&mine).expect("serializes")).expect("write");
+    assert!(save(&mine, &path, seen).is_err());
+    assert!(!in_conflict(&mine, seen), "the file already says it");
+
+    // And once "Keep My Version" has written, it is an ordinary exit again.
+    std::fs::write(&path, &theirs).expect("the other editor writes again");
+    let now = save(&mine, &path, OnDisk::read(&path)).expect("keep mine");
+    assert!(!in_conflict(&mine, now));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Who may change a file is the file's business. A rename only asks the
 /// folder, so a CV made read-only used to be replaced by a writable copy, and
 /// a CV kept private came back readable by everyone.

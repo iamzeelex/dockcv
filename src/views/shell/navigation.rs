@@ -156,34 +156,29 @@ impl Shell {
             }
             root
         });
-        cx.subscribe(&editor, |this, editor, event, cx| match event {
+        cx.subscribe(&editor, |this, _editor, event, cx| match event {
             EditorEvent::BackToGallery => {
-                // Flush before leaving, exactly as the matrix arm below does.
-                // Saves are debounced by 600 ms on a `Task` the editor entity
-                // owns, and switching `self.screen` drops that entity — so
-                // without this the last keystrokes before clicking back were
-                // simply cancelled. The sibling arm has always done this and
-                // documented why; this one did not, which made "back" the one
-                // exit that quietly lost work.
-                this.flush_editor(&editor, cx);
-
-                // Editing changes what the document's readings cost, so its
-                // measurements go and the front door takes them again.
-                if let Some(path) = this.editing_path.take() {
-                    this.reading_pages.retain(|(p, _), _| *p != path);
-                }
-                this.screen = Screen::Gallery;
-                cx.notify();
+                // Through `leave_editor`, which flushes first, exactly as the
+                // matrix arm below does. Saves are debounced by 600 ms on a
+                // `Task` the editor entity owns, and switching `self.screen`
+                // drops that entity — so without the flush the last keystrokes
+                // before clicking back were simply cancelled.
+                this.leave_editor(cx, |this, cx| {
+                    this.forget_editing();
+                    this.screen = Screen::Gallery;
+                    cx.notify();
+                });
             }
             // P-01: the toolbar's preset menu is a door into the Preset
             // Matrix, scoped to the document currently open in the editor.
             EditorEvent::OpenPresetMatrix => {
                 // The matrix re-reads the document from disk, so an unflushed
                 // write would show it the state before the last keystrokes.
-                this.flush_editor(&editor, cx);
-                if let Some(path) = this.editing_path.clone() {
-                    this.open_preset_matrix(path, cx);
-                }
+                this.leave_editor(cx, |this, cx| {
+                    if let Some(path) = this.editing_path.clone() {
+                        this.open_preset_matrix(path, cx);
+                    }
+                });
             }
         })
         .detach();
@@ -206,30 +201,44 @@ impl Shell {
         ) {
             return;
         }
-        if let Screen::Editor(editor) = &self.screen {
-            let editor = editor.clone();
-            self.flush_editor(&editor, cx);
-            if let Some(path) = self.editing_path.take() {
-                self.reading_pages.retain(|(p, _), _| *p != path);
+        let from_editor = matches!(self.screen, Screen::Editor(_));
+        self.leave_editor(cx, move |this, cx| {
+            if from_editor {
+                this.forget_editing();
             }
+            this.screen = match screen {
+                VaultScreen::Cvs => Screen::Gallery,
+                VaultScreen::Library => Screen::Library,
+                VaultScreen::Diary => Screen::Diary,
+                VaultScreen::Applications => Screen::Applications,
+            };
+            cx.notify();
+        });
+    }
+
+    /// The editor has gone. Editing changes what the document's readings cost,
+    /// so its measurements go and the front door takes them again.
+    pub(crate) fn forget_editing(&mut self) {
+        if let Some(path) = self.editing_path.take() {
+            self.reading_pages.retain(|(p, _), _| *p != path);
         }
-        self.screen = match screen {
-            VaultScreen::Cvs => Screen::Gallery,
-            VaultScreen::Library => Screen::Library,
-            VaultScreen::Diary => Screen::Diary,
-            VaultScreen::Applications => Screen::Applications,
-        };
-        cx.notify();
     }
 
     /// Write the editor's document out now, cancelling nothing and waiting for
-    /// nothing. Every exit from the editor goes through here.
+    /// nothing. Every exit from the editor goes through here, by way of
+    /// [`Shell::leave_editor`].
     ///
     /// Synchronous on purpose: the alternative is to await the pending task,
     /// and the pending task is a 600 ms timer we are trying to get *ahead* of.
     /// A CV is kilobytes of TOML — this is one small write, not a reason to
     /// build a handshake.
     pub(crate) fn flush_editor(&mut self, editor: &Entity<Root>, cx: &mut Context<Self>) {
+        self.remember_history(editor, cx);
+        editor.update(cx, |editor, cx| editor.save_now(cx));
+    }
+
+    /// Keep the editor's Undo for the next time this CV opens, this session.
+    pub(crate) fn remember_history(&mut self, editor: &Entity<Root>, cx: &mut Context<Self>) {
         let (path, undo, redo) = {
             let root = editor.read(cx);
             (
@@ -239,7 +248,6 @@ impl Shell {
             )
         };
         self.undo_histories.insert(path, (undo, redo));
-        editor.update(cx, |editor, cx| editor.save_now(cx));
     }
 
     /// Write out whatever is open, whoever is asking.

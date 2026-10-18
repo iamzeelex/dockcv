@@ -485,6 +485,35 @@ pub fn report_file_chosen(cx: &mut App, path: &Path) {
     });
 }
 
+/// Shown after leaving a CV with the file's version chosen on the way out.
+const SET_ASIDE_HINT: &str = "Open it again and Undo brings yours back — until DockCV quits.";
+
+/// Say where the version on screen went when the editor was left with the
+/// file's version chosen (`Shell::leave_editor`).
+///
+/// Not [`report_file_chosen`]: its Undo is one keystroke away on the screen
+/// the person is still looking at, and this one is behind reopening the CV —
+/// and gone when the app quits, since the history lives in memory.
+pub fn report_set_aside(cx: &mut App, path: &Path) {
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("This CV")
+        .to_string();
+    log::info!(
+        "left {} with the file's version over unsaved edits",
+        path.display()
+    );
+    cx.default_global::<SaveStatus>().notice = Some(Notice {
+        tone: Tone::Note,
+        key: "document",
+        title: format!("{name} now has the file's version"),
+        detail: "The version you had on screen was set aside, not saved.".to_string(),
+        hint: SET_ASIDE_HINT,
+        conflict: None,
+    });
+}
+
 /// How many successful vault writes this process has made.
 ///
 /// [`super::vault_cache::VaultCache`] compares it against its own copy so a
