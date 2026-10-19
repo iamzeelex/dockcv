@@ -29,8 +29,13 @@ say() { printf '\033[1m%s\033[0m\n' "$*"; }
 
 # 1. poppler's pdftotext — the layout-preserving personality, and the one
 #    shell-pipeline parsers use.
+#    The harness only reads with poppler's (`ats::external::poppler_pdftotext`):
+#    xpdf's has the same name, and Windows has one on PATH already.
 if command -v pdftotext >/dev/null 2>&1; then
   say "pdftotext: $(pdftotext -v 2>&1 | head -1)"
+  if ! pdftotext -v 2>&1 | grep -qi poppler; then
+    echo "the pdftotext on PATH is not poppler's — the harness will skip it; install poppler" >&2
+  fi
 elif [ "$(uname)" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
   say "installing poppler via Homebrew"
   brew install poppler
