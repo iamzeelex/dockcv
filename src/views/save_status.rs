@@ -234,10 +234,10 @@ pub fn record_notebook(
 
 /// The conflict hint when another DockCV has the vault open — the same facts,
 /// plus the one thing that stops it happening again.
-const SHARED_CONFLICT_HINT: &str = "Nothing was written — the file on disk is exactly as \
-     the other DockCV left it, and the version on screen is still here. Leave this document \
-     to keep the file's version, or copy what you need off the screen first. Quit one DockCV \
-     to work in one.";
+const SHARED_CONFLICT_HINT: &str = "Nothing was written yet — the file is exactly as the \
+     other DockCV left it, and your version is still on screen. Keeping yours replaces its \
+     changes; using the file's sets yours aside, and Undo brings it back. Quit one DockCV to \
+     work in one.";
 
 /// Say that a file changed under a document we are holding, and that both
 /// versions are still here.
