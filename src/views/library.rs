@@ -1099,7 +1099,7 @@ impl Shell {
         let Some(vault) = self.vault.clone() else {
             return;
         };
-        let mut library = vault::load_library(&vault);
+        let (mut library, seen) = vault::load_library_seen(&vault);
         use SectionKind::*;
         match section {
             Work => remove_at(&mut library.work, index),
@@ -1111,7 +1111,6 @@ impl Shell {
             Profile | Custom(_) => {}
         }
         let path = vault::library_path(&vault);
-        let seen = self.cache.library_on_disk();
         save_status::record_notebook(
             cx,
             "library",

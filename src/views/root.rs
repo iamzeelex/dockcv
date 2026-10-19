@@ -146,6 +146,10 @@ pub struct Root {
     /// edit made in another editor between two debounced saves was overwritten
     /// with no sign that it had ever been there. See [`vault::OnDisk`].
     pub(super) on_disk: vault::OnDisk,
+    /// What `doc` serialized to at that same moment — the answer to "is there
+    /// anything unsaved" when the file is not byte-for-byte what DockCV would
+    /// write. See [`vault::external_change`].
+    pub(super) agreed: vault::OnDisk,
     /// Set by the vault watcher when `doc_path` changed on disk. Acted on in
     /// `render` rather than where it is set, because taking the file's version
     /// means recompiling the preview and that needs a `Window` — the same
@@ -268,7 +272,17 @@ impl Root {
     /// New documents arrive the same way: `Shell::create_doc` writes the file
     /// through `vault::create_document` and then opens it, so the "seed if
     /// absent" branch had no legitimate caller either.
-    pub fn new(doc_path: PathBuf, doc: ResumeDoc, cx: &mut Context<Self>) -> Self {
+    ///
+    /// `on_disk` comes with the document, from the same read
+    /// (`vault::load_seen`). It used to be read again here, a second look at
+    /// the file that could see a different version from the one parsed into
+    /// `doc` — and then the first save would replace that version unseen.
+    pub fn new(
+        doc_path: PathBuf,
+        doc: ResumeDoc,
+        on_disk: vault::OnDisk,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let vault_dir = doc_path
             .parent()
             .map(Path::to_path_buf)
@@ -281,13 +295,9 @@ impl Root {
             template::generate_for_with_profiles(&doc, &profiles),
         )));
 
-        // Read here rather than taken as an argument: `Root::new` already owns
-        // the path, and every caller that builds an editor would otherwise have
-        // to remember to carry the fingerprint alongside the document.
-        let on_disk = vault::OnDisk::read(&doc_path);
-
         Self {
             on_disk,
+            agreed: vault::OnDisk::of_document(&doc),
             external_change_pending: false,
             engine,
             doc,

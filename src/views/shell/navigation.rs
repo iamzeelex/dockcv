@@ -134,8 +134,8 @@ impl Shell {
     }
 
     pub(crate) fn open_doc(&mut self, doc_path: PathBuf, cx: &mut Context<Self>) {
-        let doc = match vault::load(&doc_path) {
-            Ok(doc) => doc,
+        let (doc, on_disk) = match vault::load_seen(&doc_path) {
+            Ok(loaded) => loaded,
             Err(message) => {
                 save_status::report_unreadable(cx, &doc_path, message);
                 cx.notify();
@@ -149,7 +149,7 @@ impl Shell {
         config::set_last_document(Some(doc_path.clone()));
         self.last_opened = Some(doc_path.clone());
         let editor = cx.new(move |cx| {
-            let mut root = Root::new(doc_path, doc, cx);
+            let mut root = Root::new(doc_path, doc, on_disk, cx);
             if let Some((undo, redo)) = history {
                 root.undo_stack = undo;
                 root.redo_stack = redo;
@@ -239,19 +239,7 @@ impl Shell {
             )
         };
         self.undo_histories.insert(path, (undo, redo));
-        // Two statements, not one: `record` needs `cx` mutably and `read` holds
-        // it immutably, and `flush_save` returning an owned `Result` is what
-        // lets the first borrow end before the second begins.
-        let (path, seen, result) = {
-            let editor = editor.read(cx);
-            (
-                editor.doc_path.clone(),
-                editor.seen_on_disk(),
-                editor.flush_save(),
-            )
-        };
-        let now = save_status::record_document(cx, &path, seen, result);
-        editor.update(cx, |editor, _| editor.on_disk = now);
+        editor.update(cx, |editor, cx| editor.save_now(cx));
     }
 
     /// Write out whatever is open, whoever is asking.
@@ -296,8 +284,8 @@ impl Shell {
 
     /// Open the Preset Matrix view for a document.
     pub(crate) fn open_preset_matrix(&mut self, doc_path: PathBuf, cx: &mut Context<Self>) {
-        if let Ok(doc) = vault::load(&doc_path) {
-            let pm = crate::views::preset_matrix::PresetMatrix::new(doc_path, doc);
+        if let Ok((doc, on_disk)) = vault::load_seen(&doc_path) {
+            let pm = crate::views::preset_matrix::PresetMatrix::new(doc_path, doc, on_disk);
             self.screen = Screen::PresetMatrix(Box::new(pm));
             // The evidence in the column headers, in the order it can be had:
             // the board is on disk and answers immediately, the page counts

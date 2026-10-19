@@ -735,7 +735,7 @@ impl Shell {
         let Some(vault) = self.vault.clone() else {
             return;
         };
-        let mut applications = vault::load_applications(&vault);
+        let (mut applications, seen) = vault::load_applications_seen(&vault);
         let mut application = Application {
             created: vault::today_iso(),
             ..Default::default()
@@ -746,14 +746,14 @@ impl Shell {
         applications.entries.push(application);
         let index = applications.entries.len() - 1;
         let path = vault::applications_path(&vault);
-        let seen = self.cache.applications_on_disk();
-        save_status::record_notebook(
+        let now = save_status::record_notebook(
             cx,
             "applications board",
             &path,
             seen,
             vault::save_applications_seen(&vault, &applications, seen),
         );
+        self.follow_board_write(seen, now);
 
         self.open_application_detail(index, window, cx);
         self.focus_application_company(window, cx);
@@ -772,7 +772,7 @@ impl Shell {
         let Some(vault) = self.vault.clone() else {
             return;
         };
-        let mut applications = vault::load_applications(&vault);
+        let (mut applications, seen) = vault::load_applications_seen(&vault);
         let mut first_send = false;
         if let Some(application) = applications.entries.get_mut(index) {
             application.advance_to(status, &vault::today_iso());
@@ -785,14 +785,14 @@ impl Shell {
             }
         }
         let path = vault::applications_path(&vault);
-        let seen = self.cache.applications_on_disk();
-        save_status::record_notebook(
+        let now = save_status::record_notebook(
             cx,
             "applications board",
             &path,
             seen,
             vault::save_applications_seen(&vault, &applications, seen),
         );
+        self.follow_board_write(seen, now);
         cx.notify();
 
         // D4a: the moment "this is what they got" becomes a true statement is
@@ -807,17 +807,17 @@ impl Shell {
         let Some(vault) = self.vault.clone() else {
             return;
         };
-        let mut applications = vault::load_applications(&vault);
+        let (mut applications, seen) = vault::load_applications_seen(&vault);
         remove_at(&mut applications.entries, index);
         let path = vault::applications_path(&vault);
-        let seen = self.cache.applications_on_disk();
-        save_status::record_notebook(
+        let now = save_status::record_notebook(
             cx,
             "applications board",
             &path,
             seen,
             vault::save_applications_seen(&vault, &applications, seen),
         );
+        self.follow_board_write(seen, now);
 
         // The detail panel holds an index into the list that just shifted.
         // Left alone it would go on editing whichever card slid into the gap.

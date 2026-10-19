@@ -68,9 +68,10 @@ fn an_external_edit_is_adopted_only_when_there_is_nothing_to_lose() {
     doc.profile.active_mut().name = "Albert Einstein".into();
     save(&doc, &path, OnDisk::ABSENT).expect("write");
     let (held, seen) = load_seen(&path).expect("load");
+    let agreed = OnDisk::of_document(&held);
 
     assert_eq!(
-        external_change(&held, &path, seen),
+        external_change(&held, &path, seen, agreed),
         ExternalChange::None,
         "an untouched file is not a change"
     );
@@ -81,7 +82,7 @@ fn an_external_edit_is_adopted_only_when_there_is_nothing_to_lose() {
         .replace("Albert Einstein", "Marie Curie");
     std::fs::write(&path, &theirs).expect("write");
     assert_eq!(
-        external_change(&held, &path, seen),
+        external_change(&held, &path, seen, agreed),
         ExternalChange::Adopt,
         "with nothing unsaved, the file's version is free to take"
     );
@@ -90,7 +91,7 @@ fn an_external_edit_is_adopted_only_when_there_is_nothing_to_lose() {
     let mut edited = held.clone();
     edited.profile.active_mut().label = "Principal Systems Architect".into();
     assert_eq!(
-        external_change(&edited, &path, seen),
+        external_change(&edited, &path, seen, agreed),
         ExternalChange::Conflict,
         "two versions, and taking either one silently loses the other"
     );
@@ -117,14 +118,14 @@ fn a_write_we_have_not_finished_recording_is_not_a_conflict() {
     doc.profile.active_mut().name = "Albert Einstein".into();
     save(&doc, &path, OnDisk::ABSENT).expect("write");
     let (mut held, seen) = load_seen(&path).expect("load");
+    let agreed = OnDisk::of_document(&held);
 
-    // Typed, and written — but `seen` is still the state from before it,
-    // which is exactly the window the watcher can land in.
+    // Typed, and written — but `seen` is still the state from before it.
     held.profile.active_mut().label = "Principal Systems Architect".into();
     save(&held, &path, seen).expect("write");
 
     assert_eq!(
-        external_change(&held, &path, seen),
+        external_change(&held, &path, seen, agreed),
         ExternalChange::None,
         "the file holds what this document holds; nobody else has been here"
     );
@@ -416,6 +417,172 @@ fn a_document_without_a_skills_style_loads_as_the_one_it_was_printed_with() {
         super::load(&path).expect("reload").layout.skills.style,
         SkillsStyle::Bubbles
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A file DockCV did not write — by hand, by an older version, with a comment
+/// in it — parses to a document DockCV would write differently. Judging
+/// "anything unsaved?" by the file's bytes called that document edited the
+/// moment it opened, so every edit made outside arrived as a conflict.
+#[test]
+fn a_file_dockcv_did_not_write_still_reloads_when_edited_outside() {
+    use crate::vault::{external_change, load_seen, save, to_toml, ExternalChange, OnDisk};
+
+    let dir = std::env::temp_dir().join(format!("dockcv-hand-written-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("cv.toml");
+
+    let mut doc = ResumeDoc::default();
+    doc.profile.active_mut().name = "Albert Einstein".into();
+    let canonical = to_toml(&doc).expect("serializes");
+    std::fs::write(&path, format!("# kept by hand\n{canonical}")).expect("write");
+
+    let (held, seen) = load_seen(&path).expect("load");
+    let agreed = OnDisk::of_document(&held);
+    assert_ne!(seen, agreed, "the fixture is a file DockCV would not write");
+
+    let theirs = std::fs::read_to_string(&path)
+        .expect("read")
+        .replace("Albert Einstein", "Marie Curie");
+    std::fs::write(&path, theirs).expect("the other editor writes");
+    assert_eq!(
+        external_change(&held, &path, seen, agreed),
+        ExternalChange::Adopt,
+        "nothing was typed here, so there is nothing to lose by reloading"
+    );
+
+    // And typing still makes it a conflict.
+    let mut edited = held.clone();
+    edited.profile.active_mut().label = "Physicist".into();
+    assert_eq!(
+        external_change(&edited, &path, seen, agreed),
+        ExternalChange::Conflict
+    );
+    // A write against the fresh file then goes through as before.
+    save(&held, &path, OnDisk::read(&path)).expect("write");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The editor writes from three places — the debounce, the export recording
+/// itself, the flush on leaving — and `Root::save_now` is the one they share.
+/// What it relies on: a holder that takes each write's result as its next
+/// `seen` never refuses its own work, however the three interleave.
+///
+/// The defect this replaced was a writer that captured `seen` before another
+/// one ran and wrote after it — or whose result was dropped while its write
+/// still landed — and from then on refused every save as "changed outside".
+#[test]
+fn a_holder_that_records_every_write_never_refuses_itself() {
+    use crate::vault::{load_seen, save, OnDisk};
+
+    let dir = std::env::temp_dir().join(format!("dockcv-one-writer-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("cv.toml");
+    save(&ResumeDoc::default(), &path, OnDisk::ABSENT).expect("write");
+    let (mut doc, mut on_disk) = load_seen(&path).expect("load");
+
+    let save_now = |doc: &ResumeDoc, on_disk: &mut OnDisk| {
+        *on_disk = save(doc, &path, *on_disk).expect("a holder never conflicts with itself");
+    };
+    for round in 0..20 {
+        doc.profile
+            .active_mut()
+            .summary
+            .push_str(&format!(" {round}"));
+        save_now(&doc, &mut on_disk); // the debounce
+        doc.record_export(
+            "2026-10-18",
+            "01:00",
+            "pdf",
+            "Current view",
+            dir.join("cv.pdf"),
+        );
+        save_now(&doc, &mut on_disk); // the export
+        save_now(&doc, &mut on_disk); // the flush, with nothing new to say
+    }
+    assert!(std::fs::read_to_string(&path)
+        .expect("read")
+        .contains(" 19"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Who may change a file is the file's business. A rename only asks the
+/// folder, so a CV made read-only used to be replaced by a writable copy, and
+/// a CV kept private came back readable by everyone.
+#[cfg(unix)]
+#[test]
+fn a_write_respects_the_files_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    use crate::vault::{atomic_write, OnDisk};
+
+    let dir = std::env::temp_dir().join(format!("dockcv-permissions-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("cv.toml");
+    let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+    std::fs::write(&path, "before").expect("write");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+    assert!(
+        atomic_write(&path, "after").is_err(),
+        "a read-only file is refused"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "before");
+    assert_eq!(mode(&path), 0o444);
+
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    atomic_write(&path, "after").expect("a writable file is written");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "after");
+    assert_eq!(
+        mode(&path),
+        0o600,
+        "the replacement keeps the original's mode"
+    );
+    assert_eq!(OnDisk::read(&path), OnDisk::of("after"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A CV linked into the vault from somewhere else is edited where it lives.
+#[cfg(unix)]
+#[test]
+fn a_symlinked_document_is_written_through_its_link() {
+    use crate::vault::{load_seen, save};
+
+    let dir = std::env::temp_dir().join(format!("dockcv-symlink-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let elsewhere = dir.join("elsewhere");
+    let vault = dir.join("vault");
+    std::fs::create_dir_all(&elsewhere).expect("temp dir");
+    std::fs::create_dir_all(&vault).expect("temp dir");
+
+    let real = elsewhere.join("cv.toml");
+    let mut doc = ResumeDoc::default();
+    doc.profile.active_mut().name = "Albert Einstein".into();
+    std::fs::write(&real, super::to_toml(&doc).unwrap()).expect("write");
+    let link = vault.join("cv.toml");
+    std::os::unix::fs::symlink("../elsewhere/cv.toml", &link).expect("link");
+
+    let (mut held, seen) = load_seen(&link).expect("load through the link");
+    held.profile.active_mut().label = "Physicist".into();
+    save(&held, &link, seen).expect("write through the link");
+
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the link is still a link"
+    );
+    assert!(std::fs::read_to_string(&real)
+        .unwrap()
+        .contains("Physicist"));
 
     let _ = std::fs::remove_dir_all(&dir);
 }
