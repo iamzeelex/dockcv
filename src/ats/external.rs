@@ -144,12 +144,14 @@ for p in docx.Document(sys.argv[1]).paragraphs:\n\
 /// report's three `pdftotext` columns are named for.
 ///
 /// The name is not the reader. xpdf ships a `pdftotext` too — the one poppler
-/// was forked from — and a Windows runner has one on `PATH` without anybody
-/// asking for it. It writes Latin-1 unless told otherwise and orders a page by
-/// its own rules, so under poppler's name it loses `José` and every ligature
-/// and the harness reports a regression in the template that is not one. A
-/// reader that is not poppler is a reader the harness does not claim to
-/// measure, and it is skipped the way a missing one is.
+/// was forked from — and Git for Windows bundles it (`Git\ucrt64\bin`, 4.06 on
+/// the CI runner), so a Windows machine has one on `PATH` without anybody
+/// asking for it. It writes Latin-1 unless told otherwise, so under poppler's
+/// name it loses `José` and every ligature, and the harness reports a
+/// regression in the template that is not one. A reader that is not poppler is
+/// a reader the harness does not claim to measure, and it is skipped the way a
+/// missing one is. xpdf's `-v` exits 1, which is why the banner is read and the
+/// status is not.
 fn poppler_pdftotext() -> bool {
     static POPPLER: OnceLock<bool> = OnceLock::new();
     *POPPLER.get_or_init(|| {

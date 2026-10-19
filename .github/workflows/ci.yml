@@ -200,14 +200,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
 
-      - name: TEMPORARY which pdftotext
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          Get-Command pdftotext -All -ErrorAction SilentlyContinue | Format-List Name,Source,Version
-          pdftotext -v 2>&1 | Out-String
-
       - name: Cargo Check Workspace
         run: cargo check --workspace
 
