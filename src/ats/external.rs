@@ -13,6 +13,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 /// One external reading, named the way the report names it.
 pub struct External {
@@ -43,11 +44,16 @@ pub fn read_all(pdf_path: &Path) -> Vec<External> {
     let path = pdf_path.to_string_lossy().to_string();
     let mut out = Vec::new();
 
-    for (engine, flag) in [
-        ("pdftotext", ""),
-        ("pdftotext -raw", "-raw"),
-        ("pdftotext -layout", "-layout"),
-    ] {
+    let modes: &[(&'static str, &str)] = if poppler_pdftotext() {
+        &[
+            ("pdftotext", ""),
+            ("pdftotext -raw", "-raw"),
+            ("pdftotext -layout", "-layout"),
+        ]
+    } else {
+        &[]
+    };
+    for &(engine, flag) in modes {
         let mut args = vec![];
         if !flag.is_empty() {
             args.push(flag);
@@ -132,6 +138,34 @@ for p in docx.Document(sys.argv[1]).paragraphs:\n\
     }
 
     out
+}
+
+/// Whether the `pdftotext` on `PATH` is poppler's, which is the reader the
+/// report's three `pdftotext` columns are named for.
+///
+/// The name is not the reader. xpdf ships a `pdftotext` too — the one poppler
+/// was forked from — and a Windows runner has one on `PATH` without anybody
+/// asking for it. It writes Latin-1 unless told otherwise and orders a page by
+/// its own rules, so under poppler's name it loses `José` and every ligature
+/// and the harness reports a regression in the template that is not one. A
+/// reader that is not poppler is a reader the harness does not claim to
+/// measure, and it is skipped the way a missing one is.
+fn poppler_pdftotext() -> bool {
+    static POPPLER: OnceLock<bool> = OnceLock::new();
+    *POPPLER.get_or_init(|| {
+        Command::new("pdftotext")
+            .arg("-v")
+            .output()
+            .is_ok_and(|out| {
+                // The banner goes to stderr, and poppler's credits Glyph & Cog
+                // as well, so poppler's own name is the only word that tells
+                // the two apart.
+                let banner = [out.stdout, out.stderr].concat();
+                String::from_utf8_lossy(&banner)
+                    .to_ascii_lowercase()
+                    .contains("poppler")
+            })
+    })
 }
 
 /// The pinned jar, whatever version the script last fetched.
