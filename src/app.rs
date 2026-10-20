@@ -193,7 +193,7 @@ fn init(cx: &mut App) {
     ]);
     crate::views::init_keybindings(cx);
 
-    cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
+    cx.on_action(|_: &Quit, cx: &mut App| quit(cx));
     cx.on_action(|_: &OpenSettings, cx: &mut App| open_settings_window(cx));
     cx.on_action(|_: &About, cx: &mut App| show_about(cx));
     cx.on_action(|_: &ShowNotices, cx: &mut App| show_notices(cx));
@@ -229,7 +229,17 @@ fn init(cx: &mut App) {
     cx.on_action(|_: &CloseWindow, cx: &mut App| {
         // Whichever window is in front — Settings closing must not take the
         // main window with it, and `on_window_closed` already tells them apart.
-        if let Some(window) = cx.active_window() {
+        let Some(window) = cx.active_window() else {
+            return;
+        };
+        // The main window closing ends the app, so it is an exit from the
+        // editor like any other, and asks first when that would lose work.
+        let main = cx.try_global::<AppWindows>().map(|w| w.main);
+        if main == Some(window) {
+            with_shell(cx, |shell, cx| {
+                shell.leave_editor(cx, |shell, cx| shell.close_main_window(cx));
+            });
+        } else {
             let _ = window.update(cx, |_, window, _| window.remove_window());
         }
     });
@@ -365,6 +375,17 @@ impl gpui::Global for AppWindows {}
 /// away the last thing the user typed. Which is most of a sentence, every time.
 fn flush_open_document(cx: &mut App) {
     with_shell(cx, |shell, cx| shell.flush_open_document(cx));
+}
+
+/// Quit — once the editor, if its CV is in conflict with its file, has asked
+/// which version to keep. Quitting is the exit that loses the version on screen
+/// for good, so it is the last one that should skip the question.
+fn quit(cx: &mut App) {
+    if cx.has_global::<AppWindows>() {
+        with_shell(cx, |shell, cx| shell.leave_editor(cx, |_, cx| cx.quit()));
+    } else {
+        cx.quit();
+    }
 }
 
 /// Run something against the running [`Shell`], if there is one.
@@ -593,6 +614,27 @@ fn open_main_window(cx: &mut App, smoke_test: bool) {
 
     let _ = handle.update(cx, |_, window, _| {
         window.activate_window();
+    });
+
+    // The alert in front of leaving a CV in conflict is drawn on this window,
+    // and the exits that raise it — ⌘Q, ⌘1–⌘4 — arrive with no window of their
+    // own.
+    kept_shell.update(cx, |shell, _| shell.window = Some(handle.into()));
+    // The close button answers before anything can be asked: refuse, then ask
+    // once this callback has returned and the window is free to draw an alert.
+    let _ = handle.update(cx, |_, window, cx| {
+        window.on_window_should_close(cx, |_, cx| {
+            let mut close = true;
+            with_shell(cx, |shell, cx| close = !shell.must_ask_before_leaving(cx));
+            if !close {
+                cx.defer(|cx| {
+                    with_shell(cx, |shell, cx| {
+                        shell.leave_editor(cx, |shell, cx| shell.close_main_window(cx));
+                    });
+                });
+            }
+            close
+        });
     });
 
     if smoke_test {

@@ -18,31 +18,13 @@
 
 use wasm_bindgen::prelude::*;
 
-use dockcv_core::resume::model::{Resume, ResumeDoc};
-use dockcv_core::resume::{altacv, parse_document_toml, template};
+use dockcv_core::resume::model::ResumeDoc;
+use dockcv_core::resume::parse_any;
+use dockcv_core::resume::template;
 use dockcv_core::typst_engine::TypstEngine;
 
-/// Read whatever the visitor pasted.
-///
-/// Tried in order of how specific the format is, so a guess never wins over a
-/// certainty: a DockCV document is TOML with our own shape, a JSON Résumé is
-/// the published schema, and AltaCV is Typst source. Each parser rejects the
-/// other formats outright, so the order only decides which error the visitor
-/// sees when nothing matches.
 fn parse(input: &str) -> Result<ResumeDoc, String> {
-    if let Ok(doc) = parse_document_toml(input) {
-        return Ok(doc);
-    }
-    if let Ok(resume) = toml::from_str::<Resume>(input) {
-        return Ok(ResumeDoc::from_resume(resume, "Base"));
-    }
-    if let Ok(resume) = serde_json::from_str::<Resume>(input) {
-        return Ok(ResumeDoc::from_resume(resume, "Base"));
-    }
-    if let Some(resume) = altacv::import(input) {
-        return Ok(ResumeDoc::from_resume(resume, "Base"));
-    }
-    Err("Not a DockCV document, a JSON Résumé, or an AltaCV file.".into())
+    parse_any(input)
 }
 
 /// Typeset a résumé. Returns one SVG string per page.

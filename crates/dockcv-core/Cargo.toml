@@ -95,13 +95,11 @@ serde_json = "1.0"
 # `dockcv-wasm` accepts the same human-readable files as the app. Keeping the
 # compatibility parser here ensures every host applies the same migrations.
 toml = "0.8"
+# Regex for heuristic text classification and entity extraction
+regex = "1.10"
 
 [dev-dependencies]
 zip = { version = "8", default-features = false }
 # Read the catalog of PDFs produced by language tests. Same build already used
 # by the desktop crate's PDF importer tests; dev-only, no engine or WASM cost.
 lopdf = { version = "0.44", default-features = false, features = ["wasm_js"] }
-# The JSON Resume schema validates its dates with a regular expression, and the
-# test that keeps the exporter honest checks against that expression verbatim.
-# Dev-only: nothing in the crate itself matches a pattern.
-regex = "1"

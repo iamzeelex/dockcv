@@ -1,0 +1,47 @@
+package cv:layout-measurer@0.1.0;
+
+interface measurer {
+    record page-metric {
+        page-count: u32,
+        target-pages: u32,
+        fits-target: bool,
+        overflow-pt: f64,
+        overflow-lines-est: s32,
+        page-height-pt: f64,
+        last-page-used-pt: f64,
+        column-pt: f64,
+        line-advance-pt: f64,
+    }
+
+    record measurement-result {
+        metric: page-metric,
+        typst-source: string,
+        diagnostics: list<string>,
+    }
+
+    record render-result {
+        metric: page-metric,
+        pdf-bytes: list<u8>,
+        diagnostics: list<string>,
+    }
+
+    variant layout-error {
+        invalid-format(string),
+        parse-failure(string),
+        compilation-failure(string),
+        internal(string),
+    }
+
+    /// Measure page geometry & overflow for a resume document (JSON Résumé, DockCV TOML, or raw Typst).
+    measure-layout: func(format-name: string, content: string, target-pages: u32) -> result<measurement-result, layout-error>;
+
+    /// Compile the resume to PDF and measure layout geometry.
+    render-pdf: func(format-name: string, content: string, target-pages: u32) -> result<render-result, layout-error>;
+
+    /// Compile the resume to vector SVG pages (one SVG string per page).
+    render-svg: func(format-name: string, content: string) -> result<list<string>, layout-error>;
+}
+
+world layout-measurer-vmc {
+    export measurer;
+}

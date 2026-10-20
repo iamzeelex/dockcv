@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "name": "cv-layout-measurer",
+  "version": "0.1.0",
+  "title": "Resume Layout Measurer and Typesetter",
+  "locale": "en",
+  "summary": "Measures page geometry, line overflow/slack, and renders PDF/SVG via embedded Typst.",
+  "catalog_kind": "capability",
+  "publisher_stage": "experimental",
+  "known_limitations": [
+    "Uses bundled Libertinus Serif font faces; external arbitrary fonts require host fonts."
+  ],
+  "exports": {
+    "cv:layout-measurer/measurer@0.1.0#measure-layout": {
+      "summary": "Calculates page count, overflow points, and estimated lines over/under page budget.",
+      "effects": ["none"],
+      "idempotency": "yes"
+    },
+    "cv:layout-measurer/measurer@0.1.0#render-pdf": {
+      "summary": "Compiles resume to PDF bytes with layout measurement.",
+      "effects": ["none"],
+      "idempotency": "yes"
+    },
+    "cv:layout-measurer/measurer@0.1.0#render-svg": {
+      "summary": "Compiles resume to vector SVG pages.",
+      "effects": ["none"],
+      "idempotency": "yes"
+    }
+  },
+  "execution": {
+    "recommended_fuel_limit": 500000000,
+    "function_limits": {
+      "cv:layout-measurer/measurer@0.1.0#measure-layout": 100000000,
+      "cv:layout-measurer/measurer@0.1.0#render-pdf": 500000000,
+      "cv:layout-measurer/measurer@0.1.0#render-svg": 500000000
+    }
+  }
+}

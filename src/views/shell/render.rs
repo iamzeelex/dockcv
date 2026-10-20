@@ -6,7 +6,7 @@ use gpui::{
 };
 
 use crate::theme::ActiveTheme;
-use crate::views::save_status;
+use crate::views::{save_status, Root};
 
 use super::navigation::Screen;
 use super::Shell;
@@ -132,6 +132,13 @@ impl Render for Shell {
             }
         };
 
+        // Only the editor can settle a conflict — it holds the other version —
+        // so only while it is up does the banner offer to.
+        let conflict_choices = match &self.screen {
+            Screen::Editor(editor) => Root::conflict_choices(editor, cx),
+            _ => None,
+        };
+
         div()
             .size_full()
             // `relative` so the notice can be an overlay: a vault problem is
@@ -150,6 +157,6 @@ impl Render for Shell {
             // Drawn once, here, rather than per screen — this is the outermost
             // element in the app, so one call covers the gallery, the library,
             // the diary, the board, the matrix *and* the editor.
-            .children(save_status::banner(cx))
+            .children(save_status::banner(cx, conflict_choices))
     }
 }

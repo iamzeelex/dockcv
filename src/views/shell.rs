@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use gpui::{Context, Entity, Subscription, Task};
+use gpui::{AnyWindowHandle, Context, Entity, Subscription, Task};
 
 use dockcv_ui_components::TextFieldState;
 
@@ -34,6 +34,7 @@ pub(crate) mod diary_actions;
 pub(crate) mod gallery_actions;
 pub(crate) mod git;
 pub(crate) mod inputs;
+pub(crate) mod leave;
 pub(crate) mod matrix_actions;
 pub(crate) mod navigation;
 pub(crate) mod render;
@@ -182,6 +183,13 @@ pub struct Shell {
     /// Whether the cache needs to be rechecked against disk (e.g. after external
     /// modification or window focus).
     pub(super) cache_stale: bool,
+    /// The main window, set by `app.rs` once it exists. What the alert in front
+    /// of leaving a CV in conflict is drawn on (`leave.rs`) — the exits that
+    /// need it arrive as app actions, which bring no window of their own.
+    pub(crate) window: Option<AnyWindowHandle>,
+    /// That alert is up. A second exit while it is waiting (⌘Q twice) is
+    /// dropped rather than stacking a second alert on the first.
+    pub(super) asking_to_leave: bool,
 }
 
 impl Shell {
@@ -262,6 +270,8 @@ impl Shell {
             editing_path: None,
             cache: VaultCache::default(),
             cache_stale: true,
+            window: None,
+            asking_to_leave: false,
         }
     }
 }

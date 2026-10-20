@@ -19,17 +19,38 @@ use crate::vault::{
     LIBRARY_FILE, PROFILES_FILE, SNAPSHOTS_DIR,
 };
 
-fn save_notebook<T: serde::Serialize>(
+/// Write a notebook, refusing to replace one that changed since `seen` — or
+/// one that cannot be read at all.
+///
+/// The second refusal is the one that was missing. A notebook that does not
+/// parse loads as an empty one, so its screen still opens; and the first thing
+/// written after that was the empty notebook plus one entry, over a file that
+/// held the person's whole diary with one typo in it. A file DockCV could not
+/// read is not a file DockCV may replace. The banner says so, and the person
+/// fixes the typo instead of losing the year.
+fn save_notebook<T: serde::Serialize + serde::de::DeserializeOwned>(
     path: &Path,
     data: &T,
     seen: Option<OnDisk>,
 ) -> Result<OnDisk, SaveError> {
     let text =
         toml::to_string_pretty(data).map_err(|e| SaveError::Failed(format!("serialize: {e}")))?;
-    let current = OnDisk::read(path);
+    let existing = fs::read_to_string(path).ok();
+    let current = existing.as_deref().map_or(OnDisk::ABSENT, OnDisk::of);
     if let Some(seen) = seen {
         if current != seen {
             return Err(SaveError::Conflict);
+        }
+    }
+    if let Some(existing) = existing.as_deref() {
+        if !existing.trim().is_empty() && toml::from_str::<T>(existing).is_err() {
+            let name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            return Err(SaveError::Failed(format!(
+                "{name} could not be read, so DockCV left it exactly as it is"
+            )));
         }
     }
     let written = OnDisk::of(&text);
@@ -38,6 +59,18 @@ fn save_notebook<T: serde::Serialize>(
     }
     atomic_write(path, &text).map_err(SaveError::Failed)?;
     Ok(written)
+}
+
+/// A notebook and the file state it came from, out of one read.
+///
+/// One read rather than a hash and then a parse: two looks at a file can see
+/// two versions of it, and a notebook paired with a hash that does not describe
+/// it is a later write that replaces something nobody read.
+fn load_notebook<T: serde::de::DeserializeOwned + Default>(path: &Path) -> (T, OnDisk) {
+    match fs::read_to_string(path) {
+        Ok(text) => (toml::from_str(&text).unwrap_or_default(), OnDisk::of(&text)),
+        Err(_) => (T::default(), OnDisk::ABSENT),
+    }
 }
 
 /// Path of the vault's block library file.
@@ -52,20 +85,7 @@ pub fn load_library(vault_dir: &Path) -> Library {
 
 /// Load the library and what was on disk, for checked writing later.
 pub fn load_library_seen(vault_dir: &Path) -> (Library, OnDisk) {
-    let path = library_path(vault_dir);
-    let on_disk = OnDisk::read(&path);
-    let library = fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| toml::from_str(&text).ok())
-        .unwrap_or_default();
-    (library, on_disk)
-}
-
-/// Atomically save the block library without checking seen disk state.
-pub fn save_library(vault_dir: &Path, library: &Library) -> Result<(), String> {
-    save_notebook(&library_path(vault_dir), library, None)
-        .map(|_| ())
-        .map_err(|e| e.message())
+    load_notebook(&library_path(vault_dir))
 }
 
 /// Atomically save the block library, failing with [`SaveError::Conflict`] if the
@@ -90,16 +110,14 @@ pub fn load_diary(vault_dir: &Path) -> Diary {
 
 /// Load the diary and what was on disk, for checked writing later.
 pub fn load_diary_seen(vault_dir: &Path) -> (Diary, OnDisk) {
-    let path = diary_path(vault_dir);
-    let on_disk = OnDisk::read(&path);
-    let diary = fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| toml::from_str(&text).ok())
-        .unwrap_or_default();
-    (diary, on_disk)
+    load_notebook(&diary_path(vault_dir))
 }
 
 /// Atomically save the diary without checking seen disk state.
+///
+/// Test fixtures only. App code writes every notebook against the version it
+/// read, so nothing it holds can replace something it never saw.
+#[cfg(test)]
 pub fn save_diary(vault_dir: &Path, diary: &Diary) -> Result<(), String> {
     save_notebook(&diary_path(vault_dir), diary, None)
         .map(|_| ())
@@ -124,12 +142,8 @@ pub fn load_applications(vault_dir: &Path) -> Applications {
 
 /// Load the applications board and what was on disk, for checked writing later.
 pub fn load_applications_seen(vault_dir: &Path) -> (Applications, OnDisk) {
-    let path = applications_path(vault_dir);
-    let on_disk = OnDisk::read(&path);
-    let mut applications: Applications = fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| toml::from_str(&text).ok())
-        .unwrap_or_default();
+    let (mut applications, on_disk): (Applications, OnDisk) =
+        load_notebook(&applications_path(vault_dir));
     for entry in &mut applications.entries {
         if entry.status_word.is_empty() {
             entry.status_word = ApplicationStatus::Wishlist.word().to_string();
@@ -148,6 +162,8 @@ pub fn load_applications_seen(vault_dir: &Path) -> (Applications, OnDisk) {
 }
 
 /// Atomically save the applications board without checking seen disk state.
+/// Test fixtures only, for the reason [`save_diary`] gives.
+#[cfg(test)]
 pub fn save_applications(vault_dir: &Path, applications: &Applications) -> Result<(), String> {
     save_notebook(&applications_path(vault_dir), applications, None)
         .map(|_| ())
@@ -177,17 +193,12 @@ pub fn load_profiles(vault_dir: &Path) -> ProfileCatalog {
 
 /// Load user profiles and what was on disk, for checked writing later.
 pub fn load_profiles_seen(vault_dir: &Path) -> (ProfileCatalog, OnDisk) {
-    let path = profiles_path(vault_dir);
-    let on_disk = OnDisk::read(&path);
-    let catalog = fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| toml::from_str(&text).ok())
-        .unwrap_or_default();
-    (catalog, on_disk)
+    load_notebook(&profiles_path(vault_dir))
 }
 
 /// Atomically save user profiles without checking seen disk state.
-#[allow(dead_code)]
+/// Test fixtures only, for the reason [`save_diary`] gives.
+#[cfg(test)]
 pub fn save_profiles(vault_dir: &Path, profiles: &ProfileCatalog) -> Result<(), String> {
     save_notebook(&profiles_path(vault_dir), profiles, None)
         .map(|_| ())
@@ -264,6 +275,12 @@ fn slugify_for_snapshot(s: &str) -> String {
 /// sanitized file name from the company name and version, and return the
 /// file name to store in `Snapshot::file`.
 ///
+/// Never onto a file that is already there. The version counts one
+/// application's sends, so two applications to the same company both send
+/// `v1` — and `fs::write` let the second replace the first application's
+/// evidence of what it was sent, leaving both cards pointing at one PDF. A
+/// taken name gets `-2`, `-3`, …, the scheme the trash and new documents use.
+///
 /// Does not generate the PDF — producing the bytes is the Typst pipeline's
 /// job; this only stores what it is handed.
 pub fn save_snapshot(
@@ -272,10 +289,36 @@ pub fn save_snapshot(
     company: &str,
     version: u32,
 ) -> Result<String, String> {
+    use std::io::Write;
+
     let dir = snapshots_dir(vault_dir);
     fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-    let file_name = format!("{}-v{version}.pdf", slugify_for_snapshot(company));
-    let path = dir.join(&file_name);
-    fs::write(&path, bytes).map_err(|e| format!("write {}: {e}", path.display()))?;
-    Ok(file_name)
+    let stem = format!("{}-v{version}", slugify_for_snapshot(company));
+    // Bounded for the same reason `free_trash_path` is: a thousand sends of
+    // one version is a different problem, and an unbounded loop is a hang.
+    for n in 1..1000 {
+        let file_name = if n == 1 {
+            format!("{stem}.pdf")
+        } else {
+            format!("{stem}-{n}.pdf")
+        };
+        let path = dir.join(&file_name);
+        // `create_new` is the check and the claim in one step, so two sends at
+        // once cannot both decide the same name is free.
+        let mut file = match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("write {}: {e}", path.display())),
+        };
+        if let Err(e) = file.write_all(bytes) {
+            let _ = fs::remove_file(&path);
+            return Err(format!("write {}: {e}", path.display()));
+        }
+        return Ok(file_name);
+    }
+    Err(format!("no free name for {stem}.pdf in {}", dir.display()))
 }

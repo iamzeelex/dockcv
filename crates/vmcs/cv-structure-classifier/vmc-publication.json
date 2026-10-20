@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "name": "cv-structure-classifier",
+  "version": "0.1.0",
+  "title": "Resume Structure Classifier",
+  "locale": "en",
+  "summary": "Deterministic text stream classification into structured resume sections and profile extraction.",
+  "catalog_kind": "capability",
+  "publisher_stage": "experimental",
+  "known_limitations": [
+    "Unrecognized free-form lines are grouped into unplaced rather than guessed."
+  ],
+  "exports": {
+    "cv:structure-classifier/classifier@0.1.0#classify-text": {
+      "summary": "Classifies raw resume text into JSON Résumé, TOML, and structured sections.",
+      "effects": ["none"],
+      "idempotency": "yes"
+    }
+  },
+  "execution": {
+    "recommended_fuel_limit": 50000000,
+    "function_limits": {
+      "cv:structure-classifier/classifier@0.1.0#classify-text": 50000000
+    }
+  }
+}

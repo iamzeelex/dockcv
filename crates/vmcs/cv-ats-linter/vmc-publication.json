@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "name": "cv-ats-linter",
+  "version": "0.1.0",
+  "title": "Deterministic ATS Compliance Linter",
+  "locale": "en",
+  "summary": "Validates resume documents against strict Applicant Tracking System (ATS) rules.",
+  "catalog_kind": "capability",
+  "publisher_stage": "experimental",
+  "known_limitations": [
+    "Checks structural, date, and typography conformance; does not perform semantic job-matching."
+  ],
+  "exports": {
+    "cv:ats-linter/linter@0.1.0#lint": {
+      "summary": "Runs ATS compliance lint rules on structured or text resume content.",
+      "effects": ["none"],
+      "idempotency": "yes"
+    }
+  },
+  "execution": {
+    "recommended_fuel_limit": 50000000,
+    "function_limits": {
+      "cv:ats-linter/linter@0.1.0#lint": 50000000
+    }
+  }
+}

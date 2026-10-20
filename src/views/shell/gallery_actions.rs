@@ -81,13 +81,23 @@ impl Shell {
 
     /// Start a new CV — the gallery's template chooser, reached from ⌘N and
     /// the File menu as well as the gallery's own button.
+    ///
+    /// ⌘N works from the editor, so this is one of its exits and goes the way
+    /// they all do — it used to swap the screen without the flush, which lost
+    /// the last keystrokes before it.
     pub fn start_new_cv(&mut self, cx: &mut Context<Self>) {
         if self.vault.is_none() {
             return;
         }
-        self.screen = Screen::Gallery;
-        self.gallery_creating = true;
-        cx.notify();
+        let from_editor = matches!(self.screen, Screen::Editor(_));
+        self.leave_editor(cx, move |this, cx| {
+            if from_editor {
+                this.forget_editing();
+            }
+            this.screen = Screen::Gallery;
+            this.gallery_creating = true;
+            cx.notify();
+        });
     }
 
     /// Show the vault folder in Finder.

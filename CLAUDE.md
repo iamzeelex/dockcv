@@ -70,7 +70,8 @@ src/
   render.rs         Pixels → gpui::RenderImage (BGRA swap)
   theme.rs          thin re-export of dockcv-ui-components::theme
   vault.rs   + vault/     File-over-App store: TOML on disk, one file per document
-                          notebooks.rs (library/diary/board/profiles) + four test files
+                          notebooks.rs (library/diary/board/profiles), write.rs (save
+                          against what was read), atomic.rs + four test files
   import/                 the importer: engines/, classifier.rs + classifier/,
                           lines.rs (PDF line boxes → the lines the author wrote)
   ats/                    conformance harness — test-only until the ATS screen lands

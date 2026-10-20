@@ -4,14 +4,11 @@
 //! from **PDF** (via `pdf-extract`, pure Rust), **DOCX**, **JSON Resume**,
 //! **Plain Text/Markdown**, and a **LinkedIn data export** archive.
 
-pub mod bidi;
-pub mod classifier;
+pub use dockcv_core::import::{bidi, classifier, lines, model, notes};
+
 pub mod error;
 #[cfg(test)]
 pub mod foreign_cvs;
-pub mod lines;
-pub mod model;
-pub mod notes;
 pub mod pdf_tags;
 #[cfg(test)]
 mod roundtrip_tests;

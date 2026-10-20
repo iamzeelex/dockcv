@@ -44,12 +44,18 @@ pub use super::language::DocumentLanguage;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Resume {
+    #[serde(default)]
     pub basics: Basics,
+    #[serde(default)]
     pub work: Vec<Work>,
+    #[serde(default)]
     pub education: Vec<Education>,
+    #[serde(default)]
     pub skills: Vec<SkillGroup>,
+    #[serde(default)]
     pub certificates: Vec<Certificate>,
     /// JSON Resume `volunteer` — surfaced in the UI as "Organizations".
+    #[serde(default)]
     pub volunteer: Vec<Volunteer>,
     /// User-added sections beyond the six above (D-9), each already resolved
     /// to its active variant's entries — this is the *composed*, render-ready
@@ -76,48 +82,71 @@ pub struct Resume {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Basics {
+    #[serde(default)]
     pub name: String,
     /// Job title / tagline.
+    #[serde(default)]
     pub label: String,
     /// Profile blurb (Typst markup).
+    #[serde(default)]
     pub summary: String,
+    #[serde(default)]
     pub email: String,
+    #[serde(default)]
     pub phone: String,
+    #[serde(default)]
     pub location: String,
+    #[serde(default)]
     pub url: String,
+    #[serde(default)]
     pub profiles: Vec<NetworkProfile>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct NetworkProfile {
+    #[serde(default)]
     pub network: String,
+    #[serde(default)]
     pub username: String,
+    #[serde(default)]
     pub url: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Work {
     /// Employer name.
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub position: String,
+    #[serde(default)]
     pub location: String,
+    #[serde(default, alias = "startDate")]
     pub start_date: ResumeDate,
+    #[serde(default, alias = "endDate")]
     pub end_date: ResumeDate,
     /// Optional employer or project URL.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub url: String,
     /// Optional one-line summary (Typst markup).
+    #[serde(default)]
     pub summary: String,
     /// Bullet points (Typst markup each).
+    #[serde(default)]
     pub highlights: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Education {
+    #[serde(default)]
     pub institution: String,
+    #[serde(default, alias = "studyType")]
     pub study_type: String,
+    #[serde(default, alias = "startDate")]
     pub start_date: ResumeDate,
+    #[serde(default, alias = "endDate")]
     pub end_date: ResumeDate,
+    #[serde(default)]
     pub url: String,
     /// Coursework, thesis, honours — the same `highlights` vocabulary `Work`,
     /// `Volunteer` and `CustomEntry` already use. Added because a CV's course
@@ -129,27 +158,38 @@ pub struct Education {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct SkillGroup {
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub keywords: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Certificate {
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub issuer: String,
+    #[serde(default)]
     pub date: ResumeDate,
+    #[serde(default)]
     pub url: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Volunteer {
+    #[serde(default)]
     pub organization: String,
+    #[serde(default)]
     pub position: String,
+    #[serde(default, alias = "startDate")]
     pub start_date: ResumeDate,
+    #[serde(default, alias = "endDate")]
     pub end_date: ResumeDate,
     /// Optional organization or initiative URL.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub url: String,
+    #[serde(default)]
     pub highlights: Vec<String>,
 }
 

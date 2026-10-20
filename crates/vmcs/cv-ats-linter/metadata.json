@@ -1,0 +1,6 @@
+{
+  "module_name": "cv-ats-linter",
+  "version": "0.1.0",
+  "description": "Deterministic ATS compliance audit for resume documents; no capabilities, no clock, no network",
+  "recommended_fuel_limit": 50000000
+}

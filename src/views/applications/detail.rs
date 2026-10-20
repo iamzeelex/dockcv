@@ -83,7 +83,12 @@ impl Shell {
         let Some(vault) = self.vault.clone() else {
             return;
         };
-        let applications = vault::load_applications(&vault);
+        // The card and the hash from one read. The hash used to come from the
+        // cache, which only catches up on the next frame — so a panel opened
+        // by "New application", straight after the write that made its card,
+        // agreed with the board as it was *before* that card, and the first
+        // name typed into it was refused as "changed outside DockCV".
+        let (applications, on_disk) = vault::load_applications_seen(&vault);
         let Some(app) = applications.entries.get(index) else {
             return;
         };
@@ -147,7 +152,7 @@ impl Shell {
 
         self.applications_detail = Some(ApplicationDetail {
             index,
-            on_disk: self.cache.applications_on_disk(),
+            on_disk,
             company,
             role,
             url,
@@ -295,21 +300,42 @@ impl Shell {
         let Some(vault) = self.vault.clone() else {
             return;
         };
-        let mut applications = vault::load_applications(&vault);
+        let (mut applications, seen) = vault::load_applications_seen(&vault);
         let Some(app) = applications.entries.get_mut(index) else {
             return;
         };
         change(app);
         let path = vault::applications_path(&vault);
-        let seen = self.cache.applications_on_disk();
-        save_status::record_notebook(
+        let now = save_status::record_notebook(
             cx,
             "applications board",
             &path,
             seen,
             vault::save_applications_seen(&vault, &applications, seen),
         );
+        self.follow_board_write(seen, now);
         cx.notify();
+    }
+
+    /// Carry the open card panel along with a write this app just made to the
+    /// board.
+    ///
+    /// The panel's `on_disk` says which version of the board its fields agree
+    /// with, so an edit made outside while it is open is refused rather than
+    /// overwritten. A write DockCV made itself, from a fresh read, does not
+    /// make those fields any less true — the one that would,
+    /// `log_interview_round`, re-seeds them — and leaving the hash behind made
+    /// the next field edit refuse: "applications was changed outside DockCV".
+    ///
+    /// Only when the panel agreed with the file just before this write. If it
+    /// was already behind, something else changed the board meanwhile, and
+    /// that is still for the panel's own write to discover.
+    pub(crate) fn follow_board_write(&mut self, before: vault::OnDisk, after: vault::OnDisk) {
+        if let Some(detail) = self.applications_detail.as_mut() {
+            if detail.on_disk == before {
+                detail.on_disk = after;
+            }
+        }
     }
 
     /// Record that an interview happened.
