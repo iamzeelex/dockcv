@@ -31,3 +31,23 @@ pub use model::ExportRecord;
 pub use model::{
     builtin_profile, LayoutProfile, ProfileCatalog, ATS_SAFE_PROFILE, DEFAULT_PROFILE,
 };
+
+/// Read whatever resume format was provided.
+///
+/// Tried in order of how specific the format is: DockCV TOML, raw TOML Resume,
+/// JSON Résumé, and AltaCV Typst source.
+pub fn parse_any(input: &str) -> Result<model::ResumeDoc, String> {
+    if let Ok(doc) = parse_document_toml(input) {
+        return Ok(doc);
+    }
+    if let Ok(resume) = toml::from_str::<model::Resume>(input) {
+        return Ok(model::ResumeDoc::from_resume(resume, "Base"));
+    }
+    if let Ok(resume) = serde_json::from_str::<model::Resume>(input) {
+        return Ok(model::ResumeDoc::from_resume(resume, "Base"));
+    }
+    if let Some(resume) = altacv::import(input) {
+        return Ok(model::ResumeDoc::from_resume(resume, "Base"));
+    }
+    Err("Not a DockCV document, a JSON Résumé, or an AltaCV file.".into())
+}

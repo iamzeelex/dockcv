@@ -910,7 +910,7 @@ impl Shell {
         // The card arrives with the version rather than before it. It goes to
         // the wishlist, so nothing counts as sent until it moves — which is
         // what `furthest` is for.
-        let mut applications = vault::load_applications(&vault_dir);
+        let (mut applications, seen) = vault::load_applications_seen(&vault_dir);
         applications.entries.push(Application {
             company,
             role,
@@ -922,11 +922,14 @@ impl Shell {
             }),
             ..Default::default()
         });
-        save_status::record(
+        let now = save_status::record_notebook(
             cx,
             "applications board",
-            vault::save_applications(&vault_dir, &applications),
+            &vault::applications_path(&vault_dir),
+            seen,
+            vault::save_applications_seen(&vault_dir, &applications, seen),
         );
+        self.follow_board_write(seen, now);
 
         self.reading_pages.retain(|(p, _), _| *p != path);
         self.load_matrix_records();

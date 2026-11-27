@@ -47,41 +47,44 @@ impl Root {
 
     /// Copy the entry at `index` of `section`'s active variant into the vault
     /// library, so it can be reused in other résumés.
+    ///
+    /// Onto the library as it is on disk now, not onto the copy this editor
+    /// took when it opened: that copy is as old as the editor, and writing it
+    /// back replaced every block added outside since — unchecked, unseen.
     pub(super) fn save_block_to_library(
         &mut self,
         section: SectionKind,
         index: usize,
         cx: &mut Context<Self>,
     ) {
+        let (mut library, seen) = vault::load_library_seen(&self.vault_dir);
         use SectionKind::*;
         match section {
-            Work => clone_into(self.doc.work.active().get(index), &mut self.library.work),
+            Work => clone_into(self.doc.work.active().get(index), &mut library.work),
             Education => clone_into(
                 self.doc.education.active().get(index),
-                &mut self.library.education,
+                &mut library.education,
             ),
-            Skills => clone_into(
-                self.doc.skills.active().get(index),
-                &mut self.library.skills,
-            ),
+            Skills => clone_into(self.doc.skills.active().get(index), &mut library.skills),
             Certificates => clone_into(
                 self.doc.certificates.active().get(index),
-                &mut self.library.certificates,
+                &mut library.certificates,
             ),
             Organizations => clone_into(
                 self.doc.volunteer.active().get(index),
-                &mut self.library.volunteer,
+                &mut library.volunteer,
             ),
             // The vault library is a copy pool for the six built-in section
             // shapes only (`Library` has no custom-section pool) — out of
             // scope for D-9's model-only task.
             Profile | Custom(_) => {}
         }
-        save_status::record(
-            cx,
-            "library",
-            vault::save_library(&self.vault_dir, &self.library),
-        );
+        let path = vault::library_path(&self.vault_dir);
+        let result = vault::save_library_seen(&self.vault_dir, &library, seen);
+        if result.is_ok() {
+            self.library = library;
+        }
+        save_status::record_notebook(cx, "library", &path, seen, result);
         cx.notify();
     }
 
@@ -247,7 +250,7 @@ impl Root {
             .file_stem()
             .map(|stem| stem.to_string_lossy().into_owned());
 
-        let mut diary = vault::load_diary(&self.vault_dir);
+        let (mut diary, seen) = vault::load_diary_seen(&self.vault_dir);
         diary.entries.insert(
             0,
             DiaryEntry {
@@ -265,7 +268,13 @@ impl Root {
                 source_doc,
             },
         );
-        save_status::record(cx, "diary", vault::save_diary(&self.vault_dir, &diary));
+        save_status::record_notebook(
+            cx,
+            "diary",
+            &vault::diary_path(&self.vault_dir),
+            seen,
+            vault::save_diary_seen(&self.vault_dir, &diary, seen),
+        );
         self.diary = diary;
         self.capture_sheet = None;
         cx.notify();

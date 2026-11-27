@@ -45,7 +45,11 @@ fn two_readings() -> (
     ];
 
     (
-        PresetMatrix::new(PathBuf::from("/dummy/path"), doc),
+        PresetMatrix::new(
+            PathBuf::from("/dummy/path"),
+            doc,
+            crate::vault::OnDisk::ABSENT,
+        ),
         faang,
         startup,
     )
@@ -165,7 +169,11 @@ fn a_pin_to_a_deleted_variant_is_labelled_rather_than_guessed_at() {
     doc.remove_variant(SectionKind::Work, 1);
     assert_eq!(doc.work.variants.len(), 1);
 
-    let matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+    let matrix = PresetMatrix::new(
+        PathBuf::from("/dummy/path"),
+        doc,
+        crate::vault::OnDisk::ABSENT,
+    );
     assert_eq!(matrix.variant_label(SectionKind::Work, infra), None);
     assert_eq!(
         matrix.cell_text(SectionKind::Work, Choice::Pin(infra)),
@@ -187,12 +195,20 @@ fn the_working_copy_marks_the_exact_or_nearest_preset() {
     doc.add_variant(SectionKind::Work);
     doc.add_preset("Work tailored");
 
-    let exact = PresetMatrix::new(PathBuf::from("/dummy/path"), doc.clone());
+    let exact = PresetMatrix::new(
+        PathBuf::from("/dummy/path"),
+        doc.clone(),
+        crate::vault::OnDisk::ABSENT,
+    );
     assert_eq!(exact.working_copy_mark(1), Some("ACTIVE"));
     assert_eq!(exact.working_copy_mark(0), None);
 
     doc.add_variant(SectionKind::Skills);
-    let edited = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+    let edited = PresetMatrix::new(
+        PathBuf::from("/dummy/path"),
+        doc,
+        crate::vault::OnDisk::ABSENT,
+    );
     assert_eq!(edited.working_copy_mark(1), Some("EDITED"));
     assert_eq!(edited.working_copy_mark(0), None);
 }
@@ -205,11 +221,19 @@ fn differences_only_defaults_by_how_many_presets_there_are() {
     for n in 0..3 {
         doc.add_preset(format!("Preset {n}"));
     }
-    let three = PresetMatrix::new(PathBuf::from("/dummy/path"), doc.clone());
+    let three = PresetMatrix::new(
+        PathBuf::from("/dummy/path"),
+        doc.clone(),
+        crate::vault::OnDisk::ABSENT,
+    );
     assert!(!three.differences_only);
 
     doc.add_preset("Preset 4");
-    let four = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+    let four = PresetMatrix::new(
+        PathBuf::from("/dummy/path"),
+        doc,
+        crate::vault::OnDisk::ABSENT,
+    );
     assert!(four.differences_only);
 }
 
@@ -344,7 +368,11 @@ fn order_and_heading_differences_are_visible_in_their_rows() {
     doc.set_section_title(SectionKind::Work, "Experience");
     doc.add_preset("Experience first");
 
-    let matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+    let matrix = PresetMatrix::new(
+        PathBuf::from("/dummy/path"),
+        doc,
+        crate::vault::OnDisk::ABSENT,
+    );
     let columns = matrix.columns();
 
     assert_eq!(
@@ -379,7 +407,11 @@ fn language_is_reported_per_column_without_becoming_a_section_row() {
     doc.set_language(crate::resume::model::DocumentLanguage::German);
     doc.add_preset("Deutsch");
 
-    let matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+    let matrix = PresetMatrix::new(
+        PathBuf::from("/dummy/path"),
+        doc,
+        crate::vault::OnDisk::ABSENT,
+    );
     let columns = matrix.columns();
     assert_eq!(matrix.column_language(&columns[0]).badge(), "DE");
     assert_eq!(matrix.column_language(&columns[1]).badge(), "EN");
@@ -396,7 +428,11 @@ fn a_column_is_measured_through_the_profile_it_is_pinned_to() {
 
     let mut doc = ResumeDoc::from_resume(Resume::default(), "Base");
     doc.layout_profile = Some("House letter".into());
-    let mut matrix = PresetMatrix::new(PathBuf::from("/dummy/path"), doc);
+    let mut matrix = PresetMatrix::new(
+        PathBuf::from("/dummy/path"),
+        doc,
+        crate::vault::OnDisk::ABSENT,
+    );
     matrix.profiles.upsert(
         "House letter",
         LayoutSettings {

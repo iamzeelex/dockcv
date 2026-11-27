@@ -50,7 +50,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Instance {
     pub pid: u32,
-    /// `CARGO_PKG_VERSION` of the build, so the banner can tell 0.4.0 from 0.4.1.
+    /// `CARGO_PKG_VERSION` of the build, so the banner can tell 0.4.0 from 0.5.0.
     pub version: String,
     /// The binary it runs from — what tells the installed app from `cargo run`.
     pub executable: PathBuf,

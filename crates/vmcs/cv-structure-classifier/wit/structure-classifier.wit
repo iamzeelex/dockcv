@@ -1,0 +1,41 @@
+package cv:structure-classifier@0.1.0;
+
+interface classifier {
+    record unplaced-item {
+        title: string,
+        subtitle: string,
+        details: list<string>,
+        formatted-line: string,
+    }
+
+    record classify-request {
+        format-name: string,
+        raw-text: string,
+    }
+
+    record classify-result {
+        /// The parsed document in DockCV TOML format
+        document-toml: string,
+        /// The parsed document in JSON Resume format
+        document-json: string,
+        candidate-name: string,
+        candidate-email: string,
+        candidate-phone: string,
+        section-count: u32,
+        work-count: u32,
+        education-count: u32,
+        skills-count: u32,
+        unplaced: list<unplaced-item>,
+    }
+
+    variant classify-error {
+        empty-input,
+        classification-failed(string),
+    }
+
+    classify-text: func(req: classify-request) -> result<classify-result, classify-error>;
+}
+
+world structure-classifier-vmc {
+    export classifier;
+}

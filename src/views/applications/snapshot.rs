@@ -83,7 +83,7 @@ impl Shell {
         let Some(vault) = self.vault.clone() else {
             return;
         };
-        let mut applications = vault::load_applications(&vault);
+        let (mut applications, seen) = vault::load_applications_seen(&vault);
         let Some(application) = applications.entries.get_mut(index) else {
             return;
         };
@@ -92,11 +92,14 @@ impl Shell {
             preset,
         });
         let already_sent = application.status() != ApplicationStatus::Wishlist;
-        save_status::record(
+        let now = save_status::record_notebook(
             cx,
             "applications board",
-            vault::save_applications(&vault, &applications),
+            &vault::applications_path(&vault),
+            seen,
+            vault::save_applications_seen(&vault, &applications, seen),
         );
+        self.follow_board_write(seen, now);
         cx.notify();
 
         // Pinning a CV to a card that has already been sent is the user
@@ -116,16 +119,19 @@ impl Shell {
         let Some(vault) = self.vault.clone() else {
             return;
         };
-        let mut applications = vault::load_applications(&vault);
+        let (mut applications, seen) = vault::load_applications_seen(&vault);
         let Some(application) = applications.entries.get_mut(index) else {
             return;
         };
         application.sent_as = None;
-        save_status::record(
+        let now = save_status::record_notebook(
             cx,
             "applications board",
-            vault::save_applications(&vault, &applications),
+            &vault::applications_path(&vault),
+            seen,
+            vault::save_applications_seen(&vault, &applications, seen),
         );
+        self.follow_board_write(seen, now);
         cx.notify();
     }
 
@@ -181,7 +187,7 @@ impl Shell {
                 })
                 .await;
 
-            let _ = this.update(cx, |_this, cx| {
+            let _ = this.update(cx, |this, cx| {
                 let bytes = match bytes {
                     Ok(bytes) => bytes,
                     // The compile failed, not the disk. Reported as a snapshot
@@ -207,7 +213,7 @@ impl Shell {
                 // editable while it does. If the row moved underneath us,
                 // dropping the snapshot record is the honest outcome — a
                 // snapshot filed against the wrong company is worse than none.
-                let mut applications = vault::load_applications(&vault);
+                let (mut applications, seen) = vault::load_applications_seen(&vault);
                 let Some(application) = applications.entries.get_mut(index) else {
                     return;
                 };
@@ -220,11 +226,14 @@ impl Shell {
                     preset,
                     file,
                 });
-                save_status::record(
+                let now = save_status::record_notebook(
                     cx,
                     "applications board",
-                    vault::save_applications(&vault, &applications),
+                    &vault::applications_path(&vault),
+                    seen,
+                    vault::save_applications_seen(&vault, &applications, seen),
                 );
+                this.follow_board_write(seen, now);
                 cx.notify();
             });
         })

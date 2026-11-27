@@ -1,0 +1,20 @@
+[package]
+name = "cv-ats-linter"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic ATS compliance linter for resume documents (Kraton VMC)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.36.0"
+dockcv-core = { path = "../../dockcv-core", default-features = false }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+
+[workspace]

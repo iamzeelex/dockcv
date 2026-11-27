@@ -54,7 +54,9 @@ impl Fingerprint {
                 if path.extension().is_none_or(|ext| ext != "toml") {
                     return None;
                 }
-                let meta = entry.metadata().ok()?;
+                // Through a symlink, not of it: a CV linked in from elsewhere
+                // changes at its target, and the link's own time never moves.
+                let meta = std::fs::metadata(&path).ok()?;
                 let modified = meta
                     .modified()
                     .ok()
@@ -88,12 +90,16 @@ pub(super) struct VaultCache {
     /// result away only bought a second parse for anything that needed the
     /// document itself (`library/usage.rs`).
     documents: Vec<Option<ResumeDoc>>,
+    /// The hash beside the library is for the block form, which seeds its
+    /// fields from this copy and so has to write against this version. The
+    /// diary and the board keep none: every write to them reads the file
+    /// afresh and checks against *that* read, and a cached hash beside a fresh
+    /// read was a pair that disagreed until the next frame — every second write
+    /// in one event was refused as "changed outside DockCV".
     library: Library,
     library_on_disk: vault::OnDisk,
     diary: Diary,
-    diary_on_disk: vault::OnDisk,
     applications: Applications,
-    applications_on_disk: vault::OnDisk,
     profiles: ProfileCatalog,
     profiles_on_disk: vault::OnDisk,
 }
@@ -124,15 +130,13 @@ impl VaultCache {
         self.metadata = loaded.iter().map(|(meta, _)| meta.clone()).collect();
         self.documents = loaded.into_iter().map(|(_, doc)| doc).collect();
         let (library, lib_on_disk) = vault::load_library_seen(dir);
-        let (diary, diary_on_disk) = vault::load_diary_seen(dir);
-        let (applications, apps_on_disk) = vault::load_applications_seen(dir);
+        let diary = vault::load_diary(dir);
+        let applications = vault::load_applications(dir);
         let (profiles, prof_on_disk) = vault::load_profiles_seen(dir);
         self.library = library;
         self.library_on_disk = lib_on_disk;
         self.diary = diary;
-        self.diary_on_disk = diary_on_disk;
         self.applications = applications;
-        self.applications_on_disk = apps_on_disk;
         self.profiles = profiles;
         self.profiles_on_disk = prof_on_disk;
 
@@ -183,16 +187,8 @@ impl VaultCache {
         &self.diary
     }
 
-    pub(super) fn diary_on_disk(&self) -> vault::OnDisk {
-        self.diary_on_disk
-    }
-
     pub(super) fn applications(&self) -> &Applications {
         &self.applications
-    }
-
-    pub(super) fn applications_on_disk(&self) -> vault::OnDisk {
-        self.applications_on_disk
     }
 
     pub(super) fn profiles(&self) -> &ProfileCatalog {
@@ -360,28 +356,26 @@ mod tests {
 
     #[test]
     fn notebook_on_disk_hashes_are_tracked_on_refresh() {
-        use crate::resume::model::DiaryEntry;
+        use crate::resume::model::{Library, Work};
         use crate::vault::OnDisk;
 
         let dir = temp_vault("hashes");
         let mut cache = VaultCache::default();
         cache.refresh(Some(&dir), 0);
         assert_eq!(cache.library_on_disk(), OnDisk::ABSENT);
-        assert_eq!(cache.diary_on_disk(), OnDisk::ABSENT);
 
-        let mut diary = Diary::default();
-        diary.entries.push(DiaryEntry {
-            date: "2026-09-01".into(),
-            text: "Entry".into(),
+        let mut library = Library::default();
+        library.work.push(Work {
+            name: "Acme".into(),
             ..Default::default()
         });
-        vault::save_diary(&dir, &diary).expect("save");
+        vault::save_library_seen(&dir, &library, OnDisk::ABSENT).expect("save");
 
         cache.refresh(Some(&dir), 1);
-        assert_ne!(cache.diary_on_disk(), OnDisk::ABSENT);
+        assert_ne!(cache.library_on_disk(), OnDisk::ABSENT);
         assert_eq!(
-            cache.diary_on_disk(),
-            OnDisk::read(&vault::diary_path(&dir))
+            cache.library_on_disk(),
+            OnDisk::read(&vault::library_path(&dir))
         );
 
         let _ = std::fs::remove_dir_all(&dir);

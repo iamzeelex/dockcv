@@ -1,0 +1,134 @@
+package cv:application-tracker@0.1.0;
+
+interface tracker {
+    enum application-status {
+        wishlist,
+        applied,
+        interviewing,
+        offer,
+        closed,
+    }
+
+    enum closure-reason {
+        rejected,
+        ghosted,
+        withdrew,
+        declined,
+        accepted,
+    }
+
+    record next-step {
+        label: string,
+        date: string,
+        time: string,
+    }
+
+    record sent-cv {
+        document: string,
+        preset: string,
+    }
+
+    record stage-change {
+        at: string,
+        to: string,
+    }
+
+    record interview-round {
+        at: string,
+        label: string,
+    }
+
+    record application-card {
+        company: string,
+        role: string,
+        status: application-status,
+        created: string,
+        applied: option<string>,
+        url: string,
+        posting: string,
+        compensation: string,
+        notes: string,
+        closure-note: option<string>,
+        closed-as: option<closure-reason>,
+        sent-as: option<sent-cv>,
+        next-step: option<next-step>,
+        history: list<stage-change>,
+        rounds: list<interview-round>,
+    }
+
+    record add-request {
+        current-board-toml: string,
+        company: string,
+        role: string,
+        status: application-status,
+        date: string,
+        posting: string,
+        url: string,
+        compensation: string,
+        sent-document: option<string>,
+        sent-preset: option<string>,
+    }
+
+    record transition-request {
+        current-board-toml: string,
+        company: string,
+        role: string,
+        new-status: application-status,
+        date: string,
+        closure: option<closure-reason>,
+        closure-note: option<string>,
+    }
+
+    record interview-request {
+        current-board-toml: string,
+        company: string,
+        role: string,
+        date: string,
+        label: string,
+    }
+
+    record step-request {
+        current-board-toml: string,
+        company: string,
+        role: string,
+        label: string,
+        date: string,
+        time: string,
+    }
+
+    record funnel-summary {
+        total-applications: u32,
+        active-count: u32,
+        wishlist-count: u32,
+        applied-count: u32,
+        interviewing-count: u32,
+        offer-count: u32,
+        closed-count: u32,
+    }
+
+    record update-result {
+        updated-board-toml: string,
+        cards: list<application-card>,
+        funnel: funnel-summary,
+    }
+
+    variant tracker-error {
+        application-not-found(string),
+        invalid-board-toml(string),
+        invalid-transition(string),
+    }
+
+    record parse-request {
+        board-toml: string,
+    }
+
+    parse-board: func(req: parse-request) -> result<update-result, tracker-error>;
+    add-application: func(req: add-request) -> result<update-result, tracker-error>;
+    advance-application: func(req: transition-request) -> result<update-result, tracker-error>;
+    log-interview: func(req: interview-request) -> result<update-result, tracker-error>;
+    schedule-step: func(req: step-request) -> result<update-result, tracker-error>;
+}
+
+world application-tracker-vmc {
+    export tracker;
+}

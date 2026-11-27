@@ -95,8 +95,9 @@ pub struct Column {
 }
 
 impl PresetMatrix {
-    pub fn new(path: PathBuf, doc: ResumeDoc) -> Self {
-        let on_disk = crate::vault::OnDisk::read(&path);
+    /// `on_disk` is what the file held when `doc` was read from it — from the
+    /// same read (`vault::load_seen`), so the two describe one version.
+    pub fn new(path: PathBuf, doc: ResumeDoc, on_disk: crate::vault::OnDisk) -> Self {
         let differences_only = doc.presets.len() > 3;
         let profiles = path
             .parent()

@@ -88,14 +88,13 @@ impl Shell {
         };
         let value = rename.field.read(cx).value(cx).trim().to_string();
         if !value.is_empty() {
-            if let Ok(mut doc) = vault::load(&rename.path) {
+            if let Ok((mut doc, on_disk)) = vault::load_seen(&rename.path) {
                 // Through the addressing layer, never at the field: reaching
                 // past `FieldId` is how a value ends up in the model and
                 // nowhere else (E-42).
                 if let Some(slot) = FieldId::PresetName(rename.index).get_mut(&mut doc) {
                     *slot = value;
                 }
-                let on_disk = vault::OnDisk::read(&rename.path);
                 let result = vault::save(&doc, &rename.path, on_disk);
                 save_status::record_document(cx, &rename.path, on_disk, result);
                 // The name is part of the key the board records a send under,
@@ -108,7 +107,7 @@ impl Shell {
 
     /// Copy a version into a second one of the same document.
     pub(crate) fn duplicate_version(&mut self, path: &Path, index: usize, cx: &mut Context<Self>) {
-        let Ok(mut doc) = vault::load(path) else {
+        let Ok((mut doc, on_disk)) = vault::load_seen(path) else {
             return;
         };
         let Some(name) = doc.presets.get(index).map(|p| format!("{} copy", p.name)) else {
@@ -117,7 +116,6 @@ impl Shell {
         if doc.add_preset_from(index, name).is_none() {
             return;
         }
-        let on_disk = vault::OnDisk::read(path);
         let result = vault::save(&doc, path, on_disk);
         save_status::record_document(cx, path, on_disk, result);
         self.reading_pages.retain(|(p, _), _| p != path);
@@ -132,14 +130,13 @@ impl Shell {
     /// combination, not any of the writing. The document's own `Delete`, which
     /// does destroy writing, keeps its confirmation.
     pub(crate) fn delete_version(&mut self, path: &Path, index: usize, cx: &mut Context<Self>) {
-        let Ok(mut doc) = vault::load(path) else {
+        let Ok((mut doc, on_disk)) = vault::load_seen(path) else {
             return;
         };
         if index >= doc.presets.len() {
             return;
         }
         doc.remove_preset(index);
-        let on_disk = vault::OnDisk::read(path);
         let result = vault::save(&doc, path, on_disk);
         save_status::record_document(cx, path, on_disk, result);
         self.reading_pages.retain(|(p, _), _| p != path);

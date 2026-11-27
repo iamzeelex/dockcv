@@ -11,11 +11,9 @@ use gpui::Context;
 use crate::config;
 use crate::resume::diagnostics::CompileMessage;
 use crate::typst_engine::Severity;
-use crate::vault;
 
 use super::export_sheet::{ExportFormat, CURRENT_VIEW};
 use super::{CompileState, Root};
-use crate::views::save_status;
 
 impl Root {
     /// Write the file the sheet described, and nothing else.
@@ -136,13 +134,12 @@ impl Root {
                         let mut config = config::load();
                         config.remember_export_destination(&this.doc_path, &folder);
                         config::save(&config);
-                        let seen = this.on_disk;
-                        this.on_disk = save_status::record_document(
-                            cx,
-                            &this.doc_path,
-                            seen,
-                            vault::save(&this.doc, &this.doc_path, seen),
-                        );
+                        // Through the editor's one write, not a second one of
+                        // its own: a debounced save pending behind this export
+                        // used to fire afterwards with the state from before
+                        // it, find the file changed, and refuse every save
+                        // that followed.
+                        this.save_now(cx);
                     }
                     Err(message) => {
                         // A failed export has to reach the screen. The banner

@@ -1,0 +1,79 @@
+package cv:ats-linter@0.1.0;
+
+interface linter {
+    enum section-kind {
+        profile,
+        work,
+        education,
+        skills,
+        certificates,
+        organizations,
+        custom,
+        unknown,
+    }
+
+    record date-range {
+        start: string,
+        end: string,
+    }
+
+    record markup-finding {
+        text: string,
+        in-the-text: string,
+    }
+
+    record missing-chars {
+        text: string,
+        missing: list<char>,
+    }
+
+    record whitespace-chars {
+        text: string,
+        characters: list<char>,
+    }
+
+    record heading-mismatch {
+        title: string,
+        expected: string,
+    }
+
+    variant finding-rule {
+        heading-no-parser-knows(heading-mismatch),
+        date-no-parser-can-read(string),
+        dates-run-backwards(date-range),
+        no-way-to-reach-person,
+        markup-that-never-renders(markup-finding),
+        list-marker-typed-into-text(string),
+        characters-no-face-can-set(missing-chars),
+        whitespace-nobody-sees(whitespace-chars),
+    }
+
+    record finding {
+        rule: finding-rule,
+        section: section-kind,
+        field-path: option<string>,
+        message: string,
+    }
+
+    record lint-request {
+        /// Document content as JSON Resume, DockCV TOML, or AltaCV
+        document-content: string,
+    }
+
+    record lint-result {
+        findings: list<finding>,
+        is-clean: bool,
+        finding-count: u32,
+    }
+
+    variant lint-error {
+        unrecognized-format(string),
+        parse-failed(string),
+    }
+
+    lint: func(req: lint-request) -> result<lint-result, lint-error>;
+}
+
+world ats-linter-vmc {
+    export linter;
+}

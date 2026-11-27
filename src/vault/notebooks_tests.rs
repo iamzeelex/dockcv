@@ -17,7 +17,7 @@ fn library_round_trip() {
         name: "Acme".into(),
         ..Default::default()
     });
-    super::save_library(&dir, &library).expect("save library");
+    super::save_library_seen(&dir, &library, crate::vault::OnDisk::ABSENT).expect("save library");
 
     let back = super::load_library(&dir);
     assert_eq!(back.work.len(), 1);
@@ -107,6 +107,7 @@ fn missing_applications_file_loads_as_empty() {
 #[test]
 fn save_snapshot_writes_bytes_and_sanitizes_the_file_name() {
     let dir = std::env::temp_dir().join(format!("dockcv-snapshot-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 
     let file_name =
@@ -120,6 +121,67 @@ fn save_snapshot_writes_bytes_and_sanitizes_the_file_name() {
     // empty stem.
     let punctuation_only = super::save_snapshot(&dir, b"x", "!!!", 2).expect("save snapshot");
     assert_eq!(punctuation_only, "application-v2.pdf");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Two applications to one company each send `v1`, and the second used to
+/// replace the PDF the first company was actually sent.
+#[test]
+fn a_snapshot_never_replaces_another() {
+    let dir = std::env::temp_dir().join(format!("dockcv-snapshot-twice-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let first = super::save_snapshot(&dir, b"%PDF first role", "Google", 1).expect("first");
+    let second = super::save_snapshot(&dir, b"%PDF second role", "Google", 1).expect("second");
+
+    assert_eq!(first, "google-v1.pdf");
+    assert_eq!(second, "google-v1-2.pdf");
+    let read = |name: &str| std::fs::read(super::snapshots_dir(&dir).join(name)).unwrap();
+    assert_eq!(
+        read(&first),
+        b"%PDF first role",
+        "the first send is still the first send"
+    );
+    assert_eq!(read(&second), b"%PDF second role");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A notebook with a typo in it reads as empty — and the next write used to
+/// be that empty notebook plus one entry, over the person's whole diary.
+#[test]
+fn a_notebook_that_will_not_parse_is_never_replaced() {
+    use crate::vault::SaveError;
+
+    let dir = std::env::temp_dir().join(format!("dockcv-broken-diary-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = super::diary_path(&dir);
+    // An unterminated string, the way a hand edit goes wrong.
+    let precious = "[[entries]]\ndate = \"2026-01-01\"\ntext = \"Shipped the thing\"\n\n\
+                    [[entries]]\ndate = \"2026-02-01\"\ntext = \"Led the migration\n";
+    std::fs::write(&path, precious).unwrap();
+
+    let (mut diary, seen) = super::load_diary_seen(&dir);
+    assert!(diary.entries.is_empty(), "the screen still opens, empty");
+    diary.entries.push(Default::default());
+
+    assert!(matches!(
+        super::save_diary_seen(&dir, &diary, seen),
+        Err(SaveError::Failed(_))
+    ));
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        precious,
+        "a file DockCV could not read is left exactly as it is"
+    );
+
+    // An empty file is not a broken one: there is nothing in it to lose.
+    std::fs::write(&path, "").unwrap();
+    let (diary, seen) = super::load_diary_seen(&dir);
+    super::save_diary_seen(&dir, &diary, seen).expect("an empty notebook is writable");
 
     std::fs::remove_dir_all(&dir).ok();
 }

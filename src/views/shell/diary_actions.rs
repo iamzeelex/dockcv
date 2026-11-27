@@ -46,7 +46,7 @@ impl Shell {
             .unwrap_or_default();
 
         if let Some(vault) = self.vault.clone() {
-            let mut diary = vault::load_diary(&vault);
+            let (mut diary, seen) = vault::load_diary_seen(&vault);
             diary.entries.insert(
                 0,
                 DiaryEntry {
@@ -61,7 +61,6 @@ impl Shell {
                 },
             );
             let path = vault::diary_path(&vault);
-            let seen = self.cache.diary_on_disk();
             save_status::record_notebook(
                 cx,
                 "diary",
@@ -87,13 +86,12 @@ impl Shell {
         let Some(vault) = self.vault.clone() else {
             return;
         };
-        let mut diary = vault::load_diary(&vault);
+        let (mut diary, seen) = vault::load_diary_seen(&vault);
         let Some(entry) = diary.entries.get_mut(index) else {
             return;
         };
         entry.confidential = !entry.confidential;
         let path = vault::diary_path(&vault);
-        let seen = self.cache.diary_on_disk();
         save_status::record_notebook(
             cx,
             "diary",
@@ -108,10 +106,9 @@ impl Shell {
         let Some(vault) = self.vault.clone() else {
             return;
         };
-        let mut diary = vault::load_diary(&vault);
+        let (mut diary, seen) = vault::load_diary_seen(&vault);
         remove_at(&mut diary.entries, index);
         let path = vault::diary_path(&vault);
-        let seen = self.cache.diary_on_disk();
         save_status::record_notebook(
             cx,
             "diary",

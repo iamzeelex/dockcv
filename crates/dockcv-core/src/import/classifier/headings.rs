@@ -16,7 +16,7 @@ use super::SectionKind;
 /// The shipped table: language → its words for each section.
 pub(crate) type Taxonomy = std::collections::BTreeMap<String, LanguageCorpus>;
 
-static TAXONOMY_TOML: &str = include_str!("../../../assets/taxonomy.toml");
+static TAXONOMY_TOML: &str = include_str!("../../../../../assets/taxonomy.toml");
 
 static INDEXED_TAXONOMY: OnceLock<IndexedTaxonomy> = OnceLock::new();
 
@@ -239,7 +239,7 @@ pub(crate) fn every_word_names_a_section(clean: &str) -> bool {
     counted >= 2
 }
 
-pub(crate) fn names_a_section(clean: &str) -> bool {
+pub fn names_a_section(clean: &str) -> bool {
     let tax = get_indexed_taxonomy();
     if tax.exact_map.contains_key(clean) {
         return true;
@@ -256,7 +256,7 @@ pub(crate) fn names_a_section(clean: &str) -> bool {
 }
 
 /// Taxonomy-driven section header classifier with ISO language corpus & NLP fuzzy matching.
-pub(crate) fn classify_header(header: &str) -> SectionKind {
+pub fn classify_header(header: &str) -> SectionKind {
     let clean = sanitize_header_line(header);
     let tax = get_indexed_taxonomy();
 

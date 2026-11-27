@@ -208,12 +208,18 @@ impl Shell {
         // The reverse half: the entry now knows it has been used, so the
         // diary can answer "did I ever use this?" without opening every CV.
         if let Some(vault_dir) = self.vault.clone() {
-            let mut diary = vault::load_diary(&vault_dir);
+            let (mut diary, seen) = vault::load_diary_seen(&vault_dir);
             if let Some(entry) = diary.entries.get_mut(entry_index) {
                 if !entry.used_in.contains(&stem) {
                     entry.used_in.push(stem);
                 }
-                save_status::record(cx, "diary", vault::save_diary(&vault_dir, &diary));
+                save_status::record_notebook(
+                    cx,
+                    "diary",
+                    &vault::diary_path(&vault_dir),
+                    seen,
+                    vault::save_diary_seen(&vault_dir, &diary, seen),
+                );
             }
         }
 

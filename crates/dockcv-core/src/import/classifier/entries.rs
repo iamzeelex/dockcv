@@ -204,7 +204,7 @@ pub(crate) fn ends_with_parenthesised_date(line: &str) -> bool {
 }
 
 /// Is the line nothing but a date or a date range?
-pub(crate) fn is_only_dates(line: &str) -> bool {
+pub fn is_only_dates(line: &str) -> bool {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return false;

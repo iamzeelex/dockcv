@@ -288,7 +288,7 @@ impl Shell {
         }
 
         if let Some(vault_dir) = self.vault.clone() {
-            let mut diary = vault::load_diary(&vault_dir);
+            let (mut diary, seen) = vault::load_diary_seen(&vault_dir);
             diary.entries.insert(
                 0,
                 DiaryEntry {
@@ -301,7 +301,13 @@ impl Shell {
                     ..Default::default()
                 },
             );
-            save_status::record(cx, "diary", vault::save_diary(&vault_dir, &diary));
+            save_status::record_notebook(
+                cx,
+                "diary",
+                &vault::diary_path(&vault_dir),
+                seen,
+                vault::save_diary_seen(&vault_dir, &diary, seen),
+            );
         }
 
         if let Some(sheet) = self.diary_paste.as_mut() {
