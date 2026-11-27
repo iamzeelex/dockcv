@@ -1,9 +1,10 @@
 //! Writing a document against the version that was read.
 //!
-//! Split from `vault.rs` in 0.4.1 so the module could take the fixes for the
-//! false "changed outside DockCV" without growing past its size. Everything
-//! here answers one question — may this write replace what is on disk? — and
-//! `write_tests.rs` beside it is where that question is tested.
+//! Split from `vault.rs` during the 0.4.1 work — a version that was never
+//! released on its own and ships as part of 0.5.0 — so the module could take
+//! the fixes for the false "changed outside DockCV" without growing past its
+//! size. Everything here answers one question — may this write replace what is
+//! on disk? — and `write_tests.rs` beside it is where that question is tested.
 
 use std::fs;
 use std::path::Path;

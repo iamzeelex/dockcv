@@ -1,4 +1,4 @@
-# DockCV Sovereign VMC Suite for Kraton (v0.4.1)
+# DockCV Sovereign VMC Suite for Kraton (0.5.0-dev)
 
 This directory contains standalone, sovereign **Virtual Monadic Components (VMCs)** extracted from DockCV. Each module is compiled to the Wasm Component Model (`wasm32-wasip2`), adheres to Kraton WIT specifications, and performs deterministic computation without touching the host filesystem or OS clock.
 
