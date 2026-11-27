@@ -12,9 +12,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::resume::model::{ApplicationStatus, Applications, Diary, Library, ProfileCatalog};
+use dockcv_core::resume::model::{ApplicationStatus, Applications, Diary, Library, ProfileCatalog};
 
-use crate::vault::{
+use crate::{
     atomic_write, list_documents, load, OnDisk, SaveError, APPLICATIONS_FILE, DIARY_FILE,
     LIBRARY_FILE, PROFILES_FILE, SNAPSHOTS_DIR,
 };

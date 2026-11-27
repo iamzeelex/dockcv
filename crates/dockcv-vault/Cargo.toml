@@ -1,0 +1,35 @@
+# DockCV's file layer: the vault directory, and every way the app reads or
+# writes a file in it.
+#
+# Split out of the binary so the rule the product rests on — plain TOML that a
+# person can open in any editor, written without ever replacing something
+# nobody read — lives in one place with a boundary around it, and so the
+# layers above it (history, import, the screens) cannot reach past it to the
+# disk. `dockcv-core` stays free of the filesystem on purpose; this is the
+# crate that owns it.
+#
+# The rule that keeps it honest: **no GPUI and no screen code.** Whatever the
+# app needs to hold in a window — a `Global`, an entity — is the app's own
+# wrapper around what is here. `scripts/check-boundaries.sh` fails CI if GPUI
+# ever appears in this crate's dependency tree.
+[package]
+name = "dockcv-vault"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "DockCV's file layer: the vault directory, guarded writes and notebooks"
+
+[dependencies]
+# Only the model and its TOML spelling. Defaults off: the Typst compiler, the
+# raster and PDF writers and the bundled fonts have no business in a crate
+# whose job is files.
+dockcv-core = { path = "../dockcv-core", default-features = false }
+log = "0.4"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.8"
+
+[dev-dependencies]
+# The sample résumé the tests build documents from. Dev-only, as in the app.
+dockcv-core = { path = "../dockcv-core", default-features = false, features = ["fixtures"] }

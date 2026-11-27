@@ -3,8 +3,8 @@
 //! Split from `vault.rs` by C15. One notebook per subject, each atomic, each
 //! with a migration for the shape it used to have.
 
-use crate::resume::model::{Library, Work};
-use crate::resume::{altacv, model::ResumeDoc};
+use dockcv_core::resume::model::{Library, Work};
+use dockcv_core::resume::{altacv, model::ResumeDoc};
 
 #[test]
 fn library_round_trip() {
@@ -17,7 +17,7 @@ fn library_round_trip() {
         name: "Acme".into(),
         ..Default::default()
     });
-    super::save_library_seen(&dir, &library, crate::vault::OnDisk::ABSENT).expect("save library");
+    super::save_library_seen(&dir, &library, crate::OnDisk::ABSENT).expect("save library");
 
     let back = super::load_library(&dir);
     assert_eq!(back.work.len(), 1);
@@ -32,7 +32,7 @@ fn library_round_trip() {
 /// verbatim is untouched — `""` is the one value nobody typed.
 #[test]
 fn an_empty_status_is_filled_in_rather_than_warned_about_forever() {
-    use crate::resume::model::ApplicationStatus;
+    use dockcv_core::resume::model::ApplicationStatus;
 
     let dir = std::env::temp_dir().join(format!(
         "dockcv_status_{}",
@@ -65,7 +65,7 @@ fn an_empty_status_is_filled_in_rather_than_warned_about_forever() {
 
 #[test]
 fn applications_round_trip() {
-    use crate::resume::model::{Application, ApplicationStatus, Applications};
+    use dockcv_core::resume::model::{Application, ApplicationStatus, Applications};
 
     let dir = std::env::temp_dir().join(format!("dockcv-apps-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -75,7 +75,7 @@ fn applications_round_trip() {
         company: "Bramble Tech".into(),
         role: "Staff Engineer".into(),
         status_word: ApplicationStatus::Interviewing.word().into(),
-        sent_as: Some(crate::resume::model::SentCv {
+        sent_as: Some(dockcv_core::resume::model::SentCv {
             document: "albert-senior-swe".into(),
             preset: "FAANG · concise".into(),
         }),
@@ -153,7 +153,7 @@ fn a_snapshot_never_replaces_another() {
 /// be that empty notebook plus one entry, over the person's whole diary.
 #[test]
 fn a_notebook_that_will_not_parse_is_never_replaced() {
-    use crate::vault::SaveError;
+    use crate::SaveError;
 
     let dir = std::env::temp_dir().join(format!("dockcv-broken-diary-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -190,17 +190,17 @@ fn a_notebook_that_will_not_parse_is_never_replaced() {
 fn toml_round_trip_preserves_document() {
     let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
     let mut doc = ResumeDoc::from_resume(resume, "Base");
-    doc.add_variant(crate::resume::model::SectionKind::Work);
+    doc.add_variant(dockcv_core::resume::model::SectionKind::Work);
     doc.section_order = vec![
-        crate::resume::model::SectionKind::Skills,
-        crate::resume::model::SectionKind::Profile,
-        crate::resume::model::SectionKind::Work,
-        crate::resume::model::SectionKind::Education,
-        crate::resume::model::SectionKind::Certificates,
-        crate::resume::model::SectionKind::Organizations,
+        dockcv_core::resume::model::SectionKind::Skills,
+        dockcv_core::resume::model::SectionKind::Profile,
+        dockcv_core::resume::model::SectionKind::Work,
+        dockcv_core::resume::model::SectionKind::Education,
+        dockcv_core::resume::model::SectionKind::Certificates,
+        dockcv_core::resume::model::SectionKind::Organizations,
     ];
-    doc.set_section_title(crate::resume::model::SectionKind::Work, "Engineering");
-    doc.set_language(crate::resume::model::DocumentLanguage::German);
+    doc.set_section_title(dockcv_core::resume::model::SectionKind::Work, "Engineering");
+    doc.set_language(dockcv_core::resume::model::DocumentLanguage::German);
     doc.add_preset("Tailored");
 
     let text = super::to_toml(&doc).expect("serialize to TOML");
@@ -216,7 +216,7 @@ fn toml_round_trip_preserves_document() {
     assert_eq!(back.presets[0].lang.as_deref(), Some("de"));
     assert_eq!(
         back.language(),
-        crate::resume::model::DocumentLanguage::German
+        dockcv_core::resume::model::DocumentLanguage::German
     );
 }
 
@@ -226,7 +226,7 @@ fn toml_round_trip_preserves_document() {
 /// existing vault's CVs render unchanged (US-07/C1).
 #[test]
 fn layout_defaults_and_old_docs_still_load() {
-    use crate::resume::model::{LayoutSettings, Margins, PageSize, TypeSizes};
+    use dockcv_core::resume::model::{LayoutSettings, Margins, PageSize, TypeSizes};
 
     let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
     let doc = ResumeDoc::from_resume(resume, "Base");
@@ -306,7 +306,7 @@ fn layout_defaults_and_old_docs_still_load() {
 /// same document it always did.
 #[test]
 fn custom_sections_default_and_old_docs_still_load() {
-    use crate::resume::model::SectionKind;
+    use dockcv_core::resume::model::SectionKind;
 
     let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
     let doc = ResumeDoc::from_resume(resume, "Base");
@@ -327,7 +327,7 @@ fn custom_sections_default_and_old_docs_still_load() {
 
     let mut with_custom = back;
     let id = with_custom.add_custom_section("Languages");
-    super::save(&with_custom, &path, crate::vault::OnDisk::read(&path)).expect("save");
+    super::save(&with_custom, &path, crate::OnDisk::read(&path)).expect("save");
     let reloaded = super::load(&path).expect("load");
     assert_eq!(reloaded.custom_sections.len(), 1);
     assert_eq!(reloaded.custom_sections[0].title, "Languages");
@@ -342,7 +342,7 @@ fn custom_sections_default_and_old_docs_still_load() {
 /// vault written by this branch still opens on `main`.
 #[test]
 fn export_settings_and_history_round_trip_and_stay_out_of_untouched_files() {
-    use crate::resume::model::ExportSettings;
+    use dockcv_core::resume::model::ExportSettings;
     use std::path::PathBuf;
 
     let resume = altacv::import(altacv::ALTACV_SAMPLE).unwrap();
@@ -471,7 +471,7 @@ path = "/Users/someone/Downloads/Ann Lee - Concise.docx"
 #[test]
 fn search_reaches_every_name_a_document_carries_and_says_which() {
     use super::MatchKind;
-    use crate::resume::model::{Basics, Preset, Resume, SectionKind};
+    use dockcv_core::resume::model::{Basics, Preset, Resume, SectionKind};
 
     let resume = Resume {
         basics: Basics {
@@ -504,7 +504,7 @@ fn search_reaches_every_name_a_document_carries_and_says_which() {
     ));
     std::fs::create_dir_all(&dir).expect("scratch");
     let path = dir.join("northwind-em.toml");
-    super::save(&doc, &path, crate::vault::OnDisk::read(&path)).expect("save");
+    super::save(&doc, &path, crate::OnDisk::read(&path)).expect("save");
 
     let meta = super::meta_from(&path, Some(&doc));
 
@@ -552,7 +552,7 @@ fn an_unreadable_document_is_still_findable_by_its_stem() {
 
 #[test]
 fn profiles_are_a_reserved_atomic_vault_file_and_usage_is_per_document() {
-    use crate::resume::model::{LayoutSettings, ProfileCatalog, ResumeDoc, ATS_SAFE_PROFILE};
+    use dockcv_core::resume::model::{LayoutSettings, ProfileCatalog, ResumeDoc, ATS_SAFE_PROFILE};
 
     let dir = std::env::temp_dir().join(format!(
         "dockcv_profiles_{}",
@@ -598,8 +598,8 @@ fn profiles_are_a_reserved_atomic_vault_file_and_usage_is_per_document() {
 
 #[test]
 fn notebook_lost_update_prevention_and_atomic_writes() {
-    use crate::resume::model::{Applications, Diary, ProfileCatalog};
-    use crate::vault::{OnDisk, SaveError};
+    use crate::{OnDisk, SaveError};
+    use dockcv_core::resume::model::{Applications, Diary, ProfileCatalog};
 
     let dir = std::env::temp_dir().join(format!(
         "dockcv-notebook-conflict-{}-{}",
@@ -624,7 +624,7 @@ fn notebook_lost_update_prevention_and_atomic_writes() {
     std::fs::write(&lib_path, "work = []\n# external edit\n").expect("write external");
 
     // Attempting to save with stale seen returns Conflict
-    lib2.work.push(crate::resume::model::Work {
+    lib2.work.push(dockcv_core::resume::model::Work {
         name: "Acme".into(),
         ..Default::default()
     });
@@ -640,7 +640,7 @@ fn notebook_lost_update_prevention_and_atomic_writes() {
     let diary_path = super::diary_path(&dir);
     std::fs::write(&diary_path, "entries = []\n# external diary edit\n").expect("write external");
 
-    diary2.entries.push(crate::resume::model::DiaryEntry {
+    diary2.entries.push(dockcv_core::resume::model::DiaryEntry {
         text: "New entry".into(),
         ..Default::default()
     });
@@ -657,7 +657,7 @@ fn notebook_lost_update_prevention_and_atomic_writes() {
     let apps_path = super::applications_path(&dir);
     std::fs::write(&apps_path, "entries = []\n# external apps edit\n").expect("write external");
 
-    apps2.entries.push(crate::resume::model::Application {
+    apps2.entries.push(dockcv_core::resume::model::Application {
         company: "Beta".into(),
         ..Default::default()
     });
@@ -682,9 +682,9 @@ fn notebook_lost_update_prevention_and_atomic_writes() {
 
     // 5. Atomic write helper replaces destination and cleans up
     let test_file = dir.join("atomic_test.txt");
-    crate::vault::atomic_write(&test_file, "hello").expect("atomic write");
+    crate::atomic_write(&test_file, "hello").expect("atomic write");
     assert_eq!(std::fs::read_to_string(&test_file).unwrap(), "hello");
-    crate::vault::atomic_write(&test_file, "world").expect("atomic overwrite");
+    crate::atomic_write(&test_file, "world").expect("atomic overwrite");
     assert_eq!(std::fs::read_to_string(&test_file).unwrap(), "world");
 
     let _ = std::fs::remove_dir_all(&dir);

@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/dockcv-core", "crates/dockcv-wasm", "crates/ui-components"]
+members = [".", "crates/dockcv-core", "crates/dockcv-vault", "crates/dockcv-wasm", "crates/ui-components"]
 resolver = "2"
 
 # The browser module, built for size rather than speed — the download is the
@@ -42,8 +42,9 @@ path = "src/main.rs"
 # logger capture ours and GPUI's alike. See `src/logging.rs`.
 log = "0.4"
 dockcv-core = { path = "crates/dockcv-core" }
+dockcv-vault = { path = "crates/dockcv-vault" }
 dockcv-ui-components = { path = "crates/ui-components" }
-gpui = { git = "https://github.com/zed-industries/zed" }
+gpui ={ git = "https://github.com/zed-industries/zed" }
 
 # The Typst pipeline moved to `dockcv-core`; what stays here is the last step
 # of it. `render.rs` turns the engine's pixmap into a `gpui::RenderImage`, and

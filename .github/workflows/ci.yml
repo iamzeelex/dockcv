@@ -61,6 +61,19 @@ jobs:
       - name: Verify Version & CHANGELOG Consistency
         run: bash scripts/release.sh --check
 
+  # The crates are layers only while nothing reaches past them: the engine has
+  # no window and no disk, the file layer has no window, and the widget crate
+  # knows nothing about résumés. Each was a sentence in a manifest until this.
+  boundaries:
+    name: Crate boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - name: No crate depends on what its role forbids
+        run: bash scripts/check-boundaries.sh
+
   clippy:
     name: Clippy Linting
     runs-on: macos-latest

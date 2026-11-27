@@ -3,7 +3,7 @@
 //! Split from `vault.rs` by C15: external edits, save conflicts, and what the
 //! folder looks like to `list_documents`.
 
-use crate::resume::{altacv, model::ResumeDoc};
+use dockcv_core::resume::{altacv, model::ResumeDoc};
 
 /// The lost update, which happened to a real vault.
 ///
@@ -14,7 +14,7 @@ use crate::resume::{altacv, model::ResumeDoc};
 /// that must never happen.
 #[test]
 fn a_file_changed_outside_the_app_is_not_overwritten() {
-    use crate::vault::{load_seen, save, OnDisk, SaveError};
+    use crate::{load_seen, save, OnDisk, SaveError};
 
     let dir = std::env::temp_dir().join(format!("dockcv-lost-update-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
@@ -58,7 +58,7 @@ fn a_file_changed_outside_the_app_is_not_overwritten() {
 /// The three answers, and the two that are silent when wrong.
 #[test]
 fn an_external_edit_is_adopted_only_when_there_is_nothing_to_lose() {
-    use crate::vault::{external_change, load_seen, save, ExternalChange, OnDisk};
+    use crate::{external_change, load_seen, save, ExternalChange, OnDisk};
 
     let dir = std::env::temp_dir().join(format!("dockcv-external-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
@@ -108,7 +108,7 @@ fn an_external_edit_is_adopted_only_when_there_is_nothing_to_lose() {
 /// front of somebody who had done nothing but type.
 #[test]
 fn a_write_we_have_not_finished_recording_is_not_a_conflict() {
-    use crate::vault::{external_change, load_seen, save, ExternalChange, OnDisk};
+    use crate::{external_change, load_seen, save, ExternalChange, OnDisk};
 
     let dir = std::env::temp_dir().join(format!("dockcv-own-write-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
@@ -141,7 +141,7 @@ fn a_write_we_have_not_finished_recording_is_not_a_conflict() {
 /// merely having the document open was enough to arm it.
 #[test]
 fn writing_a_document_that_has_not_changed_leaves_the_file_alone() {
-    use crate::vault::{load_seen, save, OnDisk};
+    use crate::{load_seen, save, OnDisk};
 
     let dir = std::env::temp_dir().join(format!("dockcv-idle-write-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
@@ -238,7 +238,7 @@ fn a_document_that_will_not_parse_is_left_exactly_as_it_is() {
 /// from TOML serialization to preserve clean, diffable files.
 #[test]
 fn entry_urls_round_trip_cleanly_through_toml() {
-    use crate::resume::model::{Resume, ResumeDoc, Volunteer, Work};
+    use dockcv_core::resume::model::{Resume, ResumeDoc, Volunteer, Work};
 
     let resume = Resume {
         work: vec![
@@ -319,7 +319,7 @@ fn a_status_this_build_cannot_read_survives_a_save() {
     let applications = super::load_applications(&dir);
     assert_eq!(
         applications.entries[0].status(),
-        crate::resume::model::ApplicationStatus::Wishlist,
+        dockcv_core::resume::model::ApplicationStatus::Wishlist,
         "an unknown word still reads as Wishlist, so the board stays usable"
     );
 
@@ -333,8 +333,10 @@ fn a_status_this_build_cannot_read_survives_a_save() {
     // And a word we *do* understand is still written from the enum, so a
     // card moved on the board writes where it was moved to.
     let mut applications = super::load_applications(&dir);
-    applications.entries[0]
-        .advance_to(crate::resume::model::ApplicationStatus::Offer, "2026-08-21");
+    applications.entries[0].advance_to(
+        dockcv_core::resume::model::ApplicationStatus::Offer,
+        "2026-08-21",
+    );
     super::save_applications(&dir, &applications).expect("save");
     let text = std::fs::read_to_string(super::applications_path(&dir)).expect("read back");
     assert!(text.contains("status = \"offer\""), "got:\n{text}");
@@ -354,12 +356,12 @@ fn a_card_created_in_code_writes_the_status_it_was_given() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("temp vault");
 
-    let mut applications = crate::resume::model::Applications::default();
+    let mut applications = dockcv_core::resume::model::Applications::default();
     applications
         .entries
-        .push(crate::resume::model::Application {
+        .push(dockcv_core::resume::model::Application {
             company: "Acme".into(),
-            status_word: crate::resume::model::ApplicationStatus::Applied
+            status_word: dockcv_core::resume::model::ApplicationStatus::Applied
                 .word()
                 .into(),
             ..Default::default()
@@ -379,7 +381,7 @@ fn a_card_created_in_code_writes_the_status_it_was_given() {
 /// happens to be listed first.
 #[test]
 fn a_document_without_a_skills_style_loads_as_the_one_it_was_printed_with() {
-    use crate::resume::model::SkillsStyle;
+    use dockcv_core::resume::model::SkillsStyle;
 
     let dir = std::env::temp_dir().join(format!("dockcv-skills-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -388,11 +390,11 @@ fn a_document_without_a_skills_style_loads_as_the_one_it_was_printed_with() {
 
     // Save with the default, then strip the key the way a file written
     // before this field existed would not have had it at all.
-    let doc = crate::resume::model::ResumeDoc::from_resume(
-        crate::resume::model::Resume::default(),
+    let doc = dockcv_core::resume::model::ResumeDoc::from_resume(
+        dockcv_core::resume::model::Resume::default(),
         "Base",
     );
-    super::save(&doc, &path, crate::vault::OnDisk::read(&path)).expect("save");
+    super::save(&doc, &path, crate::OnDisk::read(&path)).expect("save");
     let text = std::fs::read_to_string(&path).expect("read");
     let without: String = text
         .lines()
@@ -412,7 +414,7 @@ fn a_document_without_a_skills_style_loads_as_the_one_it_was_printed_with() {
     // And a chosen style round-trips.
     let mut doc = loaded;
     doc.layout.skills.style = SkillsStyle::Bubbles;
-    super::save(&doc, &path, crate::vault::OnDisk::read(&path)).expect("save");
+    super::save(&doc, &path, crate::OnDisk::read(&path)).expect("save");
     assert_eq!(
         super::load(&path).expect("reload").layout.skills.style,
         SkillsStyle::Bubbles
@@ -427,7 +429,7 @@ fn a_document_without_a_skills_style_loads_as_the_one_it_was_printed_with() {
 /// moment it opened, so every edit made outside arrived as a conflict.
 #[test]
 fn a_file_dockcv_did_not_write_still_reloads_when_edited_outside() {
-    use crate::vault::{external_change, load_seen, save, to_toml, ExternalChange, OnDisk};
+    use crate::{external_change, load_seen, save, to_toml, ExternalChange, OnDisk};
 
     let dir = std::env::temp_dir().join(format!("dockcv-hand-written-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -476,7 +478,7 @@ fn a_file_dockcv_did_not_write_still_reloads_when_edited_outside() {
 /// still landed — and from then on refused every save as "changed outside".
 #[test]
 fn a_holder_that_records_every_write_never_refuses_itself() {
-    use crate::vault::{load_seen, save, OnDisk};
+    use crate::{load_seen, save, OnDisk};
 
     let dir = std::env::temp_dir().join(format!("dockcv-one-writer-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -521,7 +523,7 @@ fn a_holder_that_records_every_write_never_refuses_itself() {
 /// that lands after it is refused like any other.
 #[test]
 fn keeping_my_version_writes_only_over_the_file_it_read_again() {
-    use crate::vault::{load_seen, save, OnDisk, SaveError};
+    use crate::{load_seen, save, OnDisk, SaveError};
 
     let dir = std::env::temp_dir().join(format!("dockcv-keep-mine-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -583,7 +585,7 @@ fn keeping_my_version_writes_only_over_the_file_it_read_again() {
 /// was the bug — the version on screen left with the editor.
 #[test]
 fn leaving_asks_only_when_a_refused_flush_would_lose_the_screens_version() {
-    use crate::vault::{external_change, load_seen, save, to_toml, ExternalChange, OnDisk};
+    use crate::{external_change, load_seen, save, to_toml, ExternalChange, OnDisk};
 
     let dir = std::env::temp_dir().join(format!("dockcv-leave-ask-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -637,7 +639,7 @@ fn leaving_asks_only_when_a_refused_flush_would_lose_the_screens_version() {
 fn a_write_respects_the_files_permissions() {
     use std::os::unix::fs::PermissionsExt;
 
-    use crate::vault::{atomic_write, OnDisk};
+    use crate::{atomic_write, OnDisk};
 
     let dir = std::env::temp_dir().join(format!("dockcv-permissions-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -671,7 +673,7 @@ fn a_write_respects_the_files_permissions() {
 #[cfg(unix)]
 #[test]
 fn a_symlinked_document_is_written_through_its_link() {
-    use crate::vault::{load_seen, save};
+    use crate::{load_seen, save};
 
     let dir = std::env::temp_dir().join(format!("dockcv-symlink-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

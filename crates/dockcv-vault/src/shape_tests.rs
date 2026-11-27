@@ -3,8 +3,8 @@
 //! Split from `vault.rs` by C15: the marker, the trash, relative time, and the
 //! metadata a card is drawn from.
 
-use crate::resume::model::Diary;
-use crate::resume::{altacv, model::ResumeDoc};
+use dockcv_core::resume::model::Diary;
+use dockcv_core::resume::{altacv, model::ResumeDoc};
 
 #[test]
 fn trashing_the_same_name_twice_keeps_both() {
@@ -12,13 +12,13 @@ fn trashing_the_same_name_twice_keeps_both() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("temp vault");
 
-    let mut first = ResumeDoc::from_resume(crate::resume::model::Resume::default(), "Base");
+    let mut first = ResumeDoc::from_resume(dockcv_core::resume::model::Resume::default(), "Base");
     first.profile.active_mut().name = "The first one".into();
     let path = super::create_document(&dir, &first, "cv").expect("create");
     super::delete_document(&path).expect("delete");
 
     // Same name again, different contents.
-    let mut second = ResumeDoc::from_resume(crate::resume::model::Resume::default(), "Base");
+    let mut second = ResumeDoc::from_resume(dockcv_core::resume::model::Resume::default(), "Base");
     second.profile.active_mut().name = "The second one".into();
     let path = super::create_document(&dir, &second, "cv").expect("recreate");
     assert_eq!(

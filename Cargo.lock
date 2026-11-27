@@ -1757,6 +1757,7 @@ dependencies = [
  "csv",
  "dockcv-core",
  "dockcv-ui-components",
+ "dockcv-vault",
  "docx-rs",
  "gpui",
  "gpui_platform",
@@ -1806,6 +1807,16 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+]
+
+[[package]]
+name = "dockcv-vault"
+version = "0.4.0"
+dependencies = [
+ "dockcv-core",
+ "log",
+ "serde",
+ "toml 0.8.23",
 ]
 
 [[package]]

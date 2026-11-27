@@ -4,7 +4,7 @@
 //! `CLAUDE.md` is about — a schema change needs a forward migration and a
 //! round-trip test, and these are the round-trip tests.
 
-use crate::resume::{altacv, model::ResumeDoc};
+use dockcv_core::resume::{altacv, model::ResumeDoc};
 
 /// O-13: visibility is part of what a preset selects. A document written
 /// before it existed must load with everything visible, an empty list must
@@ -12,7 +12,7 @@ use crate::resume::{altacv, model::ResumeDoc};
 /// the *rendered* document, not just the sidebar.
 #[test]
 fn hiding_a_section_survives_a_round_trip_and_reaches_the_render() {
-    use crate::resume::model::SectionKind;
+    use dockcv_core::resume::model::SectionKind;
 
     let mut doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
     assert!(
@@ -50,7 +50,7 @@ fn hiding_a_section_survives_a_round_trip_and_reaches_the_render() {
 /// will land in — an untouched document has to gain no key at all.
 #[test]
 fn a_sections_own_layout_survives_a_round_trip_and_is_absent_until_used() {
-    use crate::resume::model::SectionKind;
+    use dockcv_core::resume::model::SectionKind;
 
     let mut doc = ResumeDoc::from_resume(altacv::import(altacv::ALTACV_SAMPLE).unwrap(), "Base");
     let text = super::to_toml(&doc).expect("serializes");
@@ -76,8 +76,8 @@ fn a_sections_own_layout_survives_a_round_trip_and_is_absent_until_used() {
     let mut doc = back;
     doc.set_section_overrides(
         SectionKind::Skills,
-        crate::resume::model::SectionOverrides {
-            heading_style: Some(crate::resume::model::HeadingStyle::Boxed),
+        dockcv_core::resume::model::SectionOverrides {
+            heading_style: Some(dockcv_core::resume::model::HeadingStyle::Boxed),
             ..doc.section_overrides(SectionKind::Skills)
         },
     );
@@ -90,7 +90,7 @@ fn a_sections_own_layout_survives_a_round_trip_and_is_absent_until_used() {
     let back: ResumeDoc = toml::from_str(&text).expect("round-trips");
     assert_eq!(
         back.headings_for(SectionKind::Skills).style,
-        crate::resume::model::HeadingStyle::Boxed
+        dockcv_core::resume::model::HeadingStyle::Boxed
     );
     assert_eq!(
         back.headings_for(SectionKind::Skills).case,
@@ -172,7 +172,7 @@ fn a_versions_lineage_and_both_descriptions_survive_a_round_trip() {
 /// existed has to load without gaining an empty one in every card.
 #[test]
 fn stage_history_round_trips_and_old_boards_gain_no_key() {
-    use crate::resume::model::{Application, ApplicationStatus, Applications};
+    use dockcv_core::resume::model::{Application, ApplicationStatus, Applications};
 
     let mut board = Applications {
         entries: vec![Application {
@@ -211,7 +211,7 @@ fn stage_history_round_trips_and_old_boards_gain_no_key() {
 /// before either existed must gain no keys.
 #[test]
 fn rounds_and_closure_round_trip_and_old_boards_gain_no_keys() {
-    use crate::resume::model::{Application, Applications, Closure, InterviewRound};
+    use dockcv_core::resume::model::{Application, Applications, Closure, InterviewRound};
 
     let mut board = Applications {
         entries: vec![Application {
@@ -277,7 +277,7 @@ fn renaming_a_document_never_overwrites_another() {
 /// the same name and the same job title.
 #[test]
 fn doc_meta_carries_what_distinguishes_two_cvs() {
-    use crate::resume::model::SectionKind;
+    use dockcv_core::resume::model::SectionKind;
     let dir = std::env::temp_dir().join(format!("dockcv-meta-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("temp vault");
@@ -308,9 +308,9 @@ fn doc_meta_carries_what_distinguishes_two_cvs() {
 /// silently dropping sections from the editor.
 #[test]
 fn section_order_defaults_and_repairs_itself() {
-    use crate::resume::model::SectionKind;
+    use dockcv_core::resume::model::SectionKind;
 
-    let mut doc = ResumeDoc::from_resume(crate::resume::model::Resume::default(), "Base");
+    let mut doc = ResumeDoc::from_resume(dockcv_core::resume::model::Resume::default(), "Base");
     assert_eq!(
         doc.sections(),
         ResumeDoc::SECTIONS.to_vec(),
@@ -344,7 +344,7 @@ fn section_order_defaults_and_repairs_itself() {
 /// before D-9 — no new keys. Vaults are the user's real files under git.
 #[test]
 fn a_document_without_custom_sections_gains_no_new_keys() {
-    let doc = ResumeDoc::from_resume(crate::resume::model::Resume::default(), "Base");
+    let doc = ResumeDoc::from_resume(dockcv_core::resume::model::Resume::default(), "Base");
     let text = super::to_toml(&doc).expect("serializes");
     assert!(
         !text.contains("custom_sections"),
@@ -363,9 +363,9 @@ fn a_document_without_custom_sections_gains_no_new_keys() {
 /// like it had done nothing.
 #[test]
 fn a_new_custom_section_changes_the_generated_document() {
-    use crate::resume::template;
+    use dockcv_core::resume::template;
 
-    let mut doc = ResumeDoc::from_resume(crate::resume::model::Resume::default(), "Base");
+    let mut doc = ResumeDoc::from_resume(dockcv_core::resume::model::Resume::default(), "Base");
     let before = template::generate_for(&doc);
 
     doc.add_custom_section("Publications");

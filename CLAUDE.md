@@ -69,9 +69,7 @@ src/
   update.rs         whether a newer DockCV exists — and nothing beyond finding out
   render.rs         Pixels → gpui::RenderImage (BGRA swap)
   theme.rs          thin re-export of dockcv-ui-components::theme
-  vault.rs   + vault/     File-over-App store: TOML on disk, one file per document
-                          notebooks.rs (library/diary/board/profiles), write.rs (save
-                          against what was read), atomic.rs + four test files
+  vault             (moved to crates/dockcv-vault; `crate::vault::…` is a re-export of it)
   import/                 the importer: engines/, classifier.rs + classifier/,
                           lines.rs (PDF line boxes → the lines the author wrote)
   ats/                    conformance harness — test-only until the ATS screen lands
@@ -98,6 +96,12 @@ crates/dockcv-core/src/
     edit.rs                 FieldId / ListId addressing + key-event text editing
     ats.rs                  what a parser will read differently from a person
     dates.rs links.rs language.rs outcomes.rs presets.rs   shared vocabulary
+crates/dockcv-vault/src/
+  lib.rs            File-over-App store: TOML on disk, one file per document
+  notebooks.rs      library / diary / board / profiles
+  write.rs          save against what was read (the lost-update guard)
+  atomic.rs         write-then-rename, mode and symlink carried over
+                    + four test files beside them
 crates/ui-components/  reusable widgets + theme tokens (own crate, no app deps)
 .research/             read-only reference checkouts — never edit, never import
 ```
@@ -126,6 +130,13 @@ drawn with a `‹ <document> / Presets` breadcrumb).
 `gpui-component`, the Slate palette, the type scale, and the few widgets upstream
 lacks. It must **not** know about résumés, vaults, or Typst — if a widget needs a
 `ResumeDoc`, it belongs in `src/views/`.
+
+`crates/dockcv-vault` owns the disk: every read or write of a vault file goes through
+it, and it has **no GPUI** — a `Global` or an entity around its state is the app's own
+wrapper. `dockcv-core` has no filesystem and no GPUI either. These three sentences are
+enforced, not hoped for: `scripts/check-boundaries.sh` (CI job `boundaries`) fails when a
+crate's normal dependencies include what its role forbids. A new crate gets its rule added
+there in the same change that creates it.
 
 ---
 
@@ -239,7 +250,7 @@ Every component gets a doc comment saying what it is and one usage line.
 - Vault = a directory. One TOML per document; `library.toml`; `diary.toml`.
 - Writes are debounced auto-saves. The user must always be able to see the real path and
   open it in Finder (US-09).
-- Every schema change needs a forward migration and a round-trip test in `vault.rs`.
+- Every schema change needs a forward migration and a round-trip test in `dockcv-vault`.
 
 ### Three kinds of state, three homes
 
@@ -283,7 +294,7 @@ history is wrong the day the label is reworded.
 - Comments explain **why**, not what. Match the density already in the file — this
   codebase documents intent at module and non-obvious-decision level, not per line.
 - No `unwrap()` on anything that can fail at runtime. `Result<_, String>` is the
-  established error type in `vault.rs`/`typst_engine.rs`; stay consistent within a module.
+  established error type in `dockcv-vault`/`typst_engine.rs`; stay consistent within a module.
 - Don't add dependencies without saying why in the PR/summary. `image`, `smallvec` and
   `typst*` versions are pinned to unify with GPUI's own tree — check before bumping.
 - Rust files stay under ~800 lines, and a file that has to grow gets a sibling in its own

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::resume::model::ResumeDoc;
+use dockcv_core::resume::model::ResumeDoc;
 
 mod atomic;
 mod notebooks;
@@ -203,10 +203,10 @@ pub struct SearchEntry {
 pub struct PresetMeta {
     pub name: String,
     /// The version this one was made from, by name — see
-    /// [`crate::resume::model::Preset::based_on`].
+    /// [`dockcv_core::resume::model::Preset::based_on`].
     pub based_on: Option<String>,
     /// What this version is for, when its author said — see
-    /// [`crate::resume::model::Preset::description`]. The front door's row
+    /// [`dockcv_core::resume::model::Preset::description`]. The front door's row
     /// subtitle, and nothing when absent.
     pub description: Option<String>,
 }
@@ -550,7 +550,7 @@ fn free_trash_path(trash: &Path, name: &std::ffi::OsStr) -> PathBuf {
     trash.join(format!("{stem}-{}.{ext}", today_iso()))
 }
 
-pub(crate) fn civil_from_days(z: i64) -> (i64, u32, u32) {
+pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = z - era * 146_097; // [0, 146096]
@@ -628,10 +628,10 @@ fn read_document_text(path: &Path) -> Result<String, String> {
 /// **The only way a document enters memory from a file**, and the reason it is
 /// one function rather than a `toml::from_str` at each call site: a document
 /// written before 0.4.0 does not deserialize at all until
-/// [`crate::resume::parse_document_toml`] has run over it. The parser lives in
+/// [`dockcv_core::resume::parse_document_toml`] has run over it. The parser lives in
 /// `dockcv-core` because the browser engine accepts the same files.
 pub fn parse(text: &str) -> Result<ResumeDoc, toml::de::Error> {
-    crate::resume::parse_document_toml(text)
+    dockcv_core::resume::parse_document_toml(text)
 }
 
 /// Serialize a document to its TOML representation.

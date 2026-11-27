@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::resume::model::ResumeDoc;
+use dockcv_core::resume::model::ResumeDoc;
 
 use super::{atomic_write, parse, read_document_text, to_toml};
 

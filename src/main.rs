@@ -24,7 +24,6 @@ mod presence;
 mod render;
 mod theme;
 mod update;
-mod vault;
 mod views;
 
 // The engine lives in `dockcv-core` now — see that crate's manifest for why.
@@ -32,6 +31,9 @@ mod views;
 // the app keeps resolving: the move is a change of *where the code lives*, and
 // making it also a change of what everything is called would bury it.
 pub use dockcv_core::{resume, typst_engine};
+// The same move for the file layer: `crate::vault::…` is read at some sixty
+// call sites, and the crate behind it is `dockcv-vault`.
+pub use dockcv_vault as vault;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

@@ -305,7 +305,9 @@ mod tests {
             text: "Cut p99 latency in half".into(),
             ..Default::default()
         });
-        vault::save_diary(&dir, &diary).expect("save");
+        // The checked write: the unchecked one is `#[cfg(test)]` inside
+        // `dockcv-vault` and not visible from here, which is the point of it.
+        vault::save_diary_seen(&dir, &diary, vault::OnDisk::ABSENT).expect("save");
 
         cache.refresh(Some(&dir), 0);
         assert_eq!(cache.diary().entries.len(), 1);
