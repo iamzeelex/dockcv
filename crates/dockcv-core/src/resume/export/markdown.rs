@@ -326,35 +326,35 @@ fn write_markdown_custom_entry(out: &mut String, e: &CustomEntry, dates: DateSty
 }
 
 /// Convert Typst inline markup (`*bold*`, `_italic_`, `#link("url")[label]`) to Markdown.
+///
+/// `i` is a **byte** offset, for the reason `strip_typst_markup` spells out: a
+/// character index used to slice `input` panics on a `#` after the first
+/// non-ASCII character, and `C#` is ordinary résumé text.
 pub fn typst_to_markdown(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
 
-    while i < chars.len() {
+    while i < input.len() {
+        let rest = &input[i..];
+        let Some(c) = rest.chars().next() else { break };
+
         // Escaped characters
-        if chars[i] == '\\' && i + 1 < chars.len() {
-            match chars[i + 1] {
-                '*' | '_' | '#' | '$' | '[' | ']' | '\\' => {
-                    out.push(chars[i + 1]);
-                    i += 2;
-                    continue;
-                }
-                ' ' => {
-                    out.push(' ');
-                    i += 2;
-                    continue;
-                }
-                _ => {}
+        if c == '\\' {
+            if let Some(next @ ('*' | '_' | '#' | '$' | '[' | ']' | '\\' | ' ')) =
+                rest[1..].chars().next()
+            {
+                out.push(next);
+                i += 1 + next.len_utf8();
+                continue;
             }
         }
 
         // #link("...") or #link("...")[...]
-        if chars[i] == '#' && input[i..].starts_with("#link(") {
-            if let Some(close_paren) = input[i..].find(')') {
+        if rest.starts_with("#link(") {
+            if let Some(close_paren) = rest.find(')') {
                 let link_end = i + close_paren;
                 let url_content = input[i + 6..link_end].trim_matches('"');
-                if link_end + 1 < input.len() && input[link_end + 1..].starts_with('[') {
+                if input[link_end + 1..].starts_with('[') {
                     if let Some(close_bracket) = input[link_end + 1..].find(']') {
                         let label = &input[link_end + 2..link_end + 1 + close_bracket];
                         out.push_str(&linked(label, links::href(url_content)));
@@ -370,21 +370,21 @@ pub fn typst_to_markdown(input: &str) -> String {
         }
 
         // Convert Typst bold `*word*` to Markdown `**word**`
-        if chars[i] == '*' {
+        if c == '*' {
             out.push_str("**");
             i += 1;
             continue;
         }
 
         // Convert Typst italic `_word_` to Markdown `*word*`
-        if chars[i] == '_' {
+        if c == '_' {
             out.push('*');
             i += 1;
             continue;
         }
 
-        out.push(chars[i]);
-        i += 1;
+        out.push(c);
+        i += c.len_utf8();
     }
 
     out
@@ -395,6 +395,27 @@ mod tests {
     use super::*;
     use crate::resume::export::walk::sample_resume;
     use crate::resume::model::*;
+
+    /// The Markdown twin of the stripper walked a character index over byte
+    /// slices the same way, and panicked on the same `#`.
+    #[test]
+    fn markup_after_non_ascii_text_converts_instead_of_crashing() {
+        for text in [
+            "Résumé #1",
+            "Разработал сервис на C#",
+            "Shipped 🚀 C# tooling",
+        ] {
+            assert_eq!(typst_to_markdown(text), text, "{text:?} has no markup");
+        }
+        assert_eq!(
+            typst_to_markdown("Ünï *жирный* и _курсив_ \\#1"),
+            "Ünï **жирный** и *курсив* #1"
+        );
+        assert_eq!(
+            typst_to_markdown(r#"Сайт: #link("https://dockcv.com")[Мой сайт]"#),
+            "Сайт: [Мой сайт](https://dockcv.com)"
+        );
+    }
 
     #[test]
     fn markdown_export_contains_all_markdown_headers_and_links() {

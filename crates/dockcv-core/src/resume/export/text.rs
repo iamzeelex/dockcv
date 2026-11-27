@@ -336,36 +336,42 @@ fn write_custom_entry(out: &mut String, e: &CustomEntry, dates: DateStyle) {
 }
 
 /// Strip common Typst formatting markup (`*`, `_`, `#link(..)[..]`, etc.)
+///
+/// `i` is a **byte** offset throughout. An earlier version walked a
+/// `Vec<char>` and sliced `input` with the same index, which is only the same
+/// number while every character before it is ASCII: after one `é` or one
+/// Cyrillic letter the index fell inside a character and `input[i..]` panicked
+/// on any `#` — `C#`, `#1` — in a summary or bullet. That ran on every frame of
+/// the editor (the ATS lint) and on every text, Word and JSON Resume export.
+/// Every marker here is ASCII, so each one starts on a character boundary, and
+/// the one branch that is not a marker advances by the character's own width.
 pub fn strip_typst_markup(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
 
-    while i < chars.len() {
+    while i < input.len() {
+        let rest = &input[i..];
+        let Some(c) = rest.chars().next() else { break };
+
         // Check for escaped characters
-        if chars[i] == '\\' && i + 1 < chars.len() {
-            match chars[i + 1] {
-                '*' | '_' | '#' | '$' | '[' | ']' | '\\' => {
-                    out.push(chars[i + 1]);
-                    i += 2;
-                    continue;
-                }
-                ' ' => {
-                    out.push(' ');
-                    i += 2;
-                    continue;
-                }
-                _ => {}
+        if c == '\\' {
+            // The backslash is one byte, so `rest[1..]` starts on a boundary.
+            if let Some(next @ ('*' | '_' | '#' | '$' | '[' | ']' | '\\' | ' ')) =
+                rest[1..].chars().next()
+            {
+                out.push(next);
+                i += 1 + next.len_utf8();
+                continue;
             }
         }
 
         // Check for #link("...") or #link("...")[...]
-        if chars[i] == '#' && input[i..].starts_with("#link(") {
+        if rest.starts_with("#link(") {
             // Find closing paren of link
-            if let Some(close_paren) = input[i..].find(')') {
+            if let Some(close_paren) = rest.find(')') {
                 let link_end = i + close_paren;
                 let url_content = input[i + 6..link_end].trim_matches('"');
-                if link_end + 1 < input.len() && input[link_end + 1..].starts_with('[') {
+                if input[link_end + 1..].starts_with('[') {
                     // It has [label]
                     if let Some(close_bracket) = input[link_end + 1..].find(']') {
                         let label = &input[link_end + 2..link_end + 1 + close_bracket];
@@ -386,13 +392,13 @@ pub fn strip_typst_markup(input: &str) -> String {
         }
 
         // Strip bold / italic delimiters
-        if chars[i] == '*' || chars[i] == '_' {
+        if c == '*' || c == '_' {
             i += 1;
             continue;
         }
 
-        out.push(chars[i]);
-        i += 1;
+        out.push(c);
+        i += c.len_utf8();
     }
 
     out
@@ -532,5 +538,98 @@ mod tests {
             strip_typst_markup(r#"Visit #link("https://dockcv.com")[DockCV]"#),
             "Visit DockCV (https://dockcv.com)"
         );
+    }
+
+    /// The stripper used a character index to slice the string, so the first
+    /// non-ASCII character in front of a `#` put the slice inside a character
+    /// and panicked. `C#` and `#1` are ordinary résumé text, and so are
+    /// accents and Cyrillic: each pair below crashed the editor's lint and the
+    /// text, Word and JSON Resume exports.
+    #[test]
+    fn a_hash_after_non_ascii_text_is_text_not_a_crash() {
+        for text in [
+            "Résumé #1",
+            "Разработал сервис на C#",
+            "Разработал сервис на C# и #1 в рейтинге",
+            "東京で C# を書いた",
+            "Shipped 🚀 C# tooling",
+        ] {
+            assert_eq!(strip_typst_markup(text), text, "{text:?} has no markup");
+        }
+    }
+
+    #[test]
+    fn markup_is_still_read_after_non_ascii_text() {
+        assert_eq!(
+            strip_typst_markup(r#"Сайт: #link("https://dockcv.com")[Мой сайт]"#),
+            "Сайт: Мой сайт (https://dockcv.com)"
+        );
+        // A label that is the address says it once.
+        assert_eq!(
+            strip_typst_markup(r#"Café #link("https://dockcv.com")[https://dockcv.com]"#),
+            "Café https://dockcv.com"
+        );
+        // A link with no label gives its address.
+        assert_eq!(
+            strip_typst_markup(r#"Ссылка: #link("https://dockcv.com") — всё"#),
+            "Ссылка: https://dockcv.com — всё"
+        );
+        assert_eq!(
+            strip_typst_markup("Ünïcode *жирный* и _курсив_"),
+            "Ünïcode жирный и курсив"
+        );
+        // Escapes next to wide characters: the escaped one is unwrapped, and a
+        // backslash that escapes nothing is left where it was.
+        assert_eq!(strip_typst_markup(r"Ünï \#1 и \* и \é"), r"Ünï #1 и * и \é");
+    }
+
+    /// The paths the app takes, not just the helper they share: a CV in
+    /// Russian that mentions `C#` has to leave through every format DockCV
+    /// writes. Before the fix each of these panicked in the markup stripper.
+    #[test]
+    fn every_export_survives_a_hash_after_non_ascii_text() {
+        let prose = "Разработал сервис на C# и занял #1 в рейтинге";
+        let mut resume = sample_resume();
+        resume.basics.summary = prose.into();
+        resume.work[0].summary = prose.into();
+        resume.work[0].highlights[0] = prose.into();
+
+        assert!(export_plain_text(&resume).contains(prose));
+        assert!(crate::resume::export::export_markdown(&resume).contains(prose));
+        assert!(crate::resume::export::export_json_resume(&resume)
+            .expect("serializes")
+            .contains(prose));
+        crate::resume::export::export_docx(&resume).expect("a Word file is written");
+    }
+
+    /// Every marker the stripper looks for, after a prefix of every width a
+    /// character can have (one to four bytes), and at the very end of the text.
+    /// None of them may slice inside a character.
+    #[test]
+    fn no_marker_after_any_width_of_character_can_slice_inside_it() {
+        let prefixes = ["", "e", "é", "Ж", "東", "🚀", "éЖ東🚀"];
+        let markers = [
+            "#",
+            "#link(",
+            "#link(\"u\")",
+            "#link(\"u\")[",
+            "#link(\"u\")[l]",
+            "\\",
+            "\\#",
+            "\\ ",
+            "*",
+            "_",
+            "[",
+            ")",
+        ];
+        for prefix in prefixes {
+            for marker in markers {
+                for tail in ["", "é", " x"] {
+                    let text = format!("{prefix}{marker}{tail}");
+                    // Reaching the end without a panic is the assertion.
+                    let _ = strip_typst_markup(&text);
+                }
+            }
+        }
     }
 }

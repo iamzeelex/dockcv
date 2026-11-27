@@ -782,6 +782,29 @@ mod tests {
         }
     }
 
+    /// The editor runs this lint on every frame, over every summary and bullet.
+    /// A `#` after the first non-ASCII character used to panic the markup
+    /// stripper it calls, so a Russian or French CV that mentioned `C#` could
+    /// not be opened. The ASCII prose above could never have caught it.
+    #[test]
+    fn prose_with_a_hash_after_non_ascii_text_is_left_alone() {
+        for prose in [
+            "Разработал сервис на C# для клиента #1.",
+            "Résumé #1: shipped C# tooling.",
+            "Розробив сервіс на C# для клієнта #1.",
+        ] {
+            let mut resume = clean();
+            resume.basics.summary = prose.into();
+            resume.work[0].summary = prose.into();
+            resume.work[0].highlights[0] = prose.into();
+            assert_eq!(
+                lint(&resume, DocumentLanguage::English),
+                Vec::new(),
+                "{prose:?} should be left alone, and should not panic"
+            );
+        }
+    }
+
     #[test]
     fn a_bullet_that_brought_its_own_marker() {
         for typed in ["• Halved p99 latency.", "- Halved p99 latency."] {
